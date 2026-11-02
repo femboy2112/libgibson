@@ -35,7 +35,8 @@ mod channel;
 mod transport;
 mod viewport;
 
-use std::io::{self, Read, Write};
+use std::collections::VecDeque;
+use std::io::{self, Write};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -45,9 +46,7 @@ use gibson::input::{Event, KeyCode};
 use gibson::instrument_telemetry::{InstrumentTelemetry, Stage};
 use gibson::node::Node;
 use gibson::renderer::RenderMode;
-use gibson::wire::{
-    encode_command, FieldInbox, FrameDecoder, SourceCursor, WireBody, WireCommand, WireMessage,
-};
+use gibson::wire::{encode_command, FieldInbox, SourceCursor, WireBody, WireCommand, WireMessage};
 use gibson::world_view::WorldView;
 use gibson::{Rect, Style};
 
@@ -447,44 +446,78 @@ fn selfcheck_peak(inbox: &FieldInbox, src: u64) -> Option<f64> {
     view.finite_extremes().map(|(_, hi)| hi)
 }
 
-/// Blocking read of the next whole wire message from the lockstep producer, bounded by a finite
-/// read budget so a stalled producer fails loudly instead of hanging CI. A missing counterpart
-/// is a real failure, never a skip — the loop is the thing under test.
+/// Wall-clock deadline for a single lockstep message wait. A healthy producer answers in
+/// milliseconds; this bound only ever bites a producer that never writes — which must fail the
+/// selfcheck loudly and promptly, not hang CI (Gate E).
+const SELFCHECK_MSG_DEADLINE: Duration = Duration::from_secs(10);
+
+/// Wait for the next decoded message from the lockstep producer, draining the **non-blocking**
+/// background [`Reader`] and bounding the wait by a WALL-CLOCK deadline rather than a read count.
+///
+/// # Why this is not a blocking read (Gate E)
+///
+/// The previous implementation blocked directly on `stdout.read()` with only a read-*count* budget.
+/// A producer that connects but never writes blocks the very first `read()` forever, so the count
+/// never advances and the budget is no deadline at all — the selfcheck (and CI) hangs indefinitely.
+/// Draining the [`Reader`] instead never blocks on the producer: [`Reader::drain`] returns promptly
+/// whether or not a frame has arrived (the reader thread owns the blocking read, off this thread),
+/// so a true wall-clock deadline is enforceable here and a stalled or silent producer fails fast.
+/// A clean EOF is distinguished from a read fault via the drain's `read_error` provenance (Gate C4).
+///
+/// Decoded messages drain in order; `pending` buffers any the caller has not yet consumed (the
+/// reader's lawful FIELD coalescing does not apply across the lockstep's command round-trips).
 fn selfcheck_next(
-    out: &mut impl Read,
-    dec: &mut FrameDecoder,
+    reader: &Reader,
+    pending: &mut VecDeque<WireMessage>,
     child: &mut Child,
     ctx: &mut Context,
 ) -> WireMessage {
-    let mut rbuf = [0u8; 65536];
-    let mut reads = 0u32;
+    if let Some(msg) = pending.pop_front() {
+        return msg;
+    }
+    let deadline = Instant::now() + SELFCHECK_MSG_DEADLINE;
     loop {
-        match dec.next_message() {
-            Some(Ok(msg)) => return msg,
-            // A fatal decode is unrecoverable; a non-fatal one (or no whole message yet) just
-            // means read more. Folded into a guard per clippy::collapsible_match.
-            Some(Err(e)) if e.is_fatal() => {
-                selfcheck_fail(child, ctx, &format!("fatal decode: {e}"))
-            }
-            _ => {}
+        let outcome = reader.drain(&mut |m| pending.push_back(m));
+        if let Some(msg) = pending.pop_front() {
+            return msg;
         }
-        reads += 1;
-        if reads > 4000 {
-            selfcheck_fail(child, ctx, "exceeded read budget waiting for a message");
-        }
-        match out.read(&mut rbuf) {
-            Ok(0) => selfcheck_fail(
+        // No message yet. Handle terminal conditions, then enforce the wall-clock deadline.
+        if let Some(ov) = outcome.control_overflow {
+            selfcheck_fail(
                 child,
                 ctx,
-                "producer closed its stream before a message arrived",
-            ),
-            Ok(n) => {
-                if dec.push(&rbuf[..n]).is_err() {
-                    selfcheck_fail(child, ctx, "transport fatal on push");
-                }
-            }
-            Err(e) => selfcheck_fail(child, ctx, &format!("read error: {e}")),
+                &format!(
+                    "control lane overflow (cap {}, {:?}) — a verdict was lost",
+                    ov.control_cap, ov.kind
+                ),
+            );
         }
+        if let Some(e) = outcome.fatal {
+            selfcheck_fail(child, ctx, &format!("fatal decode: {e}"));
+        }
+        if outcome.disconnected {
+            // Clean close vs. severed pipe — report the real provenance (Gate C4).
+            match outcome.read_error {
+                Some(kind) => selfcheck_fail(
+                    child,
+                    ctx,
+                    &format!("producer stream faulted ({kind:?}) before a message arrived"),
+                ),
+                None => selfcheck_fail(
+                    child,
+                    ctx,
+                    "producer closed its stream before a message arrived",
+                ),
+            }
+        }
+        if Instant::now() >= deadline {
+            selfcheck_fail(
+                child,
+                ctx,
+                "timed out waiting for a message (wall-clock) — a producer that never writes no longer hangs the selfcheck",
+            );
+        }
+        std::thread::sleep(Duration::from_millis(2));
     }
 }
 
@@ -493,10 +526,13 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
     // only synchronization receipt. No hz timer, no sleeps, no read-count heuristics.
     let mut child = spawn_producer(args, true)?;
     let mut stdin_w = child.stdin.take().expect("stdin piped");
-    let mut out = child.stdout.take().expect("stdout piped");
+    let out = child.stdout.take().expect("stdout piped");
+    // Decode on the SAME bounded, non-blocking reader the interactive path uses, so the selfcheck's
+    // message waits can be bounded by a wall-clock deadline (Gate E) instead of a blocking read.
+    let reader = Reader::spawn(out, transport::DEFAULT_CONTROL_CAP);
+    let mut pending: VecDeque<WireMessage> = VecDeque::new();
 
     let mut ctx = Context::headless(RenderMode::Inline, 80, 30);
-    let mut dec = FrameDecoder::new();
     let mut inbox = FieldInbox::new();
     let mut ch = CommandChannel::new(args.source, args.epoch);
     // The #143 latency funnel, run end to end through this real consumer loop — not an
@@ -506,7 +542,7 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
     let src = args.source;
 
     // --- 1) Baseline FIELD (tick 1, amplitude 1.0): identity, then the real render path. ---
-    let msg = selfcheck_next(&mut out, &mut dec, &mut child, &mut ctx);
+    let msg = selfcheck_next(&reader, &mut pending, &mut child, &mut ctx);
     if msg.source != src || msg.cursor.epoch != args.epoch {
         selfcheck_fail(
             &mut child,
@@ -576,7 +612,7 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
     }
 
     // --- 3) Correlate the producer's ACK back through the channel. ---
-    let ack_msg = selfcheck_next(&mut out, &mut dec, &mut child, &mut ctx);
+    let ack_msg = selfcheck_next(&reader, &mut pending, &mut child, &mut ctx);
     let ack_state = match ack_msg.body {
         WireBody::Ack(ack) => match ch.resolve(ack_msg.source, ack) {
             Ok(state) => format!("{state:?}"),
@@ -610,7 +646,7 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
     }
 
     // --- 5) Post-edit FIELD (tick 2, amplitude 2.0): identity, render, peak. ---
-    let msg2 = selfcheck_next(&mut out, &mut dec, &mut child, &mut ctx);
+    let msg2 = selfcheck_next(&reader, &mut pending, &mut child, &mut ctx);
     if msg2.source != src || msg2.cursor.epoch != args.epoch {
         selfcheck_fail(
             &mut child,

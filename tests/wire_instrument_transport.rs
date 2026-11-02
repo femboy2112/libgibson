@@ -942,3 +942,69 @@ fn a_decode_fatal_is_not_recorded_as_a_read_fault() {
         "a decode-fatal is distinct from a read fault — read_error stays None"
     );
 }
+
+// ---- Gate E: the reader's non-blocking drain makes a wall-clock deadline enforceable ----
+
+/// A [`Read`] that BLOCKS on every read until its paired sender is dropped — a producer that
+/// connects but never writes a byte. A direct blocking `read()` on this hangs forever; the point
+/// of the reader thread is that the UI side can still bound its wait.
+struct NeverWrites {
+    release: std::sync::mpsc::Receiver<()>,
+}
+impl Read for NeverWrites {
+    fn read(&mut self, _out: &mut [u8]) -> io::Result<usize> {
+        // Park until the test drops the sender; models a producer stuck with nothing to say.
+        let _ = self.release.recv();
+        Ok(0)
+    }
+}
+
+/// GATE E — a producer that never writes must not hang the consumer. The reader thread blocks in
+/// `read()` indefinitely, but [`Reader::drain`] returns promptly every call, so a caller (the
+/// headless selfcheck) can bound its wait by a WALL-CLOCK deadline and fail fast — exactly what a
+/// direct blocking `stdout.read()` guarded only by a read COUNT could never do (the count never
+/// advances while the first read is parked, so it is no deadline at all).
+#[test]
+fn a_never_writing_producer_is_bounded_by_a_wall_clock_deadline_not_a_hang() {
+    use std::time::{Duration, Instant};
+
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let reader = Reader::spawn(NeverWrites { release: rx }, DEFAULT_CONTROL_CAP);
+
+    let budget = Duration::from_millis(300);
+    let start = Instant::now();
+    let deadline = start + budget;
+    let mut got_any = false;
+    let mut timed_out = false;
+    loop {
+        let outcome = reader.drain(&mut |_| got_any = true);
+        // A parked read is none of these: not a disconnect, not a fault, not a fatal.
+        assert!(!outcome.disconnected, "a blocked read is not a disconnect");
+        assert!(
+            outcome.read_error.is_none(),
+            "a blocked read is not a fault"
+        );
+        assert!(outcome.fatal.is_none());
+        if got_any {
+            break;
+        }
+        if Instant::now() >= deadline {
+            timed_out = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let elapsed = start.elapsed();
+    assert!(!got_any, "a producer that never writes yields no message");
+    assert!(
+        timed_out,
+        "the wall-clock deadline must fire — drain never blocks on the parked read"
+    );
+    // The wait was bounded within a small margin, NOT an unbounded hang.
+    assert!(
+        elapsed < budget + Duration::from_secs(2),
+        "the deadline must bound the wait (took {elapsed:?})"
+    );
+    // Release the blocked reader thread so the test leaves nothing parked.
+    drop(tx);
+}

@@ -1178,7 +1178,11 @@ pub enum CommandState {
     /// it exactly as it would a `Delivered` command; the id is never re-delivered or reused, so a
     /// possibly-received non-idempotent command is never silently retried.
     TransportUncertain,
-    /// Terminal: the producer confirmed it (and the authoritative model moved).
+    /// Terminal: the producer returned an accepting verdict for the command. This records the
+    /// command's *fate* — the producer acknowledged it — which is distinct from, and precedes, the
+    /// authoritative source-state change itself: the consumer observes that change separately, in
+    /// the producer's subsequent FIELD snapshot. The ack is the verdict on the command, never by
+    /// itself proof that the field moved (Gate D4).
     Acknowledged,
     /// Terminal: the producer declined it as typed backpressure — re-offer it.
     Refused,
