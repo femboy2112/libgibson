@@ -324,6 +324,13 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
             status = format!("transport fatal: {e}");
             disconnected = true;
         } else if outcome.disconnected {
+            // Distinguish a hard read fault from an orderly shutdown (Gate C4): the producer
+            // closing its stdout cleanly and the pipe faulting both end the stream, but they are
+            // not the same event, and a disconnect handler that conflates them is lying.
+            status = match outcome.read_error {
+                Some(kind) => format!("producer stream faulted ({kind:?}) — disconnected"),
+                None => String::from("producer disconnected (clean EOF)"),
+            };
             disconnected = true;
         }
 
@@ -376,9 +383,10 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
         // *control* verdict is never a counter here; it is the terminal control-overflow above.
         let reader = owner.reader();
         let shown = format!(
-            "{status}  |  xport: coalesced {} fields_dropped {} bytes {}/{} KiB (hw {} KiB)",
+            "{status}  |  xport: coalesced {} fields_dropped {} skips {} bytes {}/{} KiB (hw {} KiB)",
             reader.coalesced(),
             reader.fields_dropped(),
+            reader.decode_skips(),
             reader.field_bytes() / 1024,
             reader.field_byte_cap() / 1024,
             reader.bytes_high_water() / 1024,
@@ -396,7 +404,9 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
         ctx.set_root(root);
 
         if disconnected {
-            // One final paint of the terminal state, then exit (bounded).
+            // One final paint of the terminal state, then exit (bounded). Carry the real reason
+            // (clean EOF vs fault vs fatal vs control-overflow) into the final frame (Gate C4).
+            let final_note = format!("{status} — press q");
             let root = build_root(
                 &inbox,
                 src,
@@ -404,7 +414,7 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
                 probe,
                 ppc,
                 pending_amp,
-                "producer disconnected — press q",
+                &final_note,
                 &dispatch_readout(&telemetry),
             );
             ctx.set_root(root);

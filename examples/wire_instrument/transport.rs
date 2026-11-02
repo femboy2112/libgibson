@@ -70,7 +70,7 @@
 //! *terminal state*, not a counter.
 
 use std::collections::VecDeque;
-use std::io::Read;
+use std::io::{ErrorKind, Read};
 use std::process::{Child, ChildStdin};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -213,6 +213,16 @@ impl FramePump {
     /// a `pump` returns).
     pub fn buffered_bytes(&self) -> usize {
         self.dec.buffered_bytes()
+    }
+
+    /// Total frames the decoder skipped due to a **recoverable** error (unknown message type,
+    /// malformed field content, an undefined flag bit, …) and resynchronized past. This is the
+    /// countable receipt the pump's `Err`-free `Ok(())` would otherwise hide: a single malformed
+    /// frame must not tear down a live instrument (so `pump` swallows it), but it must still be
+    /// *observable* rather than vanishing without a trace (Gate C4). Fatal errors never count here
+    /// — they poison the decoder and surface through [`pump`](FramePump::pump)'s `Err`.
+    pub fn frames_skipped(&self) -> u64 {
+        self.dec.frames_skipped()
     }
 }
 
@@ -481,23 +491,42 @@ impl CoalescingBuffer {
 /// State shared between the reader thread and the UI thread.
 struct Shared {
     buf: CoalescingBuffer,
-    /// EOF reached on the producer's stdout (graceful disconnect).
+    /// The read loop ended: either a clean `Ok(0)` EOF (graceful disconnect) **or** a read fault.
+    /// Either way no further frames arrive; `read_error` disambiguates the two (Gate C4).
     eof: bool,
+    /// `Some(kind)` iff the producer's stdout read itself FAULTED (an `Err` from `read`), as
+    /// opposed to a clean `Ok(0)` end-of-stream. The I/O [`ErrorKind`] is retained so a severed
+    /// pipe or reset is distinguishable from the producer closing cleanly — the old code collapsed
+    /// both to `eof = true`, destroying the provenance a disconnect handler needs (Gate C4).
+    read_error: Option<ErrorKind>,
     /// A fatal decode poisoned the stream; surfaced to the UI verbatim.
     fatal: Option<WireError>,
+    /// Running count of recoverable frames the decoder skipped and resynchronized past — the
+    /// observable receipt for a malformed-but-nonfatal frame (Gate C4). Monotonic.
+    decode_skips: u64,
 }
 
 /// Outcome of a UI-side drain: whether the producer has disconnected and any fatal decode.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DrainOutcome {
-    /// The producer closed its stream (or the read failed): no more frames will arrive.
+    /// The producer closed its stream (or the read faulted): no more frames will arrive. See
+    /// [`read_error`](DrainOutcome::read_error) to tell a clean close from a fault.
     pub disconnected: bool,
+    /// `Some(kind)` iff the stream ended because the stdout read FAULTED, not because the producer
+    /// closed cleanly. Present only alongside `disconnected`; a graceful EOF leaves it `None`. This
+    /// is the provenance Gate C4 requires — a disconnect handler can report "producer stream
+    /// faulted (<kind>)" distinctly from an orderly shutdown instead of guessing.
+    pub read_error: Option<ErrorKind>,
     /// A fatal decode error, if the stream poisoned.
     pub fatal: Option<WireError>,
     /// The control lane failed closed (see [`ControlOverflow`]). Treat it like a fatal transport
     /// error: an authoritative verdict was lost, outstanding command fate is unresolved, and the
     /// consumer must stop rather than keep claiming command-lifecycle correctness.
     pub control_overflow: Option<ControlOverflow>,
+    /// Running count of recoverable frames the decoder has skipped and resynchronized past over
+    /// the reader's life (Gate C4). Nonzero means the producer emitted malformed-but-nonfatal
+    /// frames; a healthy stream holds it at 0. A countable receipt, never a silent loss.
+    pub decode_skips: u64,
 }
 
 /// A background reader that decodes the producer's stdout into a bounded, coalescing buffer and
@@ -514,7 +543,9 @@ impl Reader {
         let shared = Arc::new(Mutex::new(Shared {
             buf: CoalescingBuffer::with_control_cap(control_cap),
             eof: false,
+            read_error: None,
             fatal: None,
+            decode_skips: 0,
         }));
         let worker = Arc::clone(&shared);
         let handle = thread::spawn(move || {
@@ -523,6 +554,8 @@ impl Reader {
             loop {
                 match stdout.read(&mut chunk) {
                     Ok(0) => {
+                        // Clean end-of-stream: the producer closed its stdout. `read_error` stays
+                        // `None`, marking this a graceful disconnect rather than a fault.
                         worker.lock().unwrap().eof = true;
                         return;
                     }
@@ -535,13 +568,23 @@ impl Reader {
                         for m in batch {
                             guard.buf.offer(m);
                         }
+                        // Publish the decoder's recoverable-skip receipt every cycle so a malformed
+                        // frame the pump swallowed is observable, not lost (Gate C4).
+                        guard.decode_skips = pump.frames_skipped();
                         if let Err(e) = res {
                             guard.fatal = Some(e);
                             return;
                         }
                     }
-                    Err(_) => {
-                        worker.lock().unwrap().eof = true;
+                    Err(e) => {
+                        // The read FAULTED (broken pipe, reset, interrupted I/O, …). This is NOT a
+                        // clean EOF: retain the error kind so the disconnect is reported as a fault
+                        // with provenance, not mistaken for an orderly shutdown (Gate C4). `eof` is
+                        // still set — no more frames arrive either way — and `read_error` is what
+                        // disambiguates the two.
+                        let mut guard = worker.lock().unwrap();
+                        guard.read_error = Some(e.kind());
+                        guard.eof = true;
                         return;
                     }
                 }
@@ -569,8 +612,10 @@ impl Reader {
             guard.buf.drain_into(&mut |m| batch.push(m));
             let outcome = DrainOutcome {
                 disconnected: guard.eof,
+                read_error: guard.read_error,
                 fatal: guard.fatal,
                 control_overflow: guard.buf.control_overflow(),
+                decode_skips: guard.decode_skips,
             };
             (batch, outcome)
         };
@@ -615,6 +660,19 @@ impl Reader {
     /// The terminal control-lane overflow, if one has been latched (the stream failed closed).
     pub fn control_overflow(&self) -> Option<ControlOverflow> {
         self.shared.lock().unwrap().buf.control_overflow()
+    }
+
+    /// `Some(kind)` iff the reader's stdout read FAULTED (vs a clean EOF). Distinguishes a severed
+    /// pipe from a graceful producer shutdown — both set [`disconnected`](DrainOutcome), only a
+    /// fault sets this (Gate C4).
+    pub fn read_error(&self) -> Option<ErrorKind> {
+        self.shared.lock().unwrap().read_error
+    }
+
+    /// Recoverable frames the decoder has skipped and resynchronized past (the observable receipt
+    /// for malformed-but-nonfatal frames; 0 on a healthy stream — Gate C4).
+    pub fn decode_skips(&self) -> u64 {
+        self.shared.lock().unwrap().decode_skips
     }
 
     /// Join the reader thread. The producer's stdout closing (e.g. after `child.kill()`) ends the

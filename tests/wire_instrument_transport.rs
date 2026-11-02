@@ -806,3 +806,139 @@ fn byte_pressure_evicts_fields_but_never_a_control_verdict() {
         "the interleaved ACK verdict must survive field eviction"
     );
 }
+
+// ---- Gate C4: error provenance — read fault vs clean EOF, recoverable-skip receipts ---
+
+use std::io::{self, Read};
+
+/// A [`Read`] that yields `data` once, then returns an `io::Error` forever — a stand-in for a
+/// producer stdout that FAULTS (broken pipe / reset) rather than closing cleanly.
+struct FaultAfter {
+    data: Vec<u8>,
+    pos: usize,
+    kind: io::ErrorKind,
+}
+impl Read for FaultAfter {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        if self.pos >= self.data.len() {
+            return Err(io::Error::new(self.kind, "simulated producer stdout fault"));
+        }
+        let n = (self.data.len() - self.pos).min(out.len());
+        out[..n].copy_from_slice(&self.data[self.pos..self.pos + n]);
+        self.pos += n;
+        Ok(n)
+    }
+}
+
+/// A frame that is structurally legal (magic, version, known length) but carries an unknown message
+/// type — a RECOVERABLE decode error: the decoder skips exactly this frame (its length is known)
+/// and resynchronizes at the next, rather than poisoning the stream.
+fn unknown_type_frame(source: u64, epoch: u32, seq: u64) -> Vec<u8> {
+    let mut f = field_frame(source, epoch, seq, WireLimits::default());
+    // msg_type is the u16 at header offset 6; 0xFFFF is not FIELD/COMMAND/ACK/RETIRE.
+    f[6] = 0xFF;
+    f[7] = 0xFF;
+    f
+}
+
+/// GATE C4 — a hard stdout read FAULT is distinguished from a clean EOF. Both end the stream
+/// (`disconnected`), but only a fault carries a `read_error`; the old reader collapsed `Err(_)` to
+/// the same `eof = true` a clean `Ok(0)` sets, destroying the provenance a disconnect handler needs.
+#[test]
+fn a_stdout_read_fault_is_distinguished_from_a_clean_eof() {
+    // Fault path: one legal field, then the read errors.
+    let stream = field_frame(1, 0, 1, WireLimits::default());
+    let mut reader = Reader::spawn(
+        FaultAfter {
+            data: stream,
+            pos: 0,
+            kind: io::ErrorKind::BrokenPipe,
+        },
+        DEFAULT_CONTROL_CAP,
+    );
+    reader.join();
+    let outcome = reader.drain(&mut |_| {});
+    assert!(outcome.disconnected, "a fault ends the stream");
+    assert_eq!(
+        outcome.read_error,
+        Some(io::ErrorKind::BrokenPipe),
+        "a read fault must be recorded with its kind, not mistaken for a clean EOF"
+    );
+    assert!(
+        outcome.fatal.is_none(),
+        "a read fault is not a decode-fatal"
+    );
+    assert_eq!(
+        reader.read_error(),
+        Some(io::ErrorKind::BrokenPipe),
+        "the fault provenance is also readable via the Reader accessor"
+    );
+
+    // Negative control: a clean EOF (Cursor returns Ok(0) at the end) disconnects with NO read_error.
+    let stream = field_frame(2, 0, 1, WireLimits::default());
+    let mut clean = Reader::spawn(std::io::Cursor::new(stream), DEFAULT_CONTROL_CAP);
+    clean.join();
+    let outcome = clean.drain(&mut |_| {});
+    assert!(outcome.disconnected, "a clean close ends the stream too");
+    assert!(
+        outcome.read_error.is_none(),
+        "a graceful EOF must NOT masquerade as a fault"
+    );
+}
+
+/// GATE C4 — a recoverable decode error (one malformed frame) is skipped AND counted: the stream
+/// stays live, the frames on either side decode, and the skip is surfaced as a countable receipt
+/// (`decode_skips`) rather than vanishing silently.
+#[test]
+fn a_recoverable_decode_skip_is_counted_and_surfaced() {
+    let mut stream = Vec::new();
+    stream.extend_from_slice(&field_frame(1, 0, 1, WireLimits::default()));
+    stream.extend_from_slice(&unknown_type_frame(9, 0, 1)); // the poison pill: skipped, not fatal
+    stream.extend_from_slice(&field_frame(2, 0, 1, WireLimits::default()));
+
+    let mut reader = Reader::spawn(std::io::Cursor::new(stream), DEFAULT_CONTROL_CAP);
+    reader.join();
+    let mut got = 0usize;
+    let outcome = reader.drain(&mut |_| got += 1);
+
+    // Two DISTINCT sources straddle the pill → both snapshots survive (no coalescing between them).
+    assert_eq!(
+        got, 2,
+        "the frames on either side of a skip must still decode"
+    );
+    assert!(
+        outcome.fatal.is_none(),
+        "a recoverable skip must not poison the stream"
+    );
+    assert_eq!(
+        outcome.decode_skips, 1,
+        "the single skipped frame must be counted (observable receipt), not lost"
+    );
+    assert_eq!(
+        reader.decode_skips(),
+        1,
+        "the skip receipt is also readable via the Reader accessor"
+    );
+    assert!(
+        outcome.disconnected,
+        "the Cursor reaches a clean EOF after the frames"
+    );
+    assert!(outcome.read_error.is_none(), "a clean EOF is not a fault");
+}
+
+/// GATE C4 — a decode-FATAL (poisoning) error is not a read fault and vice versa: the two
+/// provenance channels stay separate. A poisoned decoder surfaces `fatal` with NO `read_error`.
+#[test]
+fn a_decode_fatal_is_not_recorded_as_a_read_fault() {
+    let mut reader = Reader::spawn(std::io::Cursor::new(vec![0xABu8; 64]), DEFAULT_CONTROL_CAP);
+    reader.join();
+    let outcome = reader.drain(&mut |_| {});
+    assert!(
+        matches!(outcome.fatal, Some(WireError::BadMagic { .. })),
+        "garbage poisons the decoder"
+    );
+    assert!(
+        outcome.read_error.is_none(),
+        "a decode-fatal is distinct from a read fault — read_error stays None"
+    );
+}
