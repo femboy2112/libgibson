@@ -24,7 +24,7 @@ use gibson::wire::{
     WireLimits, WireMessage, HEADER_BYTES,
 };
 
-use transport::{CoalescingBuffer, FramePump, Reader, DEFAULT_CONTROL_CAP};
+use transport::{CoalescingBuffer, FramePump, ProducerOwner, Reader, DEFAULT_CONTROL_CAP};
 
 // ---- builders -------------------------------------------------------------------------
 
@@ -333,4 +333,84 @@ fn reader_surfaces_a_fatal_decode() {
         Some(WireError::BadMagic { .. }) => {}
         other => panic!("expected a fatal BadMagic, got {other:?}"),
     }
+}
+
+// ---- Gate E: supervised process ownership -------------------------------------------------
+
+/// GATE E — a [`ProducerOwner`]'s `Drop` reaps the child through the OS `wait` handle and joins the
+/// reader on **every** exit, closing the lifecycle hole where `run_interactive`'s teardown sat
+/// lexically after the loop and a `?` early return (terminal init or an in-loop render) skipped it,
+/// orphaning the Python child and detaching the reader thread. Process death is observed via the
+/// OS, not an escape-stream heuristic.
+///
+/// Self-contained red→green: first the bare pattern (Child + Reader dropped with no reaping, as the
+/// early return did) is shown to leave the child ALIVE; then the owner is shown to reap it — and to
+/// do so *promptly* (kill + wait, not waiting out the long-lived child).
+#[test]
+fn producer_owner_reaps_the_child_and_joins_the_reader_on_drop() {
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    fn spawn_sleeper() -> std::process::Child {
+        Command::new("sleep")
+            .arg("30")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("spawn `sleep` as a stand-in long-lived producer")
+    }
+    // `kill -0 <pid>` exits 0 iff a live process with that id exists — an OS-level liveness probe.
+    fn alive(pid: u32) -> bool {
+        Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    // --- RED baseline: the bare pattern leaks. `std::process::Child` has no reaping `Drop`, so a
+    // scope that spawns the child + reader and then returns without kill/wait/join (exactly what a
+    // `?` early return did) leaves the child running and the reader thread detached. ---
+    let mut leaked = spawn_sleeper();
+    let leaked_pid = leaked.id();
+    let leaked_stdout = leaked.stdout.take().expect("stdout piped");
+    let leaked_reader = Reader::spawn(leaked_stdout, DEFAULT_CONTROL_CAP);
+    drop(leaked_reader); // Reader has no Drop that joins — the thread is merely detached.
+    assert!(
+        alive(leaked_pid),
+        "the bare pattern orphans the child (red baseline — Child does not reap on drop)"
+    );
+    // Reap the orphan ourselves so the test leaves nothing behind (and closing its stdout lets the
+    // detached reader thread read EOF and exit).
+    let _ = leaked.kill();
+    let _ = leaked.wait();
+
+    // --- GREEN: the owner reaps on Drop. ---
+    let mut child = spawn_sleeper();
+    let child_pid = child.id();
+    let stdin = child.stdin.take();
+    let stdout = child.stdout.take().expect("stdout piped");
+    let reader = Reader::spawn(stdout, DEFAULT_CONTROL_CAP);
+    let owner = ProducerOwner::new(child, stdin, reader);
+    assert_eq!(
+        owner.child_id(),
+        child_pid,
+        "owner reports the OS pid it owns"
+    );
+
+    let t0 = Instant::now();
+    drop(owner);
+    let elapsed = t0.elapsed();
+
+    // Prompt: if Drop called `wait` WITHOUT `kill` first, it would block ~30s on the live sleeper;
+    // returning fast proves kill-then-wait both ran (and the reader join returned on stdout EOF).
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "teardown must kill+wait+join promptly, not wait out the long-lived child (took {elapsed:?})"
+    );
+    // Reaped: observed through the OS, not inferred from the terminal escape stream.
+    assert!(
+        !alive(child_pid),
+        "the owner must reap the child on drop; pid {child_pid} is still alive"
+    );
 }

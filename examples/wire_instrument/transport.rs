@@ -53,6 +53,7 @@
 
 use std::collections::VecDeque;
 use std::io::Read;
+use std::process::{Child, ChildStdin};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
@@ -310,5 +311,74 @@ impl Reader {
         if let Some(h) = self.handle.take() {
             let _ = h.join();
         }
+    }
+}
+
+/// A supervised owner for the producer subprocess and everything whose lifetime is tied to it:
+/// the [`Child`], its stdin, and the background [`Reader`] thread (Gate E).
+///
+/// # The lifecycle hole it closes
+///
+/// `run_interactive` spawns the producer and the reader thread, *then* builds the terminal
+/// [`Context`](gibson::context::Context) and enters a render loop — both fallible. Before this
+/// owner, the only teardown (EOF stdin → `kill` → `wait` → reader `join` → terminal restore) sat
+/// at the *bottom* of the function, reachable only on the normal `break` paths. A `?` error from
+/// `Context::fullscreen()` or any in-loop `ctx.run_once()` returned early, **orphaning the Python
+/// child, detaching the reader thread** (neither [`Reader`] nor `Context` restores on `Drop`), and
+/// potentially leaving the terminal raw.
+///
+/// This owner moves child-ownership into a value whose [`Drop`] runs on **every** exit — normal
+/// return, a propagated `?` error, or a panic unwind — so the child is always reaped through the
+/// OS `wait` handle (not inferred from an escape-stream heuristic) and the reader is always joined.
+/// Terminal restoration is handled separately by the caller, since the `Context` must outlive a
+/// failed terminal init (there is nothing to restore if `fullscreen()` never succeeded).
+///
+/// Reaping order: drop stdin first (EOF — lets a healthy producer exit gracefully), then `kill`
+/// as a hard backstop (idempotent if the child already exited), then `wait` to reap the process
+/// (preventing a zombie) and close its stdout, which ends the reader's read loop so `join` returns
+/// promptly.
+pub struct ProducerOwner {
+    child: Child,
+    stdin: Option<ChildStdin>,
+    reader: Reader,
+}
+
+impl ProducerOwner {
+    /// Take ownership of the spawned `child`, its `stdin` (if piped), and the `reader` thread.
+    pub fn new(child: Child, stdin: Option<ChildStdin>, reader: Reader) -> Self {
+        Self {
+            child,
+            stdin,
+            reader,
+        }
+    }
+
+    /// The outbound command sink — the producer's stdin — while it is open.
+    pub fn stdin_mut(&mut self) -> Option<&mut ChildStdin> {
+        self.stdin.as_mut()
+    }
+
+    /// The inbound reader, for draining decoded messages (`&self` — drain does not consume it).
+    pub fn reader(&self) -> &Reader {
+        &self.reader
+    }
+
+    /// The OS process id of the owned child — the handle a test measures reaping against (process
+    /// death observed through the OS, never an escape-stream assertion).
+    pub fn child_id(&self) -> u32 {
+        self.child.id()
+    }
+}
+
+impl Drop for ProducerOwner {
+    fn drop(&mut self) {
+        // EOF to the producer's stdin for a graceful exit…
+        drop(self.stdin.take());
+        // …with a hard backstop so no child outlives us (idempotent if it already exited).
+        let _ = self.child.kill();
+        // Reap through the OS wait handle — prevents a zombie and closes the child's stdout…
+        let _ = self.child.wait();
+        // …so the reader's read loop hits EOF and this join returns promptly, never detached.
+        self.reader.join();
     }
 }
