@@ -17,7 +17,10 @@ use viewport::viewport_dims;
 fn the_pre_fix_u16_cast_wrapped_a_huge_field_and_the_fix_does_not() {
     // Pre-fix: `(ext.cols() as u16).saturating_mul(ppc).clamp(1, 240)` with cols = 65536, ppc = 1.
     let buggy = (65536usize as u16).saturating_mul(1).clamp(1, 240);
-    assert_eq!(buggy, 1, "documents the wrap: 65536 as u16 == 0 → clamped up to 1");
+    assert_eq!(
+        buggy, 1,
+        "documents the wrap: 65536 as u16 == 0 → clamped up to 1"
+    );
 
     // Fixed: wide arithmetic, clamped before the narrowing cast.
     assert_eq!(
