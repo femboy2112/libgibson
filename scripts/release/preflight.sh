@@ -22,7 +22,17 @@ fail=0
 step()  { printf '\n==== %s ====\n' "$*"; }
 ok()    { printf '  [PASS] %s\n' "$*"; }
 no()    { printf '  [FAIL] %s\n' "$*"; fail=1; }
-run()   { if "$@" >/dev/null 2>&1; then ok "$*"; else no "$*"; fi; }
+# Surface the cause of a failed step. A release gate that discards its own output to /dev/null is
+# unreviewable: a red preflight (e.g. CI run 41375536305) then reports *that* it failed but never
+# *why*, so the app/SDK defect cannot be separated from a toolchain/golden effect. Captured output
+# is dumped ONLY on failure (success stays quiet) and bounded to the last 80 lines so a megabyte of
+# build output can never bury the PASS/FAIL summary.
+dump()  { sed 's/^/    | /' "$1" | tail -n 80; }
+run()   {
+    local log; log="$(mktemp)"
+    if "$@" >"$log" 2>&1; then ok "$*"; else no "$*"; dump "$log"; fi
+    rm -f "$log"
+}
 
 step "worktree whitespace"
 if git diff --check; then ok "git diff --check"; else no "git diff --check"; fi
@@ -52,17 +62,24 @@ else
 fi
 
 step "rustdoc (-D warnings)"
-if RUSTDOCFLAGS="-D warnings" cargo $STABLE doc --no-deps >/dev/null 2>&1; then ok "rustdoc"; else no "rustdoc"; fi
+dlog="$(mktemp)"
+if RUSTDOCFLAGS="-D warnings" cargo $STABLE doc --no-deps >"$dlog" 2>&1; then ok "rustdoc"; else no "rustdoc"; dump "$dlog"; fi
+rm -f "$dlog"
 
 step "MSRV library check — resolved-release floor ($MSRV, committed lock)"
-if cargo $MSRV check --locked --lib >/dev/null 2>&1; then ok "MSRV $MSRV check --locked --lib"; else no "MSRV check"; fi
+dlog="$(mktemp)"
+if cargo $MSRV check --locked --lib >"$dlog" 2>&1; then ok "MSRV $MSRV check --locked --lib"; else no "MSRV check"; dump "$dlog"; fi
+rm -f "$dlog"
 
 step "MSRV declared-range consumer — fresh resolution ($MSRV)"
-if MSRV_TOOLCHAIN="$MSRV" scripts/release/msrv-consumer.sh >/dev/null 2>&1; then
+dlog="$(mktemp)"
+if MSRV_TOOLCHAIN="$MSRV" scripts/release/msrv-consumer.sh >"$dlog" 2>&1; then
     ok "declared dependency ranges resolve to a $MSRV-buildable graph"
 else
     no "declared-range MSRV fresh resolution (a dependency upgrade may have raised the effective MSRV)"
+    dump "$dlog"
 fi
+rm -f "$dlog"
 
 step "cargo package"
 run cargo $STABLE package --allow-dirty
@@ -75,13 +92,17 @@ run scripts/release/cleanroom.sh
 
 step "third-party notices freshness"
 tpn="$(mktemp)"
-if scripts/release/gen-third-party-notices.sh "$tpn" >/dev/null 2>&1 && diff -q "$tpn" THIRD-PARTY-NOTICES.md >/dev/null 2>&1; then
+glog="$(mktemp)"
+if scripts/release/gen-third-party-notices.sh "$tpn" >"$glog" 2>&1 && diff -q "$tpn" THIRD-PARTY-NOTICES.md >/dev/null 2>&1; then
     ok "THIRD-PARTY-NOTICES.md matches generated"
 else
     # A release candidate must not knowingly ship stale dependency notices.
     no "THIRD-PARTY-NOTICES.md differs from freshly generated output (run scripts/release/gen-third-party-notices.sh)"
+    # Show the generator's own errors, then the actual diff, so the cause is reviewable.
+    dump "$glog"
+    diff -u THIRD-PARTY-NOTICES.md "$tpn" 2>&1 | sed 's/^/    | /' | head -n 60
 fi
-rm -f "$tpn"
+rm -f "$tpn" "$glog"
 
 step "license files present"
 missing=0
