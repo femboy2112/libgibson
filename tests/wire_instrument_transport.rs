@@ -24,7 +24,30 @@ use gibson::wire::{
     WireLimits, WireMessage, HEADER_BYTES,
 };
 
-use transport::{CoalescingBuffer, FramePump, Reader, DEFAULT_CONTROL_CAP};
+use transport::{CoalescingBuffer, ControlKind, FramePump, Reader, DEFAULT_CONTROL_CAP};
+
+/// A synthetic RETIRE message (unit body; never coalesceable).
+fn retire_msg(source: u64, epoch: u32, seq: u64) -> WireMessage {
+    WireMessage {
+        source,
+        cursor: SourceCursor::new(epoch, seq),
+        body: WireBody::Retire,
+    }
+}
+
+/// A synthetic COMMAND message (never coalesceable).
+fn command_msg(source: u64, epoch: u32, seq: u64, command_id: u64) -> WireMessage {
+    use gibson::wire::WireCommand;
+    WireMessage {
+        source,
+        cursor: SourceCursor::new(epoch, seq),
+        body: WireBody::Command(WireCommand {
+            command_id,
+            kind: 1,
+            arg: vec![],
+        }),
+    }
+}
 
 // ---- builders -------------------------------------------------------------------------
 
@@ -156,6 +179,65 @@ fn frame_pump_handles_arbitrary_chunk_boundaries_with_a_bounded_buffer() {
     assert!(seqs.iter().copied().eq(1..=N), "every frame, in order");
 }
 
+/// Renaissance VIII, Gate B. A single legal read that straddles a frame boundary *at the one-frame
+/// ceiling* — the tail of a maximum-size frame plus the head of the next — must not trip a fatal
+/// overflow. RED on the pre-fix pump (it pushed the whole chunk, so `buffered + chunk` exceeded the
+/// ceiling before frame 1 could be drained to free room); GREEN once the pump feeds incrementally
+/// bounded by the decoder's `remaining_capacity`, draining between.
+#[test]
+fn frame_pump_survives_a_straddle_at_the_one_frame_ceiling() {
+    let (tight, _) = one_frame_limits();
+    let f1 = field_frame(7, 0, 1, tight);
+    let f2 = field_frame(7, 0, 2, tight);
+    let f = f1.len();
+
+    // chunk 1: all of f1 except its final byte. chunk 2: f1's final byte + all of f2 — a legal
+    // read whose (buffered f-1) + (1 + f) exceeds the one-frame ceiling of f.
+    let c1 = f1[..f - 1].to_vec();
+    let mut c2 = vec![f1[f - 1]];
+    c2.extend_from_slice(&f2);
+
+    let mut pump = FramePump::with_decoder(FrameDecoder::with_limits(tight));
+    let mut got: Vec<WireMessage> = Vec::new();
+    pump.pump(&c1, &mut |m| got.push(m))
+        .expect("the partial first frame just buffers");
+    pump.pump(&c2, &mut |m| got.push(m))
+        .expect("a legal straddle at the ceiling must decode, not overflow");
+
+    assert_eq!(got.len(), 2, "both legal frames decoded");
+    assert_eq!(got[0].cursor.sequence, 1);
+    assert_eq!(got[1].cursor.sequence, 2);
+    assert_eq!(pump.buffered_bytes(), 0, "drained to empty after the second frame");
+}
+
+/// A genuinely oversized DECLARED frame still poisons fatally through the incremental pump — the
+/// straddle fix must not blunt the real overflow guard. A frame declaring a payload past the tight
+/// limit is fatal `FrameTooLarge` (the decoder refuses to buffer toward a frame it would reject).
+#[test]
+fn frame_pump_still_rejects_a_genuinely_oversized_declared_frame() {
+    // Tight limits sized to a 4x4 field; an 8x8 field's declared payload (64 cells) far exceeds
+    // that cap, so the decoder must poison fatally even though the bytes are well-formed.
+    let (tight, _) = one_frame_limits();
+    let oversized = encode_field(
+        7,
+        SourceCursor::new(0, 1),
+        &gradient_field(8, 8),
+        WireLimits::default(),
+    )
+    .expect("encode a large but legal field under default limits");
+    assert!(
+        oversized.len() - HEADER_BYTES > tight.max_payload_bytes,
+        "the 8x8 payload must exceed the tight cap for this test to mean anything"
+    );
+
+    let mut pump = FramePump::with_decoder(FrameDecoder::with_limits(tight));
+    let err = pump
+        .pump(&oversized, &mut |_| {})
+        .expect_err("a frame declaring more than the cap is fatal");
+    assert!(err.is_fatal(), "oversized declared payload poisons the decoder");
+    assert!(matches!(err, WireError::FrameTooLarge { .. }));
+}
+
 // ---- 2A: coalescing bounds a snapshot flood; control is never silently lost ----------
 
 #[test]
@@ -171,7 +253,7 @@ fn coalescing_collapses_a_same_source_field_flood_to_one() {
     );
     assert_eq!(buf.coalesced(), 9_999);
     assert_eq!(
-        buf.dropped(),
+        buf.fields_dropped(),
         0,
         "coalescing is not dropping — nothing was lost at a cap"
     );
@@ -236,7 +318,7 @@ fn distinct_sources_each_keep_their_latest_snapshot() {
     buf.offer(field_msg(2, 0, 8)); // -> one pending s2 @ seq 8
 
     assert_eq!(buf.len(), 2, "one pending snapshot per source");
-    assert_eq!(buf.dropped(), 0);
+    assert_eq!(buf.fields_dropped(), 0);
 
     let mut out: Vec<(u64, u64)> = Vec::new();
     buf.drain_into(&mut |m| out.push((m.source, m.cursor.sequence)));
@@ -247,22 +329,115 @@ fn distinct_sources_each_keep_their_latest_snapshot() {
     );
 }
 
-/// Control messages never coalesce, so a flood of them past the hard cap proves the bound:
-/// the queue stays at the cap and every dropped message is *counted*, never silently lost (L7).
+/// Renaissance VIII, Gate A. A control flood past the reserved control lane must NOT silently
+/// continue behind a drop counter — counting a lost ACK is not preserving command reliability.
+/// It fails CLOSED: the buffer latches a typed terminal [`ControlOverflow`], and that state is
+/// sticky across a drain so the consumer cannot resume treating the stream as healthy.
+///
+/// (This replaces the Renaissance VII test that *accepted* the defect by asserting the dropped
+/// ACKs were merely counted — a safeguard that certified the bug.)
 #[test]
-fn control_flood_past_the_cap_is_bounded_and_disclosed() {
+fn control_flood_past_the_lane_fails_closed_not_silently_dropped() {
     let cap = 8;
     let mut buf = CoalescingBuffer::with_control_cap(cap);
     for id in 0..(cap as u64) * 2 {
         buf.offer(ack_msg(7, 0, id, id)); // acks are never coalesceable
     }
     assert_eq!(buf.coalesced(), 0, "control messages are never collapsed");
-    assert_eq!(buf.len(), cap, "hard-bounded at the cap");
-    assert_eq!(
-        buf.dropped(),
-        cap as u64,
-        "every message past the cap is disclosed"
+    assert_eq!(buf.control_len(), cap, "admitted exactly the reserved control lane");
+    let ov = buf
+        .control_overflow()
+        .expect("a control flood past the lane latches a terminal overflow");
+    assert_eq!(ov.control_cap, cap);
+    assert_eq!(ov.kind, ControlKind::Ack, "the overflowing kind is disclosed");
+
+    // Sticky: draining does not clear the terminal state.
+    buf.drain_into(&mut |_| {});
+    assert!(
+        buf.control_overflow().is_some(),
+        "a terminal control overflow survives a drain — the stream stays failed-closed"
     );
+    // And post-overflow offers are refused, never masquerading as part of a healthy stream.
+    buf.offer(ack_msg(7, 0, 999, 999));
+    assert!(buf.is_empty(), "nothing is admitted after the stream failed closed");
+}
+
+/// Gate A minimal counterexample, repaired. Two distinct-source fields fill the field lane; an
+/// authoritative ACK that arrives next must still be admitted — a field flood can never cost a
+/// verdict. (RED on the pre-fix single-cap buffer: the ACK was dropped at the cap.)
+#[test]
+fn an_ack_is_admitted_even_when_the_field_lane_is_full() {
+    let mut buf = CoalescingBuffer::with_caps(2, 4); // field_cap 2, control_cap 4
+    buf.offer(field_msg(1, 0, 1));
+    buf.offer(field_msg(2, 0, 1)); // field lane now full (2 distinct sources)
+    buf.offer(field_msg(3, 0, 1)); // over the field cap: dropped as an expendable snapshot
+    buf.offer(ack_msg(1, 0, 2, 7)); // the control lane has its own reserved room
+
+    assert_eq!(buf.field_len(), 2, "field lane bounded at its own cap");
+    assert_eq!(buf.fields_dropped(), 1, "the over-cap snapshot is a counted, lawful drop");
+    assert_eq!(buf.control_len(), 1, "the ACK is admitted, not starved by the field flood");
+    assert!(buf.control_overflow().is_none(), "no terminal state — this is in-contract");
+
+    let mut acks = 0u32;
+    buf.drain_into(&mut |m| {
+        if matches!(m.body, WireBody::Ack(_)) {
+            acks += 1;
+        }
+    });
+    assert_eq!(acks, 1, "the authoritative ACK survived to the consumer");
+}
+
+/// Conservation over a mixed FIELD/ACK/RETIRE/COMMAND stream with several sources: every control
+/// verdict is preserved and in order; only expendable same-source field runs coalesce.
+#[test]
+fn every_control_verdict_survives_a_mixed_multi_source_stream() {
+    let mut buf = CoalescingBuffer::with_caps(64, 64);
+    // A run from source 1, an ack for it, a retire of source 2, a command, a fresh field run.
+    buf.offer(field_msg(1, 0, 1));
+    buf.offer(field_msg(1, 0, 2)); // coalesces onto the previous s1 field
+    buf.offer(ack_msg(1, 0, 3, 100)); // control: breaks the run
+    buf.offer(retire_msg(2, 0, 4)); // control
+    buf.offer(command_msg(1, 0, 5, 101)); // control
+    buf.offer(field_msg(3, 0, 6));
+    buf.offer(field_msg(3, 0, 7)); // coalesces onto the previous s3 field
+
+    assert_eq!(buf.coalesced(), 2, "only same-source field runs collapsed");
+    assert!(buf.control_overflow().is_none());
+
+    let mut kinds: Vec<&'static str> = Vec::new();
+    buf.drain_into(&mut |m| {
+        kinds.push(match m.body {
+            WireBody::Field(_) => "field",
+            WireBody::Ack(_) => "ack",
+            WireBody::Retire => "retire",
+            WireBody::Command(_) => "command",
+        });
+    });
+    assert_eq!(
+        kinds,
+        ["field", "ack", "retire", "command", "field"],
+        "every control verdict survives, in order, around coalesced field runs"
+    );
+}
+
+/// Mutation guard: control admitted up to EXACTLY the lane cap is never lost and never latches a
+/// premature overflow. A mutation that dropped a control message while headroom remained would
+/// make this red.
+#[test]
+fn control_is_never_lost_while_the_lane_has_headroom() {
+    let cap = 16;
+    let mut buf = CoalescingBuffer::with_control_cap(cap);
+    for id in 0..cap as u64 {
+        buf.offer(ack_msg(7, 0, id, id));
+    }
+    assert_eq!(buf.control_len(), cap, "every in-lane control message retained");
+    assert!(
+        buf.control_overflow().is_none(),
+        "no overflow while the lane is exactly full but not exceeded"
+    );
+    let mut got = 0u32;
+    buf.drain_into(&mut |_| got += 1);
+    assert_eq!(got as usize, cap, "all admitted control messages delivered");
 }
 
 // ---- 2C: the reader never blocks on a consumer (deadlock-freedom) ---------------------
