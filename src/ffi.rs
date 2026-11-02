@@ -192,6 +192,88 @@ pub fn style_from_ffi(s: &GibsonStyle) -> Result<Style, GibsonStatus> {
     })
 }
 
+/// Inverse of [`color_from_ffi`]: encodes an optional engine `Color` as an FFI color descriptor.
+/// `None` and `Color::Reset` both map to `GIBSON_COLOR_RESET` (the terminal default), so a
+/// round-trip through `color_from_ffi` is faithful up to that single, documented conflation.
+pub fn color_to_ffi(color: Option<Color>) -> GibsonColor {
+    let (color_type, r, g, b) = match color {
+        None | Some(Color::Reset) => (GIBSON_COLOR_RESET, 0, 0, 0),
+        Some(Color::Black) => (GIBSON_COLOR_BLACK, 0, 0, 0),
+        Some(Color::Red) => (GIBSON_COLOR_RED, 0, 0, 0),
+        Some(Color::Green) => (GIBSON_COLOR_GREEN, 0, 0, 0),
+        Some(Color::Yellow) => (GIBSON_COLOR_YELLOW, 0, 0, 0),
+        Some(Color::Blue) => (GIBSON_COLOR_BLUE, 0, 0, 0),
+        Some(Color::Magenta) => (GIBSON_COLOR_MAGENTA, 0, 0, 0),
+        Some(Color::Cyan) => (GIBSON_COLOR_CYAN, 0, 0, 0),
+        Some(Color::White) => (GIBSON_COLOR_WHITE, 0, 0, 0),
+        Some(Color::BrightBlack) => (GIBSON_COLOR_BRIGHT_BLACK, 0, 0, 0),
+        Some(Color::BrightRed) => (GIBSON_COLOR_BRIGHT_RED, 0, 0, 0),
+        Some(Color::BrightGreen) => (GIBSON_COLOR_BRIGHT_GREEN, 0, 0, 0),
+        Some(Color::BrightYellow) => (GIBSON_COLOR_BRIGHT_YELLOW, 0, 0, 0),
+        Some(Color::BrightBlue) => (GIBSON_COLOR_BRIGHT_BLUE, 0, 0, 0),
+        Some(Color::BrightMagenta) => (GIBSON_COLOR_BRIGHT_MAGENTA, 0, 0, 0),
+        Some(Color::BrightCyan) => (GIBSON_COLOR_BRIGHT_CYAN, 0, 0, 0),
+        Some(Color::BrightWhite) => (GIBSON_COLOR_BRIGHT_WHITE, 0, 0, 0),
+        Some(Color::Ansi256(i)) => (GIBSON_COLOR_ANSI256, i, 0, 0),
+        Some(Color::Rgb(r, g, b)) => (GIBSON_COLOR_RGB, r, g, b),
+    };
+    GibsonColor {
+        color_type,
+        r,
+        g,
+        b,
+        _pad: 0,
+    }
+}
+
+/// Inverse of [`style_from_ffi`]: encodes an engine `Style` as an FFI style descriptor.
+pub fn style_to_ffi(style: &Style) -> GibsonStyle {
+    GibsonStyle {
+        fg: color_to_ffi(style.fg),
+        bg: color_to_ffi(style.bg),
+        bold: style.bold as u8,
+        dim: style.dim as u8,
+        italic: style.italic as u8,
+        underline: style.underline as u8,
+        reverse: style.reverse as u8,
+        _reserved: [0; 3],
+    }
+}
+
+/// Maximum UTF-8 bytes of one cell's grapheme cluster carried by [`GibsonCell`]. Every grapheme
+/// LibGibson places in a cell when rendering a styled node tree fits; a longer cluster is truncated
+/// at a codepoint boundary by `gibson_get_frame_cell`.
+pub const GIBSON_CELL_GLYPH_CAP: usize = 16;
+
+/// FFI-safe view of one resolved frame cell (see `gibson_get_frame_cell`). `glyph` holds the
+/// grapheme's UTF-8 bytes (NOT NUL-terminated); `glyph_len` is how many are valid. `style` is
+/// already quantized to the context's color depth, so it matches the emitted ANSI wire.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct GibsonCell {
+    pub glyph: [u8; GIBSON_CELL_GLYPH_CAP],
+    pub glyph_len: u8,
+    pub width: u8,
+    pub is_continuation: u8,
+    pub transparent: u8,
+    pub _reserved: [u8; 4],
+    pub style: GibsonStyle,
+}
+
+impl Default for GibsonCell {
+    fn default() -> Self {
+        Self {
+            glyph: [0; GIBSON_CELL_GLYPH_CAP],
+            glyph_len: 0,
+            width: 0,
+            is_continuation: 0,
+            transparent: 0,
+            _reserved: [0; 4],
+            style: GibsonStyle::default(),
+        }
+    }
+}
+
 /// Reads an optional style pointer, defaulting to plain when null.
 unsafe fn read_style(style: *const GibsonStyle) -> Result<Style, GibsonStatus> {
     if style.is_null() {
@@ -1470,6 +1552,73 @@ pub unsafe extern "C" fn gibson_get_rendered_output(
         if !buf.is_null() && cap >= bytes.len() {
             ptr::copy_nonoverlapping(bytes.as_ptr(), buf, bytes.len());
         }
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Writes the `(cols, rows)` geometry of the most recently rendered frame into `*out_cols` /
+/// `*out_rows`, or `(0, 0)` if there is no frame yet (e.g. a stdout-backed context whose render was
+/// a non-TTY no-op). A headless context always has a frame after `gibson_render`.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_get_frame_size(
+    ctx: *mut GibsonContextOpaque,
+    out_cols: *mut u16,
+    out_rows: *mut u16,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || out_cols.is_null() || out_rows.is_null() {
+            set_last_error("Null ctx/out_cols/out_rows for gibson_get_frame_size".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let (cols, rows) = (*ctx).inner.frame_size().unwrap_or((0, 0));
+        *out_cols = cols;
+        *out_rows = rows;
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Writes a display-accurate view of the cell at `(x, y)` in the most recently rendered frame into
+/// `*out` — the resolved *styled cell grid*, with the style quantized to the context's color depth.
+/// Returns `ErrInvalidParam` if `out` is null, if there is no frame yet, or if `(x, y)` is out of
+/// bounds; otherwise the grapheme's UTF-8 bytes are copied into `out->glyph` (up to
+/// `GIBSON_CELL_GLYPH_CAP`, truncated at a codepoint boundary) with `out->glyph_len` set to the
+/// number of bytes written.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_get_frame_cell(
+    ctx: *mut GibsonContextOpaque,
+    x: u16,
+    y: u16,
+    out: *mut GibsonCell,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || out.is_null() {
+            set_last_error("Null ctx or out for gibson_get_frame_cell".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let cell = match (*ctx).inner.frame_cell(x, y) {
+            Some(c) => c,
+            None => {
+                set_last_error(format!(
+                    "No frame cell at ({x}, {y}): no frame rendered yet or coordinate out of bounds"
+                ));
+                return GibsonStatus::ErrInvalidParam;
+            }
+        };
+        let mut encoded = GibsonCell::default();
+        let bytes = cell.glyph.as_bytes();
+        let mut n = bytes.len().min(GIBSON_CELL_GLYPH_CAP);
+        while n > 0 && !cell.glyph.is_char_boundary(n) {
+            n -= 1;
+        }
+        encoded.glyph[..n].copy_from_slice(&bytes[..n]);
+        encoded.glyph_len = n as u8;
+        encoded.width = cell.width;
+        encoded.is_continuation = cell.is_continuation as u8;
+        encoded.transparent = cell.transparent as u8;
+        encoded.style = style_to_ffi(&cell.style);
+        *out = encoded;
         GibsonStatus::Ok
     }));
     res.unwrap_or(GibsonStatus::ErrPanic)

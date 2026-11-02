@@ -93,6 +93,23 @@ typedef struct {
     uint8_t _reserved[3];
 } gibson_style_t;
 
+/* Max UTF-8 bytes of one cell's grapheme cluster carried by gibson_cell_t. Every grapheme
+   LibGibson places in a cell fits; a longer cluster is truncated at a codepoint boundary. */
+#define GIBSON_CELL_GLYPH_CAP 16
+
+/* A resolved frame cell (see gibson_get_frame_cell). glyph holds the grapheme's UTF-8 bytes
+   (NOT NUL-terminated); glyph_len is how many are valid. style is quantized to the context's
+   color depth, so it matches the emitted ANSI wire. */
+typedef struct {
+    uint8_t glyph[GIBSON_CELL_GLYPH_CAP];
+    uint8_t glyph_len;
+    uint8_t width;          /* display columns: 0 (continuation/empty), 1, or 2 */
+    uint8_t is_continuation;
+    uint8_t transparent;
+    uint8_t _reserved[4];
+    gibson_style_t style;
+} gibson_cell_t;
+
 /* Border styles (pass as int32_t) */
 typedef enum {
     GIBSON_BORDER_SINGLE = 0,
@@ -236,6 +253,11 @@ int32_t         gibson_last_error_message(char *buf, size_t buf_len);
 /* Copies the headless ANSI frame stream into buf (binary-safe, NOT NUL-terminated).
    out_len always receives the available size; pass buf=NULL or cap=0 to size-query first. */
 gibson_status_t gibson_get_rendered_output(gibson_context_t *ctx, uint8_t *buf, size_t cap, size_t *out_len);
+/* Resolved styled cell grid of the most recently rendered frame. frame_size writes (0,0) if there
+   is no frame yet; frame_cell returns GIBSON_ERR_INVALID_PARAM for a null out, no frame, or an
+   out-of-bounds (x,y). Style is quantized to the context's color depth. (ABI v1, additive) */
+gibson_status_t gibson_get_frame_size(gibson_context_t *ctx, uint16_t *out_cols, uint16_t *out_rows);
+gibson_status_t gibson_get_frame_cell(gibson_context_t *ctx, uint16_t x, uint16_t y, gibson_cell_t *out);
 
 /* Node Construction */
 gibson_status_t gibson_node_box_col(gibson_node_t **out);

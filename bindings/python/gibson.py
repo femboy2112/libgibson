@@ -148,6 +148,24 @@ class GibsonStyle(ctypes.Structure):
         st.reverse = 1 if reverse else 0
         return st
 
+GIBSON_CELL_GLYPH_CAP = 16
+
+class GibsonCell(ctypes.Structure):
+    _fields_ = [
+        ("glyph", ctypes.c_uint8 * GIBSON_CELL_GLYPH_CAP),
+        ("glyph_len", ctypes.c_uint8),
+        ("width", ctypes.c_uint8),
+        ("is_continuation", ctypes.c_uint8),
+        ("transparent", ctypes.c_uint8),
+        ("_reserved", ctypes.c_uint8 * 4),
+        ("style", GibsonStyle),
+    ]
+
+    @property
+    def glyph_str(self) -> str:
+        """The grapheme as a Python str (decoded from the written UTF-8 bytes)."""
+        return bytes(self.glyph[: self.glyph_len]).decode("utf-8", "replace")
+
 class GibsonStats(ctypes.Structure):
     _fields_ = [
         ("struct_size", ctypes.c_uint32),
@@ -182,6 +200,12 @@ _lib.gibson_create_headless_context.restype = ctypes.c_int32
 
 _lib.gibson_get_rendered_output.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
 _lib.gibson_get_rendered_output.restype = ctypes.c_int32
+
+_lib.gibson_get_frame_size.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint16), ctypes.POINTER(ctypes.c_uint16)]
+_lib.gibson_get_frame_size.restype = ctypes.c_int32
+
+_lib.gibson_get_frame_cell.argtypes = [ctypes.c_void_p, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(GibsonCell)]
+_lib.gibson_get_frame_cell.restype = ctypes.c_int32
 
 _lib.gibson_destroy_context.argtypes = [ctypes.c_void_p]
 _lib.gibson_destroy_context.restype = None
@@ -617,6 +641,25 @@ class Context:
         if status != 0:
             raise RuntimeError(f"rendered_output copy failed: status {status}")
         return bytes(buf[: got.value])
+
+    def frame_size(self):
+        """(cols, rows) of the most recently rendered frame, or (0, 0) if there is no frame yet."""
+        cols = ctypes.c_uint16(0)
+        rows = ctypes.c_uint16(0)
+        status = _lib.gibson_get_frame_size(self.handle, ctypes.byref(cols), ctypes.byref(rows))
+        if status != 0:
+            raise RuntimeError(f"frame_size failed: status {status}")
+        return (cols.value, rows.value)
+
+    def frame_cell(self, x: int, y: int) -> GibsonCell:
+        """The resolved styled cell at (x, y) in the most recent frame — glyph, width, flags, and
+        the style quantized to the context's color depth. Raises if there is no frame yet or
+        (x, y) is out of bounds. Use `.glyph_str` for the grapheme as a str."""
+        cell = GibsonCell()
+        status = _lib.gibson_get_frame_cell(self.handle, x, y, ctypes.byref(cell))
+        if status != 0:
+            raise RuntimeError(f"frame_cell({x}, {y}) failed: status {status}")
+        return cell
 
     def request_render(self):
         status = _lib.gibson_request_render(self.handle)

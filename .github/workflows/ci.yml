@@ -238,6 +238,25 @@ jobs:
             cmp "$RUNNER_TEMP/c_depth_$name.bin" "bindings/parity/golden_depth_$name.bin"
           done
 
+      - name: FFI styled cell-grid parity (C vs Python vs native golden)
+        # Serialize the whole resolved styled cell grid of the canonical frame through the new
+        # gibson_get_frame_size + gibson_get_frame_cell, via the C ABI and the Python binding, and
+        # require a byte-identical serialization across both AND the committed golden the Rust job
+        # verifies from the native API. Closes the styled-cell-grid half of the Gate I cede (#142,
+        # v0.6 Gate J).
+        env:
+          PYTHONPATH: bindings/python
+          LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
+        run: |
+          set -euo pipefail
+          gcc -Iinclude bindings/parity/parity_cells.c -Ltarget/release -lgibson \
+            -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/parity_cells_c
+          /tmp/parity_cells_c "$RUNNER_TEMP/c_cells.txt"
+          python3 bindings/parity/parity_cells.py "$RUNNER_TEMP/py_cells.txt"
+          echo "--- C cells (head) ---"; head -8 "$RUNNER_TEMP/c_cells.txt"
+          cmp "$RUNNER_TEMP/c_cells.txt" "$RUNNER_TEMP/py_cells.txt"
+          cmp "$RUNNER_TEMP/c_cells.txt" bindings/parity/golden_cells.txt
+
   asan:
     name: AddressSanitizer (C, C++)
     runs-on: ubuntu-latest
