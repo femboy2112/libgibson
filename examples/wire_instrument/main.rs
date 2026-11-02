@@ -36,7 +36,7 @@ mod transport;
 mod viewport;
 
 use std::io::{self, Read, Write};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use gibson::context::Context;
@@ -52,7 +52,7 @@ use gibson::world_view::WorldView;
 use gibson::{Rect, Style};
 
 use channel::CommandChannel;
-use transport::Reader;
+use transport::{ProducerOwner, Reader};
 
 /// The producer's one command kind: an 8-byte LE f64 target amplitude in [0, 10].
 const KIND_SET_AMPLITUDE: u32 = 1;
@@ -238,16 +238,40 @@ fn clamp_probe(inbox: &FieldInbox, src: Option<u64>, probe: &mut (usize, usize))
     }
 }
 
+/// Spawn the producer, wire up the bounded reader, and drive the interactive loop — with the
+/// child, its stdin, and the reader thread owned by a [`ProducerOwner`] so they are reaped on
+/// every exit path, and the terminal restored whether the loop returns `Ok` or a `?` error (Gate
+/// E). Original-error precedence: a loop error is returned even if terminal restoration also fails.
 fn run_interactive(args: &Args) -> io::Result<()> {
     let mut child = spawn_producer(args, false)?;
-    let mut stdin_w: Option<ChildStdin> = child.stdin.take();
+    let stdin_w = child.stdin.take();
     let stdout = child.stdout.take().expect("stdout piped");
     // Decode + coalesce in a bounded background reader that never blocks on the UI, so the
     // producer's stdout is always drained (no full-duplex deadlock, Gate B 2C) and memory stays
     // bounded to one pending snapshot per source (2A).
-    let mut reader = Reader::spawn(stdout, transport::DEFAULT_CONTROL_CAP);
+    let reader = Reader::spawn(stdout, transport::DEFAULT_CONTROL_CAP);
+    // Supervised ownership: the owner's Drop reaps the child (via the OS wait handle) and joins
+    // the reader on EVERY exit — a `?` error from terminal init below or any in-loop render, a
+    // normal quit, or a panic unwind. Neither `Reader` nor `Context` cleans up on Drop, so without
+    // this a `?` early return orphaned the Python child and detached the reader thread (Gate E).
+    let mut owner = ProducerOwner::new(child, stdin_w, reader);
 
+    // If terminal init fails, `owner` drops here and reaps the child; the terminal was never put
+    // into raw mode, so there is nothing to restore.
     let mut ctx = Context::fullscreen()?;
+
+    // Run the fallible loop, then ALWAYS restore the terminal — the restore is a plain statement,
+    // not `?`, so it runs even when the loop propagated an error. The owner drops at scope end,
+    // reaping the child and joining the reader regardless of how we leave.
+    let loop_result = interactive_loop(args, &mut ctx, &mut owner);
+    let restore_result = ctx.restore();
+    loop_result.and(restore_result)
+}
+
+/// The interactive render/command loop. Fallible (`ctx.run_once` can error); every `?` here
+/// returns into [`run_interactive`], which still restores the terminal and (via the owner's Drop)
+/// reaps the child before propagating.
+fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -> io::Result<()> {
     let mut inbox = FieldInbox::new();
     let mut ch = CommandChannel::new(args.source, args.epoch);
     // The #143 latency funnel, now also wired through the INTERACTIVE delivery path (H1 instrumented
@@ -269,7 +293,7 @@ fn run_interactive(args: &Args) -> io::Result<()> {
         // error was skipped in the reader, a fatal one is surfaced here. The UI never holds an
         // unbounded backlog and never pushes a chunk-burst into the decoder (Gate B 2A/2B).
         let mut batch: Vec<WireMessage> = Vec::new();
-        let outcome = reader.drain(&mut |m| batch.push(m));
+        let outcome = owner.reader().drain(&mut |m| batch.push(m));
         for msg in batch {
             src.get_or_insert(msg.source);
             match msg.body {
@@ -317,7 +341,7 @@ fn run_interactive(args: &Args) -> io::Result<()> {
                 KeyCode::Enter => {
                     match ch.issue_tracked(KIND_SET_AMPLITUDE, pending_amp.to_le_bytes().to_vec()) {
                         Ok(id) => {
-                            if let Some(sink) = stdin_w.as_mut() {
+                            if let Some(sink) = owner.stdin_mut() {
                                 // Time ONLY the delivery leg (issue->confirmed write+flush),
                                 // mirroring the selfcheck; record on Ok(Some) alone — a failed or
                                 // absent delivery has no honest latency (L7/L10).
@@ -351,8 +375,8 @@ fn run_interactive(args: &Args) -> io::Result<()> {
         // handled above.
         let shown = format!(
             "{status}  |  xport: coalesced {} fields_dropped {}",
-            reader.coalesced(),
-            reader.fields_dropped(),
+            owner.reader().coalesced(),
+            owner.reader().fields_dropped(),
         );
         let root = build_root(
             &inbox,
@@ -384,11 +408,10 @@ fn run_interactive(args: &Args) -> io::Result<()> {
         }
     }
 
-    drop(stdin_w); // EOF to the producer for a graceful exit…
-    let _ = child.kill(); // …with a hard backstop so no child outlives us.
-    let _ = child.wait();
-    reader.join();
-    ctx.restore()?;
+    // Teardown is NOT here: the terminal is restored by `run_interactive` on every exit, and the
+    // child is reaped + the reader joined by the `ProducerOwner`'s Drop — including the `?` returns
+    // above. A normal quit falls through to this `Ok(())`; an error returns early and is handled
+    // identically by the caller.
     Ok(())
 }
 
