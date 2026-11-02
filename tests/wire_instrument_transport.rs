@@ -207,7 +207,11 @@ fn frame_pump_survives_a_straddle_at_the_one_frame_ceiling() {
     assert_eq!(got.len(), 2, "both legal frames decoded");
     assert_eq!(got[0].cursor.sequence, 1);
     assert_eq!(got[1].cursor.sequence, 2);
-    assert_eq!(pump.buffered_bytes(), 0, "drained to empty after the second frame");
+    assert_eq!(
+        pump.buffered_bytes(),
+        0,
+        "drained to empty after the second frame"
+    );
 }
 
 /// A genuinely oversized DECLARED frame still poisons fatally through the incremental pump — the
@@ -234,7 +238,10 @@ fn frame_pump_still_rejects_a_genuinely_oversized_declared_frame() {
     let err = pump
         .pump(&oversized, &mut |_| {})
         .expect_err("a frame declaring more than the cap is fatal");
-    assert!(err.is_fatal(), "oversized declared payload poisons the decoder");
+    assert!(
+        err.is_fatal(),
+        "oversized declared payload poisons the decoder"
+    );
     assert!(matches!(err, WireError::FrameTooLarge { .. }));
 }
 
@@ -344,12 +351,20 @@ fn control_flood_past_the_lane_fails_closed_not_silently_dropped() {
         buf.offer(ack_msg(7, 0, id, id)); // acks are never coalesceable
     }
     assert_eq!(buf.coalesced(), 0, "control messages are never collapsed");
-    assert_eq!(buf.control_len(), cap, "admitted exactly the reserved control lane");
+    assert_eq!(
+        buf.control_len(),
+        cap,
+        "admitted exactly the reserved control lane"
+    );
     let ov = buf
         .control_overflow()
         .expect("a control flood past the lane latches a terminal overflow");
     assert_eq!(ov.control_cap, cap);
-    assert_eq!(ov.kind, ControlKind::Ack, "the overflowing kind is disclosed");
+    assert_eq!(
+        ov.kind,
+        ControlKind::Ack,
+        "the overflowing kind is disclosed"
+    );
 
     // Sticky: draining does not clear the terminal state.
     buf.drain_into(&mut |_| {});
@@ -359,7 +374,10 @@ fn control_flood_past_the_lane_fails_closed_not_silently_dropped() {
     );
     // And post-overflow offers are refused, never masquerading as part of a healthy stream.
     buf.offer(ack_msg(7, 0, 999, 999));
-    assert!(buf.is_empty(), "nothing is admitted after the stream failed closed");
+    assert!(
+        buf.is_empty(),
+        "nothing is admitted after the stream failed closed"
+    );
 }
 
 /// Gate A minimal counterexample, repaired. Two distinct-source fields fill the field lane; an
@@ -374,9 +392,20 @@ fn an_ack_is_admitted_even_when_the_field_lane_is_full() {
     buf.offer(ack_msg(1, 0, 2, 7)); // the control lane has its own reserved room
 
     assert_eq!(buf.field_len(), 2, "field lane bounded at its own cap");
-    assert_eq!(buf.fields_dropped(), 1, "the over-cap snapshot is a counted, lawful drop");
-    assert_eq!(buf.control_len(), 1, "the ACK is admitted, not starved by the field flood");
-    assert!(buf.control_overflow().is_none(), "no terminal state — this is in-contract");
+    assert_eq!(
+        buf.fields_dropped(),
+        1,
+        "the over-cap snapshot is a counted, lawful drop"
+    );
+    assert_eq!(
+        buf.control_len(),
+        1,
+        "the ACK is admitted, not starved by the field flood"
+    );
+    assert!(
+        buf.control_overflow().is_none(),
+        "no terminal state — this is in-contract"
+    );
 
     let mut acks = 0u32;
     buf.drain_into(&mut |m| {
@@ -430,7 +459,11 @@ fn control_is_never_lost_while_the_lane_has_headroom() {
     for id in 0..cap as u64 {
         buf.offer(ack_msg(7, 0, id, id));
     }
-    assert_eq!(buf.control_len(), cap, "every in-lane control message retained");
+    assert_eq!(
+        buf.control_len(),
+        cap,
+        "every in-lane control message retained"
+    );
     assert!(
         buf.control_overflow().is_none(),
         "no overflow while the lane is exactly full but not exceeded"
@@ -527,7 +560,10 @@ fn drain_invokes_a_reentrant_sink_without_deadlocking() {
         .recv_timeout(Duration::from_secs(5))
         .expect("a reentrant sink must complete, not deadlock under the reader's mutex");
     worker.join().unwrap();
-    assert_eq!(delivered, 2, "both coalesced snapshots were delivered to the sink");
+    assert_eq!(
+        delivered, 2,
+        "both coalesced snapshots were delivered to the sink"
+    );
 }
 
 /// A corrupt stream poisons the decoder; the reader surfaces the fatal error rather than hiding
