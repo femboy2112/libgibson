@@ -287,7 +287,16 @@ fn run_interactive(args: &Args) -> io::Result<()> {
                 WireBody::Command(_) => {}
             }
         }
-        if let Some(e) = outcome.fatal {
+        if let Some(ov) = outcome.control_overflow {
+            // The control lane failed closed: an authoritative verdict was lost, so command fate
+            // is unresolved. Treat it as a fatal transport condition — do not keep running and
+            // claiming command-lifecycle correctness behind a drop counter.
+            status = format!(
+                "transport fatal: control lane overflow (cap {}, {:?}) — command fate lost",
+                ov.control_cap, ov.kind
+            );
+            disconnected = true;
+        } else if let Some(e) = outcome.fatal {
             status = format!("transport fatal: {e}");
             disconnected = true;
         } else if outcome.disconnected {
@@ -336,12 +345,14 @@ fn run_interactive(args: &Args) -> io::Result<()> {
             clamp_probe(&inbox, src, &mut probe);
         }
 
-        // L7 telemetry: the reader's lawful snapshot coalescing and any cap-overflow drops are
-        // shown, never hidden — a growing `dropped` would be a misbehaving producer, not a leak.
+        // L7 telemetry: the reader's lawful snapshot coalescing and any expendable field drops are
+        // shown, never hidden — a growing `fields_dropped` is a misbehaving producer, not a leak.
+        // A lost *control* verdict is never a counter here; it is the terminal control-overflow
+        // handled above.
         let shown = format!(
-            "{status}  |  xport: coalesced {} dropped {}",
+            "{status}  |  xport: coalesced {} fields_dropped {}",
             reader.coalesced(),
-            reader.dropped(),
+            reader.fields_dropped(),
         );
         let root = build_root(
             &inbox,

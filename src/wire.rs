@@ -617,6 +617,24 @@ impl FrameDecoder {
         self.buf.len()
     }
 
+    /// The accumulation-buffer ceiling: one maximum frame (`HEADER_BYTES + max_payload_bytes`).
+    /// A caller that feeds the decoder incrementally uses this (via [`remaining_capacity`])
+    /// to never offer more than fits, so a single read that straddles a frame boundary at the
+    /// ceiling can be split — feed, drain the completed frame to free room, feed the rest —
+    /// instead of tripping a spurious fatal `BufferOverflow` on legal input.
+    ///
+    /// [`remaining_capacity`]: FrameDecoder::remaining_capacity
+    pub fn buffer_ceiling_bytes(&self) -> usize {
+        self.buffer_ceiling()
+    }
+
+    /// Bytes that [`push`](FrameDecoder::push) can still accept before it would overflow the
+    /// one-frame ceiling: `buffer_ceiling_bytes() - buffered_bytes()`. Zero means the next push
+    /// must be preceded by a drain. This is never negative — `push` enforces the ceiling.
+    pub fn remaining_capacity(&self) -> usize {
+        self.buffer_ceiling().saturating_sub(self.buf.len())
+    }
+
     /// Total fully-decoded messages.
     pub fn messages_decoded(&self) -> u64 {
         self.messages_decoded
