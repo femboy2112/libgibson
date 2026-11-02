@@ -192,11 +192,17 @@ fn c02_partial_write_leaves_a_torn_frame_and_faults() {
     assert!(ch.conserves());
 }
 
-/// 03 — write_all fully succeeds but flush fails: still not delivered, still faulted.
+/// 03 — write_all fully succeeds but flush fails: *transport-uncertain* (Gate D), not known-torn.
+/// The complete frame reached the transport, so the producer may hold and apply it: the channel
+/// still faults conservatively (a generic writer may have spilled a torn prefix) and does NOT
+/// confirm delivery, but the command is classified `transport_uncertain` — NOT `transport_failed`
+/// — and a later genuine, source-matched ack RECONCILES it to its terminal fate rather than
+/// dying as `AckBeforeDelivery`. (This case previously conflated the uncertain outcome with a
+/// known-torn write, counting it as `transport_failed` and leaving the entry unreconcilable.)
 #[test]
-fn c03_flush_error_after_full_write_faults_and_does_not_deliver() {
+fn c03_flush_error_after_full_write_is_transport_uncertain_and_reconcilable() {
     let mut ch = CommandChannel::new(1, 1);
-    ch.issue_tracked(KIND, vec![]).unwrap();
+    let id = ch.issue_tracked(KIND, vec![]).unwrap();
 
     let mut sink = FailOnFlush::new();
     let err = ch.deliver_next(&mut sink).unwrap_err();
@@ -204,16 +210,39 @@ fn c03_flush_error_after_full_write_faults_and_does_not_deliver() {
 
     assert!(
         !sink.written.is_empty(),
-        "the bytes reached the writer's buffer"
+        "the full command frame reached the transport before flush failed"
     );
     assert!(
         ch.faulted(),
-        "an unflushed write is not a confirmed delivery"
+        "an unflushed write is not a confirmed delivery; the channel faults conservatively"
     );
-    assert_eq!(ch.transport_failed(), 1);
-    assert_eq!(ch.delivered_frames(), 0);
-    assert_eq!(ch.outstanding(), 1);
+    assert_eq!(
+        ch.transport_failed(),
+        0,
+        "a handed-off-but-unflushed frame is NOT a known-torn write"
+    );
+    assert_eq!(
+        ch.transport_uncertain(),
+        1,
+        "it is counted as transport-uncertain (Gate D)"
+    );
+    assert_eq!(
+        ch.delivered_frames(),
+        0,
+        "delivery is not confirmed, so no frame is committed"
+    );
+    assert_eq!(ch.outstanding(), 1, "it stays live, awaiting a verdict");
     assert!(ch.conserves());
+
+    // The producer did receive and apply the complete frame, and returns a genuine verdict: the
+    // ledger reconciles it instead of rejecting it for an uncertain local flush outcome.
+    assert_eq!(
+        ch.resolve(1, ack(id, AckStatus::Acknowledged)),
+        Ok(CommandState::Acknowledged)
+    );
+    assert_eq!(ch.acknowledged(), 1);
+    assert_eq!(ch.outstanding(), 0, "reconciled and pruned");
+    assert!(ch.conserves(), "books stay balanced after reconciliation");
 }
 
 /// 04 — once faulted, further delivery is refused and writes nothing onto the torn stream.

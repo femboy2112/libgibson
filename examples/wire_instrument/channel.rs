@@ -99,10 +99,18 @@ pub struct CommandChannel {
     /// Set once a delivery write/flush fails; the channel then refuses all further delivery (the
     /// stream may be torn). `None` while healthy.
     fault: Option<TransportFault>,
-    /// Commands popped from the bridge toward the wire whose write/flush failed — counted so the
-    /// bridge's "delivered" and the ledger's "delivered" can be reconciled rather than silently
-    /// disagreeing (L7, and the cross-store half of [`Self::conserves`]).
+    /// Commands popped from the bridge toward the wire whose delivery `write_all` failed (known
+    /// not delivered / torn) — counted so the bridge's "delivered" and the ledger's "delivered"
+    /// can be reconciled rather than silently disagreeing (L7, and the cross-store half of
+    /// [`Self::conserves`]). Distinct from [`transport_uncertain`](Self::transport_uncertain),
+    /// which counts a *handed-off-but-unconfirmed* frame (Gate D).
     transport_failed: u64,
+    /// Commands popped toward the wire whose full frame was written (`write_all` ok) but whose
+    /// `flush` failed — *transport-uncertain* deliveries (Gate D). Tracked separately from
+    /// [`transport_failed`](Self::transport_failed) because the producer may have received and
+    /// applied them, so a later genuine ack reconciles them. Mirrors the ledger's
+    /// [`CommandLedger::uncertain_ever`](gibson::wire::CommandLedger::uncertain_ever).
+    transport_uncertain: u64,
     /// Set once `next_id` has handed out `u64::MAX`; further issues are refused as
     /// [`LocalRefusal::IdsExhausted`] rather than wrapping.
     ids_exhausted: bool,
@@ -129,6 +137,7 @@ impl CommandChannel {
             limits,
             fault: None,
             transport_failed: 0,
+            transport_uncertain: 0,
             ids_exhausted: false,
         }
     }
@@ -247,17 +256,17 @@ impl CommandChannel {
             self.limits,
         )
         .expect("command arg bounded at issue stays within limits at delivery");
-        match w.write_all(&bytes).and_then(|()| w.flush()) {
-            Ok(()) => {
-                self.out_seq = seq;
-                self.ledger
-                    .note_delivered(id)
-                    .expect("delivered a command the ledger is tracking");
-                Ok(Some(id))
-            }
+        // Two physically distinct failure outcomes must NOT be conflated (Gate D). `write_all`
+        // returning `Err` means not all bytes were written: the producer saw at most an
+        // undecodable prefix, so the command is *known not delivered* and no genuine ack is
+        // possible. `write_all` succeeding then `flush` failing means the *complete* frame reached
+        // the writer but the confirming flush failed: the producer may hold and apply it, so
+        // delivery is *transport-uncertain* and a later genuine ack must be able to reconcile it.
+        match w.write_all(&bytes) {
             Err(e) => {
-                // The command already left the bridge (counted delivered there). Account the loss
-                // and fault, keeping the cross-store tallies reconciled without a false delivery.
+                // Known not delivered (torn/short write). Ledger entry stays `Accepted`; a later
+                // "ack" for it is correctly a protocol fault (`AckBeforeDelivery`). Count the loss
+                // and fault (the stream may carry a torn prefix).
                 self.transport_failed += 1;
                 self.fault = Some(TransportFault {
                     command_id: id,
@@ -265,6 +274,33 @@ impl CommandChannel {
                 });
                 Err(e)
             }
+            Ok(()) => match w.flush() {
+                Ok(()) => {
+                    self.out_seq = seq;
+                    self.ledger
+                        .note_delivered(id)
+                        .expect("delivered a command the ledger is tracking");
+                    Ok(Some(id))
+                }
+                Err(e) => {
+                    // Transport-uncertain: the whole frame was handed off, flush was not confirmed.
+                    // Mark the ledger entry `TransportUncertain` (NOT `Delivered`, NOT left
+                    // `Accepted`) so a genuine verdict ack can reconcile it; count it; and still
+                    // fault, because a generic `W` (e.g. a `BufWriter`) may have spilled a torn
+                    // prefix — the channel conservatively refuses further delivery. `out_seq` is
+                    // not advanced: the frame is not *confirmed* flushed, and we never emit another
+                    // frame (faulted), so the sequence number is not reused.
+                    self.transport_uncertain += 1;
+                    self.ledger
+                        .note_transport_uncertain(id)
+                        .expect("uncertain delivery of a command the ledger is tracking");
+                    self.fault = Some(TransportFault {
+                        command_id: id,
+                        seq,
+                    });
+                    Err(e)
+                }
+            },
         }
     }
 
@@ -310,15 +346,24 @@ impl CommandChannel {
     pub fn failed(&self) -> u64 {
         self.ledger.failed()
     }
-    /// Frames actually written-and-flushed onto the wire (the committed `out_seq`). Equals the
-    /// ledger's delivered-ever count on a healthy channel; after a fault it trails the bridge's
-    /// delivered count by exactly [`transport_failed`](Self::transport_failed).
+    /// Frames **confirmed** written-and-flushed onto the wire (the committed `out_seq`). Advances
+    /// only on a fully successful `write_all` + `flush`, exactly in lockstep with the ledger's
+    /// `Accepted` → `Delivered` transition, so `delivered_frames() == ledger.delivered_ever()`
+    /// always. A torn write or a transport-uncertain (flush-failed) delivery does NOT advance it —
+    /// an unconfirmed frame is never counted as confirmed.
     pub fn delivered_frames(&self) -> u64 {
         self.out_seq
     }
-    /// Commands popped toward the wire whose write/flush failed (L7 — counted, never hidden).
+    /// Commands popped toward the wire whose `write_all` failed — known not delivered / torn (L7 —
+    /// counted, never hidden).
     pub fn transport_failed(&self) -> u64 {
         self.transport_failed
+    }
+    /// Commands popped toward the wire whose full frame was written but whose `flush` failed —
+    /// *transport-uncertain* (Gate D). A later genuine, source-matched ack reconciles these to
+    /// their terminal fate; they are neither counted as delivered nor lost.
+    pub fn transport_uncertain(&self) -> u64 {
+        self.transport_uncertain
     }
     /// Whether a delivery write/flush has faulted the channel. A faulted channel refuses all
     /// further delivery; the fault names the command and sequence number that broke.
@@ -334,23 +379,30 @@ impl CommandChannel {
     /// that makes a delivery desync detectable.
     ///
     /// The bridge counts a command "delivered" the instant `next_command` pops it; the ledger
-    /// counts it "delivered" only when [`deliver_next`](Self::deliver_next) confirms the
-    /// write/flush landed. The only legitimate gap between those two tallies is a command that
-    /// was popped but whose write failed — and the channel counts exactly those in
-    /// [`transport_failed`](Self::transport_failed). So:
+    /// counts it "delivered" only when [`deliver_next`](Self::deliver_next) confirms the full
+    /// write *and* flush landed. Every popped command is therefore in exactly one of three
+    /// buckets: confirmed-delivered (`ledger.delivered_ever`), transport-uncertain
+    /// ([`transport_uncertain`](Self::transport_uncertain), mirrored by `ledger.uncertain_ever`),
+    /// or known-torn ([`transport_failed`](Self::transport_failed)). So:
     ///
     /// ```text
-    ///   bridge.commands_delivered == ledger.delivered_ever + transport_failed
+    ///   bridge.commands_delivered == ledger.delivered_ever + ledger.uncertain_ever + transport_failed
     /// ```
     ///
-    /// On a healthy channel `transport_failed` is 0 and the two delivered tallies agree exactly.
-    /// The naive ordering (pop, then write, then mark delivered on success) breaks this identity
-    /// silently on any write error — which is precisely the lie this channel exists to prevent.
+    /// The channel's own `transport_uncertain` counter must also agree with the ledger's
+    /// `uncertain_ever`, catching a channel/ledger desync on the uncertain path exactly as the
+    /// identity above catches one on the delivered path. On a healthy channel both failure
+    /// counters are 0 and the bridge's and ledger's delivered tallies agree exactly. The naive
+    /// ordering (pop, then write, then mark delivered on success) breaks this identity silently on
+    /// any write error — which is precisely the lie this channel exists to prevent.
     pub fn conserves(&self) -> bool {
         self.ledger.conserves()
             && self.bridge.commands_conserved()
+            && self.transport_uncertain == self.ledger.uncertain_ever()
             && self.bridge.commands_delivered()
-                == self.ledger.delivered_ever() + self.transport_failed
+                == self.ledger.delivered_ever()
+                    + self.ledger.uncertain_ever()
+                    + self.transport_failed
     }
 }
 
