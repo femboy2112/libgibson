@@ -662,3 +662,147 @@ fn producer_owner_reaps_the_child_and_joins_the_reader_on_drop() {
         "the owner must reap the child on drop; pid {child_pid} is still alive"
     );
 }
+
+// ---- Gate C1/C2: byte-denominated retention + latest-wins freshness -------------------
+
+/// A FIELD message of a chosen size: `cells` f64 samples = `cells * 8` payload bytes.
+fn sized_field_msg(source: u64, seq: u64, cells: usize) -> WireMessage {
+    WireMessage {
+        source,
+        cursor: SourceCursor::new(0, seq),
+        body: WireBody::Field(gradient_field(cells, 1)),
+    }
+}
+
+#[test]
+fn a_distinct_source_field_flood_is_bounded_in_bytes_not_just_count() {
+    // 256 KiB per field (32768 f64), a 1 MiB byte budget, a generous COUNT cap. Distinct
+    // sources never coalesce, so only the byte budget can bound retention — the exact gap a
+    // count-only cap leaves (RED: 40 such fields retained 10 MiB behind a count of 40).
+    let cells = 32_768; // 256 KiB
+    let cap = 1024 * 1024; // 1 MiB
+    let mut buf = CoalescingBuffer::with_byte_budget(4096, 16, cap);
+    for s in 0..40u64 {
+        buf.offer(sized_field_msg(s, 1, cells));
+    }
+    assert!(
+        buf.field_bytes() <= cap,
+        "retained {} bytes exceeds the {cap}-byte budget",
+        buf.field_bytes()
+    );
+    assert!(
+        buf.bytes_high_water() <= cap,
+        "high-water {} exceeded the budget",
+        buf.bytes_high_water()
+    );
+    // The flood is disclosed as expendable drops, never hidden behind a bounded count.
+    assert!(
+        buf.fields_dropped() > 0,
+        "over-budget snapshots must be counted, not hidden"
+    );
+    // Latest-wins: the most recent arrivals survive; the oldest sources were evicted.
+    let mut retained = std::collections::BTreeSet::new();
+    buf.drain_into(&mut |m| {
+        retained.insert(m.source);
+    });
+    assert!(
+        retained.contains(&39),
+        "the newest arrival (source 39) must survive"
+    );
+    assert!(
+        !retained.contains(&0),
+        "the oldest arrival (source 0) must have been evicted"
+    );
+}
+
+#[test]
+fn at_the_field_cap_the_newest_snapshot_survives_not_the_stalest() {
+    // field_cap = 2 (byte budget generous). A@1, B@1, A@2 — the current back is B when A@2
+    // arrives, so it cannot coalesce; the lane is full. The STALE A@1 must be evicted and the
+    // FRESH A@2 admitted (RED: the old policy dropped A@2 and kept the stale A@1).
+    let mut buf = CoalescingBuffer::with_caps(2, 16);
+    buf.offer(field_msg(0xA, 0, 1));
+    buf.offer(field_msg(0xB, 0, 1));
+    buf.offer(field_msg(0xA, 0, 2));
+    let mut seen: Vec<(u64, u64)> = Vec::new();
+    buf.drain_into(&mut |m| seen.push((m.source, m.cursor.sequence)));
+    let a_seq = seen.iter().find(|(s, _)| *s == 0xA).map(|(_, q)| *q);
+    assert_eq!(
+        a_seq,
+        Some(2),
+        "source A's retained snapshot must be the newest (seq 2)"
+    );
+    assert!(
+        seen.iter().any(|(s, _)| *s == 0xB),
+        "source B's snapshot must also be retained"
+    );
+}
+
+#[test]
+fn coalescing_reclaims_the_stale_snapshot_bytes() {
+    // A run of same-source snapshots coalesces to ONE; retained bytes reflect only the latest,
+    // not the sum of the run — otherwise coalescing would leak the very bytes it claims to free.
+    let cells = 16_384; // 128 KiB
+    let mut buf = CoalescingBuffer::default();
+    for seq in 1..=20u64 {
+        buf.offer(sized_field_msg(7, seq, cells));
+    }
+    assert_eq!(
+        buf.field_len(),
+        1,
+        "a same-source run must collapse to one entry"
+    );
+    assert_eq!(
+        buf.field_bytes(),
+        cells * 8,
+        "retained bytes must be ONE snapshot's worth, not the whole run's"
+    );
+    assert_eq!(buf.coalesced(), 19, "19 of 20 snapshots coalesced away");
+}
+
+#[test]
+fn a_field_larger_than_the_whole_budget_is_refused_without_evicting_others() {
+    // A byte budget below a single incoming field: the giant cannot be retained without breaking
+    // the budget, so it is refused (counted) — and the snapshots already held are NOT disturbed.
+    let small = 1_024; // 8 KiB field
+    let giant = 100_000; // 800 KiB field
+    let cap = 64 * 1024; // 64 KiB budget
+    let mut buf = CoalescingBuffer::with_byte_budget(4096, 16, cap);
+    buf.offer(sized_field_msg(1, 1, small));
+    let before = buf.field_bytes();
+    buf.offer(sized_field_msg(2, 1, giant));
+    assert_eq!(
+        buf.field_bytes(),
+        before,
+        "the oversized field must not disturb retained bytes"
+    );
+    assert!(buf.field_bytes() <= cap, "budget must hold");
+    assert_eq!(buf.fields_dropped(), 1, "the refused giant must be counted");
+}
+
+#[test]
+fn byte_pressure_evicts_fields_but_never_a_control_verdict() {
+    // Under byte pressure the buffer evicts expendable FIELD snapshots, but an interleaved ACK
+    // (a non-expendable verdict) must survive the eviction — control is never dropped to free bytes.
+    let cells = 32_768; // 256 KiB
+    let cap = 512 * 1024; // room for ~2 fields
+    let mut buf = CoalescingBuffer::with_byte_budget(4096, 16, cap);
+    buf.offer(sized_field_msg(1, 1, cells));
+    buf.offer(ack_msg(2, 0, 1, 7)); // a verdict interleaved between fields
+    buf.offer(sized_field_msg(3, 1, cells));
+    buf.offer(sized_field_msg(4, 1, cells)); // forces eviction of an older field
+    assert!(
+        buf.field_bytes() <= cap,
+        "byte budget must hold under the flood"
+    );
+    let mut acks = 0usize;
+    buf.drain_into(&mut |m| {
+        if matches!(m.body, WireBody::Ack(_)) {
+            acks += 1;
+        }
+    });
+    assert_eq!(
+        acks, 1,
+        "the interleaved ACK verdict must survive field eviction"
+    );
+}

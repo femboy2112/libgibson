@@ -93,6 +93,16 @@ pub const DEFAULT_CONTROL_CAP: usize = 4096;
 /// the expendable snapshot is counted as a lawful drop — fields never consume the control lane.
 pub const DEFAULT_FIELD_CAP: usize = 1024;
 
+/// Default byte budget for retained **FIELD** payload (f64 data + optional mask) — the
+/// dominant, variable memory the transport holds. A message-count cap alone does **not**
+/// bound memory: one legal field carries up to `2^20` cells × 8 bytes (+ a 1-byte-per-cell
+/// mask) ≈ 9 MiB, so 1024 count-bounded entries is a multi-GiB retention envelope. This
+/// byte cap bounds that regardless of count. 64 MiB comfortably holds several maximum-size
+/// fields across distinct sources (so a single legal field is always admissible) while
+/// giving a documented worst-case envelope; past it the oldest expendable snapshots are
+/// evicted (latest-wins), never a control verdict. Tune via [`CoalescingBuffer::with_byte_budget`].
+pub const DEFAULT_FIELD_BYTE_CAP: usize = 64 * 1024 * 1024;
+
 /// Which non-expendable control body overflowed the reserved control lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlKind {
@@ -217,6 +227,21 @@ fn control_kind(body: &WireBody) -> Option<ControlKind> {
     }
 }
 
+/// Heap bytes a decoded message retains while queued — the dominant, variable cost the byte
+/// budget must bound. A FIELD owns its `f64` data array (8 bytes/cell) plus an optional
+/// one-byte-per-cell mask; a COMMAND owns its argument bytes; ACK/RETIRE are unit-sized. The
+/// fixed per-message overhead (header, enum tag, deque slot) is small and already bounded by
+/// the count caps, so it is intentionally excluded from this variable-payload accounting.
+fn field_payload_bytes(body: &WireBody) -> usize {
+    match body {
+        WireBody::Field(f) => {
+            f.data.len() * std::mem::size_of::<f64>() + f.mask.as_ref().map_or(0, |m| m.len())
+        }
+        WireBody::Command(c) => c.arg.len(),
+        WireBody::Ack(_) | WireBody::Retire => 0,
+    }
+}
+
 /// An order-preserving inbound queue over two lanes that share one FIFO (so cross-kind order is
 /// preserved) but **not** one budget. A FIELD run from one source coalesces to its newest member
 /// and is bounded by an expendable field cap (over-cap snapshots are dropped and counted). Control
@@ -227,8 +252,11 @@ pub struct CoalescingBuffer {
     queue: VecDeque<WireMessage>,
     field_cap: usize,
     control_cap: usize,
+    field_byte_cap: usize,
     field_count: usize,
     control_count: usize,
+    field_bytes: usize,
+    bytes_high_water: usize,
     coalesced: u64,
     fields_dropped: u64,
     overflow: Option<ControlOverflow>,
@@ -248,15 +276,28 @@ impl CoalescingBuffer {
         Self::with_caps(DEFAULT_FIELD_CAP, control_cap)
     }
 
-    /// A buffer with explicit lane budgets: at most `field_cap` un-coalesced FIELD entries and a
-    /// reserved control lane of `control_cap`. Each is floored at 1.
+    /// A buffer with explicit count lane budgets and the default FIELD byte budget
+    /// ([`DEFAULT_FIELD_BYTE_CAP`]). Equivalent to
+    /// `with_byte_budget(field_cap, control_cap, DEFAULT_FIELD_BYTE_CAP)`.
     pub fn with_caps(field_cap: usize, control_cap: usize) -> Self {
+        Self::with_byte_budget(field_cap, control_cap, DEFAULT_FIELD_BYTE_CAP)
+    }
+
+    /// A buffer with explicit lane budgets: at most `field_cap` un-coalesced FIELD entries, at
+    /// most `field_byte_cap` bytes of retained FIELD payload, and a reserved control lane of
+    /// `control_cap`. Each is floored at 1. The byte budget bounds memory independently of the
+    /// count: at saturation the oldest expendable snapshots are evicted to admit the freshest
+    /// (latest-wins), and a control verdict is never evicted.
+    pub fn with_byte_budget(field_cap: usize, control_cap: usize, field_byte_cap: usize) -> Self {
         Self {
             queue: VecDeque::new(),
             field_cap: field_cap.max(1),
             control_cap: control_cap.max(1),
+            field_byte_cap: field_byte_cap.max(1),
             field_count: 0,
             control_count: 0,
+            field_bytes: 0,
+            bytes_high_water: 0,
             coalesced: 0,
             fields_dropped: 0,
             overflow: None,
@@ -282,21 +323,43 @@ impl CoalescingBuffer {
             None => {
                 if let Some(back) = self.queue.back_mut() {
                     if back.source == msg.source && matches!(back.body, WireBody::Field(_)) {
-                        // Consecutive same-source snapshots: keep the newest, drop the stale one.
+                        // Consecutive same-source snapshots: keep the newest, drop the stale one,
+                        // reclaiming the stale payload's bytes and charging the newcomer's.
                         if msg.cursor >= back.cursor {
+                            let old = field_payload_bytes(&back.body);
+                            let new = field_payload_bytes(&msg.body);
                             *back = msg;
+                            self.field_bytes = self.field_bytes.saturating_sub(old) + new;
+                            // A larger replacement may now exceed the byte budget: evict older
+                            // expendable snapshots (never the just-coalesced newest) to restore it.
+                            self.enforce_field_byte_cap();
+                            self.note_high_water();
                         }
                         self.coalesced += 1;
                         return;
                     }
                 }
-                if self.field_count >= self.field_cap {
-                    // Expendable: a dropped snapshot is superseded by the next. Counted, not fatal.
+                let incoming = field_payload_bytes(&msg.body);
+                if incoming > self.field_byte_cap {
+                    // Larger than the ENTIRE envelope — it cannot be retained without breaking the
+                    // budget, so refuse it (counted) without disturbing the snapshots already held.
+                    // (The default envelope exceeds one maximum legal field, so this only bites a
+                    // pathologically small configured cap.)
                     self.fields_dropped += 1;
                     return;
                 }
+                // Make room for the freshest observation by evicting the OLDEST expendable
+                // snapshots under count OR byte pressure — at saturation we drop a stale snapshot,
+                // never refuse the newest one (latest-wins), and never touch a control verdict.
+                while (self.field_count >= self.field_cap
+                    || self.field_bytes + incoming > self.field_byte_cap)
+                    && self.evict_oldest_field().is_some()
+                {}
+                // field_cap >= 1 and incoming <= field_byte_cap, so room now exists.
                 self.field_count += 1;
+                self.field_bytes += incoming;
                 self.queue.push_back(msg);
+                self.note_high_water();
             }
             Some(kind) => {
                 if self.control_count >= self.control_cap {
@@ -322,6 +385,41 @@ impl CoalescingBuffer {
         }
         self.field_count = 0;
         self.control_count = 0;
+        self.field_bytes = 0;
+    }
+
+    /// Evict the oldest queued FIELD entry — the front-most FIELD, skipping any control so no
+    /// verdict is reordered or lost — counting it as an expendable drop and reclaiming its
+    /// bytes. Returns the reclaimed bytes, or `None` if the queue holds no FIELD to evict.
+    fn evict_oldest_field(&mut self) -> Option<usize> {
+        let idx = self
+            .queue
+            .iter()
+            .position(|m| matches!(m.body, WireBody::Field(_)))?;
+        let msg = self.queue.remove(idx).expect("index just located");
+        let bytes = field_payload_bytes(&msg.body);
+        self.field_count -= 1;
+        self.field_bytes = self.field_bytes.saturating_sub(bytes);
+        self.fields_dropped += 1;
+        Some(bytes)
+    }
+
+    /// Evict oldest expendable snapshots until retained FIELD bytes are within the byte budget,
+    /// but never evict the sole remaining snapshot: a field larger than the whole envelope is
+    /// retained rather than lost (the documented soft-cap exception, unreachable at the default
+    /// cap since it exceeds one maximum legal field).
+    fn enforce_field_byte_cap(&mut self) {
+        while self.field_bytes > self.field_byte_cap
+            && self.field_count > 1
+            && self.evict_oldest_field().is_some()
+        {}
+    }
+
+    /// Record a new retained-bytes high-water mark.
+    fn note_high_water(&mut self) {
+        if self.field_bytes > self.bytes_high_water {
+            self.bytes_high_water = self.field_bytes;
+        }
     }
 
     /// Messages currently queued (fields + control).
@@ -342,6 +440,23 @@ impl CoalescingBuffer {
     /// Control messages currently queued.
     pub fn control_len(&self) -> usize {
         self.control_count
+    }
+
+    /// Retained FIELD payload bytes currently queued (f64 data + optional mask). This is the
+    /// dominant, variable memory the buffer holds; it is bounded by [`field_byte_cap`] regardless
+    /// of how many distinct sources are queued.
+    pub fn field_bytes(&self) -> usize {
+        self.field_bytes
+    }
+
+    /// The configured retained-FIELD byte budget (bytes).
+    pub fn field_byte_cap(&self) -> usize {
+        self.field_byte_cap
+    }
+
+    /// High-water mark of retained FIELD payload bytes over this buffer's life.
+    pub fn bytes_high_water(&self) -> usize {
+        self.bytes_high_water
     }
 
     /// Total FIELD frames collapsed by coalescing over this buffer's life (lawful snapshot drops).
@@ -479,6 +594,22 @@ impl Reader {
     /// disclosed, L7). Control is never counted here — a lost verdict is a terminal overflow.
     pub fn fields_dropped(&self) -> u64 {
         self.shared.lock().unwrap().buf.fields_dropped()
+    }
+
+    /// Retained FIELD payload bytes currently queued — the dominant, variable memory the reader
+    /// holds, bounded by the byte budget independently of the message count (Gate C1).
+    pub fn field_bytes(&self) -> usize {
+        self.shared.lock().unwrap().buf.field_bytes()
+    }
+
+    /// High-water mark of retained FIELD payload bytes over the reader's life (telemetry).
+    pub fn bytes_high_water(&self) -> usize {
+        self.shared.lock().unwrap().buf.bytes_high_water()
+    }
+
+    /// The configured retained-FIELD byte budget (bytes).
+    pub fn field_byte_cap(&self) -> usize {
+        self.shared.lock().unwrap().buf.field_byte_cap()
     }
 
     /// The terminal control-lane overflow, if one has been latched (the stream failed closed).

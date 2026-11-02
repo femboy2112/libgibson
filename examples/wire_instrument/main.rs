@@ -371,12 +371,17 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
 
         // L7 telemetry: the reader's lawful snapshot coalescing and any expendable field drops are
         // shown, never hidden — a growing `fields_dropped` is a misbehaving producer, not a leak.
-        // A lost *control* verdict is never a counter here; it is the terminal control-overflow
-        // handled above.
+        // Retained FIELD bytes and their high-water are surfaced against the budget so a byte-bound
+        // flood is visible as a real memory envelope, not just a message count (Gate C1). A lost
+        // *control* verdict is never a counter here; it is the terminal control-overflow above.
+        let reader = owner.reader();
         let shown = format!(
-            "{status}  |  xport: coalesced {} fields_dropped {}",
-            owner.reader().coalesced(),
-            owner.reader().fields_dropped(),
+            "{status}  |  xport: coalesced {} fields_dropped {} bytes {}/{} KiB (hw {} KiB)",
+            reader.coalesced(),
+            reader.fields_dropped(),
+            reader.field_bytes() / 1024,
+            reader.field_byte_cap() / 1024,
+            reader.bytes_high_water() / 1024,
         );
         let root = build_root(
             &inbox,
