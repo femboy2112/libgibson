@@ -44,16 +44,36 @@ pub fn viewport_dims(cols: usize, rows: usize, ppc: u16) -> (u16, u16) {
 pub fn world_view_for(
     ext: &gibson::field_view::FieldExtent,
     ppc: u16,
-) -> (gibson::world_view::WorldView, gibson::Rect) {
+) -> Result<(gibson::world_view::WorldView, gibson::Rect), UnsupportedView> {
     let ppc = ppc.max(1);
     let (w, h) = viewport_dims(ext.cols(), ext.rows(), ppc);
     let area = gibson::Rect::new(0, 0, w, h);
     let origin = ext.origin();
     let zoom_x = f64::from(ppc) / ext.cell_w();
     let zoom_y = f64::from(ppc) / ext.cell_h();
+    // Gate D/D3: `FieldExtent::new` accepts ANY strictly-positive finite cell size — including a
+    // subnormal one — so `ppc / cell_size` can overflow to a non-finite zoom (and a zero zoom is
+    // likewise non-invertible). `WorldView` has no finite inverse for such a zoom, so every cell
+    // would map to `Transport::Clipped`: the field renders blank while `FieldView::sample` still
+    // returns values — the exact display/probe disagreement Gate G closed, resurfacing in the
+    // overflow regime. Rather than hand back that silent contradiction, refuse with a typed
+    // outcome so the caller can show an honest "unsupported view" instead of a mystery blank.
+    if !zoom_x.is_finite() || !zoom_y.is_finite() || zoom_x == 0.0 || zoom_y == 0.0 {
+        return Err(UnsupportedView { zoom_x, zoom_y });
+    }
     let view = gibson::world_view::WorldView::new(area)
         .with_pan(origin.x, origin.y)
         .with_pixels_per_cell(1, 1)
         .with_zoom(zoom_x, zoom_y);
-    (view, area)
+    Ok((view, area))
+}
+
+/// Why a field's geometry has no numerically invertible display mapping at a given `ppc`: the
+/// per-axis `zoom = ppc / cell_size` is non-finite (overflowed) or zero, so `WorldView` cannot
+/// invert it and there is no honest terminal-cell <-> field-index correspondence. Carries the
+/// offending per-axis zoom values for a truthful diagnostic (never a silent blank render).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UnsupportedView {
+    pub zoom_x: f64,
+    pub zoom_y: f64,
 }

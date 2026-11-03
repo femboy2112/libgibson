@@ -149,13 +149,6 @@ fn build_root(
         if let Some(field) = inbox.latest(src) {
             let ext = field.extent;
             if let Some(view) = FieldView::new(ext, &field.data, field.mask.as_deref()) {
-                // Gate G: derive the display transport from the SAME source geometry the probe
-                // indexes — origin (pan), anisotropic cell sizes (per-axis zoom), and ppc
-                // magnification — via checked, clamp-before-narrow sizing. A field dimension past
-                // u16::MAX saturates to the cap, and a nonzero-origin or anisotropic field no
-                // longer renders off-view/distorted while the probe reads real values.
-                let (wv, area) = viewport::world_view_for(&ext, ppc);
-                let frame = view.render(&wv, area, Colormap::Density, RangePolicy::Auto);
                 let (pix, piy) = probe;
                 let sample_txt = match view.sample(pix, piy) {
                     Some(Sample::Value(v)) => format!("{v:.4}"),
@@ -163,20 +156,6 @@ fn build_root(
                     Some(Sample::NonFinite) => "non-finite".to_string(),
                     None => "off-field".to_string(),
                 };
-                let r = &frame.report;
-                let hud_src = format!(
-                    "source {src}  model_tick {}  {}x{} cells  zoom {ppc}x  render[value {} masked {} nonfinite {} off {} conserves {}]",
-                    field.model_tick,
-                    ext.cols(),
-                    ext.rows(),
-                    r.value_cells,
-                    r.masked_cells,
-                    r.nonfinite_cells,
-                    r.off_field_cells,
-                    r.conserves(),
-                );
-                let hud_probe =
-                    format!("probe ({pix},{piy}) = {sample_txt}    pending set-amplitude = {pending_amp:.1}  [ / ] adjust · Enter send");
                 let hud_edit = format!(
                     "edits: issued {} pending {} outstanding {} | ack {} refused {} failed {} | delivered {} xfail {} faulted {} | conserves {}",
                     ch.issued(),
@@ -190,13 +169,61 @@ fn build_root(
                     ch.faulted(),
                     ch.conserves(),
                 );
-                return root
-                    .child(Node::raster(frame.surface))
-                    .child(Node::text(hud_src, Style::default()))
-                    .child(Node::text(hud_probe, Style::default()))
-                    .child(Node::text(hud_edit, Style::default()))
-                    .child(Node::text(cmd_leg.to_string(), Style::default()))
-                    .child(Node::text(status.to_string(), Style::default()));
+                // Gate G/D3: derive the display transport from the SAME source geometry the probe
+                // indexes — origin (pan), anisotropic cell sizes (per-axis zoom), and ppc
+                // magnification — via checked, clamp-before-narrow sizing. A field dimension past
+                // u16::MAX saturates to the cap; a nonzero-origin or anisotropic field no longer
+                // renders off-view/distorted while the probe reads real values. And a geometry
+                // whose zoom overflows to non-finite (D3) has NO invertible mapping: show the
+                // still-exact probe value and an explicit notice, never a blank that contradicts it.
+                match viewport::world_view_for(&ext, ppc) {
+                    Ok((wv, area)) => {
+                        let frame = view.render(&wv, area, Colormap::Density, RangePolicy::Auto);
+                        let r = &frame.report;
+                        let hud_src = format!(
+                            "source {src}  model_tick {}  {}x{} cells  zoom {ppc}x  render[value {} masked {} nonfinite {} off {} conserves {}]",
+                            field.model_tick,
+                            ext.cols(),
+                            ext.rows(),
+                            r.value_cells,
+                            r.masked_cells,
+                            r.nonfinite_cells,
+                            r.off_field_cells,
+                            r.conserves(),
+                        );
+                        let hud_probe = format!(
+                            "probe ({pix},{piy}) = {sample_txt}    pending set-amplitude = {pending_amp:.1}  [ / ] adjust · Enter send"
+                        );
+                        return root
+                            .child(Node::raster(frame.surface))
+                            .child(Node::text(hud_src, Style::default()))
+                            .child(Node::text(hud_probe, Style::default()))
+                            .child(Node::text(hud_edit, Style::default()))
+                            .child(Node::text(cmd_leg.to_string(), Style::default()))
+                            .child(Node::text(status.to_string(), Style::default()));
+                    }
+                    Err(u) => {
+                        let hud_src = format!(
+                            "source {src}  model_tick {}  {}x{} cells  VIEW UNSUPPORTED at zoom {ppc}x — cell {:e}x{:e} -> non-invertible zoom {:e}x{:e}",
+                            field.model_tick,
+                            ext.cols(),
+                            ext.rows(),
+                            ext.cell_w(),
+                            ext.cell_h(),
+                            u.zoom_x,
+                            u.zoom_y,
+                        );
+                        let hud_probe = format!(
+                            "probe ({pix},{piy}) = {sample_txt}  (geometry not displayable at this zoom; the sample is still exact)"
+                        );
+                        return root
+                            .child(Node::text(hud_src, Style::default()))
+                            .child(Node::text(hud_probe, Style::default()))
+                            .child(Node::text(hud_edit, Style::default()))
+                            .child(Node::text(cmd_leg.to_string(), Style::default()))
+                            .child(Node::text(status.to_string(), Style::default()));
+                    }
+                }
             }
         }
     }

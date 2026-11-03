@@ -17,7 +17,7 @@ mod viewport;
 use gibson::field_view::{Colormap, FieldExtent, FieldView, RangePolicy, Sample};
 use gibson::world_view::{Transport, WorldView};
 use gibson::{Point, Rect};
-use viewport::{viewport_dims, world_view_for};
+use viewport::{viewport_dims, world_view_for, UnsupportedView};
 
 /// The exact defect, executed: the pre-fix formula narrowed `cols` to `u16` *before* clamping, so a
 /// 65536-column field wrapped to 0 and then clamped *up* to width 1. The fix clamps wide first.
@@ -107,7 +107,7 @@ fn nonzero_origin_field_renders_off_view_before_the_fix_and_on_view_after() {
     assert!(old.report.off_field_cells > 0);
 
     // FIXED construction: pan to the origin — every in-bounds cell renders.
-    let (wv, area) = world_view_for(&ext, 1);
+    let (wv, area) = world_view_for(&ext, 1).expect("a unit-cell field is displayable");
     let fixed = view.render(&wv, area, Colormap::Density, RangePolicy::Auto);
     assert_eq!(
         fixed.report.value_cells, 12,
@@ -124,7 +124,7 @@ fn nonzero_origin_field_renders_off_view_before_the_fix_and_on_view_after() {
 fn terminal_cells_map_back_to_their_source_index_under_origin_anisotropy_and_zoom() {
     let ext = FieldExtent::new(Point::new(10.0, -5.0), 3.0, 2.0, 3, 2).unwrap();
     let ppc: u16 = 2;
-    let (wv, _area) = world_view_for(&ext, ppc);
+    let (wv, _area) = world_view_for(&ext, ppc).expect("ordinary geometry is displayable");
 
     for iy in 0..ext.rows() {
         for ix in 0..ext.cols() {
@@ -159,7 +159,7 @@ fn anisotropic_field_fills_its_viewport_after_the_fix() {
     let data = vec![1.0; ext.cols() * ext.rows()];
     let view = FieldView::new(ext, &data, None).unwrap();
     let ppc = 2;
-    let (wv, area) = world_view_for(&ext, ppc);
+    let (wv, area) = world_view_for(&ext, ppc).expect("ordinary geometry is displayable");
     assert_eq!(
         (area.width, area.height),
         (6, 4),
@@ -171,4 +171,74 @@ fn anisotropic_field_fills_its_viewport_after_the_fix() {
         "all 6x4 = 24 terminal cells map onto the 3x2 field, none off-field"
     );
     assert_eq!(frame.report.off_field_cells, 0);
+}
+
+// ---- Gate D/D3: a geometry whose zoom overflows has no invertible display mapping ------------
+
+/// The hostile holdout. `FieldExtent::new` accepts ANY strictly-positive finite cell size — a
+/// subnormal `1e-310` included — so `ppc / cell_w` overflows to a non-finite zoom. `WorldView`
+/// cannot invert that, so the field would render ENTIRELY blank while `FieldView::sample` still
+/// returns values: the display/probe disagreement Gate G closed, resurfacing in the overflow
+/// regime. `world_view_for` must REFUSE such a geometry with a typed outcome, not hand back a
+/// silent blank. (Extremely large but finite cells give a tiny finite zoom and remain displayable.)
+#[test]
+fn a_cell_size_whose_zoom_overflows_is_refused_not_silently_blanked() {
+    let tiny = 1e-310_f64; // subnormal, yet finite and > 0 -> a LEGAL FieldExtent
+    let ext = FieldExtent::new(Point::new(0.0, 0.0), tiny, tiny, 4, 3).unwrap();
+    let data: Vec<f64> = (0..12).map(|i| i as f64).collect();
+    let view = FieldView::new(ext, &data, None).unwrap();
+
+    // The probe returns a real value at (0,0), independent of display geometry.
+    assert!(matches!(view.sample(0, 0), Some(Sample::Value(_))));
+
+    // Precondition: the zoom this geometry demands overflows to non-finite.
+    let zoom = 1.0_f64 / tiny;
+    assert!(
+        !zoom.is_finite(),
+        "ppc/cell_w must overflow for this holdout to bite"
+    );
+
+    // OLD (inline): building the WorldView with that non-finite zoom — as the pre-D3 code did —
+    // renders the field ENTIRELY clipped while the probe still reads values. RED: the silent
+    // display/probe disagreement.
+    let (w, h) = viewport_dims(ext.cols(), ext.rows(), 1);
+    let blanked = WorldView::new(Rect::new(0, 0, w, h))
+        .with_pixels_per_cell(1, 1)
+        .with_zoom(zoom, zoom);
+    let old = view.render(
+        &blanked,
+        Rect::new(0, 0, w, h),
+        Colormap::Density,
+        RangePolicy::Auto,
+    );
+    assert_eq!(
+        old.report.value_cells, 0,
+        "RED: a non-finite zoom silently blanks the field while the probe returns values"
+    );
+
+    // FIXED: world_view_for refuses the geometry with a typed outcome carrying the offending zoom.
+    match world_view_for(&ext, 1) {
+        Err(UnsupportedView { zoom_x, zoom_y }) => {
+            assert!(
+                !zoom_x.is_finite() && !zoom_y.is_finite(),
+                "the refusal reports the non-finite per-axis zoom: {zoom_x} {zoom_y}"
+            );
+        }
+        Ok(_) => panic!("a non-invertible overflowing zoom must be refused, not returned"),
+    }
+}
+
+/// An extremely LARGE (but finite) cell size yields a tiny FINITE zoom, which is invertible — so
+/// it is displayable, NOT refused. The D3 guard rejects only genuinely non-invertible geometry.
+#[test]
+fn an_extremely_large_but_finite_cell_size_is_still_displayable() {
+    let ext = FieldExtent::new(Point::new(0.0, 0.0), 1e300, 1e300, 2, 2).unwrap();
+    let data = vec![1.0; 4];
+    let view = FieldView::new(ext, &data, None).unwrap();
+    let (wv, area) = world_view_for(&ext, 1).expect("a tiny-but-finite zoom is invertible");
+    let frame = view.render(&wv, area, Colormap::Density, RangePolicy::Auto);
+    assert!(
+        frame.report.value_cells > 0,
+        "a finite (if tiny) zoom still renders the field"
+    );
 }
