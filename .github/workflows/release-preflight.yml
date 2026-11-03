@@ -31,23 +31,36 @@ env:
 jobs:
   preflight:
     name: Release preflight (publication-free)
-    runs-on: ubuntu-latest
+    # Pinned to ubuntu-24.04 (not ubuntu-latest), mirroring the required Rust job in
+    # ci.yml: preflight runs `cargo test`, which includes the byte-exact PCM goldens
+    # in tests/audio_pocket_voice.rs. Those depend on the system libm, and the
+    # ubuntu-latest roll to 26.04 changes libm's rounding in the last ULPs, failing
+    # the frozen golden under ANY toolchain. The preflight must validate the release
+    # on the SAME environment the goldens were captured on, not inherit a drifting
+    # default runner.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # Install the MSRV toolchain first, then stable, so stable is the default
-      # (`cargo`) and 1.85 is reachable as `cargo +1.85` by the preflight script.
+      # Install the MSRV toolchain first, then the pinned comprehensive toolchain, so
+      # the latter is the default (`cargo`) and 1.85 is reachable as `cargo +1.85` by
+      # the preflight script.
       - name: Install Rust 1.85 (MSRV)
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           toolchain: "1.85"
 
-      - name: Install stable Rust
+      # Pinned to 1.98.1 (the PCM goldens' capture toolchain), matching ci.yml's
+      # required Rust job. The decisive variable for the audio goldens is the runner
+      # OS (libm), pinned above; pinning the toolchain too keeps the preflight's
+      # comprehensive lane byte-identical to the environment the release is gated on.
+      - name: Install Rust 1.98.1 (comprehensive toolchain)
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
+          toolchain: "1.98.1"
           components: rustfmt, clippy
 
       - name: Install Go

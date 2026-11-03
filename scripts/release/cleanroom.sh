@@ -45,17 +45,13 @@ dump() {
 }
 
 # D6-3 license-payload checkers for the ACTUAL built Python artifacts.
+# The wheel checker accepts BOTH the legacy flat dist-info layout and the PEP 639 /
+# Metadata-2.4 `licenses/` layout that setuptools >= 77 emits, and verifies the
+# license BYTES match the repository text (see check-wheel-license.py). It lives in
+# its own script so the three-wheel red-first fixture can exercise it in isolation
+# (scripts/release/tests/test-wheel-license.sh).
 py_wheel_license_ok() {
-    python3 - "$1" <<'PY'
-import sys, zipfile
-z = zipfile.ZipFile(sys.argv[1]); names = z.namelist()
-need = ["LICENSE", "LICENSE-MIT", "LICENSE-APACHE"]
-have_files = all(any(n.endswith("dist-info/" + f) for n in names) for f in need)
-meta = [n for n in names if n.endswith("METADATA")][0]
-body = z.read(meta).decode()
-have_meta = "License-File: LICENSE-MIT" in body and "License-File: LICENSE-APACHE" in body
-sys.exit(0 if (have_files and have_meta) else 1)
-PY
+    python3 "$REPO_ROOT/scripts/release/check-wheel-license.py" "$1" "$REPO_ROOT/bindings/python"
 }
 py_sdist_license_ok() {
     python3 - "$1" <<'PY'
