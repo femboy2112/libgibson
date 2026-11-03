@@ -269,6 +269,7 @@ pub struct CoalescingBuffer {
     bytes_high_water: usize,
     coalesced: u64,
     fields_dropped: u64,
+    out_of_contract: u64,
     overflow: Option<ControlOverflow>,
 }
 
@@ -310,6 +311,7 @@ impl CoalescingBuffer {
             bytes_high_water: 0,
             coalesced: 0,
             fields_dropped: 0,
+            out_of_contract: 0,
             overflow: None,
         }
     }
@@ -336,12 +338,24 @@ impl CoalescingBuffer {
                         // Consecutive same-source snapshots: keep the newest, drop the stale one,
                         // reclaiming the stale payload's bytes and charging the newcomer's.
                         if msg.cursor >= back.cursor {
-                            let old = field_payload_bytes(&back.body);
                             let new = field_payload_bytes(&msg.body);
+                            if new > self.field_byte_cap {
+                                // The fresher snapshot alone exceeds the ENTIRE field byte envelope.
+                                // No eviction of older expendable snapshots can make room (emptied
+                                // to just this one it still breaches), so retaining it would break
+                                // the hard byte budget. Mirror the append path's oversized-field
+                                // refusal below: keep the prior valid (staler) snapshot and count
+                                // the drop, rather than silently breach the cap. FIELD snapshots are
+                                // expendable; a staler valid observation is the honest bounded choice.
+                                self.fields_dropped += 1;
+                                return;
+                            }
+                            let old = field_payload_bytes(&back.body);
                             *back = msg;
                             self.field_bytes = self.field_bytes.saturating_sub(old) + new;
-                            // A larger replacement may now exceed the byte budget: evict older
-                            // expendable snapshots (never the just-coalesced newest) to restore it.
+                            // A larger (within-cap) replacement may still exceed the budget together
+                            // with older snapshots: evict older expendable snapshots (never the
+                            // just-coalesced newest) to restore it.
                             self.enforce_field_byte_cap();
                             self.note_high_water();
                         }
@@ -370,6 +384,19 @@ impl CoalescingBuffer {
                 self.field_bytes += incoming;
                 self.queue.push_back(msg);
                 self.note_high_water();
+            }
+            Some(ControlKind::Command) => {
+                // COMMAND is presenter -> producer only (docs/WIRE_PROTOCOL.md §COMMAND payload).
+                // An inbound COMMAND on the presenter's drain path is a DIRECTION violation from a
+                // diseased producer: reject it explicitly and count it, rather than admit it to the
+                // ACK/RETIRE verdict lane. Admitting it would (a) charge a verdict slot to a message
+                // that is not a verdict, and (b) leak unbounded `arg` bytes, since the control lane
+                // is count-bounded, not byte-bounded. The presenter's loop ignores it anyway
+                // (main.rs: `WireBody::Command(_) => {}`), so admitting it is exactly the "buffer
+                // then silently ignore" anti-pattern. With COMMAND rejected here, the only control
+                // bodies ever admitted are ACK and RETIRE — both ZERO-payload — so the inbound
+                // control lane is byte-bounded by construction (count_cap x 0 variable bytes).
+                self.out_of_contract += 1;
             }
             Some(kind) => {
                 if self.control_count >= self.control_cap {
@@ -479,6 +506,14 @@ impl CoalescingBuffer {
     /// control: a lost verdict is a [`ControlOverflow`], not a counter.
     pub fn fields_dropped(&self) -> u64 {
         self.fields_dropped
+    }
+
+    /// Total messages rejected as OUT OF CONTRACT for this (producer -> presenter) direction — an
+    /// inbound COMMAND, which the protocol only defines presenter -> producer. Nonzero discloses a
+    /// diseased/misdirected producer; such messages are never admitted, so they consume neither a
+    /// verdict slot nor any retained bytes.
+    pub fn out_of_contract(&self) -> u64 {
+        self.out_of_contract
     }
 
     /// The terminal control-lane overflow, if one has been latched. `Some` means the stream has

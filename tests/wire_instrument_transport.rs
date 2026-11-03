@@ -20,8 +20,8 @@ mod transport;
 use gibson::field_view::FieldExtent;
 use gibson::shape::Point;
 use gibson::wire::{
-    encode_field, AckStatus, FrameDecoder, SourceCursor, WireAck, WireBody, WireError, WireField,
-    WireLimits, WireMessage, HEADER_BYTES,
+    encode_field, AckStatus, FieldAdmission, FieldInbox, FrameDecoder, SourceCursor, WireAck,
+    WireBody, WireError, WireField, WireLimits, WireMessage, HEADER_BYTES,
 };
 
 use transport::{
@@ -418,21 +418,30 @@ fn an_ack_is_admitted_even_when_the_field_lane_is_full() {
     assert_eq!(acks, 1, "the authoritative ACK survived to the consumer");
 }
 
-/// Conservation over a mixed FIELD/ACK/RETIRE/COMMAND stream with several sources: every control
-/// verdict is preserved and in order; only expendable same-source field runs coalesce.
+/// Conservation over a mixed multi-source stream: every authoritative VERDICT (ACK/RETIRE) is
+/// preserved and in order around coalesced field runs. An inbound COMMAND is rejected as
+/// out-of-contract (COMMAND is presenter -> producer only; see WIRE_PROTOCOL.md) rather than
+/// conserved as a verdict — the bound it enforces is proven in
+/// `an_inbound_command_flood_is_rejected_and_byte_bounded`.
 #[test]
-fn every_control_verdict_survives_a_mixed_multi_source_stream() {
+fn acks_and_retires_survive_a_mixed_stream_while_inbound_commands_are_rejected() {
     let mut buf = CoalescingBuffer::with_caps(64, 64);
-    // A run from source 1, an ack for it, a retire of source 2, a command, a fresh field run.
+    // A run from source 1, an ack for it, a retire of source 2, an (out-of-contract) inbound
+    // command, a fresh field run.
     buf.offer(field_msg(1, 0, 1));
     buf.offer(field_msg(1, 0, 2)); // coalesces onto the previous s1 field
-    buf.offer(ack_msg(1, 0, 3, 100)); // control: breaks the run
-    buf.offer(retire_msg(2, 0, 4)); // control
-    buf.offer(command_msg(1, 0, 5, 101)); // control
+    buf.offer(ack_msg(1, 0, 3, 100)); // verdict: breaks the run
+    buf.offer(retire_msg(2, 0, 4)); // verdict
+    buf.offer(command_msg(1, 0, 5, 101)); // OUT OF CONTRACT inbound (presenter -> producer only)
     buf.offer(field_msg(3, 0, 6));
     buf.offer(field_msg(3, 0, 7)); // coalesces onto the previous s3 field
 
     assert_eq!(buf.coalesced(), 2, "only same-source field runs collapsed");
+    assert_eq!(
+        buf.out_of_contract(),
+        1,
+        "the inbound COMMAND is rejected as out-of-contract, not conserved"
+    );
     assert!(buf.control_overflow().is_none());
 
     let mut kinds: Vec<&'static str> = Vec::new();
@@ -446,9 +455,52 @@ fn every_control_verdict_survives_a_mixed_multi_source_stream() {
     });
     assert_eq!(
         kinds,
-        ["field", "ack", "retire", "command", "field"],
-        "every control verdict survives, in order, around coalesced field runs"
+        ["field", "ack", "retire", "field"],
+        "ACK/RETIRE verdicts survive in order; the out-of-contract COMMAND is never admitted"
     );
+}
+
+/// Gate B/B2 — an inbound COMMAND flood is rejected and byte-bounded. COMMAND is presenter ->
+/// producer only, so a producer flooding large-`arg` COMMAND frames back at the presenter is sending
+/// them the WRONG way. Each must be rejected out-of-contract: it consumes neither a verdict slot in
+/// the count-bounded control lane nor any retained bytes. This closes the hole where a count-only
+/// control cap left variable COMMAND payloads unbounded (control_cap x max_arg_bytes of memory).
+#[test]
+fn an_inbound_command_flood_is_rejected_and_byte_bounded() {
+    use gibson::wire::WireCommand;
+    let mut buf = CoalescingBuffer::with_caps(4, 4); // tiny lanes — any byte leak would show
+    let big_arg = vec![0u8; 1_000_000]; // 1 MB arg per command
+    for id in 0..100u64 {
+        buf.offer(WireMessage {
+            source: 1,
+            cursor: SourceCursor::new(0, id + 1),
+            body: WireBody::Command(WireCommand {
+                command_id: id,
+                kind: 1,
+                arg: big_arg.clone(),
+            }),
+        });
+    }
+    assert_eq!(
+        buf.out_of_contract(),
+        100,
+        "every inbound COMMAND is rejected and counted"
+    );
+    assert_eq!(
+        buf.control_len(),
+        0,
+        "no inbound COMMAND consumes the ACK/RETIRE verdict lane"
+    );
+    assert_eq!(
+        buf.field_bytes(),
+        0,
+        "an inbound COMMAND flood retains ZERO bytes — the lane holds only zero-payload verdicts"
+    );
+    assert!(
+        buf.control_overflow().is_none(),
+        "out-of-contract rejection is not a fail-closed verdict overflow"
+    );
+    assert_eq!(buf.len(), 0, "nothing is queued");
 }
 
 /// Mutation guard: control admitted up to EXACTLY the lane cap is never lost and never latches a
@@ -781,6 +833,84 @@ fn a_field_larger_than_the_whole_budget_is_refused_without_evicting_others() {
 }
 
 #[test]
+fn an_oversized_same_source_replacement_is_refused_not_retained() {
+    // Gate B/B1 — the replacement (coalescing) path must honour the SAME hard byte cap the append
+    // path does. The plan's exact counterexample: field_byte_cap = 8 bytes, A@seq1 = 1 f64 (8 B),
+    // then A@seq2 = 2 f64 (16 B). A@seq2 is the same source at the queue back, so it takes the
+    // coalescing path — which, before the fix, swapped it in with no size guard, leaving
+    // field_bytes = 16 > 8 with field_count = 1, so enforce_field_byte_cap (which never evicts the
+    // sole snapshot) could not restore the budget. RED before the fix: the cap is breached.
+    let cap = 8; // one f64
+    let mut buf = CoalescingBuffer::with_byte_budget(1, 16, cap);
+    buf.offer(sized_field_msg(0xA, 1, 1)); // 8 B — admitted
+    assert_eq!(buf.field_bytes(), 8);
+    buf.offer(sized_field_msg(0xA, 2, 2)); // 16 B — same source, newer: the replacement path
+
+    assert!(
+        buf.field_bytes() <= cap,
+        "an oversized same-source replacement must not breach the byte cap: {} > {cap}",
+        buf.field_bytes()
+    );
+    assert!(
+        buf.bytes_high_water() <= cap,
+        "high-water must also stay within the cap"
+    );
+    // The refusal preserves the prior VALID (staler) snapshot rather than dropping to nothing —
+    // FIELD snapshots are expendable, and a staler valid observation beats a budget breach.
+    let mut seen: Vec<(u64, u64)> = Vec::new();
+    buf.drain_into(&mut |m| seen.push((m.source, m.cursor.sequence)));
+    assert_eq!(
+        seen,
+        vec![(0xA, 1)],
+        "the prior valid snapshot (seq 1) is kept; the oversized seq 2 is refused"
+    );
+    assert_eq!(
+        buf.fields_dropped(),
+        1,
+        "the refused oversized replacement is counted as a drop, not a coalesce"
+    );
+    assert_eq!(
+        buf.coalesced(),
+        0,
+        "a refused replacement is NOT a coalesce"
+    );
+}
+
+#[test]
+fn a_within_cap_replacement_grows_then_shrinks_retained_bytes_exactly() {
+    // Control for B1: a replacement that stays within the byte cap still coalesces correctly —
+    // growing to the newcomer's bytes and shrinking back, never retaining the stale snapshot's
+    // memory. This is the behaviour the oversized-refusal guard must NOT regress.
+    let cap = 64 * 1024; // 64 KiB
+    let mut buf = CoalescingBuffer::with_byte_budget(1, 16, cap);
+    buf.offer(sized_field_msg(7, 1, 1_024)); // 8 KiB
+    assert_eq!(buf.field_bytes(), 1_024 * 8);
+    buf.offer(sized_field_msg(7, 2, 4_096)); // 32 KiB — grows, within cap
+    assert_eq!(
+        buf.field_bytes(),
+        4_096 * 8,
+        "a within-cap replacement retains ONLY the newcomer's bytes (grow)"
+    );
+    buf.offer(sized_field_msg(7, 3, 512)); // 4 KiB — shrinks, no stale memory retained
+    assert_eq!(
+        buf.field_bytes(),
+        512 * 8,
+        "a smaller replacement reclaims the stale bytes (shrink), retaining no stale memory"
+    );
+    assert_eq!(
+        buf.field_len(),
+        1,
+        "the run stays collapsed to one snapshot"
+    );
+    assert!(buf.field_bytes() <= cap);
+    assert_eq!(
+        buf.fields_dropped(),
+        0,
+        "within-cap replacements drop nothing"
+    );
+}
+
+#[test]
 fn byte_pressure_evicts_fields_but_never_a_control_verdict() {
     // Under byte pressure the buffer evicts expendable FIELD snapshots, but an interleaved ACK
     // (a non-expendable verdict) must survive the eviction — control is never dropped to free bytes.
@@ -804,6 +934,168 @@ fn byte_pressure_evicts_fields_but_never_a_control_verdict() {
     assert_eq!(
         acks, 1,
         "the interleaved ACK verdict must survive field eviction"
+    );
+}
+
+// ---- Gate B/B3: hostile per-source chronology — where stale rejection belongs ----------
+//
+// Decision (evidenced by the two tests below): per-source stale rejection is the INBOX's job,
+// not the queue's. The queue is a bounded, latest-wins COALESCING buffer whose contract is to
+// preserve message ORDER across control messages (see
+// `coalescing_never_reorders_or_collapses_fields_across_a_control_message`); making it reject or
+// globally-coalesce per source would both violate that ordering contract and require unbounded
+// per-source cursor memory (it discards evicted cursors). `FieldInbox` is the per-source
+// authority: it keeps the latest `(epoch, sequence)` per source durably and drops anything not
+// strictly newer. So chronology is enforced at the inbox; the queue only bounds delivery.
+
+/// For a CONFORMANT (per-source monotonic) interleaved stream under capacity pressure, the queue
+/// never regresses per-source chronology: front-first eviction removes the oldest-INSERTED field
+/// first, which for a monotonic source is also its lowest sequence, so the snapshot retained for
+/// each source is always its NEWEST — never a staler one resurrected over a fresher one.
+#[test]
+fn the_queue_keeps_each_sources_newest_under_pressure_for_a_conformant_stream() {
+    let mut buf = CoalescingBuffer::with_caps(2, 16); // only two field slots: eviction is forced
+    buf.offer(field_msg(0xA, 0, 1));
+    buf.offer(field_msg(0xB, 0, 1));
+    buf.offer(field_msg(0xA, 0, 2)); // back is B: no coalesce; evicts oldest field (A@1), keeps A@2
+    buf.offer(field_msg(0xB, 0, 2)); // back is A: no coalesce; evicts oldest field (B@1), keeps B@2
+
+    let mut latest: std::collections::BTreeMap<u64, u64> = std::collections::BTreeMap::new();
+    buf.drain_into(&mut |m| {
+        // A conformant producer must never see an OLDER sequence overwrite a newer one here.
+        let e = latest.entry(m.source).or_insert(0);
+        assert!(
+            m.cursor.sequence >= *e,
+            "per-source chronology regressed in the queue: {} after {}",
+            m.cursor.sequence,
+            *e
+        );
+        *e = m.cursor.sequence;
+    });
+    assert_eq!(
+        latest.get(&0xA),
+        Some(&2),
+        "source A's retained snapshot is its newest (seq 2)"
+    );
+    assert_eq!(
+        latest.get(&0xB),
+        Some(&2),
+        "source B's retained snapshot is its newest (seq 2)"
+    );
+    assert_eq!(
+        buf.fields_dropped(),
+        2,
+        "two stale snapshots evicted under the 2-slot cap"
+    );
+}
+
+/// The plan's hostile trace `A@seq10, B@seq1, A@seq5` — a per-source chronology VIOLATION (source
+/// A's sequence went backwards within one epoch). With a generous queue (no eviction) both A
+/// snapshots reach the inbox; the inbox, the authoritative per-source gate, keeps A@10 and drops
+/// A@5 as Stale. This is why chronology rejection lives at the inbox: the queue forwarded an
+/// out-of-order same-source pair (A@5 could not coalesce — B broke the run), and the inbox caught it.
+#[test]
+fn per_source_stale_rejection_is_enforced_at_the_inbox_not_the_queue() {
+    let mut buf = CoalescingBuffer::with_caps(16, 16); // generous: no eviction, both A frames survive
+    buf.offer(field_msg(0xA, 0, 10));
+    buf.offer(field_msg(0xB, 0, 1));
+    buf.offer(field_msg(0xA, 0, 5)); // back is B: cannot coalesce onto A@10 — forwarded as-is
+
+    // The queue preserves ORDER (its only chronology duty): A@10, B@1, A@5.
+    let mut drained: Vec<(u64, u64)> = Vec::new();
+    buf.drain_into(&mut |m| drained.push((m.source, m.cursor.sequence)));
+    assert_eq!(
+        drained,
+        [(0xA, 10), (0xB, 1), (0xA, 5)],
+        "queue preserves arrival order"
+    );
+
+    // Replay the drained stream into the inbox — the per-source authority.
+    let mut inbox = FieldInbox::new();
+    let outcomes: Vec<FieldAdmission> = drained
+        .iter()
+        .map(|&(s, q)| inbox.admit(s, SourceCursor::new(0, q), gradient_field(2, 1)))
+        .collect();
+
+    assert!(matches!(outcomes[0], FieldAdmission::Stored), "A@10 stored");
+    assert!(matches!(outcomes[1], FieldAdmission::Stored), "B@1 stored");
+    assert!(
+        matches!(
+            outcomes[2],
+            FieldAdmission::Stale {
+                stored: SourceCursor { sequence: 10, .. },
+                incoming: SourceCursor { sequence: 5, .. }
+            }
+        ),
+        "the out-of-order A@5 is rejected as Stale against the stored A@10: {:?}",
+        outcomes[2]
+    );
+    assert_eq!(
+        inbox.latest_cursor(0xA),
+        Some(SourceCursor::new(0, 10)),
+        "source A's authoritative latest stays at seq 10 — never regressed to the stale seq 5"
+    );
+    assert_eq!(
+        inbox.superseded(),
+        1,
+        "exactly one stale observation was dropped, and counted"
+    );
+}
+
+// ---- Gate B/B4: the retained-field budget is NOT total process memory --------------------
+//
+// The queue's `field_byte_cap` bounds ONE quantity: retained FIELD payload inside the shared
+// buffer. That is deliberately not equated with total process high-water, which additionally
+// holds (not counted here): the decoder's partial-frame buffer, the reader's per-read decoded
+// batch, the UI drain batch, the inbox's retained per-source observations, rendered surfaces, and
+// the Python process's own memory. This test proves the queue budget holds under a mixed flood
+// AND that the inbox is a SEPARATE, independently-bounded owner — so neither budget hides the
+// other. (Process RSS is reported as a reasoned envelope in the PR, not asserted here: it is
+// runner-dependent and not reliably measurable in a unit test.)
+
+#[test]
+fn the_field_byte_budget_bounds_retention_and_the_inbox_is_a_separate_owner() {
+    let cap = 512 * 1024; // 512 KiB retained-field budget
+    let mut buf = CoalescingBuffer::with_byte_budget(4096, 16, cap);
+    // A mixed flood: many large distinct-source fields, interleaved verdicts, and out-of-contract
+    // inbound commands (rejected, so they add nothing to either budget).
+    for s in 0..50u64 {
+        buf.offer(sized_field_msg(s, 1, 16_384)); // 128 KiB each
+        if s % 5 == 0 {
+            buf.offer(ack_msg(s, 0, 1, s)); // a verdict interleaved
+        }
+    }
+    assert!(
+        buf.field_bytes() <= cap,
+        "retained field bytes exceed the budget"
+    );
+    assert!(
+        buf.bytes_high_water() <= cap,
+        "field high-water exceeds the budget"
+    );
+
+    // Drain into the inbox: its retention is bounded by SOURCE COUNT, a different budget entirely.
+    let mut inbox = FieldInbox::with_capacity(gibson::wire::InboxCapacity::new(64));
+    let mut acks = 0u64;
+    buf.drain_into(&mut |m| match m.body {
+        WireBody::Field(f) => {
+            inbox.admit(m.source, m.cursor, f);
+        }
+        WireBody::Ack(_) => acks += 1,
+        _ => {}
+    });
+    // The two budgets are distinct and both held: the queue bounded bytes; the inbox bounds
+    // sources (<= its capacity), independent of how many bytes the queue ever retained.
+    let distinct_sources = (0..50u64)
+        .filter(|s| inbox.latest_cursor(*s).is_some())
+        .count();
+    assert!(
+        distinct_sources <= 64,
+        "inbox retention is bounded by its own source cap, not the byte budget"
+    );
+    assert!(
+        acks > 0,
+        "interleaved verdicts survived the field flood (control is never byte-evicted)"
     );
 }
 
