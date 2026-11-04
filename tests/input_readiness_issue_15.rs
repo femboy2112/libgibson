@@ -1,25 +1,31 @@
-//! Isolated reproducer for issue #15 — coincident resize/key input readiness.
+//! Behavioral MODEL / fixture for issue #15 — coincident resize/key input readiness.
 //!
-//! **This is a reproducer, not a fix.** The defect is upstream in crossterm (PR #1128, unmerged as
-//! of 2026-11-03): when a key arrives COINCIDENT with a resize, crossterm consumes the shared read
-//! edge for the resize and leaves the key byte buffered; a subsequent `event::poll(ZERO)` then
-//! reports "nothing" even though a key is waiting, and the byte is surfaced only when the NEXT input
-//! edge arrives. So a lone key pressed at the instant of a resize is **stranded until the user
-//! presses something else.** LibGibson's real-tty poll loop (`src/input.rs::poll_event_unix_tty`)
-//! paces around it but cannot un-strand a byte crossterm will not hand over.
+//! **This is a behavioral model, not a fix and not a backend measurement.** The defect is upstream
+//! in crossterm (PR #1128, unmerged as of 2026-11-03): when a key arrives COINCIDENT with a resize,
+//! crossterm consumes the shared read edge for the resize and leaves the key byte buffered; a
+//! subsequent `event::poll(ZERO)` then reports "nothing" even though a key is waiting, and the byte
+//! is surfaced only when the NEXT input edge arrives. So a lone key pressed at the instant of a
+//! resize is **stranded until the user presses something else.** LibGibson's real-tty poll loop
+//! (`src/input.rs::poll_event_unix_tty`) paces around it but cannot un-strand a byte crossterm will
+//! not hand over.
 //!
 //! The acceptance criterion for closing #15 is specific and is encoded here as an executable
 //! assertion: **the lone queued key must be delivered WITHOUT requiring another input event.** A
-//! workaround where some *later* event shakes the key loose does NOT satisfy it — so this reproducer
-//! deliberately refuses to let "another event eventually surfaced the key" (or generic PTY success)
-//! masquerade as a fix.
+//! workaround where some *later* event shakes the key loose does NOT satisfy it — so this fixture
+//! deliberately refuses to let "another event eventually surfaced the key" (or a generic PTY
+//! walkthrough that merely boots) masquerade as a fix.
 //!
-//! The model is deterministic and terminal-free: [`StrandingSource`] implements the public
-//! [`gibson::EventSource`] seam and reproduces crossterm's stranding behaviour exactly, with a
-//! `fixed` flag standing in for "crossterm #1128 applied". The investigation is kept isolated to
-//! this file; it touches no `src`, claims no fix, and will flip which arm is "known-failing" the day
-//! the upstream fix lands — at which point `issue_15_is_still_reproducible_*` must be updated and #15
-//! closed.
+//! **Scope and limits (RXII A3).** [`StrandingSource`] implements the public
+//! [`gibson::EventSource`] seam and encodes the stranding we BELIEVE crossterm exhibits, with a
+//! `fixed` flag standing in for "crossterm #1128 applied". It is deterministic and terminal-free —
+//! which is exactly why it is a MODEL and **not** evidence about the real backend: it does not
+//! exercise crossterm's actual event readiness over a real PTY, so a green `the_fix_delivers_*` here
+//! is a statement about this model, not a measurement that any real crossterm version delivers the
+//! key. Accepting or refuting a backend fix still requires a real PTY/readiness experiment against
+//! pinned vs. patched crossterm (RXII Gate E3). This file touches no `src`, claims no fix, and will
+//! flip which arm is "known-failing" only when a backend experiment confirms the upstream fix — at
+//! which point `issue_15_is_still_reproducible_*` is updated and #15 closed on that evidence, not on
+//! this model.
 
 use std::collections::VecDeque;
 use std::io;

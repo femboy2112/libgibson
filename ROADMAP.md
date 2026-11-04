@@ -50,10 +50,13 @@ shortcomings. Includes the unmerged Wave-3 scene editor (#176 / #177).
 ### R6.3 — Cross-language interaction contracts
 Expand Python / C / Go parity deliberately, only after a narrow independently verified vertical
 slice. Preserve ABI v1 semantics.
-- **Draft / integration:** the C ABI v1 grown **54 → 59 additively** (headless context, ANSI
+- **Draft / integration:** the C ABI v1 grown **52 → 59 additively** (headless context, ANSI
   readback, color-depth downgrade, styled cell-grid + bulk readback, full grapheme) with a frozen
   `gibson_cell_t` layout and **no** ABI-version bump (Rsn VII **Gate K**; Rsn IX **Gate F4/F5**,
-  PR #237); Go wire conformance (#206).
+  PR #237); Go wire conformance (#206). The counts are the committed `abi/gibson-abi-v1.symbols`
+  baseline (`^gibson_` lines): **52 on `main`, 59 on the dev head** — and the `symbolic` CI check
+  enforces the built `.so` against that file, so the number is the verified export surface, not a
+  prose count.
 - **Open:** one genuinely **independent installed-SDK** forcing consumer (C or Python) built from
   staged artifacts **outside** the checkout; a C/Py vertical slice compared to a Rust trace; a
   C++/Go capability gap list; and the smallest public raster/input/resize/clock contract a future
@@ -83,9 +86,12 @@ claims from bytes written to a PTY.
 ### R6.6 — Long-standing terminal issues
 - **Open / blocked upstream:** issue **#15** — coincident resize/key input readiness. Upstream
   crossterm **#1128** is unmerged; the acceptance criterion is delivery of the lone queued key
-  **without** requiring another input event. Needs an isolated reproducer, kept independent of the
-  already-shipped terminal-hangup identity-latch fix; generic PTY success does **not** close it
-  (Rsn XI **Gate G**).
+  **without** requiring another input event. A deterministic behavioral **model/fixture**
+  (`tests/input_readiness_issue_15.rs`, Rsn XI **Gate G**) encodes that acceptance criterion and
+  refuses "a later event shook it loose" / generic PTY success as a pass — but it is a MODEL, not a
+  backend measurement. Closing #15 still **needs a real PTY/readiness experiment** against pinned
+  vs. patched crossterm (RXII **Gate E3**); the fixture is kept independent of the already-shipped
+  terminal-hangup identity-latch fix.
 
 ### Current draft stack (nothing merged — owner holds every merge/tag/release)
 The Renaissance X/XI increments are a linear draft stack on top of the certified convergence head:
