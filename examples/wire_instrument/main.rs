@@ -303,6 +303,9 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
     // The DISPLAYED source. It is never bound to a stranger: it becomes `Some(args.source)` only
     // when a valid observation from the configured source actually arrives (A1).
     let mut src: Option<u64> = None;
+    // The highest PRODUCER observation epoch seen from the configured source (its own epoch space,
+    // distinct from the presenter's command-stamp epoch). A strictly higher epoch is a restart.
+    let mut observed_epoch: Option<u32> = None;
     let mut probe: (usize, usize) = (0, 0);
     let mut ppc: u16 = 1;
     let mut pending_amp: f64 = 2.0;
@@ -322,33 +325,41 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
         let mut batch: Vec<WireMessage> = Vec::new();
         let outcome = owner.reader().drain(&mut |m| batch.push(m));
         for msg in batch {
-            // Source identity has ONE authority: the CONFIGURED command destination
-            // `(args.source, args.epoch)` — NOT whichever source speaks first (A1). Binding the
-            // display to the first-observed source was a defect: a custom producer could publish a
-            // stranger B before the configured source A ever appeared, and the display would then
-            // show B while every command stayed addressed to A — two authorities over identity,
-            // disagreeing. Classify every message against the single configured destination:
+            // Source identity has ONE authority: the CONFIGURED source `args.source` — NOT whichever
+            // source speaks first (A1). Binding the display to the first-observed source was a
+            // defect: a custom producer could publish a stranger B before the configured source A
+            // ever appeared, and the display would then show B while every command stayed addressed
+            // to A — two authorities over identity, disagreeing. Classify against the configured
+            // source and the producer epoch observed so far:
             //   * Foreign  — a different source: out of contract for this single-source instrument.
             //     Refuse (never admit / display / resolve), count, surface. A command is never
             //     redirected to it; the display is never reassigned to a stranger.
-            //   * Restart  — the configured source at a different epoch (producer restart): its
-            //     field is still A's latest, so it is shown (not fatal), but it is a NEW command
-            //     session — an ack under it will not resolve a prior-session command (see
-            //     `resolve_in_session`), and commands are not re-targeted to it.
-            //   * InSession — the configured session: admit / display / resolve normally.
-            match input::classify_source(args.source, args.epoch, msg.source, msg.cursor.epoch) {
+            //   * Restart  — the configured source at a strictly higher producer epoch than seen so
+            //     far (a restart): its field is still A's latest, so it is shown (not fatal) and
+            //     surfaced as a restart. Acks still correlate by `command_id`, not epoch, so
+            //     pre-restart commands may simply remain outstanding — they are never falsely
+            //     resolved, and the restart is not fatal.
+            //   * InSession — the configured source at the displayed epoch: admit / display /
+            //     resolve normally.
+            match input::classify_source(args.source, observed_epoch, msg.source, msg.cursor.epoch)
+            {
                 SourceVerdict::Foreign => {
                     foreign_source += 1;
                     continue;
                 }
                 SourceVerdict::Restart => {
                     status = format!(
-                        "source {} restarted (epoch {} != session {}) - prior pending edits unresolvable",
-                        msg.source, msg.cursor.epoch, args.epoch
+                        "source {} restarted (epoch {} -> {}) - prior pending edits may be unresolvable",
+                        msg.source,
+                        observed_epoch.unwrap_or(msg.cursor.epoch),
+                        msg.cursor.epoch
                     );
                 }
                 SourceVerdict::InSession => {}
             }
+            // Track the highest producer epoch observed for the configured source.
+            observed_epoch =
+                Some(observed_epoch.map_or(msg.cursor.epoch, |e| e.max(msg.cursor.epoch)));
             match msg.body {
                 WireBody::Field(f) => {
                     inbox.admit(msg.source, msg.cursor, f);
@@ -360,12 +371,10 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
                     inbox.retire(msg.source);
                     status = format!("source {} retired", msg.source);
                 }
-                WireBody::Ack(ack) => {
-                    match ch.resolve_in_session(msg.source, msg.cursor.epoch, ack) {
-                        Ok(state) => status = format!("ack: edit resolved → {state:?}"),
-                        Err(e) => status = format!("ack ignored ({e:?})"),
-                    }
-                }
+                WireBody::Ack(ack) => match ch.resolve(msg.source, ack) {
+                    Ok(state) => status = format!("ack: edit resolved → {state:?}"),
+                    Err(e) => status = format!("ack ignored ({e:?})"),
+                },
                 WireBody::Command(_) => {}
             }
         }

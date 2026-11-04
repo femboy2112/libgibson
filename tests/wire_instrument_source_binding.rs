@@ -21,10 +21,14 @@
 //! `classify_source` is that authority; `drive` mirrors the fixed loop's drain-gating so the
 //! observable inbox / channel state is exactly what the loop would display.
 //!
-//! Also tested: the EPOCH boundary. A field from the configured source at a different epoch is a
-//! producer restart — a NEW command session — not a foreign source and not fatal: its field is
-//! still shown (latest-wins), but an ack under it must not resolve a command issued in the prior
-//! session (a restart resets command ids, which would otherwise collide).
+//! Epoch is a SEPARATE, narrower concern, and the model here is deliberately NOT a command gate.
+//! The producer's observation epoch (its run/restart generation) is a different space from the
+//! presenter's command-stamp epoch; the reference producer legitimately acks at its own epoch,
+//! which may differ from the channel's. So acks correlate by `command_id` (presenter-monotonic,
+//! never reset by a restart), NOT by epoch — gating acks on epoch would reject valid verdicts. A
+//! field from the configured source at a STRICTLY HIGHER epoch than observed so far is a producer
+//! restart: still shown (`FieldInbox` latest-wins), surfaced, not fatal; pre-restart commands may
+//! simply remain outstanding.
 
 #[path = "../examples/wire_instrument/channel.rs"]
 mod channel;
@@ -76,11 +80,11 @@ fn retire_msg(source: u64, epoch: u32, seq: u64) -> WireMessage {
 }
 
 /// Mirror the interactive loop's drain-gating UNDER THE FIX: classify every message against the
-/// configured destination `(dest, session_epoch)` — never the first source seen — then admit the
-/// field / resolve the ack. Returns `(visible_source, foreign_count, restart_count)`.
+/// configured source `dest` and the producer epoch observed so far — never the first source seen —
+/// then admit the field / resolve the ack (by `command_id`, epoch-blind). Returns
+/// `(visible_source, foreign_count, restart_count)`.
 fn drive(
     dest: u64,
-    session_epoch: u32,
     msgs: Vec<WireMessage>,
     inbox: &mut FieldInbox,
     ch: &mut CommandChannel,
@@ -88,8 +92,9 @@ fn drive(
     let mut visible: Option<u64> = None;
     let mut foreign = 0u64;
     let mut restarts = 0u64;
+    let mut observed_epoch: Option<u32> = None;
     for msg in msgs {
-        match classify_source(dest, session_epoch, msg.source, msg.cursor.epoch) {
+        match classify_source(dest, observed_epoch, msg.source, msg.cursor.epoch) {
             SourceVerdict::Foreign => {
                 foreign += 1;
                 continue;
@@ -97,6 +102,7 @@ fn drive(
             SourceVerdict::Restart => restarts += 1,
             SourceVerdict::InSession => {}
         }
+        observed_epoch = Some(observed_epoch.map_or(msg.cursor.epoch, |e| e.max(msg.cursor.epoch)));
         match msg.body {
             WireBody::Field(f) => {
                 inbox.admit(msg.source, msg.cursor, f);
@@ -107,7 +113,7 @@ fn drive(
                 inbox.retire(msg.source);
             }
             WireBody::Ack(a) => {
-                let _ = ch.resolve_in_session(msg.source, msg.cursor.epoch, a);
+                let _ = ch.resolve(msg.source, a);
             }
             WireBody::Command(_) => {}
         }
@@ -152,7 +158,6 @@ fn the_configured_destination_is_bound_regardless_of_who_publishes_first() {
 
     let (visible, foreign, restarts) = drive(
         A,
-        1,
         vec![
             field_msg(B, 1, 1), // B publishes first -> must NOT bind
             field_msg(A, 1, 1), // A finally appears -> becomes visible
@@ -195,7 +200,6 @@ fn an_early_foreign_ack_or_retire_cannot_bind_the_display() {
 
     let (visible, foreign, _) = drive(
         A,
-        1,
         vec![
             ack_msg(B, 1, 1, 1, AckStatus::Acknowledged), // foreign ack first
             retire_msg(B, 1, 2),                          // foreign retire
@@ -215,25 +219,35 @@ fn an_early_foreign_ack_or_retire_cannot_bind_the_display() {
     assert_eq!(ch.outstanding(), 0, "a foreign ack resolves nothing");
 }
 
-/// The configured source at a NEW epoch is a producer restart — classified `Restart`, not
-/// `Foreign`, and not fatal: its field is still shown (latest-wins). The truth table pins the
-/// classifier directly.
+/// The configured source at a strictly higher producer epoch than observed is a restart —
+/// classified `Restart`, not `Foreign`, and not fatal: its field is still shown (latest-wins). The
+/// truth table pins the classifier directly; epoch is the producer's own space.
 #[test]
-fn the_configured_source_at_a_new_epoch_is_a_restart_not_a_foreign_source() {
+fn the_configured_source_at_a_higher_epoch_is_a_restart_not_a_foreign_source() {
     assert_eq!(
-        classify_source(7, 1, 7, 1),
+        classify_source(7, None, 7, 1),
         SourceVerdict::InSession,
-        "same source, same epoch"
+        "first observation, any epoch"
     );
     assert_eq!(
-        classify_source(7, 1, 7, 2),
+        classify_source(7, Some(1), 7, 2),
         SourceVerdict::Restart,
-        "same source, new epoch = producer restart"
+        "strictly higher producer epoch = restart"
     );
     assert_eq!(
-        classify_source(7, 1, 9, 1),
+        classify_source(7, Some(2), 7, 2),
+        SourceVerdict::InSession,
+        "same epoch = in session"
+    );
+    assert_eq!(
+        classify_source(7, Some(2), 7, 1),
+        SourceVerdict::InSession,
+        "a stale lower epoch stays in session; the inbox drops it by latest-wins"
+    );
+    assert_eq!(
+        classify_source(7, Some(1), 9, 5),
         SourceVerdict::Foreign,
-        "different source = foreign, regardless of epoch"
+        "different source = foreign at any epoch"
     );
 
     const A: u64 = 7;
@@ -241,8 +255,7 @@ fn the_configured_source_at_a_new_epoch_is_a_restart_not_a_foreign_source() {
     let mut ch = CommandChannel::new(A, 1);
     let (visible, foreign, restarts) = drive(
         A,
-        1,
-        vec![field_msg(A, 2, 1)], // A restarted at epoch 2
+        vec![field_msg(A, 1, 1), field_msg(A, 2, 2)], // A, then A restarted at a higher epoch
         &mut inbox,
         &mut ch,
     );
@@ -250,7 +263,10 @@ fn the_configured_source_at_a_new_epoch_is_a_restart_not_a_foreign_source() {
         foreign, 0,
         "a restart is NOT foreign — it is still source A"
     );
-    assert_eq!(restarts, 1, "the restart is recognized");
+    assert_eq!(
+        restarts, 1,
+        "the higher-epoch field is recognized as a restart"
+    );
     assert_eq!(
         visible,
         Some(A),
@@ -259,64 +275,40 @@ fn the_configured_source_at_a_new_epoch_is_a_restart_not_a_foreign_source() {
     assert!(inbox.latest(A).is_some());
 }
 
-/// An ack from a restarted session (different epoch) must NOT resolve a command issued in the prior
-/// session — even when the `command_id` collides, which it will, because a restart resets ids.
-/// Positive control: the same ack IN SESSION resolves it, so the guard is not vacuous.
+/// Acks correlate by `command_id`, NOT by epoch. The reference producer acks on a frame at its OWN
+/// observation epoch (0 here), which differs from the channel's command-stamp epoch (1); the ack
+/// still resolves the command. This is a regression guard against re-introducing an epoch ack-gate
+/// (which broke the real PTY walkthrough).
 #[test]
-fn an_ack_from_a_restarted_session_cannot_resolve_a_prior_session_command() {
+fn an_ack_at_the_producers_own_epoch_still_resolves_the_command() {
     const A: u64 = 7;
-    let mut ch = CommandChannel::new(A, 1);
-    let mut sink: Vec<u8> = Vec::new();
-
+    let mut inbox = FieldInbox::new();
+    let mut ch = CommandChannel::new(A, 1); // commands stamped at epoch 1
     let id = ch
         .issue_tracked(KIND_SET_AMPLITUDE, 3.0f64.to_le_bytes().to_vec())
         .expect("issue");
+    let mut sink: Vec<u8> = Vec::new();
     ch.deliver_next(&mut sink).expect("deliver");
     assert_eq!(ch.outstanding(), 1, "the delivered edit awaits its verdict");
 
-    // The producer restarted (epoch 2); its ack re-uses command id `id`.
-    let cross = ch.resolve_in_session(
+    let (_visible, foreign, _restarts) = drive(
         A,
-        2,
-        WireAck {
-            command_id: id,
-            status: AckStatus::Acknowledged,
-        },
+        vec![ack_msg(A, 0, 1, id, AckStatus::Acknowledged)], // ack on the producer's epoch 0
+        &mut inbox,
+        &mut ch,
     );
-    assert!(
-        matches!(
-            cross,
-            Err(ResolveError::WrongEpoch {
-                expected: 1,
-                got: 2
-            })
-        ),
-        "cross-epoch ack must be refused as a mismatched command session: {cross:?}"
+    assert_eq!(
+        foreign, 0,
+        "the configured source is in contract at any epoch"
     );
     assert_eq!(
         ch.outstanding(),
-        1,
-        "the prior-session command stays outstanding — a restarted session cannot resolve it"
+        0,
+        "the ack resolves the command by id, despite the differing frame epoch"
     );
-
-    // POSITIVE CONTROL: the same ack IN SESSION (epoch 1) resolves it.
-    let same = ch.resolve_in_session(
-        A,
-        1,
-        WireAck {
-            command_id: id,
-            status: AckStatus::Acknowledged,
-        },
-    );
-    assert!(
-        same.is_ok(),
-        "an in-session ack resolves the command: {same:?}"
-    );
-    assert_eq!(ch.outstanding(), 0, "now resolved");
 }
 
-/// A wrong-source ack is refused in any epoch (source is checked before epoch), and the command it
-/// would have resolved stays outstanding.
+/// A wrong-source ack is refused, and the command it would have resolved stays outstanding.
 #[test]
 fn a_wrong_source_ack_is_refused_and_leaves_the_command_outstanding() {
     const A: u64 = 7;
@@ -327,9 +319,8 @@ fn a_wrong_source_ack_is_refused_and_leaves_the_command_outstanding() {
         .expect("issue");
     ch.deliver_next(&mut sink).expect("deliver");
 
-    let wrong = ch.resolve_in_session(
+    let wrong = ch.resolve(
         9,
-        1,
         WireAck {
             command_id: id,
             status: AckStatus::Acknowledged,

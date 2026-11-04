@@ -60,14 +60,16 @@ fn retire_msg(source: u64, seq: u64) -> WireMessage {
 fn drive(dest: u64, msgs: Vec<WireMessage>, inbox: &mut FieldInbox) -> (Option<u64>, u64) {
     let mut visible: Option<u64> = None;
     let mut foreign = 0u64;
+    let mut observed_epoch: Option<u32> = None;
     for msg in msgs {
-        match classify_source(dest, 0, msg.source, msg.cursor.epoch) {
+        match classify_source(dest, observed_epoch, msg.source, msg.cursor.epoch) {
             SourceVerdict::Foreign => {
                 foreign += 1;
                 continue;
             }
             SourceVerdict::Restart | SourceVerdict::InSession => {}
         }
+        observed_epoch = Some(observed_epoch.map_or(msg.cursor.epoch, |e| e.max(msg.cursor.epoch)));
         match msg.body {
             WireBody::Field(f) => {
                 inbox.admit(msg.source, msg.cursor, f);

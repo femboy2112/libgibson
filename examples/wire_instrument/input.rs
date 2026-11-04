@@ -34,37 +34,45 @@ pub fn source_in_contract(dest: u64, source: u64) -> bool {
     source == dest
 }
 
-/// The command-session identity of an inbound message, relative to the instrument's CONFIGURED
-/// destination `(dest, session_epoch)` — the source/epoch its `CommandChannel` addresses (A1).
+/// How an inbound message relates to the instrument's CONFIGURED source `dest` and the producer
+/// epoch observed so far (A1).
+///
+/// `msg_epoch` and `observed_epoch` live in the PRODUCER's epoch space (its run/restart
+/// generation), which is distinct from the presenter's command-stamp epoch. Source identity is the
+/// authority here; epoch is only a restart *signal*, never a command gate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceVerdict {
-    /// Same source, same epoch: the configured command session. Admit / display / resolve.
+    /// The configured source at the epoch already being displayed (or the very first observation,
+    /// or a stale lower epoch the inbox will drop): admit / display / resolve normally.
     InSession,
-    /// The configured source at a DIFFERENT epoch — a producer restart. The field data is still
-    /// this source's latest (the `FieldInbox` applies `(epoch, sequence)` latest-wins, so a restart
-    /// is shown, NOT fatal), but it is a NEW command session: an ack under it must not resolve a
-    /// command issued in the prior session, and commands are not silently re-targeted to it.
+    /// The configured source at a STRICTLY HIGHER epoch than observed so far — a producer restart.
+    /// The field is still this source's latest (`FieldInbox` `(epoch, sequence)` latest-wins shows
+    /// it, so a restart is NOT fatal). It is surfaced as a restart, but acks still correlate by
+    /// `command_id` (not epoch), and pre-restart commands may simply remain outstanding.
     Restart,
     /// A different source entirely: out of contract for this single-source instrument. Refuse —
     /// never admit, never display, never resolve a command — and count it.
     Foreign,
 }
 
-/// Classify an inbound message against the configured destination `(dest, session_epoch)`.
+/// Classify an inbound message against the configured source `dest` and the highest producer epoch
+/// observed so far (`observed_epoch`, `None` before the first in-contract observation).
 ///
 /// This is the SINGLE authority over source identity, shared by the interactive loop and its tests.
 /// The display binds to `dest`, never to the first source observed — so the displayed source can
 /// never disagree with the command destination (the A1 defect: a producer publishing source B first
-/// made the display show B while every command stayed addressed to the configured source A).
+/// made the display show B while every command stayed addressed to the configured source A). The
+/// epoch dimension only distinguishes a producer restart (strictly higher than `observed_epoch`)
+/// for display/status; it never gates command resolution.
 pub fn classify_source(
     dest: u64,
-    session_epoch: u32,
+    observed_epoch: Option<u32>,
     msg_source: u64,
     msg_epoch: u32,
 ) -> SourceVerdict {
     if !source_in_contract(dest, msg_source) {
         SourceVerdict::Foreign
-    } else if msg_epoch != session_epoch {
+    } else if matches!(observed_epoch, Some(seen) if msg_epoch > seen) {
         SourceVerdict::Restart
     } else {
         SourceVerdict::InSession
