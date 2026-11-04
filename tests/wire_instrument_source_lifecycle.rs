@@ -1,18 +1,22 @@
-//! Gate B3 (Renaissance XI): the single-source contract keeps source identity truthful.
+//! Gate B3 (Renaissance XI) / A1 (Renaissance XII): the single-source contract keeps source
+//! identity truthful.
 //!
-//! `interactive_loop()` binds to the FIRST source it observes (`src.get_or_insert`) and its
-//! `CommandChannel` targets that same source. The audit asked what happens when a second source B
-//! publishes while A is bound, and when A then retires while B stays live: does the UI keep showing
-//! a retired source, or silently switch to / store B? The `wire_instrument` example is deliberately
-//! a SINGLE-source instrument, so the truthful answer is a refusal — a message from any source
-//! other than the bound one is out of contract: never admitted to the inbox, never displayed, never
-//! resolving a command, and counted. A second source can therefore neither be silently
-//! stored-and-hidden nor silently switched to, and a command is never redirected. When the bound
-//! source retires it is shown as retired; the display is never reassigned to a live stranger.
+//! `interactive_loop()` binds to its CONFIGURED destination `args.source` (the source its
+//! `CommandChannel` addresses) — not to whichever source speaks first (A1). The audit asked what
+//! happens when a second source B publishes while A is the configured source, and when A then
+//! retires while B stays live: does the UI keep showing a retired source, or silently switch to /
+//! store B? The `wire_instrument` example is deliberately a SINGLE-source instrument, so the
+//! truthful answer is a refusal — a message from any source other than the configured one is out of
+//! contract: never admitted to the inbox, never displayed, never resolving a command, and counted.
+//! A second source can therefore neither be silently stored-and-hidden nor silently switched to, and
+//! a command is never redirected. When the configured source retires it is shown as retired; the
+//! display is never reassigned to a live stranger.
 //!
-//! The contract predicate `source_in_contract` is shared with the loop; `drive` mirrors the loop's
-//! drain-gating (bind the first source, refuse the rest) over a `FieldInbox`, so the observable
-//! inbox state is exactly what the loop would display.
+//! The classifier `classify_source` is the single identity authority shared with the loop; `drive`
+//! mirrors the loop's drain-gating (classify against the configured destination, refuse the rest)
+//! over a `FieldInbox`, so the observable inbox state is exactly what the loop would display. (The
+//! configured-destination-vs-first-observed distinction is proven in
+//! `tests/wire_instrument_source_binding.rs`.)
 
 #[path = "../examples/wire_instrument/input.rs"]
 mod input;
@@ -20,7 +24,7 @@ mod input;
 use gibson::field_view::FieldExtent;
 use gibson::shape::Point;
 use gibson::wire::{FieldInbox, SourceCursor, WireBody, WireField, WireMessage};
-use input::source_in_contract;
+use input::{classify_source, source_in_contract, SourceVerdict};
 
 fn field(seq_val: usize) -> WireField {
     let extent = FieldExtent::new(Point::new(0.0, 0.0), 1.0, 1.0, 2, 2).expect("extent");
@@ -48,21 +52,26 @@ fn retire_msg(source: u64, seq: u64) -> WireMessage {
     }
 }
 
-/// Drive the loop's drain-gating over a message sequence: bind to the first source, refuse every
-/// other one (Gate B3, via the shared `source_in_contract`). Returns the bound/displayed source and
-/// the out-of-contract count; the `FieldInbox` ends in exactly the state the loop would display.
-fn drive(msgs: Vec<WireMessage>, inbox: &mut FieldInbox) -> (Option<u64>, u64) {
-    let mut src: Option<u64> = None;
+/// Drive the loop's drain-gating over a message sequence: classify every message against the
+/// CONFIGURED destination `dest` (session epoch 0 here), refuse every foreign one (Gate B3 / A1, via
+/// the shared `classify_source`). Returns the displayed source (`Some(dest)` once a valid
+/// observation arrives) and the out-of-contract count; the `FieldInbox` ends in exactly the state
+/// the loop would display.
+fn drive(dest: u64, msgs: Vec<WireMessage>, inbox: &mut FieldInbox) -> (Option<u64>, u64) {
+    let mut visible: Option<u64> = None;
     let mut foreign = 0u64;
     for msg in msgs {
-        let bound = *src.get_or_insert(msg.source);
-        if !source_in_contract(bound, msg.source) {
-            foreign += 1;
-            continue;
+        match classify_source(dest, 0, msg.source, msg.cursor.epoch) {
+            SourceVerdict::Foreign => {
+                foreign += 1;
+                continue;
+            }
+            SourceVerdict::Restart | SourceVerdict::InSession => {}
         }
         match msg.body {
             WireBody::Field(f) => {
                 inbox.admit(msg.source, msg.cursor, f);
+                visible = Some(dest);
             }
             WireBody::Retire => {
                 inbox.retire(msg.source);
@@ -70,7 +79,7 @@ fn drive(msgs: Vec<WireMessage>, inbox: &mut FieldInbox) -> (Option<u64>, u64) {
             _ => {}
         }
     }
-    (src, foreign)
+    (visible, foreign)
 }
 
 /// The predicate: only the bound source is in contract.
@@ -90,8 +99,9 @@ fn a_second_source_is_refused_and_the_bound_source_retirement_is_truthful() {
     let mut inbox = FieldInbox::new();
 
     let (src, foreign) = drive(
+        A, // the CONFIGURED destination
         vec![
-            field_msg(A, 1),  // A publishes -> the instrument binds to A
+            field_msg(A, 1),  // A publishes -> the configured source, shown
             field_msg(B, 1),  // B publishes -> out of contract, refused
             retire_msg(A, 2), // A retires
             field_msg(B, 2),  // B keeps publishing -> still refused
@@ -102,7 +112,7 @@ fn a_second_source_is_refused_and_the_bound_source_retirement_is_truthful() {
     assert_eq!(
         src,
         Some(A),
-        "the instrument binds to the first source and never switches to a stranger"
+        "the instrument binds to the configured source and never switches to a stranger"
     );
     assert_eq!(
         foreign, 2,
@@ -131,6 +141,7 @@ fn a_conformant_single_source_stream_is_fully_admitted() {
     let mut inbox = FieldInbox::new();
 
     let (src, foreign) = drive(
+        A,
         vec![field_msg(A, 1), field_msg(A, 2), field_msg(A, 3)],
         &mut inbox,
     );

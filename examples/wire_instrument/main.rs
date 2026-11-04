@@ -51,7 +51,7 @@ use gibson::wire::{encode_command, FieldInbox, SourceCursor, WireBody, WireComma
 use gibson::Style;
 
 use channel::CommandChannel;
-use input::InputAction;
+use input::{InputAction, SourceVerdict};
 use transport::{ProducerOwner, Reader};
 
 /// The producer's one command kind: an 8-byte LE f64 target amplitude in [0, 10].
@@ -300,14 +300,16 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
     // the selfcheck leg only). Mirrors the selfcheck exactly: only the local issue->write+flush leg,
     // never the producer ACK (L7/L10).
     let mut telemetry = InstrumentTelemetry::new();
+    // The DISPLAYED source. It is never bound to a stranger: it becomes `Some(args.source)` only
+    // when a valid observation from the configured source actually arrives (A1).
     let mut src: Option<u64> = None;
     let mut probe: (usize, usize) = (0, 0);
     let mut ppc: u16 = 1;
     let mut pending_amp: f64 = 2.0;
     let mut status = String::from("connected — streaming…");
     let mut disconnected = false;
-    // Gate B3: messages from a source other than the one this instrument bound to are out of
-    // contract (single-source instrument). Counted and surfaced, never silently stored.
+    // Gate B3 / A1: messages from a source other than the CONFIGURED destination (`args.source`)
+    // are out of contract (single-source instrument). Counted and surfaced, never silently stored.
     let mut foreign_source: u64 = 0;
 
     loop {
@@ -320,29 +322,50 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
         let mut batch: Vec<WireMessage> = Vec::new();
         let outcome = owner.reader().drain(&mut |m| batch.push(m));
         for msg in batch {
-            // Bind to the first source observed; that identity is also what `ch` commands (Gate
-            // B3). A message from any OTHER source is out of contract for this single-source
-            // instrument: refuse it (do not admit, do not retire, do not resolve a command),
-            // count it, and surface it — so a second source is neither silently stored-and-hidden
-            // nor silently switched to, and a command is never redirected. A retire of the bound
-            // source is shown as retired below; the display is never reassigned to a stranger.
-            let bound = *src.get_or_insert(msg.source);
-            if !input::source_in_contract(bound, msg.source) {
-                foreign_source += 1;
-                continue;
+            // Source identity has ONE authority: the CONFIGURED command destination
+            // `(args.source, args.epoch)` — NOT whichever source speaks first (A1). Binding the
+            // display to the first-observed source was a defect: a custom producer could publish a
+            // stranger B before the configured source A ever appeared, and the display would then
+            // show B while every command stayed addressed to A — two authorities over identity,
+            // disagreeing. Classify every message against the single configured destination:
+            //   * Foreign  — a different source: out of contract for this single-source instrument.
+            //     Refuse (never admit / display / resolve), count, surface. A command is never
+            //     redirected to it; the display is never reassigned to a stranger.
+            //   * Restart  — the configured source at a different epoch (producer restart): its
+            //     field is still A's latest, so it is shown (not fatal), but it is a NEW command
+            //     session — an ack under it will not resolve a prior-session command (see
+            //     `resolve_in_session`), and commands are not re-targeted to it.
+            //   * InSession — the configured session: admit / display / resolve normally.
+            match input::classify_source(args.source, args.epoch, msg.source, msg.cursor.epoch) {
+                SourceVerdict::Foreign => {
+                    foreign_source += 1;
+                    continue;
+                }
+                SourceVerdict::Restart => {
+                    status = format!(
+                        "source {} restarted (epoch {} != session {}) - prior pending edits unresolvable",
+                        msg.source, msg.cursor.epoch, args.epoch
+                    );
+                }
+                SourceVerdict::InSession => {}
             }
             match msg.body {
                 WireBody::Field(f) => {
                     inbox.admit(msg.source, msg.cursor, f);
+                    // The display becomes visible only once a valid observation from the configured
+                    // source actually arrives — never before, and never bound to a stranger.
+                    src = Some(args.source);
                 }
                 WireBody::Retire => {
                     inbox.retire(msg.source);
                     status = format!("source {} retired", msg.source);
                 }
-                WireBody::Ack(ack) => match ch.resolve(msg.source, ack) {
-                    Ok(state) => status = format!("ack: edit resolved → {state:?}"),
-                    Err(e) => status = format!("ack ignored ({e:?})"),
-                },
+                WireBody::Ack(ack) => {
+                    match ch.resolve_in_session(msg.source, msg.cursor.epoch, ack) {
+                        Ok(state) => status = format!("ack: edit resolved → {state:?}"),
+                        Err(e) => status = format!("ack ignored ({e:?})"),
+                    }
+                }
                 WireBody::Command(_) => {}
             }
         }

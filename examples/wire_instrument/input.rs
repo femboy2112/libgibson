@@ -20,19 +20,55 @@
 
 use gibson::input::KeyCode;
 
-/// Whether a message from `source` is in contract for an instrument BOUND to one source (Gate B3).
+/// Whether `source` matches the instrument's CONFIGURED destination `dest` (Gate B3 / A1).
 ///
-/// The `wire_instrument` example drives exactly ONE producer: it binds to the first source it
-/// observes and its `CommandChannel` targets that same source. A
-/// field / ack / retire from any OTHER source is out of contract — it must be refused (never
-/// admitted to the inbox, never displayed, never resolving a command) and counted by the loop, so a
-/// second
-/// source can neither be silently stored-and-hidden nor silently switched to, and a command for the
-/// bound source is never redirected to another. This is a deliberate single-source contract, not a
-/// multi-source instrument; the refusal is what keeps the single-source identity truthful. When the
-/// bound source retires, it is shown as retired — the display is never reassigned to a live stranger.
-pub fn source_in_contract(bound: u64, source: u64) -> bool {
-    source == bound
+/// The `wire_instrument` example drives exactly ONE producer, chosen by configuration
+/// (`--source`), and its `CommandChannel` addresses that same configured source. A field / ack /
+/// retire from any OTHER source is out of contract — refused (never admitted to the inbox, never
+/// displayed, never resolving a command) and counted by the loop, so a second source can neither be
+/// silently stored-and-hidden nor silently switched to, and a command is never redirected. This is a
+/// deliberate single-source contract; the refusal is what keeps the single-source identity truthful.
+/// When the configured source retires it is shown as retired — the display is never reassigned to a
+/// live stranger.
+pub fn source_in_contract(dest: u64, source: u64) -> bool {
+    source == dest
+}
+
+/// The command-session identity of an inbound message, relative to the instrument's CONFIGURED
+/// destination `(dest, session_epoch)` — the source/epoch its `CommandChannel` addresses (A1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceVerdict {
+    /// Same source, same epoch: the configured command session. Admit / display / resolve.
+    InSession,
+    /// The configured source at a DIFFERENT epoch — a producer restart. The field data is still
+    /// this source's latest (the `FieldInbox` applies `(epoch, sequence)` latest-wins, so a restart
+    /// is shown, NOT fatal), but it is a NEW command session: an ack under it must not resolve a
+    /// command issued in the prior session, and commands are not silently re-targeted to it.
+    Restart,
+    /// A different source entirely: out of contract for this single-source instrument. Refuse —
+    /// never admit, never display, never resolve a command — and count it.
+    Foreign,
+}
+
+/// Classify an inbound message against the configured destination `(dest, session_epoch)`.
+///
+/// This is the SINGLE authority over source identity, shared by the interactive loop and its tests.
+/// The display binds to `dest`, never to the first source observed — so the displayed source can
+/// never disagree with the command destination (the A1 defect: a producer publishing source B first
+/// made the display show B while every command stayed addressed to the configured source A).
+pub fn classify_source(
+    dest: u64,
+    session_epoch: u32,
+    msg_source: u64,
+    msg_epoch: u32,
+) -> SourceVerdict {
+    if !source_in_contract(dest, msg_source) {
+        SourceVerdict::Foreign
+    } else if msg_epoch != session_epoch {
+        SourceVerdict::Restart
+    } else {
+        SourceVerdict::InSession
+    }
 }
 
 /// What a single key press asks the loop to do, after routine state mutation (probe/zoom/pending

@@ -81,6 +81,10 @@ pub struct TransportFault {
 pub enum ResolveError {
     /// The ack arrived on a frame from a different source than this channel addresses.
     WrongSource { expected: u64, got: u64 },
+    /// The ack arrived on a frame from a different EPOCH — a producer restart (A1). A restarted
+    /// producer resets its command ids, so an ack from the new session could otherwise collide with
+    /// and falsely resolve a command issued in the prior session. The command stays unresolved.
+    WrongEpoch { expected: u32, got: u32 },
     /// The ledger rejected the ack (unknown id, ack-before-delivery, or non-terminal status).
     Ledger(LedgerReject),
 }
@@ -304,13 +308,36 @@ impl CommandChannel {
         }
     }
 
-    /// Resolve a returned ack, binding it to this channel's source *first*. An ack on a frame
-    /// from another source cannot resolve a command addressed here, even if the id collides.
+    /// Resolve a returned ack in this channel's command session. Binds the ack to the channel's
+    /// source first (an ack on a frame from another source cannot resolve a command addressed here,
+    /// even if the id collides) and assumes the channel's bound epoch. When the ack frame's epoch is
+    /// available — the interactive loop — prefer [`CommandChannel::resolve_in_session`], which also
+    /// refuses an ack from a restarted producer (a different epoch).
     pub fn resolve(&mut self, source: u64, ack: WireAck) -> Result<CommandState, ResolveError> {
+        let epoch = self.epoch;
+        self.resolve_in_session(source, epoch, ack)
+    }
+
+    /// Resolve a returned ack against the FULL command-session identity `(source, epoch)` (A1). An
+    /// ack from another source (`WrongSource`) or another epoch (`WrongEpoch` — a producer restart,
+    /// a new session whose reset command ids must not resolve this session's commands) cannot
+    /// resolve a command this channel issued, even if the `command_id` collides.
+    pub fn resolve_in_session(
+        &mut self,
+        source: u64,
+        epoch: u32,
+        ack: WireAck,
+    ) -> Result<CommandState, ResolveError> {
         if source != self.source {
             return Err(ResolveError::WrongSource {
                 expected: self.source,
                 got: source,
+            });
+        }
+        if epoch != self.epoch {
+            return Err(ResolveError::WrongEpoch {
+                expected: self.epoch,
+                got: epoch,
             });
         }
         self.ledger.apply_ack(ack).map_err(ResolveError::Ledger)
