@@ -1300,3 +1300,86 @@ fn a_never_writing_producer_is_bounded_by_a_wall_clock_deadline_not_a_hang() {
     // Release the blocked reader thread so the test leaves nothing parked.
     drop(tx);
 }
+
+/// Gate B2 (Renaissance XI): a wrong-direction inbound COMMAND fed through the REAL production
+/// reader is rejected as out of contract — never admitted to the control lane, never drained as a
+/// deliverable message, its (large) payload never retained — and the violation is VISIBLE through
+/// the new `Reader::out_of_contract()` surface rather than counted invisibly inside the buffer.
+/// COMMAND is presenter → producer only (`docs/WIRE_PROTOCOL.md`); a conformant ACK in the same
+/// stream is still delivered, so the rejection is direction-specific, not a blanket drop, and a
+/// recoverable direction violation does not fail the lane closed.
+#[test]
+fn an_inbound_command_through_the_real_reader_is_rejected_counted_and_visible() {
+    use gibson::wire::{encode_ack, encode_command, WireCommand};
+
+    let limits = WireLimits::default();
+    let source = 7u64;
+
+    let mut stream = Vec::new();
+    // A legitimate FIELD and ACK: the stream is otherwise well-formed and must be processed.
+    stream.extend_from_slice(&field_frame(source, 0, 1, limits));
+    stream.extend_from_slice(&encode_ack(
+        source,
+        SourceCursor::new(0, 2),
+        WireAck {
+            command_id: 1,
+            status: AckStatus::Acknowledged,
+        },
+    ));
+    // A flood of wrong-direction COMMANDs, each with a 1 KiB argument — the payload a hostile
+    // producer would try to make the presenter retain.
+    const HOSTILE: u64 = 50;
+    for i in 0..HOSTILE {
+        stream.extend_from_slice(&encode_command(
+            source,
+            SourceCursor::new(0, 100 + i),
+            &WireCommand {
+                command_id: 1000 + i,
+                kind: 1,
+                arg: vec![0xCDu8; 1024],
+            },
+        ));
+    }
+
+    let mut reader = Reader::spawn(std::io::Cursor::new(stream), DEFAULT_CONTROL_CAP);
+    reader.join(); // decode to EOF
+
+    // VISIBLE through the production reader (the Gate B2 surface), one per hostile COMMAND.
+    assert_eq!(
+        reader.out_of_contract(),
+        HOSTILE,
+        "every inbound COMMAND must be counted as a direction violation, visible on the Reader"
+    );
+    // A recoverable direction violation (here 50) must NOT fail the control lane closed.
+    assert!(
+        reader.control_overflow().is_none(),
+        "a recoverable direction violation must not fail the lane closed"
+    );
+
+    let mut drained: Vec<WireMessage> = Vec::new();
+    let outcome = reader.drain(&mut |m| drained.push(m));
+    assert!(outcome.disconnected, "EOF is a clean disconnect");
+
+    // The hostile COMMAND never becomes a deliverable message: it cannot enter the control lane
+    // and cannot resolve or create an edit.
+    assert!(
+        !drained
+            .iter()
+            .any(|m| matches!(m.body, WireBody::Command(_))),
+        "no inbound COMMAND may be delivered to the application"
+    );
+    // The conformant ACK IS delivered — the rejection is direction-specific, not a blanket drop.
+    assert!(
+        drained.iter().any(|m| matches!(m.body, WireBody::Ack(_))),
+        "a conformant ACK in the same stream must still be delivered"
+    );
+    // No unbounded payload retention: nothing is left buffered and the retained FIELD budget never
+    // absorbed the 50 KiB of hostile COMMAND arguments (a COMMAND is not a field, so it is dropped
+    // at offer, not stored).
+    assert_eq!(reader.buffered_len(), 0, "nothing retained after drain");
+    assert_eq!(
+        reader.field_bytes(),
+        0,
+        "the hostile COMMAND payload never entered FIELD retention"
+    );
+}

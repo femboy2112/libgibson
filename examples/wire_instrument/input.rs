@@ -20,6 +20,21 @@
 
 use gibson::input::KeyCode;
 
+/// Whether a message from `source` is in contract for an instrument BOUND to one source (Gate B3).
+///
+/// The `wire_instrument` example drives exactly ONE producer: it binds to the first source it
+/// observes and its `CommandChannel` targets that same source. A
+/// field / ack / retire from any OTHER source is out of contract — it must be refused (never
+/// admitted to the inbox, never displayed, never resolving a command) and counted by the loop, so a
+/// second
+/// source can neither be silently stored-and-hidden nor silently switched to, and a command for the
+/// bound source is never redirected to another. This is a deliberate single-source contract, not a
+/// multi-source instrument; the refusal is what keeps the single-source identity truthful. When the
+/// bound source retires, it is shown as retired — the display is never reassigned to a live stranger.
+pub fn source_in_contract(bound: u64, source: u64) -> bool {
+    source == bound
+}
+
 /// What a single key press asks the loop to do, after routine state mutation (probe/zoom/pending
 /// amplitude) has been applied in place. The loop performs the I/O; this type carries only the
 /// *decision*, so the precedence contract can be proven deterministically.

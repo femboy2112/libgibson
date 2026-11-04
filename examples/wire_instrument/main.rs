@@ -306,6 +306,9 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
     let mut pending_amp: f64 = 2.0;
     let mut status = String::from("connected — streaming…");
     let mut disconnected = false;
+    // Gate B3: messages from a source other than the one this instrument bound to are out of
+    // contract (single-source instrument). Counted and surfaced, never silently stored.
+    let mut foreign_source: u64 = 0;
 
     loop {
         let ev = ctx.run_once(Duration::from_millis(16))?;
@@ -317,7 +320,17 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
         let mut batch: Vec<WireMessage> = Vec::new();
         let outcome = owner.reader().drain(&mut |m| batch.push(m));
         for msg in batch {
-            src.get_or_insert(msg.source);
+            // Bind to the first source observed; that identity is also what `ch` commands (Gate
+            // B3). A message from any OTHER source is out of contract for this single-source
+            // instrument: refuse it (do not admit, do not retire, do not resolve a command),
+            // count it, and surface it — so a second source is neither silently stored-and-hidden
+            // nor silently switched to, and a command is never redirected. A retire of the bound
+            // source is shown as retired below; the display is never reassigned to a stranger.
+            let bound = *src.get_or_insert(msg.source);
+            if !input::source_in_contract(bound, msg.source) {
+                foreign_source += 1;
+                continue;
+            }
             match msg.body {
                 WireBody::Field(f) => {
                     inbox.admit(msg.source, msg.cursor, f);
@@ -402,10 +415,17 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
         // *control* verdict is never a counter here; it is the terminal control-overflow above.
         let reader = owner.reader();
         let shown = format!(
-            "{status}  |  xport: coalesced {} fields_dropped {} skips {} bytes {}/{} KiB (hw {} KiB)",
+            "{status}  |  xport: coalesced {} fields_dropped {} skips {} wrong-dir {} foreign-src {} bytes {}/{} KiB (hw {} KiB)",
             reader.coalesced(),
             reader.fields_dropped(),
             reader.decode_skips(),
+            // Gate B2: inbound COMMAND frames rejected as out of contract (0 on a conformant
+            // producer). Surfaced so a hostile producer's direction violation is visible to the
+            // operator, not counted invisibly inside the buffer.
+            reader.out_of_contract(),
+            // Gate B3: messages from a source other than the bound one, refused by the
+            // single-source contract (0 on a conformant producer).
+            foreign_source,
             reader.field_bytes() / 1024,
             reader.field_byte_cap() / 1024,
             reader.bytes_high_water() / 1024,

@@ -710,6 +710,16 @@ impl Reader {
         self.shared.lock().unwrap().decode_skips
     }
 
+    /// Wrong-direction control frames rejected as out of contract (Gate B2). COMMAND is
+    /// presenter → producer only (`docs/WIRE_PROTOCOL.md`), so an inbound COMMAND on the presenter's
+    /// read path is a direction violation: it is never admitted to the control lane and never
+    /// resolves or creates an edit, and its payload is dropped (not retained). This surfaces the
+    /// `CoalescingBuffer` counter through the production reader so a hostile producer's violation is
+    /// visible to the operator instead of being counted invisibly. 0 on a conformant producer.
+    pub fn out_of_contract(&self) -> u64 {
+        self.shared.lock().unwrap().buf.out_of_contract()
+    }
+
     /// Join the reader thread. The producer's stdout closing (e.g. after `child.kill()`) ends the
     /// read loop, so this returns promptly.
     pub fn join(&mut self) {
