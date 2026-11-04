@@ -33,6 +33,9 @@ const KIND_SET_AMPLITUDE: u32 = 1;
 /// the command I/O exactly as the loop does — issue + deliver — but ONLY when the decision is
 /// `SubmitEdit`. `status` is overwritten only on a submit, exactly as the loop overwrites it, so a
 /// suppressed submit preserves whatever fatal reason the caller set. Returns whether the loop quits.
+// Mirrors the loop's own input-handling signature (probe/ppc/pending_amp + channel + writer +
+// status); grouping them would only obscure the parallel to the real loop.
+#[allow(clippy::too_many_arguments)]
 fn drive_one_key(
     code: KeyCode,
     disconnected: bool,
