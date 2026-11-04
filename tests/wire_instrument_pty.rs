@@ -17,9 +17,10 @@
 //! `wire_instrument_loop.rs` (lockstep, equal-sequence, 2x factor, with the `--freeze-amplitude`
 //! suppression control). Here the serve-mode Gaussian center moves each tick, so this asserts the
 //! edit *lifecycle* through the real binary, not per-cell doubling. The full compact-terminal
-//! (40x15) workflow — every readout visible + the edit lifecycle at that size — is Phase C3;
-//! `build_root` has no compact layout yet, so this file certifies only that 40x15 monochrome
-//! boots, streams a source-identified field, and restores cleanly.
+//! (40×15) workflow — every readout visible + the edit lifecycle + the inspector pages at that size
+//! — is now certified by `pty_full_workflow_at_40x15_mono` (RXII Checkpoint 2 / Gate B): `build_root`
+//! has a compact layout that pins the essentials and pages the detail. `pty_boot_at_40x15_mono…`
+//! remains the minimal boot/restore anchor.
 
 #![cfg(unix)]
 
@@ -235,15 +236,85 @@ fn pty_interactive_records_the_command_dispatch_leg() {
 
 #[test]
 fn pty_boot_at_40x15_mono_streams_and_restores() {
-    // Phase A2 certifies only that the compact monochrome terminal boots, streams a
-    // source-identified field, and restores. The full 40x15 workflow (all readouts visible + the
-    // edit lifecycle at that size) is Phase C3 — build_root has no compact layout yet, so the
-    // lower HUD lines may wrap off a 15-row screen; this test does not assert them.
+    // The compact-terminal boot/restore anchor: at 40x15 monochrome the instrument boots, streams
+    // a source-identified field, and restores cleanly. The FULL compact workflow (every readout
+    // visible + the edit lifecycle + the inspector pages at that size) is proven by
+    // `pty_full_workflow_at_40x15_mono` below (RXII Checkpoint 2 / Gate B C1–C3).
     let mut h = Walk::boot(40, 15, 8, 4, true);
     h.wait_text("source 1");
     eprintln!(
         "=== wire_instrument 40x15 mono boot ===\n{}\n=== end ===",
         h.screen()
     );
+    h.assert_quit_restored();
+}
+
+/// RXII Checkpoint 2 / Gate B (C1–C3): the COMPLETE 40×15 scientific-instrument workflow on a live
+/// PTY — not just boot/restore. The compact layout must keep every essential readout (source,
+/// probe, edit verdict, transport status) on a 15-row screen while the edit lifecycle runs end to
+/// end, and an inspector page must surface the full detail on demand.
+///
+/// Against the pre-C1 layout this is RED: `build_root` has no compact mode, so at 40×15 the
+/// raster plus five full-width HUD lines wrap past 15 rows and the edit-verdict line ("Acknowledged"
+/// / the `ack N` receipt) is pushed off the bottom — `wait_text("Acknowledged")` times out. The
+/// compact layout (essentials pinned above the capped raster, detail paged under `Tab`) turns it
+/// green.
+///
+/// Monochrome, so the oracle is strictly the HUD *text* through the vt100 screen — never a color.
+#[test]
+fn pty_full_workflow_at_40x15_mono() {
+    let mut h = Walk::boot(40, 15, 8, 4, true);
+
+    // Boot: the source-identified field reaches the compact screen.
+    h.wait_text("source 1");
+
+    // Submit a valid edit (pending starts at 2.0, in range). THE 40×15 TEST: the producer's
+    // Acknowledged verdict and the `ack 1` receipt must be VISIBLE on the 15-row screen — the exact
+    // readout the pre-compact layout pushed off the bottom.
+    h.send(b"\r");
+    h.wait_text("Acknowledged");
+    assert!(
+        h.screen().contains("ack 1"),
+        "the accepted edit's receipt is visible at 40×15:\n{}",
+        h.screen()
+    );
+
+    // Zoom responds and the compact source line still shows it (`z2x`), probe readout survives.
+    h.send(b"+");
+    h.wait_text("z2x");
+    assert!(
+        h.screen().contains("probe ("),
+        "the probe readout stays visible at 40×15:\n{}",
+        h.screen()
+    );
+
+    // Out-of-range edit: `]` caps pending at 12.0 (past the producer's [0,10] contract); submit and
+    // read the producer's Refused verdict and its `refused 1` receipt — both on-screen at 40×15.
+    for _ in 0..20 {
+        h.send(b"]");
+    }
+    h.send(b"\r");
+    h.wait_text("Refused");
+    assert!(
+        h.screen().contains("refused 1"),
+        "the refused edit's receipt is visible at 40×15:\n{}",
+        h.screen()
+    );
+
+    // Inspect: Tab pages to the full edit ledger (the "inspector" step of the C2 workflow) while
+    // the pinned essentials — the source identity — remain visible. Every readout is accessible.
+    h.send(b"\t");
+    h.wait_text("inspect 1/3");
+    let screen = h.screen();
+    assert!(
+        screen.contains("issued"),
+        "the inspector surfaces the full edit ledger:\n{screen}"
+    );
+    assert!(
+        screen.contains("source 1"),
+        "the pinned essentials stay visible while inspecting:\n{screen}"
+    );
+
+    // Quit and confirm the terminal is restored cleanly.
     h.assert_quit_restored();
 }

@@ -55,6 +55,9 @@ fn drive_one_key(
                 *status = format!("sent set-amplitude {:.1} (id {id})", *pending_amp);
             }
         }
+        // Inspecting is a pure UI decision the loop acts on (it cycles its inspector page); it
+        // issues no command and writes no bytes — exactly what this harness observes.
+        InputAction::Inspect => {}
         InputAction::Nothing => {}
     }
     false
@@ -229,6 +232,32 @@ fn routine_navigation_is_suppressed_under_a_terminal_state_but_applies_when_live
         "navigation is suppressed under a terminal state"
     );
     assert_eq!(ppc, 1, "zoom is suppressed under a terminal state");
+}
+
+/// The compact inspector key (Tab) is routine UI input (RXII Checkpoint 2 / Gate B, C1): on a live
+/// transport it asks the loop to page the inspector (`Inspect`); under a latched terminal state it
+/// is suppressed to `Nothing`, exactly like probe navigation — so inspecting can never admit a
+/// command or overwrite the fatal status. It also mutates no edit/probe/zoom state itself.
+#[test]
+fn the_inspector_key_pages_when_live_and_is_suppressed_under_a_terminal_state() {
+    let mut probe = (2usize, 2usize);
+    let mut ppc = 1u16;
+    let mut amp = 2.0f64;
+    // Live: Tab asks the loop to inspect, and touches no edit/probe/zoom state.
+    assert_eq!(
+        reduce_key(KeyCode::Tab, false, &mut probe, &mut ppc, &mut amp),
+        InputAction::Inspect,
+        "a live Tab pages the inspector"
+    );
+    assert_eq!(probe, (2, 2), "inspecting does not move the probe");
+    assert_eq!(ppc, 1, "inspecting does not zoom");
+
+    // Terminal: the same key changes nothing and admits nothing.
+    assert_eq!(
+        reduce_key(KeyCode::Tab, true, &mut probe, &mut ppc, &mut amp),
+        InputAction::Nothing,
+        "inspecting is suppressed under a terminal transport state"
+    );
 }
 
 /// Quit outranks even a terminal transport state: the user must always be able to exit and the

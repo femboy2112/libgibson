@@ -88,6 +88,11 @@ pub enum InputAction {
     Quit,
     /// Submit the pending edit as a tracked COMMAND (issue + deliver on the producer's stdin).
     SubmitEdit,
+    /// Advance the compact inspector to the next focus page (RXII Checkpoint 2 / Gate B, C1): the
+    /// loop cycles its `inspect_page`. Page state lives in the loop (the reducer stays a pure
+    /// decision), and because `Tab` is matched only AFTER the terminal-state guard below, inspecting
+    /// is suppressed once the transport is terminal — routine UI input, exactly like navigation.
+    Inspect,
     /// Nothing further for the loop to do (routine navigation handled, or input suppressed).
     Nothing,
 }
@@ -124,6 +129,10 @@ pub fn reduce_key(
         KeyCode::Char('[') => *pending_amp = (*pending_amp - 0.5).max(0.0),
         KeyCode::Char(']') => *pending_amp = (*pending_amp + 0.5).min(12.0),
         KeyCode::Enter => return InputAction::SubmitEdit,
+        // Tab cycles the compact inspector (C1). It is reached only on a live transport — the
+        // `disconnected` guard above already returned — so it has the same low precedence as probe
+        // navigation: suppressed once the transport is terminal.
+        KeyCode::Tab => return InputAction::Inspect,
         _ => {}
     }
     InputAction::Nothing

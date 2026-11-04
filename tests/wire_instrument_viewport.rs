@@ -9,7 +9,9 @@
 //! transports all three; these tests prove the disagreement is gone and that terminal cell
 //! `(ix·ppc.., iy·ppc..)` maps back to field index `(ix, iy)`.
 //!
-//! Still open (noted, not faked): the real 40×15 mono-terminal walkthrough on a live PTY.
+//! The real 40×15 mono-terminal walkthrough on a live PTY — including this geometry's compact
+//! display — is now certified by `wire_instrument_pty.rs::pty_full_workflow_at_40x15_mono`
+//! (RXII Checkpoint 2 / Gate B).
 
 #[path = "../examples/wire_instrument/viewport.rs"]
 mod viewport;

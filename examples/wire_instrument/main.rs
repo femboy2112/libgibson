@@ -31,8 +31,10 @@
 //! `--selfcheck` binary in CI; `tests/wire_instrument_pty.rs` walks the interactive path on a
 //! real PTY.
 
+mod capture;
 mod channel;
 mod input;
+mod layout;
 mod transport;
 mod viewport;
 
@@ -63,6 +65,12 @@ const KIND_ADVANCE: u32 = 2;
 
 struct Args {
     selfcheck: bool,
+    /// RXII Checkpoint 2 / Gate B (C4): capture the observed field stream to this path (headless,
+    /// deterministic lockstep), then print the content digest.
+    capture: Option<String>,
+    /// Replay a capture from this path, re-rendering each frame and printing the content digest —
+    /// which reproduces the capture's digest regardless of the replay terminal's color depth.
+    replay: Option<String>,
     producer: String,
     python: String,
     cols: u32,
@@ -77,6 +85,8 @@ impl Args {
     fn parse() -> Args {
         let mut a = Args {
             selfcheck: false,
+            capture: None,
+            replay: None,
             producer: "bindings/python/producer.py".to_string(),
             python: std::env::var("GIBSON_PYTHON").unwrap_or_else(|_| "python3".to_string()),
             cols: 36,
@@ -90,6 +100,8 @@ impl Args {
         while let Some(arg) = it.next() {
             match arg.as_str() {
                 "--selfcheck" => a.selfcheck = true,
+                "--capture" => a.capture = it.next(),
+                "--replay" => a.replay = it.next(),
                 "--producer" => a.producer = it.next().unwrap_or(a.producer),
                 "--cols" => a.cols = it.next().and_then(|v| v.parse().ok()).unwrap_or(a.cols),
                 "--rows" => a.rows = it.next().and_then(|v| v.parse().ok()).unwrap_or(a.rows),
@@ -101,6 +113,9 @@ impl Args {
         a
     }
 }
+
+/// How many field observations a `--capture` run records (bounded + deterministic).
+const CAPTURE_FRAMES: usize = 3;
 
 /// Spawn the reference producer with both pipes connected. Streaming (`serve`) mode for the
 /// interactive UI; deterministic `--lockstep` (one field per advance, no hz timer, no sleeps)
@@ -133,8 +148,18 @@ fn spawn_producer(args: &Args, lockstep: bool) -> io::Result<Child> {
 
 /// Build the UI: the real rendered field surface stacked over the readouts the prompt requires
 /// — source / tick / probe value (with missing-state identity) and the edit lifecycle counts.
-// A UI builder: every parameter is a display input the prompt's readouts require (field, source,
-// edit counts, probe, zoom, pending amplitude, status, and the command-dispatch leg).
+///
+/// Two layouts, chosen by terminal size ([`layout::is_compact`]). At a normal size the classic
+/// full layout renders unchanged: the raster over five full-width HUD lines (`status` composed with
+/// `xport` into the transport line exactly as before). At the compact 40×15 target the full-width
+/// lines would wrap past the screen and push the edit/transport readouts off the bottom, so the
+/// COMPACT layout (RXII Checkpoint 2 / Gate B, C1) pins the essentials — source, probe, verdict,
+/// status — at the top, caps the raster to the rows left (with an honest truncation marker, C3),
+/// and pages the full detail (edit ledger, transport counters, render report) into `inspect_page`
+/// focus pages, so every readout stays accessible on a short screen.
+// Every parameter is a display input the prompt's readouts require (field, source, edit counts,
+// probe, zoom, pending amplitude, status, transport line, the command-dispatch leg) plus the
+// terminal geometry and inspector page that select the compact layout.
 #[allow(clippy::too_many_arguments)]
 fn build_root(
     inbox: &FieldInbox,
@@ -144,8 +169,20 @@ fn build_root(
     ppc: u16,
     pending_amp: f64,
     status: &str,
+    xport: &str,
     cmd_leg: &str,
+    term_w: u16,
+    term_h: u16,
+    inspect_page: usize,
 ) -> Node {
+    let compact = layout::is_compact(term_w, term_h);
+    // The non-compact transport line, composed exactly as the pre-compact code did: `status` alone
+    // when there is no transport detail (the selfcheck), else `status  |  xport`.
+    let status_line = if xport.is_empty() {
+        status.to_string()
+    } else {
+        format!("{status}  |  {xport}")
+    };
     let mut root = Node::col();
     if let Some(src) = src {
         if let Some(field) = inbox.latest(src) {
@@ -171,6 +208,14 @@ fn build_root(
                     ch.faulted(),
                     ch.conserves(),
                 );
+                // The compact verdict essentials: the edit fate every operator needs on-screen at
+                // 40×15, spelled with the same `ack N` / `refused N` tokens the full ledger uses.
+                let verdict = format!(
+                    "ack {} refused {} out {}",
+                    ch.acknowledged(),
+                    ch.refused(),
+                    ch.outstanding()
+                );
                 // Gate G/D3: derive the display transport from the SAME source geometry the probe
                 // indexes — origin (pan), anisotropic cell sizes (per-axis zoom), and ppc
                 // magnification — via checked, clamp-before-narrow sizing. A field dimension past
@@ -182,6 +227,82 @@ fn build_root(
                     Ok((wv, area)) => {
                         let frame = view.render(&wv, area, Colormap::Density, RangePolicy::Auto);
                         let r = &frame.report;
+                        if compact {
+                            // Compact (C1): essentials pinned on top, raster capped below, detail
+                            // paged. The render report + geometry live on the `render` inspector
+                            // page; `status` alone is the essentials status (bare — the transport
+                            // counters are the `xport` page), so a resolved-ack verdict like
+                            // "ack: edit resolved → Acknowledged" stays intact at 40 columns.
+                            let ess = layout::Essentials {
+                                source: format!(
+                                    "source {src} t{} {}x{} z{ppc}x",
+                                    field.model_tick,
+                                    ext.cols(),
+                                    ext.rows()
+                                ),
+                                probe: format!(
+                                    "probe ({pix},{piy})={sample_txt} pend {pending_amp:.1}"
+                                ),
+                                verdict,
+                                status: layout::clip(status, term_w),
+                            };
+                            let render_detail = format!(
+                                "render[value {} masked {} nonfinite {} off {} conserves {}]",
+                                r.value_cells,
+                                r.masked_cells,
+                                r.nonfinite_cells,
+                                r.off_field_cells,
+                                r.conserves(),
+                            );
+                            let geom_detail = format!(
+                                "origin ({:.3},{:.3}) cell {:e}x{:e} zoom {ppc}x",
+                                ext.origin().x,
+                                ext.origin().y,
+                                ext.cell_w(),
+                                ext.cell_h(),
+                            );
+                            let details = [
+                                layout::DetailPage {
+                                    name: "edits",
+                                    lines: vec![hud_edit, cmd_leg.to_string()],
+                                },
+                                layout::DetailPage {
+                                    name: "xport",
+                                    lines: vec![if xport.is_empty() {
+                                        status_line.clone()
+                                    } else {
+                                        xport.to_string()
+                                    }],
+                                },
+                                layout::DetailPage {
+                                    name: "render",
+                                    lines: vec![render_detail, geom_detail],
+                                },
+                            ];
+                            let plan = layout::compact_plan(
+                                term_w,
+                                term_h,
+                                inspect_page,
+                                area.height,
+                                &ess,
+                                &details,
+                            );
+                            for line in &plan.header {
+                                root = root.child(Node::text(line.clone(), Style::default()));
+                            }
+                            if plan.show_raster {
+                                // Re-render into the capped viewport so the field is clipped from
+                                // the bottom and the footer (marker + hint) stays on-screen.
+                                let capped = gibson::Rect::new(0, 0, area.width, plan.raster_rows);
+                                let cframe =
+                                    view.render(&wv, capped, Colormap::Density, RangePolicy::Auto);
+                                root = root.child(Node::raster(cframe.surface));
+                            }
+                            for line in &plan.footer {
+                                root = root.child(Node::text(line.clone(), Style::default()));
+                            }
+                            return root;
+                        }
                         let hud_src = format!(
                             "source {src}  model_tick {}  {}x{} cells  zoom {ppc}x  render[value {} masked {} nonfinite {} off {} conserves {}]",
                             field.model_tick,
@@ -202,9 +323,68 @@ fn build_root(
                             .child(Node::text(hud_probe, Style::default()))
                             .child(Node::text(hud_edit, Style::default()))
                             .child(Node::text(cmd_leg.to_string(), Style::default()))
-                            .child(Node::text(status.to_string(), Style::default()));
+                            .child(Node::text(status_line, Style::default()));
                     }
                     Err(u) => {
+                        if compact {
+                            // Compact unsupported-geometry (C3): the essentials still render — the
+                            // source line carries the VIEW UNSUPPORTED notice and the probe line the
+                            // still-exact sample — never a blank that contradicts the probe. No
+                            // raster (the geometry has no invertible mapping); detail paged as usual.
+                            let ess = layout::Essentials {
+                                source: format!(
+                                    "source {src} t{} {}x{} VIEW UNSUPPORTED z{ppc}x",
+                                    field.model_tick,
+                                    ext.cols(),
+                                    ext.rows()
+                                ),
+                                probe: format!("probe ({pix},{piy})={sample_txt} (exact)"),
+                                verdict,
+                                status: layout::clip(status, term_w),
+                            };
+                            let render_detail = format!(
+                                "VIEW UNSUPPORTED non-invertible zoom {:e}x{:e}",
+                                u.zoom_x, u.zoom_y
+                            );
+                            let geom_detail = format!(
+                                "cell {:e}x{:e} at zoom {ppc}x",
+                                ext.cell_w(),
+                                ext.cell_h()
+                            );
+                            let details = [
+                                layout::DetailPage {
+                                    name: "edits",
+                                    lines: vec![hud_edit, cmd_leg.to_string()],
+                                },
+                                layout::DetailPage {
+                                    name: "xport",
+                                    lines: vec![if xport.is_empty() {
+                                        status_line.clone()
+                                    } else {
+                                        xport.to_string()
+                                    }],
+                                },
+                                layout::DetailPage {
+                                    name: "render",
+                                    lines: vec![render_detail, geom_detail],
+                                },
+                            ];
+                            let plan = layout::compact_plan(
+                                term_w,
+                                term_h,
+                                inspect_page,
+                                0,
+                                &ess,
+                                &details,
+                            );
+                            for line in &plan.header {
+                                root = root.child(Node::text(line.clone(), Style::default()));
+                            }
+                            for line in &plan.footer {
+                                root = root.child(Node::text(line.clone(), Style::default()));
+                            }
+                            return root;
+                        }
                         let hud_src = format!(
                             "source {src}  model_tick {}  {}x{} cells  VIEW UNSUPPORTED at zoom {ppc}x — cell {:e}x{:e} -> non-invertible zoom {:e}x{:e}",
                             field.model_tick,
@@ -223,7 +403,7 @@ fn build_root(
                             .child(Node::text(hud_probe, Style::default()))
                             .child(Node::text(hud_edit, Style::default()))
                             .child(Node::text(cmd_leg.to_string(), Style::default()))
-                            .child(Node::text(status.to_string(), Style::default()));
+                            .child(Node::text(status_line, Style::default()));
                     }
                 }
             }
@@ -314,6 +494,11 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
     // Gate B3 / A1: messages from a source other than the CONFIGURED destination (`args.source`)
     // are out of contract (single-source instrument). Counted and surfaced, never silently stored.
     let mut foreign_source: u64 = 0;
+    // RXII Checkpoint 2 / Gate B (C1): the compact inspector page (0 = field view; 1..=3 = edit /
+    // transport / render detail), cycled with Tab, and the live terminal geometry that selects the
+    // compact layout. Seeded from the real terminal and refreshed on every Resize event.
+    let mut inspect_page: usize = 0;
+    let (mut term_w, mut term_h) = ctx.session.terminal_size();
 
     loop {
         let ev = ctx.run_once(Duration::from_millis(16))?;
@@ -401,7 +586,14 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
             disconnected = true;
         }
 
-        if let Some(Event::Key(k)) = ev {
+        // Track the live terminal geometry so the compact layout engages at the small-terminal
+        // target and re-flows on resize.
+        if let Some(Event::Resize(w, h)) = &ev {
+            term_w = *w;
+            term_h = *h;
+        }
+
+        if let Some(Event::Key(k)) = &ev {
             // Input-state reduction is separated from command I/O and rendering so the precedence
             // contract `fatal transport > disconnect > command submission > routine UI input`
             // holds at the boundary (Gate B1). When this iteration latched `disconnected` above,
@@ -409,6 +601,10 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
             // written and the fatal `status` set above survives untouched into the final frame.
             match input::reduce_key(k.code, disconnected, &mut probe, &mut ppc, &mut pending_amp) {
                 InputAction::Quit => break,
+                // Cycle the compact inspector (C1). Suppressed under a terminal state by
+                // `reduce_key` (Tab is matched only on a live transport), so paging keeps the same
+                // low precedence as navigation.
+                InputAction::Inspect => inspect_page = (inspect_page + 1) % layout::INSPECT_PAGES,
                 InputAction::SubmitEdit => {
                     match ch.issue_tracked(KIND_SET_AMPLITUDE, pending_amp.to_le_bytes().to_vec()) {
                         Ok(id) => {
@@ -446,8 +642,11 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
         // flood is visible as a real memory envelope, not just a message count (Gate C1). A lost
         // *control* verdict is never a counter here; it is the terminal control-overflow above.
         let reader = owner.reader();
-        let shown = format!(
-            "{status}  |  xport: coalesced {} fields_dropped {} skips {} wrong-dir {} foreign-src {} bytes {}/{} KiB (hw {} KiB)",
+        // The transport line, kept SEPARATE from `status` so the compact layout can pin the bare
+        // status among the essentials and page the transport counters to the `xport` inspector
+        // page. The non-compact layout re-composes them into the identical `status  |  xport` line.
+        let xport = format!(
+            "xport: coalesced {} fields_dropped {} skips {} wrong-dir {} foreign-src {} bytes {}/{} KiB (hw {} KiB)",
             reader.coalesced(),
             reader.fields_dropped(),
             reader.decode_skips(),
@@ -469,8 +668,12 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
             probe,
             ppc,
             pending_amp,
-            &shown,
+            &status,
+            &xport,
             &dispatch_readout(&telemetry),
+            term_w,
+            term_h,
+            inspect_page,
         );
         ctx.set_root(root);
 
@@ -486,7 +689,11 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
                 ppc,
                 pending_amp,
                 &final_note,
+                "",
                 &dispatch_readout(&telemetry),
+                term_w,
+                term_h,
+                inspect_page,
             );
             ctx.set_root(root);
             ctx.run_once(Duration::from_millis(16))?;
@@ -644,7 +851,11 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
         1,
         2.0,
         "selfcheck baseline",
+        "",
         &dispatch_readout(&telemetry),
+        80,
+        30,
+        0,
     ));
     // Headless: render the composition path directly (FieldFrame.surface → Node::raster →
     // Context). `run_once` polls input — a headless session keeps is_tty true, so it does not
@@ -748,7 +959,11 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
         1,
         2.0,
         "selfcheck post",
+        "",
         &dispatch_readout(&telemetry),
+        80,
+        30,
+        0,
     ));
     // Headless: render the composition path directly (FieldFrame.surface → Node::raster →
     // Context). `run_once` polls input — a headless session keeps is_tty true, so it does not
@@ -821,9 +1036,104 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
     Ok(())
 }
 
+/// Capture `CAPTURE_FRAMES` field observations from the reference producer in deterministic
+/// `--lockstep` (baseline, then one `ADVANCE` per subsequent frame), write them to `path`, and
+/// print the content digest (RXII Checkpoint 2 / Gate B, C4). Headless and bounded, reusing the
+/// selfcheck's non-blocking reader + wall-clock message wait so a stalled producer fails fast.
+fn run_capture(args: &Args, path: &str) -> io::Result<()> {
+    let mut child = spawn_producer(args, true)?;
+    let mut stdin_w = child.stdin.take().expect("stdin piped");
+    let out = child.stdout.take().expect("stdout piped");
+    let reader = Reader::spawn(out, transport::DEFAULT_CONTROL_CAP);
+    let mut pending: VecDeque<WireMessage> = VecDeque::new();
+    // A headless context solely to satisfy `selfcheck_next`'s terminal-restore-on-failure path.
+    let mut ctx = Context::headless(RenderMode::Inline, 80, 30);
+    let src = args.source;
+
+    let mut frames: Vec<capture::CapturedFrame> = Vec::with_capacity(CAPTURE_FRAMES);
+    for i in 0..CAPTURE_FRAMES {
+        if i > 0 {
+            // Advance the model one tick: a raw control frame, never a tracked edit.
+            let advance = WireCommand {
+                command_id: 0,
+                kind: KIND_ADVANCE,
+                arg: Vec::new(),
+            };
+            let adv = encode_command(src, SourceCursor::new(args.epoch, u64::MAX), &advance);
+            if stdin_w
+                .write_all(&adv)
+                .and_then(|_| stdin_w.flush())
+                .is_err()
+            {
+                selfcheck_fail(
+                    &mut child,
+                    &mut ctx,
+                    "could not send the advance control frame",
+                );
+            }
+        }
+        let msg = selfcheck_next(&reader, &mut pending, &mut child, &mut ctx);
+        match msg.body {
+            WireBody::Field(f) => frames.push(capture::CapturedFrame::from_field(
+                msg.source, msg.cursor, &f,
+            )),
+            other => selfcheck_fail(
+                &mut child,
+                &mut ctx,
+                &format!("capture expected a FIELD, got {other:?}"),
+            ),
+        }
+    }
+    drop(stdin_w);
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let digest = capture::content_digest(&frames);
+    let mut file = std::fs::File::create(path)?;
+    capture::write_capture(&mut file, &frames)?;
+    file.flush()?;
+    println!("wire_instrument capture: {} frames -> {path}", frames.len());
+    println!("capture-digest {digest:016x}");
+    Ok(())
+}
+
+/// Replay a capture from `path`: re-render each frame through the real composition path
+/// (`FieldView::render → Node::raster → Context`) and print the content digest. The digest
+/// reproduces the capture's regardless of the replay terminal's color depth, because it is taken
+/// over the field CONTENT, not the rendered bytes (RXII Checkpoint 2 / Gate B, C4).
+fn run_replay(_args: &Args, path: &str) -> io::Result<()> {
+    let mut file = std::fs::File::open(path)?;
+    let frames = capture::read_capture(&mut file)?;
+    let digest = capture::content_digest(&frames);
+    let mut ctx = Context::headless(RenderMode::Inline, 80, 30);
+    let mut rendered = 0usize;
+    for f in &frames {
+        if let Some(ext) = f.extent() {
+            if let Some(view) = FieldView::new(ext, &f.data, f.mask.as_deref()) {
+                if let Ok((wv, area)) = viewport::world_view_for(&ext, 1) {
+                    let frame = view.render(&wv, area, Colormap::Density, RangePolicy::Auto);
+                    ctx.set_root(Node::raster(frame.surface));
+                    ctx.render()?;
+                    rendered += 1;
+                }
+            }
+        }
+    }
+    println!(
+        "wire_instrument replay: {} frames from {path} ({rendered} rendered)",
+        frames.len()
+    );
+    println!("replay-digest {digest:016x}");
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let args = Args::parse();
-    if args.selfcheck {
+    if let Some(path) = args.replay.clone() {
+        run_replay(&args, &path)
+    } else if let Some(path) = args.capture.clone() {
+        run_capture(&args, &path)
+    } else if args.selfcheck {
         run_selfcheck(&args)
     } else {
         run_interactive(&args)
