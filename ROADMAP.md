@@ -3,7 +3,112 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current direction (2026-10-19): v0.5.0 — Interactive Observable Instruments
+## Current direction (2026-11-03): v0.6.0 — Interactive Observable Instruments, continued
+
+**Canonical roadmap: [issue #191](https://github.com/femboy2112/libgibson/issues/191).** This
+section is the durable, in-repo reconciliation of that issue's R6.1–R6.6 workstreams with the
+execution momentum that has actually been built. The two framings are one plan: #191's **R6.x** are
+the workstream buckets; the **Renaissance gate** rounds (II–XI) are the red-first, falsification-driven
+increments that fill them. This maps gate → workstream so neither view drifts from the other.
+
+**Baseline.** `main` is at `2ffdd92` (`0.6.0-dev`); the current published release is **v0.5.0**
+(`d8c7b99`, GitHub prerelease — see the v0.5.0 section below, now released history). On `main`,
+only **Milestone 1 (#198)** and **Phase 6 (#199)** have merged. All subsequent v0.6 work lives on
+**stacked draft PRs and feature branches** — nothing else is merged to `main`, tagged, released, or
+force-pushed, and nothing will be without explicit maintainer (owner) authorization.
+
+> **State legend.** *Released* = in v0.5.0. *Merged* = on `main` (here: #198, #199 only).
+> *Draft* = implemented on an open draft PR / feature branch, CI-green but **not** on `main`.
+> *Open* = not yet built. Do not read a CI-green draft as a merge or a release.
+
+### R6.1 — Instrument-driven cinematic grammar
+A shot's visual result must be *caused* by real model / command / probe state (a live
+`Workbench` / `FieldView` / `plot` / producer chain), not merely depict an instrument.
+- **Draft:** the first live-wire cinematic *proof* — the `field_cinema` grammar driven by the
+  **real** producer over the wire (Rsn IX **Gate H**, PR #240).
+- **Open:** a real interactive `field_cinema --live` **executable** — the establish → discover →
+  intervene → await → transform → resolve arc, a shot+surface causal oracle over four controlled
+  histories (no-edit / accepted / refused / suppressed) compared on rendered surfaces (not peak
+  value), a supervised-reader harness, and a fresh **non-Gaussian** holdout (Rsn X/XI **Gate C/D**).
+
+### R6.2 — Public consumer ergonomics & interaction depth
+Geometry, viewport manipulation, ROI/probe fidelity, accessibility — driven by actual workbench
+shortcomings. Includes the unmerged Wave-3 scene editor (#176 / #177).
+- **Merged:** compact 40×15 readout-visibility + keyboard-only walkthrough foundations (#140 via
+  #199).
+- **Draft:** the display transport carries the field's world **origin + anisotropy + zoom** so the
+  rendered field and the index probe agree (Rsn IX **Gate G**, PR #238); a non-invertible / overflowing
+  geometry is **refused with a typed `UnsupportedView`** instead of a silent blank (Rsn X **Gate D3**,
+  PR #243); the input boundary is correct — a terminal transport state preempts input (B1), a
+  wrong-direction COMMAND is **observable** (B2), and single-source identity stays truthful (B3)
+  (Rsn XI **Gate B**, PR #244).
+- **Open:** the complete **40×15 scientific instrument** — compact layout keeping every readout via
+  focus/inspector pages, the full compact-PTY edit/inspect workflow, interactive geometry with
+  honest partial-visibility, and a capture/replay digest reproducible across color depth (Rsn XI
+  **Gate C**); review #176 / #177 for surviving unique work (avoid double-merge).
+
+### R6.3 — Cross-language interaction contracts
+Expand Python / C / Go parity deliberately, only after a narrow independently verified vertical
+slice. Preserve ABI v1 semantics.
+- **Draft / integration:** the C ABI v1 grown **54 → 59 additively** (headless context, ANSI
+  readback, color-depth downgrade, styled cell-grid + bulk readback, full grapheme) with a frozen
+  `gibson_cell_t` layout and **no** ABI-version bump (Rsn VII **Gate K**; Rsn IX **Gate F4/F5**,
+  PR #237); Go wire conformance (#206).
+- **Open:** one genuinely **independent installed-SDK** forcing consumer (C or Python) built from
+  staged artifacts **outside** the checkout; a C/Py vertical slice compared to a Rust trace; a
+  C++/Go capability gap list; and the smallest public raster/input/resize/clock contract a future
+  Doom adapter needs (engine **not** built this round, GPL kept separate) (Rsn XI **Gate E**).
+
+### R6.4 — Extended graphics / media
+Consider `gibson::media` embedded assets (#186) and the `media-deflate` segment codec (#188),
+higher-resolution graphics, and optional sonification — **only** when a concrete consumer justifies
+them.
+- **Draft / deferred:** #186 and #188 remain open drafts, deliberately not promoted. Decide from
+  real consumer need (e.g. the R6.3 Doom horizon), not speculation. No media-rights change; the
+  HumanMusic / C137 / Homosapians research stays frozen with its music-freeze ledger intact.
+
+### R6.5 — Performance & resource envelopes
+Use the telemetry to find real bottlenecks. **No** unsupported universal-FPS or optical-latency
+claims from bytes written to a PTY.
+- **Draft:** instrument telemetry + the command-dispatch latency funnel; a full-duplex
+  forward-progress proof on a **real** subprocess under flood (Rsn IX **Gate C3**, PR #239).
+- **Open:** a representative **sustained whole-process** resource envelope — model cadence, decoded/
+  skipped frames, coalesced/evicted observations, queue+inbox retained bytes, peak RSS, input→dispatch
+  and command→verdict latency, each measured separately with exact SHA/runner/workload provenance
+  (p50/p95/p99 only when the sample count makes them meaningful); plus the renderer **partial-write
+  recovery** battery. *(F1 finding: `TerminalTransaction::commit` is atomic via the synchronized-update
+  framing `?2026h`/`?2026l`; a torn-prefix battery needs a sync-update-aware oracle, a separate build.)*
+  (Rsn XI **Gate F**.)
+
+### R6.6 — Long-standing terminal issues
+- **Open / blocked upstream:** issue **#15** — coincident resize/key input readiness. Upstream
+  crossterm **#1128** is unmerged; the acceptance criterion is delivery of the lone queued key
+  **without** requiring another input event. Needs an isolated reproducer, kept independent of the
+  already-shipped terminal-hangup identity-latch fix; generic PTY success does **not** close it
+  (Rsn XI **Gate G**).
+
+### Current draft stack (nothing merged — owner holds every merge/tag/release)
+The Renaissance X/XI increments are a linear draft stack on top of the certified convergence head:
+`#241 ← #242 ← #243 ← #244`. #241 (Gate A convergence) is CI-certified with **both** the dev-CI
+matrix and the publication-free Release Preflight green on one SHA; #243's exact head `33cfd57` was
+likewise re-certified by a dispatched preflight run. Carried-forward: #176 / #177 (→ R6.2), #186 /
+#188 (→ R6.4). The per-round detail, hashes and exit heads live in the engineering record, not here.
+
+### Constraints (unchanged)
+GitHub-first prereleases; C ABI v1; Rust MSRV 1.85; `main` merge-commit convention; the PCM audio
+golden and HumanMusic research are frozen; **no** tag, GitHub Release, registry (crates.io / PyPI)
+publication, `main` merge, supported-default change, or force-push without explicit maintainer
+authorization.
+
+### Longer-term horizon
+**v0.6:** a certified instrument and a genuine cinematic experience, reproducible resource
+envelopes, and a usable experimental SDK. **v0.7:** public-SDK terminal Doom integration and mature
+raster/input/clock contracts. **v0.8–0.9:** independent language parity, portability, sustainable
+performance. **v1.0:** a stable, reviewed core with verified support contracts.
+
+---
+
+## v0.5.0 — Interactive Observable Instruments (RELEASED 2026-10-24, history)
 
 **Status (2026-10-19 snapshot): ROADMAP/PLANNING ONLY; no v0.5.0 release, merge, or new API accepted on main.**
 *Update 2026-10-24: the v0.5.0 interactive-instruments milestone is delivered and
