@@ -32,6 +32,7 @@
 //! real PTY.
 
 mod channel;
+mod input;
 mod transport;
 mod viewport;
 
@@ -42,7 +43,7 @@ use std::time::{Duration, Instant};
 
 use gibson::context::Context;
 use gibson::field_view::{Colormap, FieldView, RangePolicy, Sample};
-use gibson::input::{Event, KeyCode};
+use gibson::input::Event;
 use gibson::instrument_telemetry::{InstrumentTelemetry, Stage};
 use gibson::node::Node;
 use gibson::renderer::RenderMode;
@@ -50,6 +51,7 @@ use gibson::wire::{encode_command, FieldInbox, SourceCursor, WireBody, WireComma
 use gibson::Style;
 
 use channel::CommandChannel;
+use input::InputAction;
 use transport::{ProducerOwner, Reader};
 
 /// The producer's one command kind: an 8-byte LE f64 target amplitude in [0, 10].
@@ -355,17 +357,14 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
         }
 
         if let Some(Event::Key(k)) = ev {
-            match k.code {
-                KeyCode::Char('q') | KeyCode::Esc => break,
-                KeyCode::Left => probe.0 = probe.0.saturating_sub(1),
-                KeyCode::Right => probe.0 += 1,
-                KeyCode::Up => probe.1 = probe.1.saturating_sub(1),
-                KeyCode::Down => probe.1 += 1,
-                KeyCode::Char('+') | KeyCode::Char('=') => ppc = (ppc + 1).min(4),
-                KeyCode::Char('-') => ppc = ppc.saturating_sub(1).max(1),
-                KeyCode::Char('[') => pending_amp = (pending_amp - 0.5).max(0.0),
-                KeyCode::Char(']') => pending_amp = (pending_amp + 0.5).min(12.0),
-                KeyCode::Enter => {
+            // Input-state reduction is separated from command I/O and rendering so the precedence
+            // contract `fatal transport > disconnect > command submission > routine UI input`
+            // holds at the boundary (Gate B1). When this iteration latched `disconnected` above,
+            // `reduce_key` suppresses every edit and navigation — so no command is admitted or
+            // written and the fatal `status` set above survives untouched into the final frame.
+            match input::reduce_key(k.code, disconnected, &mut probe, &mut ppc, &mut pending_amp) {
+                InputAction::Quit => break,
+                InputAction::SubmitEdit => {
                     match ch.issue_tracked(KIND_SET_AMPLITUDE, pending_amp.to_le_bytes().to_vec()) {
                         Ok(id) => {
                             if let Some(sink) = owner.stdin_mut() {
@@ -391,7 +390,7 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
                         Err(e) => status = format!("edit refused locally ({e:?})"),
                     }
                 }
-                _ => {}
+                InputAction::Nothing => {}
             }
             clamp_probe(&inbox, src, &mut probe);
         }
