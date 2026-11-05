@@ -12,7 +12,8 @@
 mod capture;
 
 use capture::{
-    read_capture, read_capture_with, write_capture, CaptureError, CaptureLimits, CapturedFrame,
+    read_capture, read_capture_prefix_with, read_capture_with, write_capture, CaptureError,
+    CaptureLimits, CapturedFrame,
 };
 
 // ---- raw-stream builders: hand-forge bytes write_capture would refuse to emit ------------------
@@ -83,6 +84,7 @@ fn good_frame() -> CapturedFrame {
 const GENEROUS: CaptureLimits = CaptureLimits {
     max_frames: 16,
     max_field_cells: 1 << 20,
+    ..CaptureLimits::DEFAULT
 };
 
 // ---- positive / negative controls -------------------------------------------------------------
@@ -97,6 +99,7 @@ fn a_valid_capture_round_trips_under_a_tiny_budget() {
     let tiny = CaptureLimits {
         max_frames: 4,
         max_field_cells: 16,
+        ..CaptureLimits::DEFAULT
     };
     let back = read_capture_with(&mut buf.as_slice(), &tiny).expect("read within budget");
     assert_eq!(back, frames, "a legitimate capture survives a tight budget");
@@ -111,6 +114,7 @@ fn a_frame_count_beyond_budget_is_refused_without_allocating() {
     let tiny = CaptureLimits {
         max_frames: 4,
         max_field_cells: 16,
+        ..CaptureLimits::DEFAULT
     };
     match read_capture_with(&mut stream.as_slice(), &tiny) {
         Err(CaptureError::FramesExceedBudget { declared, cap }) => {
@@ -129,6 +133,7 @@ fn a_within_budget_count_with_a_short_file_truncates_rather_than_over_reading() 
     let limits = CaptureLimits {
         max_frames: 1 << 16,
         max_field_cells: 16,
+        ..CaptureLimits::DEFAULT
     };
     assert!(matches!(
         read_capture_with(&mut stream.as_slice(), &limits),
@@ -144,6 +149,7 @@ fn a_field_exceeding_the_cell_budget_is_refused() {
     let tiny = CaptureLimits {
         max_frames: 16,
         max_field_cells: 16,
+        ..CaptureLimits::DEFAULT
     };
     match read_capture_with(&mut stream.as_slice(), &tiny) {
         Err(CaptureError::CellsExceedBudget { declared, cap }) => {
@@ -299,13 +305,20 @@ fn non_finite_samples_are_accepted_and_preserved() {
 
 // ---- framing edges ----------------------------------------------------------------------------
 
-/// Bad magic (including a different version suffix) and a truncated header are both rejected.
+/// Bad magic and a truncated header are both rejected; a different `WIRECAP` format version is its
+/// own typed refusal (RXIV Gate D3), distinct from "not a capture".
 #[test]
 fn bad_magic_and_truncated_headers_are_rejected() {
     let mut wrong = b"WIRECAP2".to_vec();
     wrong.extend_from_slice(&1u32.to_le_bytes());
     assert!(matches!(
         read_capture(&mut wrong.as_slice()),
+        Err(CaptureError::UnsupportedVersion(b'2'))
+    ));
+    let mut alien = b"NOTACAP1".to_vec();
+    alien.extend_from_slice(&1u32.to_le_bytes());
+    assert!(matches!(
+        read_capture(&mut alien.as_slice()),
         Err(CaptureError::BadMagic)
     ));
 
@@ -316,16 +329,26 @@ fn bad_magic_and_truncated_headers_are_rejected() {
     ));
 }
 
-/// The stream is self-delimiting by frame count: trailing bytes after the declared frames are not
-/// consumed and do not corrupt the result (bounded by the count, not by EOF).
+/// RXIII pinned "trailing bytes are ignored". RXIV Gate D3 makes the policy explicit: the default
+/// reader is STRICT (a capture file is exactly what the writer produced, so trailing bytes are a
+/// typed refusal), and the old self-delimiting behavior survives only in the explicitly tolerant
+/// prefix reader — which reads exactly the declared frames, misparses nothing, and claims only that
+/// the decoded content round-trips (not the stream bytes).
 #[test]
-fn trailing_garbage_after_the_declared_frames_is_ignored() {
+fn trailing_garbage_is_rejected_by_default_and_ignored_only_by_the_tolerant_reader() {
     let frames = vec![good_frame()];
     let mut buf = Vec::new();
     write_capture(&mut buf, &frames).unwrap();
     buf.extend_from_slice(b"GARBAGE-NOT-A-FRAME");
-    let back = read_capture(&mut buf.as_slice()).expect("reads exactly the declared frames");
-    assert_eq!(back, frames, "trailing bytes are ignored, not misparsed");
+    assert!(matches!(
+        read_capture(&mut buf.as_slice()),
+        Err(CaptureError::TrailingBytes)
+    ));
+    let mut rest = buf.as_slice();
+    let back = read_capture_prefix_with(&mut rest, &CaptureLimits::default())
+        .expect("reads exactly the declared frames");
+    assert_eq!(back, frames, "trailing bytes are not misparsed");
+    assert_eq!(rest, b"GARBAGE-NOT-A-FRAME", "and are left unread");
 }
 
 // ---- writer refuses what it cannot represent faithfully ---------------------------------------

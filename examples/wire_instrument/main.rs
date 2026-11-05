@@ -1126,9 +1126,13 @@ fn run_capture(args: &Args, path: &str) -> io::Result<()> {
     let _ = child.wait();
 
     let digest = capture::content_digest(&frames);
-    let mut file = std::fs::File::create(path)?;
-    capture::write_capture(&mut file, &frames)?;
-    file.flush()?;
+    // RXIV Gate D3: validate, write a sibling temporary, fsync, rename — a failed capture never
+    // truncates or replaces an existing file at `path`.
+    capture::write_capture_file(
+        std::path::Path::new(path),
+        &frames,
+        &capture::CaptureLimits::default(),
+    )?;
     println!("wire_instrument capture: {} frames -> {path}", frames.len());
     println!("capture-digest {digest:016x}");
     Ok(())

@@ -118,12 +118,20 @@ impl Default for TraceLimits {
 #[derive(Debug)]
 pub enum TraceError {
     BadMagic,
-    EventsExceedBudget { declared: usize, cap: usize },
+    EventsExceedBudget {
+        declared: usize,
+        cap: usize,
+    },
     InvalidEventTag(u8),
-    InvalidEnumTag { field: &'static str, tag: u8 },
+    InvalidEnumTag {
+        field: &'static str,
+        tag: u8,
+    },
     InvalidBooleanByte(u8),
     LengthNotRepresentable(usize),
     Truncated,
+    /// Bytes follow the declared events in a strictly-read trace (RXIV Gate D3).
+    TrailingBytes,
     Io(io::Error),
 }
 
@@ -143,6 +151,7 @@ impl std::fmt::Display for TraceError {
                 write!(f, "length {n} does not fit the u32 on-disk field")
             }
             TraceError::Truncated => write!(f, "trace stream truncated"),
+            TraceError::TrailingBytes => write!(f, "bytes follow the declared events"),
             TraceError::Io(e) => write!(f, "io error: {e}"),
         }
     }
@@ -387,7 +396,7 @@ fn len_u32(n: usize) -> Result<u32, TraceError> {
 }
 
 /// Serialize a trace to a self-describing little-endian stream. `read_trace` is its exact inverse.
-pub fn write_trace<W: Write>(w: &mut W, trace: &CausalTrace) -> Result<(), TraceError> {
+pub fn write_trace<W: Write + ?Sized>(w: &mut W, trace: &CausalTrace) -> Result<(), TraceError> {
     w.write_all(MAGIC)?;
     w.write_all(&len_u32(trace.events.len())?.to_le_bytes())?;
     w.write_all(&[trace.truncated as u8])?;
@@ -464,14 +473,34 @@ fn read_f64<R: Read>(r: &mut R) -> Result<f64, TraceError> {
     Ok(f64::from_bits(u64::from_le_bytes(read_n::<_, 8>(r)?)))
 }
 
-/// Deserialize a trace with the default [`TraceLimits`].
+/// Deserialize a trace with the default [`TraceLimits`]. Strict: trailing bytes are rejected.
 pub fn read_trace<R: Read>(r: &mut R) -> Result<CausalTrace, TraceError> {
     read_trace_with(r, &TraceLimits::default())
 }
 
-/// Deserialize a trace under an explicit budget, treating the stream as hostile: the declared event
-/// count is checked against `limits` before allocation, and a false count hits `Truncated` on EOF.
+/// Deserialize a trace under an explicit budget, treating the stream as hostile, and STRICTLY: the
+/// stream must end after the declared events ([`TraceError::TrailingBytes`]), so a strictly-read
+/// trace file is byte-identical to `write_trace(read_trace(file))` (RXIV Gate D3).
 pub fn read_trace_with<R: Read>(
+    r: &mut R,
+    limits: &TraceLimits,
+) -> Result<CausalTrace, TraceError> {
+    let trace = read_trace_prefix_with(r, limits)?;
+    let mut probe = [0u8; 1];
+    loop {
+        match r.read(&mut probe) {
+            Ok(0) => return Ok(trace),
+            Ok(_) => return Err(TraceError::TrailingBytes),
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(TraceError::Io(e)),
+        }
+    }
+}
+
+/// The explicitly TOLERANT reader: decode exactly the declared events and leave whatever follows
+/// unread. The declared event count is checked against `limits` before allocation, and a false
+/// count hits `Truncated` on EOF.
+pub fn read_trace_prefix_with<R: Read>(
     r: &mut R,
     limits: &TraceLimits,
 ) -> Result<CausalTrace, TraceError> {
