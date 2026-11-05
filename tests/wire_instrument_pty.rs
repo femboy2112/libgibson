@@ -26,6 +26,8 @@
 
 #[path = "common/pty_capture.rs"]
 mod pty_capture;
+#[path = "../examples/wire_instrument/trace.rs"]
+mod trace;
 
 use portable_pty::CommandBuilder;
 use std::time::{Duration, Instant};
@@ -43,7 +45,21 @@ struct Walk {
 
 impl Walk {
     fn boot(term_cols: u16, term_rows: u16, field_cols: u32, field_rows: u32, mono: bool) -> Self {
+        Self::boot_with(term_cols, term_rows, field_cols, field_rows, mono, &[])
+    }
+
+    fn boot_with(
+        term_cols: u16,
+        term_rows: u16,
+        field_cols: u32,
+        field_rows: u32,
+        mono: bool,
+        extra: &[&str],
+    ) -> Self {
         let mut cmd = CommandBuilder::new(pty_capture::example_path("wire_instrument"));
+        for a in extra {
+            cmd.arg(a);
+        }
         // portable-pty's CommandBuilder defaults a child's cwd to $HOME when none is set
         // (cmdbuilder.rs: `self.cwd … .unwrap_or(home)`), NOT the parent's cwd. The example
         // resolves its producer as the repo-relative `bindings/python/producer.py`, so without a
@@ -361,4 +377,75 @@ fn pty_full_workflow_at_40x15_mono() {
 
     // Quit and confirm the terminal is restored cleanly.
     h.assert_quit_restored();
+}
+
+/// RXIV Gate D4 — the causal trace is wired into the REAL interactive instrument. A human-path
+/// session on a PTY (probe moves, an inspector focus, an edit at a chosen amplitude, its verdict,
+/// quit) commits a strictly-readable trace whose non-observation events are exactly that history,
+/// in order, with the command's ARGUMENT recorded (format v2).
+#[test]
+fn pty_interactive_session_commits_a_faithful_causal_trace() {
+    let dir = std::env::temp_dir().join(format!("rxiv-d4-pty-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("session.trace");
+    let p = path.to_str().unwrap().to_string();
+    let mut w = Walk::boot_with(80, 30, 24, 10, false, &["--trace", &p]);
+    w.wait_text("probe (0,0)");
+    w.send(b"\x1b[C");
+    w.wait_text("probe (1,0)");
+    w.send(b"\x1b[B");
+    w.wait_text("probe (1,1)");
+    w.send(b"\t");
+    w.send(b"]");
+    w.wait_text("2.5");
+    w.send(b"\r");
+    w.wait_text("resolved");
+    w.assert_quit_restored();
+
+    let bytes = std::fs::read(&path).expect("the trace was committed");
+    let t = trace::read_trace(&mut bytes.as_slice()).expect("strictly readable");
+    let observations = t
+        .events()
+        .iter()
+        .filter(|e| matches!(e, trace::TraceEvent::Observation { .. }))
+        .count();
+    assert!(observations >= 1, "admitted observations are recorded");
+    let history: Vec<&trace::TraceEvent> = t
+        .events()
+        .iter()
+        .filter(|e| !matches!(e, trace::TraceEvent::Observation { .. }))
+        .collect();
+    assert!(
+        matches!(history[0], trace::TraceEvent::Probe { .. })
+            && matches!(history[1], trace::TraceEvent::Probe { .. }),
+        "two probe moves first: {history:?}"
+    );
+    assert!(matches!(history[2], trace::TraceEvent::Focus { page: 1 }));
+    match history[3] {
+        trace::TraceEvent::Command {
+            command_id: 1,
+            dest_source: 1,
+            kind: 1,
+            arg,
+            admission: trace::Admission::Accepted,
+        } => assert_eq!(arg.as_slice(), 2.5f64.to_le_bytes().as_slice()),
+        other => panic!("expected the recorded edit, got {other:?}"),
+    }
+    assert!(matches!(
+        history[4],
+        trace::TraceEvent::Verdict {
+            command_id: 1,
+            verdict: trace::Verdict::Acknowledged
+        }
+    ));
+    assert!(matches!(
+        history.last(),
+        Some(trace::TraceEvent::Outcome {
+            kind: trace::OutcomeKind::Quit,
+            pending_commands: 0
+        })
+    ));
+    assert_eq!(history.len(), 6, "nothing else happened: {history:?}");
+    let _ = std::fs::remove_dir_all(&dir);
 }

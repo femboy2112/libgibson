@@ -35,6 +35,7 @@ mod capture;
 mod channel;
 mod input;
 mod layout;
+mod trace;
 mod transport;
 mod viewport;
 
@@ -71,6 +72,10 @@ struct Args {
     /// Replay a capture from this path, re-rendering each frame and printing the content digest —
     /// which reproduces the capture's digest regardless of the replay terminal's color depth.
     replay: Option<String>,
+    /// RXIV Gate D4: record the session's causal trace (observations, probes, focus, commands with
+    /// their arguments and admission, verdicts, outcome) and commit it atomically to this path on
+    /// exit.
+    trace: Option<String>,
     producer: String,
     python: String,
     cols: u32,
@@ -87,6 +92,7 @@ impl Args {
             selfcheck: false,
             capture: None,
             replay: None,
+            trace: None,
             producer: "bindings/python/producer.py".to_string(),
             python: std::env::var("GIBSON_PYTHON").unwrap_or_else(|_| "python3".to_string()),
             cols: 36,
@@ -102,6 +108,7 @@ impl Args {
                 "--selfcheck" => a.selfcheck = true,
                 "--capture" => a.capture = it.next(),
                 "--replay" => a.replay = it.next(),
+                "--trace" => a.trace = it.next(),
                 "--producer" => a.producer = it.next().unwrap_or(a.producer),
                 "--cols" => a.cols = it.next().and_then(|v| v.parse().ok()).unwrap_or(a.cols),
                 "--rows" => a.rows = it.next().and_then(|v| v.parse().ok()).unwrap_or(a.rows),
@@ -502,15 +509,46 @@ fn run_interactive(args: &Args) -> io::Result<()> {
     // Run the fallible loop, then ALWAYS restore the terminal — the restore is a plain statement,
     // not `?`, so it runs even when the loop propagated an error. The owner drops at scope end,
     // reaping the child and joining the reader regardless of how we leave.
-    let loop_result = interactive_loop(args, &mut ctx, &mut owner);
+    let mut recorded = args.trace.as_ref().map(|_| trace::CausalTrace::new());
+    let loop_result = interactive_loop(args, &mut ctx, &mut owner, &mut recorded);
     let restore_result = ctx.restore();
-    loop_result.and(restore_result)
+    // RXIV Gate D4: commit the causal trace atomically (never a partial file at the path).
+    let trace_result = match (&args.trace, &recorded) {
+        (Some(path), Some(t)) => capture::atomic_write(std::path::Path::new(path), |w| {
+            trace::write_trace(w, t).map_err(io::Error::from)
+        }),
+        _ => Ok(()),
+    };
+    loop_result.and(restore_result).and(trace_result)
+}
+
+/// Record one causal event if a trace is being kept (bounded by the trace's own limits).
+fn note(recorded: &mut Option<trace::CausalTrace>, ev: trace::TraceEvent) {
+    if let Some(t) = recorded {
+        t.record(ev, &trace::TraceLimits::default());
+    }
+}
+
+/// The producer's wire verdict as a trace verdict (presenter-local states never travel as an ACK
+/// status; the ledger refuses them before this is reached).
+fn trace_verdict(status: gibson::wire::AckStatus) -> trace::Verdict {
+    use gibson::wire::AckStatus;
+    match status {
+        AckStatus::Acknowledged => trace::Verdict::Acknowledged,
+        AckStatus::Refused => trace::Verdict::Refused,
+        AckStatus::Failed | AckStatus::Accepted | AckStatus::Delivered => trace::Verdict::Failed,
+    }
 }
 
 /// The interactive render/command loop. Fallible (`ctx.run_once` can error); every `?` here
 /// returns into [`run_interactive`], which still restores the terminal and (via the owner's Drop)
 /// reaps the child before propagating.
-fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -> io::Result<()> {
+fn interactive_loop(
+    args: &Args,
+    ctx: &mut Context,
+    owner: &mut ProducerOwner,
+    recorded: &mut Option<trace::CausalTrace>,
+) -> io::Result<()> {
     let mut inbox = FieldInbox::new();
     let mut ch = CommandChannel::new(args.source, args.epoch);
     // The #143 latency funnel, now also wired through the INTERACTIVE delivery path (H1 instrumented
@@ -536,6 +574,7 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
     // compact layout. Seeded from the real terminal and refreshed on every Resize event.
     let mut inspect_page: usize = 0;
     let (mut term_w, mut term_h) = ctx.session.terminal_size();
+    let mut outcome_kind = trace::OutcomeKind::Quit;
 
     loop {
         let ev = ctx.run_once(Duration::from_millis(16))?;
@@ -584,6 +623,21 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
                 Some(observed_epoch.map_or(msg.cursor.epoch, |e| e.max(msg.cursor.epoch)));
             match msg.body {
                 WireBody::Field(f) => {
+                    if recorded.is_some() {
+                        let frame = capture::CapturedFrame::from_field(msg.source, msg.cursor, &f);
+                        note(
+                            recorded,
+                            trace::TraceEvent::Observation {
+                                source: msg.source,
+                                epoch: msg.cursor.epoch,
+                                sequence: msg.cursor.sequence,
+                                model_tick: f.model_tick,
+                                field_checksum: capture::content_digest(std::slice::from_ref(
+                                    &frame,
+                                )),
+                            },
+                        );
+                    }
                     inbox.admit(msg.source, msg.cursor, f);
                     // The display becomes visible only once a valid observation from the configured
                     // source actually arrives — never before, and never bound to a stranger.
@@ -594,7 +648,16 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
                     status = format!("source {} retired", msg.source);
                 }
                 WireBody::Ack(ack) => match ch.resolve(msg.source, ack) {
-                    Ok(state) => status = format!("ack: edit resolved → {state:?}"),
+                    Ok(state) => {
+                        note(
+                            recorded,
+                            trace::TraceEvent::Verdict {
+                                command_id: ack.command_id,
+                                verdict: trace_verdict(ack.status),
+                            },
+                        );
+                        status = format!("ack: edit resolved → {state:?}")
+                    }
                     Err(e) => status = format!("ack ignored ({e:?})"),
                 },
                 WireBody::Command(_) => {}
@@ -609,10 +672,13 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
                 ov.control_cap, ov.kind
             );
             disconnected = true;
+            outcome_kind = trace::OutcomeKind::FatalTransport;
         } else if let Some(e) = outcome.fatal {
             status = format!("transport fatal: {e}");
             disconnected = true;
+            outcome_kind = trace::OutcomeKind::FatalTransport;
         } else if outcome.disconnected {
+            outcome_kind = trace::OutcomeKind::Disconnected;
             // Distinguish a hard read fault from an orderly shutdown (Gate C4): the producer
             // closing its stdout cleanly and the pipe faulting both end the stream, but they are
             // not the same event, and a disconnect handler that conflates them is lying.
@@ -636,41 +702,102 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
             // holds at the boundary (Gate B1). When this iteration latched `disconnected` above,
             // `reduce_key` suppresses every edit and navigation — so no command is admitted or
             // written and the fatal `status` set above survives untouched into the final frame.
+            let probe_before = probe;
             match input::reduce_key(k.code, disconnected, &mut probe, &mut ppc, &mut pending_amp) {
                 InputAction::Quit => break,
                 // Cycle the compact inspector (C1). Suppressed under a terminal state by
                 // `reduce_key` (Tab is matched only on a live transport), so paging keeps the same
                 // low precedence as navigation.
-                InputAction::Inspect => inspect_page = (inspect_page + 1) % layout::INSPECT_PAGES,
+                InputAction::Inspect => {
+                    inspect_page = (inspect_page + 1) % layout::INSPECT_PAGES;
+                    note(
+                        recorded,
+                        trace::TraceEvent::Focus {
+                            page: inspect_page as u32,
+                        },
+                    );
+                }
                 InputAction::SubmitEdit => {
-                    match ch.issue_tracked(KIND_SET_AMPLITUDE, pending_amp.to_le_bytes().to_vec()) {
+                    let arg = pending_amp.to_le_bytes().to_vec();
+                    match ch.issue_tracked(KIND_SET_AMPLITUDE, arg.clone()) {
                         Ok(id) => {
-                            if let Some(sink) = owner.stdin_mut() {
+                            let admission = if let Some(sink) = owner.stdin_mut() {
                                 // Time ONLY the delivery leg (issue->confirmed write+flush),
                                 // mirroring the selfcheck; record on Ok(Some) alone — a failed or
                                 // absent delivery has no honest latency (L7/L10).
+                                let uncertain_before = ch.transport_uncertain();
                                 let t0 = Instant::now();
                                 let delivered = ch.deliver_next(sink);
                                 let leg = t0.elapsed();
                                 match delivered {
                                     Ok(Some(_)) => {
                                         telemetry.record(Stage::CommandDispatch, leg);
-                                        status =
-                                            format!("sent set-amplitude {pending_amp:.1} (id {id})")
+                                        status = format!(
+                                            "sent set-amplitude {pending_amp:.1} (id {id})"
+                                        );
+                                        trace::Admission::Accepted
                                     }
-                                    Ok(None) => status = "nothing to deliver".to_string(),
-                                    Err(e) => status = format!("delivery uncertain (pipe: {e})"),
+                                    Ok(None) => {
+                                        status = "nothing to deliver".to_string();
+                                        trace::Admission::Rejected
+                                    }
+                                    Err(e) => {
+                                        status = format!("delivery uncertain (pipe: {e})");
+                                        if ch.transport_uncertain() > uncertain_before {
+                                            trace::Admission::TransportUncertain
+                                        } else {
+                                            trace::Admission::TransportFailed
+                                        }
+                                    }
                                 }
                             } else {
                                 status = "producer stdin closed".to_string();
-                            }
+                                trace::Admission::TransportFailed
+                            };
+                            note(
+                                recorded,
+                                trace::TraceEvent::Command {
+                                    command_id: id,
+                                    dest_source: args.source,
+                                    kind: KIND_SET_AMPLITUDE,
+                                    arg,
+                                    admission,
+                                },
+                            );
                         }
-                        Err(e) => status = format!("edit refused locally ({e:?})"),
+                        Err(e) => {
+                            status = format!("edit refused locally ({e:?})");
+                            // No id was minted: 0 is never a real command id.
+                            note(
+                                recorded,
+                                trace::TraceEvent::Command {
+                                    command_id: 0,
+                                    dest_source: args.source,
+                                    kind: KIND_SET_AMPLITUDE,
+                                    arg,
+                                    admission: trace::Admission::Rejected,
+                                },
+                            );
+                        }
                     }
                 }
                 InputAction::Nothing => {}
             }
             clamp_probe(&inbox, src, &mut probe);
+            if probe != probe_before {
+                if let Some(c) = src
+                    .and_then(|s| inbox.latest(s))
+                    .and_then(|f| f.extent.cell_center(probe.0, probe.1))
+                {
+                    note(
+                        recorded,
+                        trace::TraceEvent::Probe {
+                            world_x: c.x,
+                            world_y: c.y,
+                        },
+                    );
+                }
+            }
         }
 
         // L7 telemetry: the reader's lawful snapshot coalescing and any expendable field drops are
@@ -738,6 +865,13 @@ fn interactive_loop(args: &Args, ctx: &mut Context, owner: &mut ProducerOwner) -
         }
     }
 
+    note(
+        recorded,
+        trace::TraceEvent::Outcome {
+            kind: outcome_kind,
+            pending_commands: u32::try_from(ch.outstanding()).unwrap_or(u32::MAX),
+        },
+    );
     // Teardown is NOT here: the terminal is restored by `run_interactive` on every exit, and the
     // child is reaped + the reader joined by the `ProducerOwner`'s Drop — including the `?` returns
     // above. A normal quit falls through to this `Ok(())`; an error returns early and is handled

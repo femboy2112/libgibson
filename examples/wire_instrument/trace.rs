@@ -21,6 +21,13 @@
 //! [`CausalTrace::field_projection_digest`] fingerprints ONLY the observation references — i.e.
 //! exactly the information the field-only capture carries. The B3 tests turn the gap between them
 //! into assertions: equal field projection, different causal digest.
+//!
+//! **Format v2 (RXIV Gate D4).** v1 recorded a command's kind but not its ARGUMENT, so "set 99.0,
+//! refused" and "set 50.0, refused" were the same causal history and an intervention could not be
+//! replayed. v2 records the (bounded) argument bytes and a `Failed` verdict, and the writer applies
+//! the reader's budget before its first byte. A `WIRETRC1` stream is
+//! [`TraceError::UnsupportedVersion`]. Both digests are deterministic receipts (FNV-1a), not
+//! authenticators.
 
 use std::io::{self, Read, Write};
 
@@ -35,6 +42,8 @@ pub enum Admission {
     Rejected,
     /// Written to transport but the flush outcome was uncertain (see Gate D / transport-uncertain).
     TransportUncertain,
+    /// The write itself failed: known not delivered (the stream may carry a torn prefix).
+    TransportFailed,
 }
 
 /// The producer's authoritative verdict on a command — exactly what the producer sent, nothing the
@@ -48,6 +57,8 @@ pub enum Verdict {
     Acknowledged,
     /// The producer explicitly refused the command.
     Refused,
+    /// The producer could not apply the command (wrong shape / unknown kind) — never a success.
+    Failed,
 }
 
 /// How the session ended.
@@ -77,11 +88,13 @@ pub enum TraceEvent {
     Probe { world_x: f64, world_y: f64 },
     /// The user focused an inspector page.
     Focus { page: u32 },
-    /// The user issued a command: its id, destination source, kind, and local admission.
+    /// The user issued a command: its id, destination source, kind, argument bytes (bounded by
+    /// [`TraceLimits::max_arg_bytes`]), and local admission.
     Command {
         command_id: u64,
         dest_source: u64,
         kind: u32,
+        arg: Vec<u8>,
         admission: Admission,
     },
     /// A producer verdict reconciling a previously issued command.
@@ -100,17 +113,24 @@ pub enum TraceEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TraceLimits {
     pub max_events: usize,
+    /// Cap on one recorded command argument (bytes).
+    pub max_arg_bytes: usize,
 }
 
 impl TraceLimits {
     pub const DEFAULT_MAX_EVENTS: usize = 1 << 16;
+    /// The live wire's default command-argument ceiling.
+    pub const DEFAULT_MAX_ARG_BYTES: usize = 1 << 16;
+    /// The default budget as a `const` (for `..TraceLimits::DEFAULT`).
+    pub const DEFAULT: Self = TraceLimits {
+        max_events: Self::DEFAULT_MAX_EVENTS,
+        max_arg_bytes: Self::DEFAULT_MAX_ARG_BYTES,
+    };
 }
 
 impl Default for TraceLimits {
     fn default() -> Self {
-        TraceLimits {
-            max_events: Self::DEFAULT_MAX_EVENTS,
-        }
+        Self::DEFAULT
     }
 }
 
@@ -118,7 +138,14 @@ impl Default for TraceLimits {
 #[derive(Debug)]
 pub enum TraceError {
     BadMagic,
+    /// A `WIRETRC` stream of a different format version (the version byte is carried).
+    UnsupportedVersion(u8),
     EventsExceedBudget {
+        declared: usize,
+        cap: usize,
+    },
+    /// A command argument exceeds [`TraceLimits::max_arg_bytes`].
+    ArgExceedsBudget {
         declared: usize,
         cap: usize,
     },
@@ -138,7 +165,16 @@ pub enum TraceError {
 impl std::fmt::Display for TraceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TraceError::BadMagic => write!(f, "not a wire_instrument trace (bad magic / version)"),
+            TraceError::BadMagic => write!(f, "not a wire_instrument trace (bad magic)"),
+            TraceError::UnsupportedVersion(v) => {
+                write!(f, "unsupported trace format version {:?}", *v as char)
+            }
+            TraceError::ArgExceedsBudget { declared, cap } => {
+                write!(
+                    f,
+                    "command argument of {declared} bytes exceeds budget {cap}"
+                )
+            }
             TraceError::EventsExceedBudget { declared, cap } => {
                 write!(f, "declared {declared} events exceeds budget {cap}")
             }
@@ -195,7 +231,9 @@ impl CausalTrace {
     /// Record one event if under `limits.max_events`; otherwise set the `truncated` marker and drop
     /// it. Returns whether the event was recorded. This is what keeps the trace bounded.
     pub fn record(&mut self, ev: TraceEvent, limits: &TraceLimits) -> bool {
-        if self.events.len() >= limits.max_events {
+        let arg_over =
+            matches!(&ev, TraceEvent::Command { arg, .. } if arg.len() > limits.max_arg_bytes);
+        if self.events.len() >= limits.max_events || arg_over {
             self.truncated = true;
             false
         } else {
@@ -273,7 +311,7 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
     }
 }
 
-const MAGIC: &[u8; 8] = b"WIRETRC1";
+const MAGIC: &[u8; 8] = b"WIRETRC2";
 
 const TAG_OBSERVATION: u8 = 1;
 const TAG_PROBE: u8 = 2;
@@ -287,6 +325,7 @@ fn admission_tag(a: Admission) -> u8 {
         Admission::Accepted => 0,
         Admission::Rejected => 1,
         Admission::TransportUncertain => 2,
+        Admission::TransportFailed => 3,
     }
 }
 fn admission_from(tag: u8) -> Result<Admission, TraceError> {
@@ -294,6 +333,7 @@ fn admission_from(tag: u8) -> Result<Admission, TraceError> {
         0 => Ok(Admission::Accepted),
         1 => Ok(Admission::Rejected),
         2 => Ok(Admission::TransportUncertain),
+        3 => Ok(Admission::TransportFailed),
         t => Err(TraceError::InvalidEnumTag {
             field: "admission",
             tag: t,
@@ -304,12 +344,14 @@ fn verdict_tag(v: Verdict) -> u8 {
     match v {
         Verdict::Acknowledged => 0,
         Verdict::Refused => 1,
+        Verdict::Failed => 2,
     }
 }
 fn verdict_from(tag: u8) -> Result<Verdict, TraceError> {
     match tag {
         0 => Ok(Verdict::Acknowledged),
         1 => Ok(Verdict::Refused),
+        2 => Ok(Verdict::Failed),
         t => Err(TraceError::InvalidEnumTag {
             field: "verdict",
             tag: t,
@@ -364,12 +406,15 @@ fn digest_event(h: &mut u64, ev: &TraceEvent) {
             command_id,
             dest_source,
             kind,
+            arg,
             admission,
         } => {
             fnv(h, &[TAG_COMMAND]);
             fnv(h, &command_id.to_le_bytes());
             fnv(h, &dest_source.to_le_bytes());
             fnv(h, &kind.to_le_bytes());
+            fnv(h, &(arg.len() as u64).to_le_bytes());
+            fnv(h, arg);
             fnv(h, &[admission_tag(*admission)]);
         }
         TraceEvent::Verdict {
@@ -395,8 +440,43 @@ fn len_u32(n: usize) -> Result<u32, TraceError> {
     u32::try_from(n).map_err(|_| TraceError::LengthNotRepresentable(n))
 }
 
-/// Serialize a trace to a self-describing little-endian stream. `read_trace` is its exact inverse.
+/// Validate a trace against `limits` with the SAME budget [`read_trace_with`] applies (events, argument
+/// sizes, on-disk lengths), so `write_trace_with(t, L) == Ok` implies the bytes read back under `L`.
+pub fn validate_trace(trace: &CausalTrace, limits: &TraceLimits) -> Result<(), TraceError> {
+    if trace.events.len() > limits.max_events {
+        return Err(TraceError::EventsExceedBudget {
+            declared: trace.events.len(),
+            cap: limits.max_events,
+        });
+    }
+    len_u32(trace.events.len())?;
+    for ev in &trace.events {
+        if let TraceEvent::Command { arg, .. } = ev {
+            if arg.len() > limits.max_arg_bytes {
+                return Err(TraceError::ArgExceedsBudget {
+                    declared: arg.len(),
+                    cap: limits.max_arg_bytes,
+                });
+            }
+            len_u32(arg.len())?;
+        }
+    }
+    Ok(())
+}
+
+/// Serialize a trace with the default [`TraceLimits`]. See [`write_trace_with`].
 pub fn write_trace<W: Write + ?Sized>(w: &mut W, trace: &CausalTrace) -> Result<(), TraceError> {
+    write_trace_with(w, trace, &TraceLimits::default())
+}
+
+/// Serialize a trace to a self-describing little-endian stream after validating it against `limits`
+/// (nothing is written for a refused trace). [`read_trace_with`] is its exact inverse.
+pub fn write_trace_with<W: Write + ?Sized>(
+    w: &mut W,
+    trace: &CausalTrace,
+    limits: &TraceLimits,
+) -> Result<(), TraceError> {
+    validate_trace(trace, limits)?;
     w.write_all(MAGIC)?;
     w.write_all(&len_u32(trace.events.len())?.to_le_bytes())?;
     w.write_all(&[trace.truncated as u8])?;
@@ -429,12 +509,15 @@ pub fn write_trace<W: Write + ?Sized>(w: &mut W, trace: &CausalTrace) -> Result<
                 command_id,
                 dest_source,
                 kind,
+                arg,
                 admission,
             } => {
                 w.write_all(&[TAG_COMMAND])?;
                 w.write_all(&command_id.to_le_bytes())?;
                 w.write_all(&dest_source.to_le_bytes())?;
                 w.write_all(&kind.to_le_bytes())?;
+                w.write_all(&len_u32(arg.len())?.to_le_bytes())?;
+                w.write_all(arg)?;
                 w.write_all(&[admission_tag(*admission)])?;
             }
             TraceEvent::Verdict {
@@ -506,6 +589,9 @@ pub fn read_trace_prefix_with<R: Read>(
 ) -> Result<CausalTrace, TraceError> {
     let magic = read_n::<_, 8>(r)?;
     if &magic != MAGIC {
+        if magic[..7] == MAGIC[..7] {
+            return Err(TraceError::UnsupportedVersion(magic[7]));
+        }
         return Err(TraceError::BadMagic);
     }
     let n = read_u32(r)? as usize;
@@ -535,12 +621,27 @@ pub fn read_trace_prefix_with<R: Read>(
                 world_y: read_f64(r)?,
             },
             TAG_FOCUS => TraceEvent::Focus { page: read_u32(r)? },
-            TAG_COMMAND => TraceEvent::Command {
-                command_id: read_u64(r)?,
-                dest_source: read_u64(r)?,
-                kind: read_u32(r)?,
-                admission: admission_from(read_n::<_, 1>(r)?[0])?,
-            },
+            TAG_COMMAND => {
+                let command_id = read_u64(r)?;
+                let dest_source = read_u64(r)?;
+                let kind = read_u32(r)?;
+                let alen = read_u32(r)? as usize;
+                if alen > limits.max_arg_bytes {
+                    return Err(TraceError::ArgExceedsBudget {
+                        declared: alen,
+                        cap: limits.max_arg_bytes,
+                    });
+                }
+                let mut arg = vec![0u8; alen];
+                r.read_exact(&mut arg)?;
+                TraceEvent::Command {
+                    command_id,
+                    dest_source,
+                    kind,
+                    arg,
+                    admission: admission_from(read_n::<_, 1>(r)?[0])?,
+                }
+            }
             TAG_VERDICT => TraceEvent::Verdict {
                 command_id: read_u64(r)?,
                 verdict: verdict_from(read_n::<_, 1>(r)?[0])?,

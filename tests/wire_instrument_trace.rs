@@ -35,6 +35,7 @@ fn cmd(id: u64) -> TraceEvent {
         command_id: id,
         dest_source: 1,
         kind: 7,
+        arg: 2.0f64.to_le_bytes().to_vec(),
         admission: Admission::Accepted,
     }
 }
@@ -205,9 +206,12 @@ fn renderer_capability_changes_do_not_mutate_the_causal_history() {
 #[test]
 fn a_malformed_trace_is_rejected_within_finite_resources() {
     // Count beyond budget — refused before any event allocation.
-    let mut over = b"WIRETRC1".to_vec();
+    let mut over = b"WIRETRC2".to_vec();
     over.extend_from_slice(&1_000_000u32.to_le_bytes());
-    let tiny = TraceLimits { max_events: 4 };
+    let tiny = TraceLimits {
+        max_events: 4,
+        ..TraceLimits::DEFAULT
+    };
     assert!(matches!(
         read_trace_with(&mut over.as_slice(), &tiny),
         Err(TraceError::EventsExceedBudget {
@@ -216,12 +220,18 @@ fn a_malformed_trace_is_rejected_within_finite_resources() {
         })
     ));
 
-    // Bad magic.
-    let mut wrong = b"WIRETRC2".to_vec();
+    // Bad magic, and (RXIV Gate D4) an older format version as its own typed refusal.
+    let mut wrong = b"NOTATRC2".to_vec();
     wrong.extend_from_slice(&0u32.to_le_bytes());
     assert!(matches!(
         read_trace(&mut wrong.as_slice()),
         Err(TraceError::BadMagic)
+    ));
+    let mut v1 = b"WIRETRC1".to_vec();
+    v1.extend_from_slice(&0u32.to_le_bytes());
+    assert!(matches!(
+        read_trace(&mut v1.as_slice()),
+        Err(TraceError::UnsupportedVersion(b'1'))
     ));
 
     // Truncated header.
@@ -231,7 +241,7 @@ fn a_malformed_trace_is_rejected_within_finite_resources() {
     ));
 
     // Invalid event tag.
-    let mut bad_tag = b"WIRETRC1".to_vec();
+    let mut bad_tag = b"WIRETRC2".to_vec();
     bad_tag.extend_from_slice(&1u32.to_le_bytes()); // one event
     bad_tag.push(0); // truncated=false
     bad_tag.push(99); // bogus event tag
@@ -241,13 +251,14 @@ fn a_malformed_trace_is_rejected_within_finite_resources() {
     ));
 
     // Invalid enum tag inside a Command's admission.
-    let mut bad_enum = b"WIRETRC1".to_vec();
+    let mut bad_enum = b"WIRETRC2".to_vec();
     bad_enum.extend_from_slice(&1u32.to_le_bytes());
     bad_enum.push(0); // truncated=false
     bad_enum.push(4); // TAG_COMMAND
     bad_enum.extend_from_slice(&1u64.to_le_bytes()); // command_id
     bad_enum.extend_from_slice(&1u64.to_le_bytes()); // dest_source
     bad_enum.extend_from_slice(&7u32.to_le_bytes()); // kind
+    bad_enum.extend_from_slice(&0u32.to_le_bytes()); // v2: empty argument
     bad_enum.push(9); // bogus admission tag
     assert!(matches!(
         read_trace(&mut bad_enum.as_slice()),
@@ -294,7 +305,10 @@ fn the_causal_digest_catches_an_omitted_command_or_a_changed_verdict() {
 /// rather than growing without bound, and the marker is part of the fingerprint.
 #[test]
 fn recording_is_bounded_and_marks_truncation() {
-    let lim = TraceLimits { max_events: 2 };
+    let lim = TraceLimits {
+        max_events: 2,
+        ..TraceLimits::DEFAULT
+    };
     let mut t = CausalTrace::new();
     assert!(t.record(obs(1, 1, C0), &lim));
     assert!(t.record(obs(2, 2, C1_NATURAL), &lim));
