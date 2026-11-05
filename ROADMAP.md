@@ -3,114 +3,87 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current direction (2026-11-03): v0.6.0 — Interactive Observable Instruments, continued
+## Current direction (2026-11-05): v0.6.0 — the merge-readiness candidate (Renaissance XIV)
 
 **Canonical roadmap: [issue #191](https://github.com/femboy2112/libgibson/issues/191).** This
-section is the durable, in-repo reconciliation of that issue's R6.1–R6.6 workstreams with the
-execution momentum that has actually been built. The two framings are one plan: #191's **R6.x** are
-the workstream buckets; the **Renaissance gate** rounds (II–XI) are the red-first, falsification-driven
-increments that fill them. This maps gate → workstream so neither view drifts from the other.
+section reconciles #191's R6.1–R6.6 workstreams with what is actually built and verified. The
+per-gate red/green evidence, mutation controls and remaining limits are in
+[`docs/V06_QUALIFICATION_LEDGER.md`](docs/V06_QUALIFICATION_LEDGER.md).
 
 **Baseline.** `main` is at `2ffdd92` (`0.6.0-dev`); the current published release is **v0.5.0**
-(`d8c7b99`, GitHub prerelease — see the v0.5.0 section below, now released history). On `main`,
-only **Milestone 1 (#198)** and **Phase 6 (#199)** have merged. All subsequent v0.6 work lives on
-**stacked draft PRs and feature branches** — nothing else is merged to `main`, tagged, released, or
-force-pushed, and nothing will be without explicit maintainer (owner) authorization.
+(`d8c7b99`, GitHub prerelease). On `main`, only **Milestone 1 (#198)** and **Phase 6 (#199)** have
+merged. Everything below lives on ONE consolidated integration branch,
+`feat/v0.6-RXIV-causal-audit-191`, proposed to `main` as a single PR that preserves the full
+ancestry of the Renaissance stack (`#241 ← … ← #251`) plus the RXIV corrections. Nothing is merged,
+tagged, released or published; a merge requires the independent audit's approval of the exact
+final SHA and then the owner's action.
 
-> **State legend.** *Released* = in v0.5.0. *Merged* = on `main` (here: #198, #199 only).
-> *Draft* = implemented on an open draft PR / feature branch, CI-green but **not** on `main`.
-> *Open* = not yet built. Do not read a CI-green draft as a merge or a release.
+> **State legend.** *Released* = in v0.5.0. *Merged* = on `main`. *Candidate* = on the integration
+> PR, CI-green on its exact head, **not** on `main`. *Deferred* / *Blocked* as stated.
 
-### R6.1 — Instrument-driven cinematic grammar
-A shot's visual result must be *caused* by real model / command / probe state (a live
-`Workbench` / `FieldView` / `plot` / producer chain), not merely depict an instrument.
-- **Draft:** the first live-wire cinematic *proof* — the `field_cinema` grammar driven by the
-  **real** producer over the wire (Rsn IX **Gate H**, PR #240).
-- **Open:** a real interactive `field_cinema --live` **executable** — the establish → discover →
-  intervene → await → transform → resolve arc, a shot+surface causal oracle over four controlled
-  histories (no-edit / accepted / refused / suppressed) compared on rendered surfaces (not peak
-  value), a supervised-reader harness, and a fresh **non-Gaussian** holdout (Rsn X/XI **Gate C/D**).
+### R6.1 — Instrument-driven cinematic grammar — **completed and verified (candidate)**
+The interactive live instrument-film (`field_cinema --live --interactive`): a real producer field,
+user probe navigation, target selection, the command through the certified tracked channel, the
+correlated verdict, the next authoritative field, and a scene-composed response to the **verified**
+difference; the scripted `--live` stays the deterministic CI film. TRANSFORM is gated by a typed
+effect contract (an ACK is not a change; a high unchanged value is not a change), proven against
+four real histories on **rendered surfaces** and a non-Gaussian holdout; causal attribution is
+claimed only via a matched counterfactual. *Limits:* the effect contract measures the peak sample
+against the requested amplitude (declared per source); auto-advance timing is untested.
 
-### R6.2 — Public consumer ergonomics & interaction depth
-Geometry, viewport manipulation, ROI/probe fidelity, accessibility — driven by actual workbench
-shortcomings. Includes the unmerged Wave-3 scene editor (#176 / #177).
-- **Merged:** compact 40×15 readout-visibility + keyboard-only walkthrough foundations (#140 via
-  #199).
-- **Draft:** the display transport carries the field's world **origin + anisotropy + zoom** so the
-  rendered field and the index probe agree (Rsn IX **Gate G**, PR #238); a non-invertible / overflowing
-  geometry is **refused with a typed `UnsupportedView`** instead of a silent blank (Rsn X **Gate D3**,
-  PR #243); the input boundary is correct — a terminal transport state preempts input (B1), a
-  wrong-direction COMMAND is **observable** (B2), and single-source identity stays truthful (B3)
-  (Rsn XI **Gate B**, PR #244).
-- **Open:** the complete **40×15 scientific instrument** — compact layout keeping every readout via
-  focus/inspector pages, the full compact-PTY edit/inspect workflow, interactive geometry with
-  honest partial-visibility, and a capture/replay digest reproducible across color depth (Rsn XI
-  **Gate C**); review #176 / #177 for surviving unique work (avoid double-merge).
+### R6.2 — Public consumer ergonomics & interaction depth — **completed and verified (candidate)**
+The 40×15 scientific instrument (RXII); the display transport carrying origin/anisotropy/zoom
+(Gate G); a probe-following ROI window computed against the **physical** terminal (RXIV F), with the
+probe painted on screen; grapheme-cluster-safe clipping; strict, bounded, atomically committed
+capture files and a causal trace (v2) wired into the instrument (`--trace`) and the film
+(`--record` / `--replay-film`). The Wave-3 editor drafts #176/#177 are **superseded** by the merged
+`instrument_workbench` (close recommended — owner's action).
 
-### R6.3 — Cross-language interaction contracts
-Expand Python / C / Go parity deliberately, only after a narrow independently verified vertical
-slice. Preserve ABI v1 semantics.
-- **Draft / integration:** the C ABI v1 grown **52 → 59 additively** (headless context, ANSI
-  readback, color-depth downgrade, styled cell-grid + bulk readback, full grapheme) with a frozen
-  `gibson_cell_t` layout and **no** ABI-version bump (Rsn VII **Gate K**; Rsn IX **Gate F4/F5**,
-  PR #237); Go wire conformance (#206). The counts are the committed `abi/gibson-abi-v1.symbols`
-  baseline (`^gibson_` lines): **52 on `main`, 59 on the dev head** — and the `symbolic` CI check
-  enforces the built `.so` against that file, so the number is the verified export surface, not a
-  prose count.
-- **Open:** one genuinely **independent installed-SDK** forcing consumer (C or Python) built from
-  staged artifacts **outside** the checkout; a C/Py vertical slice compared to a Rust trace; a
-  C++/Go capability gap list; and the smallest public raster/input/resize/clock contract a future
-  Doom adapter needs (engine **not** built this round, GPL kept separate) (Rsn XI **Gate E**).
+### R6.3 — Cross-language interaction contracts — **completed with documented limitation**
+C ABI v1 at **59** symbols (`abi/gibson-abi-v1.symbols`, `symbolic`-guarded), frozen
+`gibson_cell_t`, no version bump. An installed-SDK forcing consumer (staged prefix, pkg-config only)
+runs in the CI Bindings job and the release cleanroom; a real-TTY input→state→render loop runs
+entirely through the ABI. *Limits:* a headless context has no input source; there is no sub-cell
+pixel raster; C++/Go/Python interactive parity is **not** claimed beyond the existing parity
+harnesses ([`docs/SDK_DOOM_HORIZON.md`](docs/SDK_DOOM_HORIZON.md)).
 
-### R6.4 — Extended graphics / media
-Consider `gibson::media` embedded assets (#186) and the `media-deflate` segment codec (#188),
-higher-resolution graphics, and optional sonification — **only** when a concrete consumer justifies
-them.
-- **Draft / deferred:** #186 and #188 remain open drafts, deliberately not promoted. Decide from
-  real consumer need (e.g. the R6.3 Doom horizon), not speculation. No media-rights change; the
-  HumanMusic / C137 / Homosapians research stays frozen with its music-freeze ledger intact.
+### R6.4 — Extended graphics / media — **explicitly deferred by design**
+`gibson::media` (#186) and `media-deflate` (#188) stay open drafts, promoted only for a concrete
+consumer. HumanMusic / C137 / Homosapians research stays frozen with its music-freeze ledger.
 
-### R6.5 — Performance & resource envelopes
-Use the telemetry to find real bottlenecks. **No** unsupported universal-FPS or optical-latency
-claims from bytes written to a PTY.
-- **Draft:** instrument telemetry + the command-dispatch latency funnel; a full-duplex
-  forward-progress proof on a **real** subprocess under flood (Rsn IX **Gate C3**, PR #239).
-- **Open:** a representative **sustained whole-process** resource envelope — model cadence, decoded/
-  skipped frames, coalesced/evicted observations, queue+inbox retained bytes, peak RSS, input→dispatch
-  and command→verdict latency, each measured separately with exact SHA/runner/workload provenance
-  (p50/p95/p99 only when the sample count makes them meaningful); plus the renderer **partial-write
-  recovery** battery. *(F1 finding: `TerminalTransaction::commit` is atomic via the synchronized-update
-  framing `?2026h`/`?2026l`; a torn-prefix battery needs a sync-update-aware oracle, a separate build.)*
-  (Rsn XI **Gate F**.)
+### R6.5 — Performance & resource envelopes — **completed with documented limitation**
+A measured envelope at an exact SHA ([`docs/V06_PERFORMANCE_ENVELOPE.md`](docs/V06_PERFORMANCE_ENVELOPE.md)):
+observation and command→verdict round trips, input→dispatch, scene evaluation, renderer
+generation, write+flush, producer cadence, coalescing, retained-byte high-water, RSS and cleanup.
+**Partial-write policy:** `TerminalTransaction` is **not** atomic I/O — synchronized-update framing
+is a display hint. The renderer counts delivered bytes: a failure that sent nothing is certain (the
+retry diffs in place); a torn prefix or an unconfirmed flush voids its physical belief, so the next
+fullscreen frame resets SGR, clears and repaints exactly, and an inline region is abandoned to
+scrollback and re-allocated (`tests/renderer_partial_write.rs`, every cut point).
+*Limits:* one host; no display FPS; streaming observation age unmeasured (no producer clock).
 
-### R6.6 — Long-standing terminal issues
-- **Open / blocked upstream:** issue **#15** — coincident resize/key input readiness. Upstream
-  crossterm **#1128** is unmerged; the acceptance criterion is delivery of the lone queued key
-  **without** requiring another input event. A deterministic behavioral **model/fixture**
-  (`tests/input_readiness_issue_15.rs`, Rsn XI **Gate G**) encodes that acceptance criterion and
-  refuses "a later event shook it loose" / generic PTY success as a pass — but it is a MODEL, not a
-  backend measurement. Closing #15 still **needs a real PTY/readiness experiment** against pinned
-  vs. patched crossterm (RXII **Gate E3**); the fixture is kept independent of the already-shipped
-  terminal-hangup identity-latch fix.
-
-### Current draft stack (nothing merged — owner holds every merge/tag/release)
-The Renaissance X/XI increments are a linear draft stack on top of the certified convergence head:
-`#241 ← #242 ← #243 ← #244`. #241 (Gate A convergence) is CI-certified with **both** the dev-CI
-matrix and the publication-free Release Preflight green on one SHA; #243's exact head `33cfd57` was
-likewise re-certified by a dispatched preflight run. Carried-forward: #176 / #177 (→ R6.2), #186 /
-#188 (→ R6.4). The per-round detail, hashes and exit heads live in the engineering record, not here.
+### R6.6 — Long-standing terminal issues — **blocked upstream; documented limitation**
+Issue **#15**. A real-PTY A/B isolated from LibGibson
+([`docs/research/issue15_crossterm_ab/`](docs/research/issue15_crossterm_ab/)) shows stock
+crossterm 0.29.0 strands the key in a resize-then-key readiness batch (0/30 delivered) and the
+upstream fix #1128 delivers it (30/30). #1128 is unmerged and crates.io is still 0.29.0, so #15
+stays open and is **not** claimed fixed; the fork is not adopted. Next probe: re-run the A/B against
+the first crossterm release containing #1128, then un-ignore
+`event_pressure_pty::context_coincident_lone_key_delivery_acceptance`.
 
 ### Constraints (unchanged)
 GitHub-first prereleases; C ABI v1; Rust MSRV 1.85; `main` merge-commit convention; the PCM audio
 golden and HumanMusic research are frozen; **no** tag, GitHub Release, registry (crates.io / PyPI)
-publication, `main` merge, supported-default change, or force-push without explicit maintainer
-authorization.
+publication, supported-default change, or force-push without explicit maintainer authorization. The
+`main` merge of the integration PR is conditionally authorized only after independent approval of
+its exact SHA.
 
 ### Longer-term horizon
-**v0.6:** a certified instrument and a genuine cinematic experience, reproducible resource
-envelopes, and a usable experimental SDK. **v0.7:** public-SDK terminal Doom integration and mature
-raster/input/clock contracts. **v0.8–0.9:** independent language parity, portability, sustainable
-performance. **v1.0:** a stable, reviewed core with verified support contracts.
+**v0.7:** playable public-SDK terminal Doom through verified input, raster, pacing and lifecycle
+contracts; the GPL adapter kept separate. **v0.8:** independently tested Rust/C/C++/Python/Go
+interactive capability coverage. **v0.9:** portability, performance, API stabilization and developer
+ergonomics. **v1.0:** reviewed stable CORE/API/ABI contracts with explicit support and compatibility
+obligations.
 
 ---
 

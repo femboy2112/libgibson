@@ -238,6 +238,15 @@ int main(void) {
 > These wrappers expose the established UI/output subset of the C ABI. Scene/Story,
 > software graphics, and audio/HumanMusic are Rust-only.
 
+**Verify an installed SDK (development checkout).** `scripts/dev/sdk_forcing_consumer.sh` builds
+the library, stages the SDK into a temporary prefix **outside** the checkout, and compiles
+[`bindings/sdk_forcing/doom_forcing_consumer.c`](bindings/sdk_forcing/doom_forcing_consumer.c)
+against it with nothing but `pkg-config` — a 240-frame bulk-readback loop that self-checks bulk ==
+single-cell readback, a mid-session colour-depth restyle, long-glyph recovery and ANSI output, and
+exits nonzero on any violation. CI and the release cleanroom run it. Its scope (output/readback
+only; a headless context has no input; no pixel raster) is mapped in
+[`docs/SDK_DOOM_HORIZON.md`](docs/SDK_DOOM_HORIZON.md).
+
 ## Try the demos
 
 ```bash

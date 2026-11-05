@@ -217,12 +217,13 @@ contract. It does not include every hostile input or every emulator.
 | --- | --- | --- |
 | Primary-screen inline mode; fullscreen | IMPLEMENTED + TESTED | Renderer, whole_renderer_vt100, commit_invariance, PTYs. |
 | Lifecycle, cursor, resize/re-anchor | IMPLEMENTED + TESTED; PARTIALLY TESTED across environments | Drop/panic cleanup and PTY input/resize; relative inline anchor, no DSR. Restore errors are best effort. |
-| Synchronized updates | IMPLEMENTED + PARTIALLY TESTED | Transaction markers tested; user toggle + TTY enables them, not negotiated support. |
+| Synchronized updates | IMPLEMENTED + PARTIALLY TESTED | Transaction markers tested; user toggle + TTY enables them, not negotiated support. A display hint, **not** atomic I/O. |
+| Partial-write recovery | IMPLEMENTED + TESTED (RXIV) | Commits count delivered bytes: a no-byte failure is retried in place; a torn prefix or failed flush voids the renderer's physical belief — fullscreen re-establishes the screen exactly, inline abandons the torn region. Every cut point swept against a vt100 oracle (`renderer_partial_write`). |
 | Differential rendering | IMPLEMENTED + TESTED | Count, exact coordinate spans, affected footprint and bytes are distinct; D2 regression now covered. |
 | Scrollback insertion | IMPLEMENTED + TESTED | CSI L fast path or repaint fallback; not universally zero repaint. Passive capability assumptions remain. |
 | Structured output / non-TTY | IMPLEMENTED + TESTED | Text/RichText/Node share layout; redirected output is plain text. |
 | Raw ANSI escape hatch | IMPLEMENTED + TESTED, caller responsibility | Explicit unchecked paths bypass sanitization; legacy alias noted below. |
-| Graphemes / wide glyphs / Unicode input | IMPLEMENTED + TESTED | Cell continuations, clipping, boundary-merging input, paste and width-aware cursor tests. Emulator width policies may differ. |
+| Graphemes / wide glyphs / Unicode input | IMPLEMENTED + TESTED | Cell continuations, clipping, boundary-merging input, paste and width-aware cursor tests; example-level status clipping walks grapheme clusters (RXIV). Emulator width policies may differ. |
 | RichText, wrapping, alignment, themes | IMPLEMENTED + TESTED | Cell/layout/structured_output tests. Not a general Markdown or CSS engine. |
 | TrueColor / ANSI256 / ANSI16 / Mono | IMPLEMENTED + TESTED | Central quantization and injected capabilities; passive environment inference only. |
 | Node tree, flex, stack/overlay, offsets | IMPLEMENTED + TESTED | Taffy, compositor and scene tests; not incremental layout or virtualized lists. |
@@ -236,7 +237,7 @@ contract. It does not include every hostile input or every emulator.
 | --- | --- | --- |
 | Semantic UI / Skin / UiRuntime / App | EXPERIMENTAL, Rust-only; [branch evidence](UI_LAYER_VALIDATION.md) | Adapter over Node/Theme/FocusRing/SurfaceFx/Context. Typed actions and bounded keyed presentation; no second renderer, no automatic business state or exit ghosts. |
 | SceneEntity, IDs/tags and targeting | EXPERIMENTAL + TESTED, Rust-only | Identity around ordinary Node, deterministic targeting/z-order. |
-| Effects, sequence/parallel, displacement, loops | EXPERIMENTAL + TESTED, Rust-only | Placement writes ordered; displacements add; finite/loop time deterministic. Independent channels can commute, arbitrary FX chains do not. |
+| Effects, sequence/parallel, displacement, loops | EXPERIMENTAL + TESTED, Rust-only | Placement writes ordered; displacements add; finite/loop time deterministic. Independent channels can commute, arbitrary FX chains do not. Interchange holds only under S ∧ C ([SCENE_ALGEBRA_LAWS.md](SCENE_ALGEBRA_LAWS.md)). |
 | Entity post-process / spatial masks | EXPERIMENTAL + TESTED, Rust-only | Transparent scratch only when active; ordered SurfaceFx, glyph-safe rect/wipe/radial/band/noise scopes. |
 | StoryDirector / reactions / replay | EXPERIMENTAL + TESTED, Rust-only | In-beat actions plus at most one transition per update; exact ordered dt/event replay. Direct facts_mut/jump_to edits are outside trace replay. |
 | Braille / HalfBlock canvases | IMPLEMENTED + TESTED, optional Rust graphics | 2×4 binary dots or 1×2 RGB samples per cell; ordinary Surface output. |

@@ -10,6 +10,11 @@ frame back out to blit it — and **where does the public C ABI stop?** Nothing 
 measures the ABI against that class of consumer and records the boundaries as deliberate, so they are
 a reviewed contract rather than a surprise after promotion.
 
+**RXIV status.** The forcing consumer is now a repeatable check — it runs in the CI Bindings job
+(`scripts/dev/sdk_forcing_consumer.sh`) and in the release cleanroom (`scripts/release/cleanroom.sh`,
+hence Release Preflight) — and a real-TTY closed loop through the ABI is demonstrated (table row
+"real-terminal input → state → render"). Neither changes the two boundaries below.
+
 Every claim below is grounded in a consumer built against the SDK **staged into a prefix outside the
 checkout** (`scripts/dev/sdk_forcing_consumer.sh` → `scripts/release/stage-sdk.sh`, compiled with
 `cc $(pkg-config --cflags --libs libgibson)`, no repo include/lib paths) —
@@ -33,6 +38,9 @@ would. All held, from the installed prefix:
 | full grapheme for complex glyphs | `gibson_get_frame_cell_glyph` (size-then-copy), `GIBSON_CELL_GLYPH_CAP` | **SUPPORTED** | a 25-byte ZWJ family emoji (one cell) recovered in full past the 16-byte inline cap |
 | mid-session color-depth adaptation | `gibson_set_color_depth` + re-render + readback | **SUPPORTED** | the same styled cell resolves to a **different** style at TRUECOLOR vs MONO |
 | ANSI frame bytes to blit to a terminal | `gibson_get_rendered_output` | **SUPPORTED** | 8825 bytes of ANSI at truecolor; nonzero at every depth |
+| real-terminal input → state → render (a game loop) | `gibson_create_context` + `gibson_poll_event` + `gibson_set_root_node` + `gibson_render` | **SUPPORTED on a TTY context** (RXIV) | `ffi_realtty_probe abi-loop`: Right arrows decoded by the ABI advance state that is re-rendered; the painted frame is verified on a vt100 parse (`tests/ffi_realtty_pty.rs`) |
+| deterministic synthetic input into a headless frame | — | **NOT SUPPORTED** | boundary 1 below |
+| sub-cell pixel raster | — | **NOT SUPPORTED** | boundary 2 below |
 
 The output path of a text-mode (cell-grid) Doom-class consumer is therefore **viable on the shipped
 SDK, from an installed prefix** — not merely on the repo-relative parity harnesses.

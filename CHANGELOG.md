@@ -20,6 +20,46 @@ development line, **not a release** — the manifest reads `0.6.0-dev`. `GIBSON_
 stays 1 — the C ABI grows only by **additive** functions (compatible, no version bump);
 MSRV stays 1.85.
 
+### Fixed — Rust library (`gibson::renderer`), RXIV
+- **Partial terminal writes no longer leave the renderer believing a torn frame never happened.**
+  `TerminalTransaction` is not atomic I/O (synchronized-update framing is a display hint), and a
+  failed commit could leave a prefix of a frame on the terminal while the renderer kept diffing
+  against its old belief — after a torn frame the screen failed to converge for 119/143 cut points
+  (fullscreen) and 120/157 (inline). Commits now count delivered bytes: a failure that sent
+  **nothing** is certain (the emission state is restored and a retry diffs in place); a delivered
+  prefix or a failed flush voids the physical belief, so the next fullscreen frame resets SGR,
+  clears and repaints, and an inline region is abandoned to scrollback and re-allocated. Additive:
+  `Renderer::physical_state_uncertain()`. (`tests/renderer_partial_write.rs`.)
+
+### Added — examples / tooling, RXIV (experimental, not library API)
+- **Interactive live instrument-film:** `field_cinema --live --interactive` (probe, target,
+  tracked command, correlated verdict, verified-difference composition; `--step`,
+  `--reduced-motion`, `--suppress`, `--shape ring`, `--mask-every N`, `--record DIR`,
+  `--replay-film DIR`) and `field_cinema --envelope` (a measured resource/latency envelope).
+- **`wire_instrument --trace PATH`:** commits the session's causal trace atomically.
+- **Reference producer:** opt-in `--shape ring` (non-Gaussian holdout) and `--mask-every N`;
+  defaults and the golden vector are byte-identical.
+- **CI / release:** the installed-SDK forcing consumer runs in the Bindings job and the release
+  cleanroom; a real-TTY input→state→render loop through ABI v1 (`ffi_realtty_probe abi-loop`).
+- **Research:** a real-PTY stock-vs-patched crossterm A/B for #15
+  (`docs/research/issue15_crossterm_ab/`). #15 is **not** fixed — blocked upstream.
+
+### Changed — examples (experimental), RXIV
+- **Cinematic TRANSFORM is gated by a typed effect contract** (`field_cinema/live.rs`): the RXIII
+  `peak >= 0.8·target` rule transformed on an unchanged measurement (incl. a real no-op edit).
+- **The live film runs on the instrument's certified transport/command channel** (`LiveSession`):
+  id- and source-correlated verdicts, typed fail-closed errors, supervised producer lifetime.
+- **Capture files:** writer and reader share one acceptance contract; an aggregate payload budget
+  (256 MiB default); strict readers reject trailing bytes (`read_capture_prefix_with` is the explicit
+  tolerant form); a different format version is `UnsupportedVersion`; files commit atomically.
+- **Causal trace format v2 (`WIRETRC2`):** commands record their arguments; `Failed` verdicts and
+  `TransportFailed` admission; v1 streams are `UnsupportedVersion`.
+- **`wire_instrument`:** the ROI window is computed against the physical terminal and the probe is
+  painted on the field; status clipping walks grapheme clusters.
+- **Docs:** `SCENE_ALGEBRA_LAWS.md` — interchange holds under S ∧ C (aligned first tile AND
+  commuting crossed writes); duration alignment alone is refuted. `scene.rs` docs stop calling
+  `Parallel` a monoidal product and `to_node` a functor.
+
 ### Added — C ABI (`GIBSON_ABI_VERSION` stays 1; additive)
 - **`gibson_create_headless_context(mode, cols, rows, **out)`** + **`gibson_get_rendered_output(ctx, buf, cap, *out_len)`:**
   a deterministic in-memory headless context plus a binary-safe readback of its ANSI frame

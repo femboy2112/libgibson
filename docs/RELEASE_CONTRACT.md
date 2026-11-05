@@ -423,3 +423,30 @@ path is as stated in `SECURITY.md`.
   merged; LibGibson stays on stock 0.29.0 and does **not** vendor the fork). The
   [Event Pressure Lab](EVENT_PRESSURE_LAB.md) reproduces it. This is an accepted
   Engineering Alpha limitation for 0.1.0; a merged upstream fix would let it close.
+  RXIV (2026-11-05) re-measured it on a real PTY isolated from LibGibson: stock 0.29.0
+  delivered 0/30 resize-then-key collisions, the #1128 fork 30/30
+  ([`research/issue15_crossterm_ab`](research/issue15_crossterm_ab/README.md)); it remains
+  an accepted limitation for v0.6 until a crossterm release contains the fix.
+
+### v0.6 Engineering Alpha limitations (stated, not hidden)
+
+The v0.6 integration candidate is qualified in
+[`V06_QUALIFICATION_LEDGER.md`](V06_QUALIFICATION_LEDGER.md). These are its declared limits:
+
+- **Terminal writes are not atomic.** A failed write may leave a torn prefix of a frame on the
+  terminal; synchronized-update framing is a display hint, not I/O rollback. The renderer reports it
+  (`Renderer::physical_state_uncertain()`) and re-establishes the screen on the next frame —
+  exactly in fullscreen mode; in inline mode the torn region is abandoned to scrollback, not
+  repaired. A failure that delivered no bytes is certain and retried in place.
+- **The C ABI's headless context is output-only.** `gibson_poll_event` reads a real TTY; there is no
+  event-injection entry point and no sub-cell pixel raster. Interactive parity across C++/Go/Python
+  is not claimed beyond the existing parity harnesses.
+- **The cinematic effect contract is single-quantity.** `field_cinema` judges the peak sample
+  against the requested amplitude with a declared tolerance; it claims consistency with a request,
+  never mechanism, and causal attribution only where a matched counterfactual exists.
+- **Capture / trace checksums are FNV-1a receipts**, not authentication; replay reproduces
+  decisions from recorded observations and does not re-execute a producer. These formats are
+  example-level, not a stable public file format.
+- **The performance envelope is one host's measurement** (`V06_PERFORMANCE_ENVELOPE.md`): no
+  universal frame rate, no display latency, no streaming observation age.
+- **Issue #15** (above) stays open.

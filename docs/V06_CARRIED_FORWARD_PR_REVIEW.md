@@ -76,3 +76,14 @@ The hit-test / painted-hitmap primitives the editor is built on (`src/hit_test.r
 ### Decision (recommendation — owner holds the close button)
 
 **Close #176 and #177 as SUPERSEDED by the merged `instrument_workbench` + its three test files.** Re-basing the stale `wave2/wave3` editor branches onto `main` would re-land a second scene editor that duplicates the merged one and risks re-vendoring the hit-test primitives already on `main` (the double-merge hazard the original review flagged). The narrow freehand-`stroke` residual is recorded here as deferred-until-a-consumer-needs-it. This changes the summary verdicts for #176/#177 from "Keep; rebase" to "Close; superseded (narrow stroke residual deferred)"; the #186/#188 media verdicts are unchanged.
+
+## RXIV addendum (2026-11-05) — final disposition for the v0.6 integration candidate
+
+| PR | Disposition | Owner action |
+|---|---|---|
+| #176 / #177 (Wave-3 scene editor + PTY walkthrough) | **Superseded** by the merged `instrument_workbench` (mapping above); sole residual is freehand `stroke`, not required by any v0.6 consumer | close as superseded (not done by the agent) |
+| #186 / #188 (`gibson::media`, `media-deflate`) | **Deferred by design** (R6.4) — no concrete consumer yet | leave open / revisit at v0.7 (Doom horizon) |
+| #195 / #196 / #197 (dependabot) | Outside the v0.6 integration scope; independent of this candidate | owner's call |
+| #241 … #251 (Renaissance stack) | Contained in full, with ancestry preserved, in the consolidated integration PR | close or leave after that PR merges |
+
+No PR was closed, merged or edited for state by the agent.
