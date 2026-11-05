@@ -162,6 +162,14 @@ jobs:
           gcc -Iinclude bindings/c/example.c -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/example_c
           /tmp/example_c
 
+      - name: Installed-SDK forcing consumer (staged prefix, pkg-config only)
+        # RXIV Gate G1: stage the SDK into a prefix OUTSIDE the checkout and build the Doom-shaped
+        # forcing consumer from a temp dir with ONLY pkg-config (no repo include/lib paths); it
+        # drives 240 frames of bulk readback + depth restyle + long-glyph recovery and exits
+        # nonzero on any violated invariant. A narrow output/readback slice — not input, not a
+        # pixel raster (docs/SDK_DOOM_HORIZON.md).
+        run: scripts/dev/sdk_forcing_consumer.sh
+
       - name: C++ example
         run: |
           g++ -std=c++17 -Iinclude bindings/cpp/example.cpp -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/example_cpp

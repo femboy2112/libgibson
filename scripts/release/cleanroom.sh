@@ -89,6 +89,16 @@ clog="$(mktemp)"
 if ( cd "$cdir" && cc -std=c11 main.c $(pkg-config --cflags --libs libgibson) -o c_app && ./c_app >/dev/null ) >"$clog" 2>&1; then pass "C"; else bad "C"; dump "$clog"; fi
 rm -f "$clog"
 
+echo "### C installed-SDK forcing consumer (bulk readback loop, pkg-config) ###"
+# RXIV Gate G1: not just "it links" — the Doom-shaped forcing consumer drives the readback ABI from
+# the staged prefix (240-frame bulk readback, bulk == single-cell, mid-session depth restyle,
+# long-glyph recovery, ANSI output) and self-checks each invariant (nonzero exit on violation).
+fdir="$WORK/forcing"; mkdir -p "$fdir"
+cp bindings/sdk_forcing/doom_forcing_consumer.c "$fdir/main.c"
+flog="$(mktemp)"
+if ( cd "$fdir" && cc -std=c11 -Wall -Wextra main.c $(pkg-config --cflags --libs libgibson) -o forcing_app && ./forcing_app | grep -q '^doom_forcing_consumer: OK' ) >"$flog" 2>&1; then pass "C forcing consumer"; else bad "C forcing consumer"; dump "$flog"; fi
+rm -f "$flog"
+
 echo "### C++ consumer (pkg-config) ###"
 xdir="$WORK/cpp"; mkdir -p "$xdir"
 cat > "$xdir/main.cpp" <<'EOF'
