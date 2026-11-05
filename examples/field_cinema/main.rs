@@ -11,20 +11,30 @@
 //! cargo run --example field_cinema -- --ticks=12
 //! cargo run --example field_cinema -- --probe=10,8 # a fixed world-point selection
 //! cargo run --example field_cinema -- --selfcheck  # assert the causal invariants
+//! cargo run --example field_cinema -- --live        # the live-wire film (real producer)
+//! cargo run --example field_cinema -- --live --suppress   # the honest non-transform
+//! cargo run --example field_cinema -- --live --replay     # prove the film is deterministic
 //! ```
 //!
 //! `--selfcheck` exits non-zero if any causal invariant is violated; it is the
-//! live counterpart to `tests/field_cinema_mutation.rs`.
+//! live counterpart to `tests/field_cinema_mutation.rs`. `--live` drives the real
+//! Python↔Rust producer (`bindings/python/producer.py`) through the six-beat causal
+//! arc and renders each beat — the live counterpart to
+//! `tests/field_cinema_causal_oracle.rs`.
 
 mod cinema;
+mod live;
+mod live_link;
 
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::process::ExitCode;
 
 use cinema::{compose, observe, render_shot, view_focused_on, Emphasis, Model, Shot, SourceId};
 use gibson::field_view::{Colormap, FieldView, RangePolicy};
 use gibson::shape::Point;
 use gibson::{Rect, Surface};
+use live::{Arc, Beat};
+use live_link::{arc_summary, mono_preview, stage_live, verdict_of, Link, LIVE_EPOCH, LIVE_SOURCE};
 
 /// The terminal rectangle every shot is framed into.
 const ANCHOR: Rect = Rect {
@@ -42,6 +52,9 @@ fn main() -> ExitCode {
     }
     if args.iter().any(|a| a == "--selfcheck") {
         return selfcheck();
+    }
+    if args.iter().any(|a| a == "--live") {
+        return run_live(&args);
     }
 
     let mut ticks: u64 = 8;
@@ -162,11 +175,190 @@ fn parse_point(s: &str) -> Option<Point> {
 fn print_help() {
     println!(
         "field_cinema — source-driven cinematic slice (#191)\n\n\
-         --ticks=N      number of logical ticks to stage (default 8)\n\
-         --probe=X,Y    pin the selection to a world point (default: tracks the peak)\n\
-         --selfcheck    assert the causal invariants and exit non-zero on violation\n\
-         --help         this message"
+         --ticks=N        number of logical ticks to stage (default 8)\n\
+         --probe=X,Y      pin the selection to a world point (default: tracks the peak)\n\
+         --selfcheck      assert the causal invariants and exit non-zero on violation\n\
+         --live           the live-wire film: drive the REAL producer through the six-beat arc\n\
+         --suppress       (with --live) --freeze-amplitude the producer: the honest non-transform\n\
+         --reduced-motion (with --live) show only the key beats' frames, not every drift\n\
+         --replay         (with --live) run the film twice and prove it is byte-identical\n\
+         --help           this message\n\n\
+         --live spawns bindings/python/producer.py; set GIBSON_PYTHON to pick the interpreter."
     );
+}
+
+// ---------------------------------------------------------------------------
+// --live — the live-wire film: the REAL producer driven through the six-beat
+// causal arc. Lockstep and sleep-free; the live counterpart to
+// tests/field_cinema_causal_oracle.rs. The transform is earned by an OBSERVED
+// authoritative change, never by the producer's ack alone — so --suppress
+// (an acknowledged-but-frozen edit) honestly never transforms.
+// ---------------------------------------------------------------------------
+
+/// The presenter's intended set-amplitude target (its own command stamp; the arc's transform
+/// threshold is a fraction of this). The producer's authoritative value is observed, not trusted.
+const LIVE_TARGET: f64 = 2.0;
+
+fn run_live(args: &[String]) -> ExitCode {
+    let suppress = args.iter().any(|a| a == "--suppress");
+    let reduced = args.iter().any(|a| a == "--reduced-motion");
+
+    if args.iter().any(|a| a == "--replay") {
+        // Determinism proof: the same lockstep script yields the identical beat path and
+        // byte-identical final frame. No film is printed on the first pass.
+        let a = film_frames(suppress);
+        let b = film_frames(suppress);
+        let identical = a == b;
+        println!(
+            "field_cinema --live --replay{}\n  pass A: {} beats, final frame {}x{}\n  pass B: {} beats, final frame {}x{}\n  {} the live-wire film is deterministic (byte-identical replay)",
+            if suppress { " --suppress" } else { "" },
+            a.0.len(),
+            a.1.width,
+            a.1.height,
+            b.0.len(),
+            b.1.width,
+            b.1.height,
+            if identical { "OK —" } else { "FAILED —" },
+        );
+        return if identical {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
+
+    let color = io::stdout().is_terminal();
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    let _ = writeln!(
+        out,
+        "field_cinema --live{} — source {LIVE_SOURCE} epoch {LIVE_EPOCH}, the film is CAUSED BY a real cross-process field\n\
+         six beats: ESTABLISH → DISCOVER → INTERVENE → AWAIT → TRANSFORM → RESOLVE\n\
+         the transform is earned by an OBSERVED authoritative change — never the ack alone ({} output)\n",
+        if suppress { " --suppress" } else { "" },
+        if color { "terminal" } else { "piped/mono" },
+    );
+
+    let mut link = Link::spawn(suppress);
+    let mut arc = Arc::new();
+
+    // ESTABLISH — the unsolicited seq=1 authoritative field sets the baseline.
+    let f0 = link.recv_field();
+    let (o0, shot0, _surf0) = stage_live(&f0);
+    arc.observe(arc_summary(&o0));
+    let baseline = o0.peak_value.unwrap_or(f64::NAN);
+    beat_line(
+        &mut out,
+        arc.beat(),
+        &format!("baseline peak {baseline:.3}"),
+    );
+    if !reduced {
+        dump_surface(&mut out, &mono_preview(&f0, &shot0));
+        let _ = writeln!(out);
+    }
+
+    // DISCOVER → INTERVENE — probe the field, then issue a validated edit.
+    arc.discover();
+    beat_line(&mut out, arc.beat(), "probing the field center");
+    arc.intervene();
+    beat_line(
+        &mut out,
+        arc.beat(),
+        &format!("issuing set-amplitude {LIVE_TARGET:.1}"),
+    );
+
+    // The producer's TRUE verdict.
+    link.send_amplitude(LIVE_TARGET);
+    let ack = link.recv_ack();
+    arc.verdict(verdict_of(ack), LIVE_TARGET);
+    beat_line(&mut out, arc.beat(), &format!("producer verdict: {ack:?}"));
+
+    // Advance one tick and OBSERVE the authoritative field. This — not the ack — is the only
+    // path into TRANSFORM.
+    link.send_advance();
+    let f1 = link.recv_field();
+    let (o1, shot1, _surf1) = stage_live(&f1);
+    arc.observe(arc_summary(&o1));
+    let after = o1.peak_value.unwrap_or(f64::NAN);
+    match arc.beat() {
+        Beat::Transform => beat_line(
+            &mut out,
+            arc.beat(),
+            &format!("the field MOVED to peak {after:.3} — the change is witnessed, transformation earned"),
+        ),
+        _ => beat_line(
+            &mut out,
+            arc.beat(),
+            &format!(
+                "acknowledged, but the field held at peak {after:.3} — no authoritative change, no transformation (honest)"
+            ),
+        ),
+    }
+    dump_surface(&mut out, &mono_preview(&f1, &shot1));
+    let _ = writeln!(
+        out,
+        "  shot focus=({:.1},{:.1}) zoom={:.2} {} {:?}",
+        shot1.focus.x,
+        shot1.focus.y,
+        shot1.zoom,
+        colormap_tag(shot1.colormap),
+        shot1.emphasis,
+    );
+
+    // RESOLVE — the transform latch (if earned) survives the close.
+    arc.resolve();
+    beat_line(
+        &mut out,
+        arc.beat(),
+        if arc.transformed() {
+            "the film resolves on a transformed field"
+        } else {
+            "the film resolves unchanged — the edit was acknowledged but never took hold"
+        },
+    );
+    link.finish();
+    ExitCode::SUCCESS
+}
+
+/// Print one beat line: `[BEAT] note`.
+fn beat_line<W: Write>(out: &mut W, beat: Beat, note: &str) {
+    let tag = match beat {
+        Beat::Establish => "ESTABLISH",
+        Beat::Discover => "DISCOVER",
+        Beat::Intervene => "INTERVENE",
+        Beat::Await => "AWAIT",
+        Beat::Transform => "TRANSFORM",
+        Beat::Resolve => "RESOLVE",
+    };
+    let _ = writeln!(out, "[{tag:>9}] {note}");
+}
+
+/// Run the whole lockstep film headlessly and return its beat path and final surface — the unit
+/// the `--replay` determinism proof compares.
+fn film_frames(suppress: bool) -> (Vec<Beat>, Surface) {
+    let mut link = Link::spawn(suppress);
+    let mut arc = Arc::new();
+    let mut beats = Vec::new();
+
+    let (o0, _s0, _surf0) = stage_live(&link.recv_field());
+    arc.observe(arc_summary(&o0));
+    beats.push(arc.beat());
+    arc.discover();
+    beats.push(arc.beat());
+    arc.intervene();
+    beats.push(arc.beat());
+    link.send_amplitude(LIVE_TARGET);
+    let ack = link.recv_ack();
+    arc.verdict(verdict_of(ack), LIVE_TARGET);
+    beats.push(arc.beat());
+    link.send_advance();
+    let (o1, _s1, surf1) = stage_live(&link.recv_field());
+    arc.observe(arc_summary(&o1));
+    beats.push(arc.beat());
+    arc.resolve();
+    beats.push(arc.beat());
+    link.finish();
+    (beats, surf1)
 }
 
 // ---------------------------------------------------------------------------
