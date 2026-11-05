@@ -32,10 +32,17 @@
 //!   same interval. Parallel effects on *independent* channels/targets commute;
 //!   placement/scalar writes resolve by explicit write order. Displacements
 //!   add as integer vectors; surface operations append in deterministic order.
-//! * **Functor** `Render : SCENE → UI`: [`Scene::to_node`] maps a scene
-//!   presentation into ordinary `Node`s (a `Stack` of offset layers inside an
-//!   optional camera `Viewport`). It is **not** a second renderer; it produces
-//!   the same declarative render objects everything else uses.
+//!   This is a **timed scheduling algebra**, not a strict monoidal category: a
+//!   composite's duration is the *sum* under `;` but the *max* under `⊗`, so the
+//!   strict interchange law `(f⊗g);(h⊗k) = (f;h)⊗(g;k)` holds only when the
+//!   parallel tiles are duration-aligned, and fails otherwise. See
+//!   `docs/SCENE_ALGEBRA_LAWS.md` (Gate A).
+//! * **Lowering** `Render : SCENE → UI`: [`Scene::to_node`] lowers an evaluated
+//!   scene *presentation* into ordinary `Node`s (a `Stack` of offset layers inside
+//!   an optional camera `Viewport`). It is an object/state map — **not** an
+//!   established strict functor (it has no action on effect *morphisms*; it factors
+//!   through the `Presentation`), and **not** a second renderer; it produces the
+//!   same declarative render objects everything else uses.
 //!
 //! Everything here is a pure function of its inputs and of time, so a scene
 //! frame is reproducible under [`crate::FixedStepClock`] and suitable for

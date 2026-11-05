@@ -349,3 +349,44 @@ fn camera_pan_composes_through_sequence() {
         "a non-zero camera lowers to a Viewport"
     );
 }
+
+/// **A4 — `to_node` is an object-level lowering, not a strict functor (UNVERIFIED as a functor;
+/// accurately a lowering/interpretation function).**
+///
+/// A genuine functor `Render : SCENE → UI` would need an action on MORPHISMS (effects) preserving
+/// identity and composition. `to_node` has none: it consumes an evaluated `Presentation` and emits a
+/// `Node`, so it factors entirely through the presentation *object*. Two DIFFERENT effects (distinct
+/// morphisms) that evaluate to the SAME presentation therefore lower to the SAME node — the map
+/// carries no information about which morphism produced the state. That is exactly an object/state
+/// lowering, so the honest ledger verdict is "lowering/interpretation function", not "strict
+/// functor". (Identity-object preservation and effects-only-touch-presentation are already shown in
+/// `scene_algebra.rs`.)
+#[test]
+fn to_node_factors_through_presentation_so_it_is_a_lowering_not_a_strict_functor() {
+    let (mut scene, _) = (Scene::new(), ());
+    let a = scene.add(SceneEntity::new("a", dot("a")));
+    let t = SceneTarget::Id(a);
+
+    // Two distinct morphisms with the same endpoint at t=1s: one slides 0→5, the other 3→5.
+    let via_zero = Effect::translate(t, (0.0, 0.0), (5.0, 0.0), secs(1));
+    let via_three = Effect::translate(t, (3.0, 0.0), (5.0, 0.0), secs(1));
+    assert_ne!(
+        via_zero, via_three,
+        "the two effects are genuinely different morphisms"
+    );
+
+    let (mut p1, mut p2) = (Presentation::new(), Presentation::new());
+    via_zero.eval(secs(1), &scene, &mut p1);
+    via_three.eval(secs(1), &scene, &mut p2);
+    assert_eq!(
+        p1, p2,
+        "but they evaluate to the same presentation object at t=1s"
+    );
+
+    // So the lowering produces identical nodes: to_node sees only the presentation, never the effect.
+    assert_eq!(
+        format!("{:?}", scene.to_node(&p1, 8.0, 4.0)),
+        format!("{:?}", scene.to_node(&p2, 8.0, 4.0)),
+        "to_node factors through Presentation — an object lowering, not a functor on morphisms"
+    );
+}
