@@ -13,6 +13,13 @@ mod layout;
 
 use layout::{clip, compact_plan, is_compact, wrapped_rows, DetailPage, Essentials, INSPECT_PAGES};
 
+/// Terminal display columns of a string, via the public API (the same `UnicodeWidthStr`-backed
+/// measure the renderer uses). The oracle the width-honesty tests check `clip`/`wrapped_rows`
+/// against — a wide CJK glyph is two columns, not one `char`.
+fn display_cols(s: &str) -> usize {
+    gibson::Span::raw(s).display_width()
+}
+
 fn essentials() -> Essentials {
     Essentials {
         source: "source 1 t4 8x4 z1x".to_string(),
@@ -187,4 +194,57 @@ fn clip_truncates_long_lines_with_an_ellipsis() {
     let out = clip(long, 10);
     assert_eq!(out.chars().count(), 10, "clipped to exactly the width");
     assert!(out.ends_with('…'), "an ellipsis marks the cut: {out:?}");
+}
+
+/// Gate D width honesty. A wide (CJK) glyph is ONE `char` but TWO terminal columns, so a char-count
+/// budget under-counts the rows a wide readout occupies and would let it silently wrap past the
+/// compact budget. `wrapped_rows` must measure DISPLAY COLUMNS: six CJK glyphs are twelve columns,
+/// which overflow a width-10 line onto a second row — a char-count measure (6 ≤ 10) wrongly says one.
+#[test]
+fn wrapped_rows_measures_display_width_not_char_count() {
+    // Six fullwidth CJK glyphs = 12 display columns.
+    let cjk = "一二三四五六";
+    assert_eq!(
+        display_cols(cjk),
+        12,
+        "sanity: six CJK glyphs are 12 columns"
+    );
+    assert_eq!(cjk.chars().count(), 6, "sanity: but only six chars");
+    assert_eq!(
+        wrapped_rows(cjk, 10),
+        2,
+        "12 display columns overflow a width-10 line onto a second row"
+    );
+    // A single wide glyph still fits a width-2 line on one row.
+    assert_eq!(wrapped_rows("一", 2), 1);
+    // ASCII is unchanged (char count == display width).
+    assert_eq!(wrapped_rows("short line", 40), 1);
+}
+
+/// Gate D width honesty. `clip` must truncate by DISPLAY COLUMNS and never split a wide glyph: a
+/// char-count budget (6 CJK chars ≤ 6) would leave a 12-column string in place and blow the row
+/// budget. The clipped result must fit the width in COLUMNS and still end in an ellipsis.
+#[test]
+fn clip_truncates_by_display_width_not_char_count() {
+    let cjk = "一二三四五六"; // 12 columns, 6 chars
+    let out = clip(cjk, 6);
+    assert!(
+        display_cols(&out) <= 6,
+        "clipped to fit 6 display columns, got {} cols in {out:?}",
+        display_cols(&out)
+    );
+    assert!(out.ends_with('…'), "an ellipsis marks the cut: {out:?}");
+    // The content before the ellipsis is whole wide glyphs — no half-glyph was emitted.
+    let body: String = out.chars().take_while(|&c| c != '…').collect();
+    assert_eq!(
+        display_cols(&body) + 1,
+        display_cols(&out),
+        "the ellipsis is one column and nothing was split"
+    );
+    // A string that already fits in columns is untouched, even with wide glyphs.
+    assert_eq!(
+        clip("一二", 4),
+        "一二",
+        "two CJK glyphs fit exactly in 4 columns"
+    );
 }

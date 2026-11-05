@@ -1,6 +1,7 @@
-// Shared by the example (`main.rs`) and by `tests/wire_instrument_layout.rs` via `#[path]`; like
-// the sibling `viewport`/`input` modules it depends only on `std`, so it stays independently
-// includable. Quiet dead_code for the whole module.
+// Shared by the example (`main.rs`) and by `tests/wire_instrument_layout.rs` via `#[path]`. It uses
+// `gibson::Span` for terminal display-width measurement (the same `UnicodeWidthStr` measure the
+// renderer uses); every includer — the example and the integration tests — links gibson, so it
+// stays independently includable. Quiet dead_code for the whole module.
 #![allow(dead_code)]
 //! Compact (small-terminal) layout planning for `wire_instrument` (RXII Checkpoint 2 / Gate B, C1).
 //!
@@ -130,15 +131,24 @@ pub fn compact_plan(
     }
 }
 
+/// Terminal display columns of a string — the same `UnicodeWidthStr`-backed measure the renderer
+/// uses, reached through the public `gibson::Span`. A wide (CJK/emoji) glyph is two columns, a
+/// combining mark zero; `char` count is not column count, and budgeting the compact layout on
+/// `char`s would let a wide readout silently wrap past a short screen.
+fn display_cols(s: &str) -> usize {
+    gibson::Span::raw(s).display_width()
+}
+
 /// Count the terminal rows a string occupies when soft-wrapped at width `w` on whitespace
-/// boundaries (a word longer than `w` hard-breaks). Used only to budget the compact layout so the
-/// essentials are never pushed off a short screen (#140 / L8). Mirrors the workbench helper.
+/// boundaries (a word wider than `w` hard-breaks). Measured in DISPLAY COLUMNS, not `char`s, so a
+/// wide-glyph readout is budgeted by the room it really takes. Used only to budget the compact
+/// layout so the essentials are never pushed off a short screen (#140 / L8).
 pub fn wrapped_rows(s: &str, w: u16) -> usize {
     let w = (w as usize).max(1);
     let mut rows = 1usize;
     let mut col = 0usize;
     for word in s.split_whitespace() {
-        let wl = word.chars().count().max(1);
+        let wl = display_cols(word).max(1);
         if col == 0 {
             rows += (wl - 1) / w;
             col = ((wl - 1) % w) + 1;
@@ -152,17 +162,31 @@ pub fn wrapped_rows(s: &str, w: u16) -> usize {
     rows
 }
 
-/// Truncate `s` to at most `w` display columns (counted in `char`s), appending an ellipsis when it
-/// is cut, so a long status line never soft-wraps and disturbs the compact row budget.
+/// Truncate `s` to at most `w` terminal DISPLAY COLUMNS, appending an ellipsis when it is cut, so a
+/// long status line never soft-wraps and disturbs the compact row budget. Columns are measured, not
+/// `char`s, and truncation stops on a whole-glyph boundary so a wide glyph is never split across the
+/// cut (which would render as a stray half-cell). The ellipsis costs one column.
 pub fn clip(s: &str, w: u16) -> String {
     let w = w as usize;
-    if s.chars().count() <= w {
+    if display_cols(s) <= w {
         return s.to_string();
     }
     if w == 0 {
         return String::new();
     }
-    let mut out: String = s.chars().take(w - 1).collect();
+    // Reserve one column for the ellipsis; take whole chars by display width so a wide glyph that
+    // would straddle the cut is dropped rather than split.
+    let budget = w - 1;
+    let mut out = String::new();
+    let mut cols = 0usize;
+    for ch in s.chars() {
+        let cw = display_cols(ch.encode_utf8(&mut [0u8; 4]));
+        if cols + cw > budget {
+            break;
+        }
+        out.push(ch);
+        cols += cw;
+    }
     out.push('…');
     out
 }
