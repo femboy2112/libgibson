@@ -20,6 +20,21 @@ development line, **not a release** — the manifest reads `0.6.0-dev`. `GIBSON_
 stays 1 — the C ABI grows only by **additive** functions (compatible, no version bump);
 MSRV stays 1.85.
 
+### Fixed — test harness (`event_pressure_lab`), RXVII ([#255](https://github.com/femboy2112/libgibson/issues/255))
+- **Parallel event-pressure trials no longer collide on their scratch directory.** The trial
+  directory was named `gibson-pressure-{pid}-{CLOCK_MONOTONIC µs}`; parallel test threads share the
+  pid, so two trials starting in the same microsecond built the same path and the second failed with
+  `EEXIST` — a false failure of a test whose code under test was fine. The name now carries a
+  process-wide sequence (`gibson-pressure-{pid}-{µs}-{seq}`), creation stays exclusive
+  (`create_dir`, never adopting an existing path), an existing name is skipped for a fresh one within
+  a bounded number of attempts, and every other creation error propagates. The guard still removes
+  the directory on drop; event-pressure expectations, deadlines and the ignored #15 acceptance are
+  unchanged.
+- `tests/event_pressure_trial_dir.rs` reproduces the legacy name verbatim as a negative control:
+  with a frozen clock and barrier-synchronized starts it collides deterministically (1 of 16 creators
+  wins), while the sequenced name gives 16 distinct directories. Test harness only — no library,
+  ABI or behaviour change.
+
 ### Documentation — the terminal-write contract, RXVI ([#254](https://github.com/femboy2112/libgibson/issues/254))
 - **No current document promises an atomic terminal write any more.** README, DESIGN §8,
   `docs/FEATURES.md` and the Release Contract (§2, §6) still described `TerminalTransaction` as
