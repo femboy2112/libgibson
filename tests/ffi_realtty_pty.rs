@@ -259,3 +259,39 @@ fn abi_poll_event_surfaces_resize_on_a_real_tty() {
         "probe must reach completion\n{receipt}"
     );
 }
+
+/// RXIV Gate G1 — a controlled real-TTY input -> state -> render loop entirely through ABI v1:
+/// three Right arrows injected on the PTY master are decoded by `gibson_poll_event`, each one
+/// advances application state that is rebuilt and painted with `gibson_render`. The PAINTED frame
+/// is verified on a vt100 parse of the alternate screen (not only the receipts), so this proves the
+/// closed loop a terminal game needs from the public ABI — on a real TTY (a headless context has
+/// no input source; see docs/SDK_DOOM_HORIZON.md).
+#[test]
+fn abi_real_tty_input_drives_state_that_is_rendered() {
+    let wire = drive("abi-loop", |cap| {
+        for _ in 0..3 {
+            cap.write(b"\x1b[C").expect("write Right");
+            let _ = cap.collect_for(Duration::from_millis(60));
+        }
+        cap.write(b"q").expect("write sentinel");
+    });
+    let bytes = wire.as_bytes();
+    for n in 1..=3 {
+        assert!(
+            contains(bytes, format!("STATE count={n}").as_bytes()),
+            "state step {n} missing\n{wire}"
+        );
+    }
+    // Parse the stream up to the alternate-screen exit: the painted frame, not the receipt.
+    let end = bytes
+        .windows(8)
+        .rposition(|w| w == b"\x1b[?1049l")
+        .unwrap_or(bytes.len());
+    let mut p = vt100::Parser::new(ROWS, COLS, 0);
+    p.process(&bytes[..end]);
+    let screen = p.screen().contents();
+    assert!(
+        screen.contains("abi-loop count 3"),
+        "the ABI-rendered frame must show the state the input drove:\n{screen}"
+    );
+}

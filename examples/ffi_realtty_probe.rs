@@ -233,8 +233,50 @@ fn abi_resize() {
     }
 }
 
+/// RXIV Gate G1 — a controlled real-TTY input -> state -> render loop entirely through the C ABI:
+/// every Right arrow polled by `gibson_poll_event` increments application state, which is rebuilt
+/// into a node tree and painted with `gibson_render`; the parent verifies the PAINTED frame on a
+/// vt100 parse of the alternate screen, not just the receipt. `q` ends the loop.
+fn abi_loop() {
+    unsafe {
+        let mut ctx: *mut GibsonContextOpaque = ptr::null_mut();
+        assert_eq!(
+            gibson_create_context(GIBSON_MODE_FULLSCREEN, &mut ctx),
+            GibsonStatus::Ok
+        );
+        let mut count = 0u32;
+        set_minimal_root(ctx, &format!("abi-loop count {count}"));
+        let mut ev: GibsonEvent = std::mem::zeroed();
+        let _ = gibson_poll_event(ctx, 50, &mut ev); // arm raw mode
+        mark("READY");
+        loop {
+            let mut ev: GibsonEvent = std::mem::zeroed();
+            if gibson_poll_event(ctx, 2000, &mut ev) != GibsonStatus::Ok {
+                mark("POLL_ERR");
+                continue;
+            }
+            if ev.event_type != GIBSON_EVENT_KEY {
+                continue;
+            }
+            if ev.key_code == u32::from('q') {
+                break;
+            }
+            if ev.key_code == 0x1003 {
+                // GIBSON_KEY_RIGHT: input -> state -> render, all through the ABI.
+                count += 1;
+                set_minimal_root(ctx, &format!("abi-loop count {count}"));
+                mark(&format!("STATE count={count}"));
+            }
+        }
+        mark("DONE");
+        gibson_destroy_context(ctx);
+        std::process::exit(0);
+    }
+}
+
 fn main() {
     match std::env::args().nth(1).as_deref() {
+        Some("abi-loop") => abi_loop(),
         Some("abi") => abi(),
         Some("native") => native(),
         Some("abi-input") => abi_input(),

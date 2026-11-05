@@ -450,6 +450,11 @@ impl LiveSession {
         self.counters
     }
 
+    /// High-water of retained FIELD payload bytes in the reader (the bounded transport's memory).
+    pub fn reader_bytes_high_water(&self) -> usize {
+        self.reader().bytes_high_water()
+    }
+
     /// The command channel (read-only telemetry: outstanding, acknowledged, conservation, …).
     pub fn channel(&self) -> &CommandChannel {
         &self.channel

@@ -23,6 +23,7 @@
 //! `tests/field_cinema_causal_oracle.rs`.
 
 mod cinema;
+mod envelope;
 mod film;
 mod live;
 mod live_link;
@@ -68,6 +69,25 @@ fn main() -> ExitCode {
     }
     if args.iter().any(|a| a == "--selfcheck") {
         return selfcheck();
+    }
+    if args.iter().any(|a| a == "--envelope") {
+        // RXIV Gate G2: a bounded, measured resource/latency envelope (see envelope.rs).
+        let frames = arg_value(&args, "--frames")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1000);
+        let secs = arg_value(&args, "--stream-secs")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10.0);
+        return match envelope::run(frames, secs) {
+            Ok(report) => {
+                println!("{report}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("field_cinema --envelope FAILED — {e}");
+                ExitCode::FAILURE
+            }
+        };
     }
     if let Some(dir) = arg_value(&args, "--replay-film") {
         return replay_film_cmd(dir);
