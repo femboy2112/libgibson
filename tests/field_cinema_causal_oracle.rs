@@ -20,18 +20,38 @@
 //! Lockstep, so the proof is deterministic and sleep-free; if python3 or the producer cannot be
 //! spawned, the test fails loudly rather than skipping.
 
+#[path = "../examples/wire_instrument/channel.rs"]
+mod channel;
 #[path = "../examples/field_cinema/cinema.rs"]
 mod cinema;
+#[path = "../examples/wire_instrument/input.rs"]
+mod input;
 #[path = "../examples/field_cinema/live.rs"]
 mod live;
 #[path = "../examples/field_cinema/live_link.rs"]
 mod live_link;
+#[path = "../examples/wire_instrument/transport.rs"]
+mod transport;
 
 use cinema::Shot;
 use gibson::surface::Surface;
 use gibson::wire::AckStatus;
 use live::{Arc, Beat, Verdict};
-use live_link::{arc_summary, stage_live, verdict_of, Link};
+use live_link::{
+    arc_summary, stage_live, verdict_of, LiveSession, ProducerSpec, LIVE_SOURCE, SHUTDOWN_GRACE,
+};
+
+/// Spawn the reference lockstep producer through the certified session.
+fn live_session(freeze: bool) -> LiveSession {
+    LiveSession::spawn(&ProducerSpec::reference(freeze), LIVE_SOURCE)
+        .expect("spawn python3 bindings/python/producer.py --lockstep (is python3 on PATH?)")
+}
+
+/// Submit a set-amplitude edit and return the verdict correlated to ITS command id.
+fn edit(s: &mut LiveSession, v: f64) -> AckStatus {
+    let id = s.submit_amplitude(v).expect("deliver the edit");
+    s.await_verdict(id).expect("the edit's own verdict")
+}
 
 /// The presenter's intended target for the set-amplitude edit (its own command stamp — the arc's
 /// effect contract judges the observation against it within a declared tolerance). The producer's
@@ -55,45 +75,44 @@ struct Film {
 /// Drive an EDIT history (accepted / refused / suppressed) end to end through the real producer and
 /// the arc. `freeze` selects the suppressing producer; `amp` is the edit value submitted.
 fn drive_edit(freeze: bool, amp: f64) -> Film {
-    let mut link = Link::spawn(freeze);
+    let mut link = live_session(freeze);
     let mut arc = Arc::new();
     let mut beats = Vec::new();
 
     // ESTABLISH — the unsolicited seq=1 authoritative field sets the baseline.
-    let f0 = link.recv_field();
-    let (o0, _s0, _surf0) = stage_live(&f0.field);
+    let f0 = link.next_field().unwrap();
+    let (o0, _s0, _surf0) = stage_live(&f0).unwrap();
     arc.observe(arc_summary(&o0, f0.cursor));
     beats.push(arc.beat());
 
     // DISCOVER — the viewer probes while one natural tick calibrates the source's variation (the
     // effect contract requires it before any change can be attributed). Then INTERVENE.
     arc.discover();
-    link.send_advance();
-    let fc = link.recv_field();
-    let (oc, _sc, _surfc) = stage_live(&fc.field);
+    link.advance().unwrap();
+    let fc = link.next_field().unwrap();
+    let (oc, _sc, _surfc) = stage_live(&fc).unwrap();
     arc.observe(arc_summary(&oc, fc.cursor));
     beats.push(arc.beat());
     arc.intervene(amp);
     beats.push(arc.beat());
 
     // The producer renders its TRUE verdict. ACK arms AWAIT; REFUSED disarms to DISCOVER.
-    link.send_amplitude(amp);
-    let ack = link.recv_ack();
+    let ack = edit(&mut link, amp);
     arc.verdict(verdict_of(ack));
     beats.push(arc.beat());
 
     // Advance one tick and OBSERVE the authoritative field that follows. This — not the ack — is
     // the only thing that can carry the arc into TRANSFORM.
-    link.send_advance();
-    let f1 = link.recv_field();
-    let (o1, s1, surf1) = stage_live(&f1.field);
+    link.advance().unwrap();
+    let f1 = link.next_field().unwrap();
+    let (o1, s1, surf1) = stage_live(&f1).unwrap();
     arc.observe(arc_summary(&o1, f1.cursor));
     beats.push(arc.beat());
 
     // RESOLVE — the transform latch (if earned) survives the close.
     arc.resolve();
     beats.push(arc.beat());
-    link.finish();
+    link.finish(SHUTDOWN_GRACE);
 
     Film {
         beats,
@@ -110,32 +129,32 @@ fn drive_edit(freeze: bool, amp: f64) -> Film {
 /// Drive the NO-EDIT history: establish, discover, let the model drift two ticks at amplitude 1,
 /// resolve. Ordinary motion (the peak travels, its value does not) never earns a transform.
 fn drive_no_edit() -> Film {
-    let mut link = Link::spawn(false);
+    let mut link = live_session(false);
     let mut arc = Arc::new();
     let mut beats = Vec::new();
 
-    let f0 = link.recv_field();
-    let (o0, _s0, _surf0) = stage_live(&f0.field);
+    let f0 = link.next_field().unwrap();
+    let (o0, _s0, _surf0) = stage_live(&f0).unwrap();
     arc.observe(arc_summary(&o0, f0.cursor));
     beats.push(arc.beat());
     arc.discover();
     beats.push(arc.beat());
 
-    link.send_advance();
-    let f1 = link.recv_field();
-    let (o1, _s1, _surf1) = stage_live(&f1.field);
+    link.advance().unwrap();
+    let f1 = link.next_field().unwrap();
+    let (o1, _s1, _surf1) = stage_live(&f1).unwrap();
     arc.observe(arc_summary(&o1, f1.cursor));
     beats.push(arc.beat());
 
-    link.send_advance();
-    let f2 = link.recv_field();
-    let (o2, s2, surf2) = stage_live(&f2.field);
+    link.advance().unwrap();
+    let f2 = link.next_field().unwrap();
+    let (o2, s2, surf2) = stage_live(&f2).unwrap();
     arc.observe(arc_summary(&o2, f2.cursor));
     beats.push(arc.beat());
 
     arc.resolve();
     beats.push(arc.beat());
-    link.finish();
+    link.finish(SHUTDOWN_GRACE);
 
     Film {
         beats,
@@ -242,28 +261,27 @@ fn the_identical_real_ack_is_separated_only_by_the_observed_field() {
 /// have to turn red if the film ever decided the transform on the ack.
 #[test]
 fn removing_the_authoritative_update_breaks_the_positive_film() {
-    let mut link = Link::spawn(false);
-    let f0 = link.recv_field();
-    let (o0, _s0, _surf0) = stage_live(&f0.field);
+    let mut link = live_session(false);
+    let f0 = link.next_field().unwrap();
+    let (o0, _s0, _surf0) = stage_live(&f0).unwrap();
     let baseline = arc_summary(&o0, f0.cursor);
-    link.send_advance();
-    let fc = link.recv_field();
-    let (oc, _sc, _surfc) = stage_live(&fc.field);
+    link.advance().unwrap();
+    let fc = link.next_field().unwrap();
+    let (oc, _sc, _surfc) = stage_live(&fc).unwrap();
     let calibration = arc_summary(&oc, fc.cursor);
 
-    link.send_amplitude(TARGET);
-    let ack = link.recv_ack();
+    let ack = edit(&mut link, TARGET);
     assert_eq!(
         ack,
         AckStatus::Acknowledged,
         "the real producer acked the edit"
     );
 
-    link.send_advance();
-    let f1 = link.recv_field();
-    let (o1, _s1, _surf1) = stage_live(&f1.field);
+    link.advance().unwrap();
+    let f1 = link.next_field().unwrap();
+    let (o1, _s1, _surf1) = stage_live(&f1).unwrap();
     let authoritative = arc_summary(&o1, f1.cursor); // the real doubled field
-    link.finish();
+    link.finish(SHUTDOWN_GRACE);
 
     assert!(
         o1.peak_value.unwrap() > 1.5,

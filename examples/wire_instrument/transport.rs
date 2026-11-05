@@ -71,9 +71,10 @@
 
 use std::collections::VecDeque;
 use std::io::{ErrorKind, Read};
-use std::process::{Child, ChildStdin};
+use std::process::{Child, ChildStdin, ExitStatus};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use gibson::wire::{FrameDecoder, WireBody, WireError, WireMessage};
 
@@ -539,6 +540,9 @@ struct Shared {
     /// Running count of recoverable frames the decoder skipped and resynchronized past — the
     /// observable receipt for a malformed-but-nonfatal frame (Gate C4). Monotonic.
     decode_skips: u64,
+    /// Bytes of an incomplete frame still buffered when the stream ended (RXIV Gate B3). Nonzero
+    /// means the stream was TRUNCATED mid-frame — distinct from a clean close on a frame boundary.
+    partial_at_eof: usize,
 }
 
 /// Outcome of a UI-side drain: whether the producer has disconnected and any fatal decode.
@@ -562,6 +566,10 @@ pub struct DrainOutcome {
     /// the reader's life (Gate C4). Nonzero means the producer emitted malformed-but-nonfatal
     /// frames; a healthy stream holds it at 0. A countable receipt, never a silent loss.
     pub decode_skips: u64,
+    /// Bytes of an incomplete frame buffered when the stream ended (present only alongside
+    /// `disconnected`). Nonzero = the producer's stream was TRUNCATED mid-frame (RXIV Gate B3), so a
+    /// "clean" EOF is not reported as an orderly close.
+    pub partial_frame_bytes: usize,
 }
 
 /// A background reader that decodes the producer's stdout into a bounded, coalescing buffer and
@@ -581,6 +589,7 @@ impl Reader {
             read_error: None,
             fatal: None,
             decode_skips: 0,
+            partial_at_eof: 0,
         }));
         let worker = Arc::clone(&shared);
         let handle = thread::spawn(move || {
@@ -590,8 +599,11 @@ impl Reader {
                 match stdout.read(&mut chunk) {
                     Ok(0) => {
                         // Clean end-of-stream: the producer closed its stdout. `read_error` stays
-                        // `None`, marking this a graceful disconnect rather than a fault.
-                        worker.lock().unwrap().eof = true;
+                        // `None`, marking this a graceful disconnect rather than a fault — unless
+                        // a partial frame is still buffered, which marks the stream TRUNCATED.
+                        let mut guard = worker.lock().unwrap();
+                        guard.partial_at_eof = pump.buffered_bytes();
+                        guard.eof = true;
                         return;
                     }
                     Ok(n) => {
@@ -619,6 +631,7 @@ impl Reader {
                         // disambiguates the two.
                         let mut guard = worker.lock().unwrap();
                         guard.read_error = Some(e.kind());
+                        guard.partial_at_eof = pump.buffered_bytes();
                         guard.eof = true;
                         return;
                     }
@@ -651,6 +664,7 @@ impl Reader {
                 fatal: guard.fatal,
                 control_overflow: guard.buf.control_overflow(),
                 decode_skips: guard.decode_skips,
+                partial_frame_bytes: guard.partial_at_eof,
             };
             (batch, outcome)
         };
@@ -782,6 +796,32 @@ impl ProducerOwner {
     /// death observed through the OS, never an escape-stream assertion).
     pub fn child_id(&self) -> u32 {
         self.child.id()
+    }
+
+    /// Non-blocking exit probe through the OS wait handle (`Some` once the child has exited).
+    pub fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
+        self.child.try_wait()
+    }
+
+    /// Graceful, BOUNDED shutdown (RXIV Gate B3): close stdin (EOF — a healthy producer exits on
+    /// its own), poll the OS wait handle until `grace` elapses, and only then `kill` + `wait`.
+    /// Returns the reaped exit status and whether the exit was graceful (on its own, within
+    /// `grace`). The reader is joined either way; `Drop` afterwards is an idempotent no-op backstop.
+    pub fn shutdown(&mut self, grace: Duration) -> std::io::Result<(ExitStatus, bool)> {
+        drop(self.stdin.take());
+        let deadline = Instant::now() + grace;
+        let (status, graceful) = loop {
+            if let Some(st) = self.child.try_wait()? {
+                break (st, true);
+            }
+            if Instant::now() >= deadline {
+                let _ = self.child.kill();
+                break (self.child.wait()?, false);
+            }
+            thread::sleep(Duration::from_millis(1));
+        };
+        self.reader.join();
+        Ok((status, graceful))
     }
 }
 

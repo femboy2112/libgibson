@@ -25,6 +25,14 @@
 mod cinema;
 mod live;
 mod live_link;
+// The certified presentation-side transport, command channel, and source classifier from the
+// scientific instrument — reused, not reimplemented (RXIV Gate B).
+#[path = "../wire_instrument/channel.rs"]
+mod channel;
+#[path = "../wire_instrument/input.rs"]
+mod input;
+#[path = "../wire_instrument/transport.rs"]
+mod transport;
 
 use std::io::{self, IsTerminal, Write};
 use std::process::ExitCode;
@@ -34,7 +42,10 @@ use gibson::field_view::{Colormap, FieldView, RangePolicy};
 use gibson::shape::Point;
 use gibson::{Rect, Surface};
 use live::{Arc, Beat};
-use live_link::{arc_summary, mono_preview, stage_live, verdict_of, Link, LIVE_EPOCH, LIVE_SOURCE};
+use live_link::{
+    arc_summary, mono_preview, stage_live, verdict_of, LiveError, LiveSession, ProducerSpec,
+    LIVE_SOURCE, SHUTDOWN_GRACE,
+};
 
 /// The terminal rectangle every shot is framed into.
 const ANCHOR: Rect = Rect {
@@ -206,8 +217,13 @@ fn run_live(args: &[String]) -> ExitCode {
     if args.iter().any(|a| a == "--replay") {
         // Determinism proof: the same lockstep script yields the identical beat path and
         // byte-identical final frame. No film is printed on the first pass.
-        let a = film_frames(suppress);
-        let b = film_frames(suppress);
+        let (a, b) = match (film_frames(suppress), film_frames(suppress)) {
+            (Ok(a), Ok(b)) => (a, b),
+            (Err(e), _) | (_, Err(e)) => {
+                eprintln!("field_cinema --live --replay FAILED — {e}");
+                return ExitCode::FAILURE;
+            }
+        };
         let identical = a == b;
         println!(
             "field_cinema --live --replay{}\n  pass A: {} beats, final frame {}x{}\n  pass B: {} beats, final frame {}x{}\n  {} the live-wire film is deterministic (byte-identical replay)",
@@ -230,50 +246,85 @@ fn run_live(args: &[String]) -> ExitCode {
     let color = io::stdout().is_terminal();
     let stdout = io::stdout();
     let mut out = stdout.lock();
+    let spec = ProducerSpec::reference(suppress);
+    let mut session = match LiveSession::spawn(&spec, LIVE_SOURCE) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = writeln!(out, "field_cinema --live FAILED — {e}");
+            return ExitCode::FAILURE;
+        }
+    };
     let _ = writeln!(
         out,
-        "field_cinema --live{} — source {LIVE_SOURCE} epoch {LIVE_EPOCH}, the film is CAUSED BY a real cross-process field\n\
+        "field_cinema --live{} — source {LIVE_SOURCE}, producer pid {}, the film is CAUSED BY a real cross-process field\n\
          six beats: ESTABLISH → DISCOVER → INTERVENE → AWAIT → TRANSFORM → RESOLVE\n\
          the transform is earned by an OBSERVED authoritative change — never the ack alone ({} output)\n",
         if suppress { " --suppress" } else { "" },
+        session.producer_pid().unwrap_or(0),
         if color { "terminal" } else { "piped/mono" },
     );
+    // On ANY error the session is dropped here (stdin EOF → kill backstop → OS wait → reader
+    // join), so the producer is reaped on the failure path too, and the typed error is reported.
+    match scripted_film(&mut out, &mut session, reduced) {
+        Ok(()) => {
+            let end = session.finish(SHUTDOWN_GRACE);
+            let _ = writeln!(
+                out,
+                "  producer exit {} ({})",
+                end.exit.map_or("unknown".to_string(), |s| s.to_string()),
+                if end.graceful {
+                    "graceful"
+                } else {
+                    "killed after grace"
+                },
+            );
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            let _ = writeln!(out, "field_cinema --live FAILED — {e}");
+            drop(session);
+            ExitCode::FAILURE
+        }
+    }
+}
 
-    let mut link = Link::spawn(suppress);
+/// The scripted lockstep film: every producer interaction goes through the typed session.
+fn scripted_film<W: Write>(
+    out: &mut W,
+    session: &mut LiveSession,
+    reduced: bool,
+) -> Result<(), LiveError> {
     let mut arc = Arc::new();
 
     // ESTABLISH — the unsolicited seq=1 authoritative field sets the baseline.
-    let f0 = link.recv_field();
-    let (o0, shot0, _surf0) = stage_live(&f0.field);
+    let f0 = session.next_field()?;
+    let (o0, shot0, _surf0) = staged(&f0)?;
     arc.observe(arc_summary(&o0, f0.cursor));
     let baseline = o0.peak_value.unwrap_or(f64::NAN);
-    beat_line(
-        &mut out,
-        arc.beat(),
-        &format!("baseline peak {baseline:.3}"),
-    );
+    beat_line(out, arc.beat(), &format!("baseline peak {baseline:.3}"));
     if !reduced {
-        dump_surface(&mut out, &mono_preview(&f0.field, &shot0));
+        if let Some(p) = mono_preview(&f0.field, &shot0) {
+            dump_surface(out, &p);
+        }
         let _ = writeln!(out);
     }
 
     // DISCOVER — probe the field and watch it evolve one tick: the natural-variation calibration
     // the effect contract requires before any change can be attributed.
     arc.discover();
-    link.send_advance();
-    let fc = link.recv_field();
-    let (oc, _shotc, _surfc) = stage_live(&fc.field);
+    let fc = session.step()?;
+    let (oc, _shotc, _surfc) = staged(&fc)?;
     arc.observe(arc_summary(&oc, fc.cursor));
     let (n, drift) = arc.calibration();
     beat_line(
-        &mut out,
+        out,
         arc.beat(),
         &format!("probing the field center; natural variation {drift:.4} over {n} observations"),
     );
     // INTERVENE — arm the expected effect against the calibrated baseline.
     let armed = arc.intervene(LIVE_TARGET);
     beat_line(
-        &mut out,
+        out,
         arc.beat(),
         &format!(
             "issuing set-amplitude {LIVE_TARGET:.1} (expected effect: {})",
@@ -285,35 +336,40 @@ fn run_live(args: &[String]) -> ExitCode {
         ),
     );
 
-    // The producer's TRUE verdict.
-    link.send_amplitude(LIVE_TARGET);
-    let ack = link.recv_ack();
+    // The producer's TRUE verdict, correlated to THIS command id through the ledger.
+    let id = session.submit_amplitude(LIVE_TARGET)?;
+    let ack = session.await_verdict(id)?;
     arc.verdict(verdict_of(ack));
-    beat_line(&mut out, arc.beat(), &format!("producer verdict: {ack:?}"));
+    beat_line(
+        out,
+        arc.beat(),
+        &format!("producer verdict for command {id}: {ack:?}"),
+    );
 
     // Advance one tick and OBSERVE the authoritative field. This — not the ack — is the only
     // path into TRANSFORM.
-    link.send_advance();
-    let f1 = link.recv_field();
-    let (o1, shot1, _surf1) = stage_live(&f1.field);
+    let f1 = session.step()?;
+    let (o1, shot1, _surf1) = staged(&f1)?;
     let ev = arc.observe(arc_summary(&o1, f1.cursor));
     let after = o1.peak_value.unwrap_or(f64::NAN);
     let label = ev.map_or("unclassified", |e| e.label());
     match arc.beat() {
         Beat::Transform => beat_line(
-            &mut out,
+            out,
             arc.beat(),
             &format!("observed peak {after:.3}: {label} — the change is evidenced (not a proof of mechanism)"),
         ),
         _ => beat_line(
-            &mut out,
+            out,
             arc.beat(),
             &format!(
                 "acknowledged, observed peak {after:.3}: {label} — no consistent change, no transformation (honest)"
             ),
         ),
     }
-    dump_surface(&mut out, &mono_preview(&f1.field, &shot1));
+    if let Some(p) = mono_preview(&f1.field, &shot1) {
+        dump_surface(out, &p);
+    }
     let _ = writeln!(
         out,
         "  shot focus=({:.1},{:.1}) zoom={:.2} {} {:?}",
@@ -327,7 +383,7 @@ fn run_live(args: &[String]) -> ExitCode {
     // RESOLVE — the transform latch (if earned) survives the close.
     arc.resolve();
     beat_line(
-        &mut out,
+        out,
         arc.beat(),
         if arc.transformed() {
             "the film resolves on a transformed field"
@@ -335,8 +391,19 @@ fn run_live(args: &[String]) -> ExitCode {
             "the film resolves unchanged — the edit was acknowledged but never took hold"
         },
     );
-    link.finish();
-    ExitCode::SUCCESS
+    Ok(())
+}
+
+/// Stage an admitted frame, mapping an unpresentable geometry to a typed error.
+fn staged(
+    f: &live_link::LiveField,
+) -> Result<(cinema::FieldObservation, Shot, Surface), LiveError> {
+    stage_live(f).ok_or(LiveError::Disconnected {
+        read_error: None,
+        truncated_bytes: 0,
+        exit: None,
+        stderr: "an admitted frame's geometry was not presentable".into(),
+    })
 }
 
 /// Print one beat line: `[BEAT] note`.
@@ -354,36 +421,34 @@ fn beat_line<W: Write>(out: &mut W, beat: Beat, note: &str) {
 
 /// Run the whole lockstep film headlessly and return its beat path and final surface — the unit
 /// the `--replay` determinism proof compares.
-fn film_frames(suppress: bool) -> (Vec<Beat>, Surface) {
-    let mut link = Link::spawn(suppress);
+fn film_frames(suppress: bool) -> Result<(Vec<Beat>, Surface), LiveError> {
+    let mut session = LiveSession::spawn(&ProducerSpec::reference(suppress), LIVE_SOURCE)?;
     let mut arc = Arc::new();
     let mut beats = Vec::new();
 
-    let f0 = link.recv_field();
-    let (o0, _s0, _surf0) = stage_live(&f0.field);
+    let f0 = session.next_field()?;
+    let (o0, _s0, _surf0) = staged(&f0)?;
     arc.observe(arc_summary(&o0, f0.cursor));
     beats.push(arc.beat());
     arc.discover();
-    link.send_advance();
-    let fc = link.recv_field();
-    let (oc, _sc, _surfc) = stage_live(&fc.field);
+    let fc = session.step()?;
+    let (oc, _sc, _surfc) = staged(&fc)?;
     arc.observe(arc_summary(&oc, fc.cursor));
     beats.push(arc.beat());
     arc.intervene(LIVE_TARGET);
     beats.push(arc.beat());
-    link.send_amplitude(LIVE_TARGET);
-    let ack = link.recv_ack();
+    let id = session.submit_amplitude(LIVE_TARGET)?;
+    let ack = session.await_verdict(id)?;
     arc.verdict(verdict_of(ack));
     beats.push(arc.beat());
-    link.send_advance();
-    let f1 = link.recv_field();
-    let (o1, _s1, surf1) = stage_live(&f1.field);
+    let f1 = session.step()?;
+    let (o1, _s1, surf1) = staged(&f1)?;
     arc.observe(arc_summary(&o1, f1.cursor));
     beats.push(arc.beat());
     arc.resolve();
     beats.push(arc.beat());
-    link.finish();
-    (beats, surf1)
+    session.finish(SHUTDOWN_GRACE);
+    Ok((beats, surf1))
 }
 
 // ---------------------------------------------------------------------------

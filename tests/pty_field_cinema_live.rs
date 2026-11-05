@@ -100,7 +100,7 @@ fn the_suppressed_film_honestly_refuses_to_transform_on_a_real_pty() {
     let out = run_live_film(&["--suppress"]);
     assert_beats_in_order(&out);
     assert!(
-        out.contains("producer verdict: Acknowledged"),
+        out.contains("producer verdict for command 1: Acknowledged"),
         "the suppressed edit is still acknowledged on the wire:\n{out}"
     );
     assert!(
@@ -114,5 +114,60 @@ fn the_suppressed_film_honestly_refuses_to_transform_on_a_real_pty() {
     assert!(
         out.contains("resolves unchanged"),
         "the suppressed film resolves unchanged:\n{out}"
+    );
+}
+
+/// RXIV Gate B3 — an INNER failure must still reap the producer grandchild. A stubborn fake
+/// producer (selected through `GIBSON_PYTHON`) writes a malformed frame and then ignores both stdin
+/// EOF (`exec sleep`) and the terminal hangup (`trap '' HUP`). The film must fail with a typed fatal-decode report, exit nonzero on its own,
+/// and the grandchild — whose pid the film prints — must be gone from the OS process table when it
+/// does: reaped by the session's supervised owner (kill backstop + wait), not orphaned.
+#[test]
+fn an_inner_failure_reports_typed_and_reaps_the_producer_grandchild() {
+    let dir = std::env::temp_dir().join(format!("rxiv-b3-pty-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let fake = dir.join("stubborn-producer");
+    std::fs::write(
+        &fake,
+        // `trap '' HUP` (SIG_IGN survives exec): without it the PTY's own hangup on the film's
+        // exit would kill a LEAKED producer and pass this test for the wrong reason.
+        "#!/bin/sh\ntrap '' HUP\nprintf 'XXXXgarbage-not-a-gibson-frame-XXXXXXXXXXXXXXXXXXXXXXXXX'\nexec sleep 30\n",
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut cmd = CommandBuilder::new(pty_capture::example_path("field_cinema"));
+    cmd.arg("--live");
+    cmd.cwd(env!("CARGO_MANIFEST_DIR"));
+    cmd.env("GIBSON_PYTHON", &fake);
+    let mut capture = pty_capture::Capture::spawn(cmd, 100, 24, Duration::from_secs(10));
+    capture
+        .collect_until(|bytes| String::from_utf8_lossy(bytes).contains("FAILED"))
+        .expect("the film reports the inner failure");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(s) = capture.try_wait().expect("poll field_cinema --live") {
+            break s;
+        }
+        assert!(Instant::now() < deadline, "the failed film did not exit");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let out = String::from_utf8_lossy(&capture.finish()).into_owned();
+    assert!(!status.success(), "an inner failure exits nonzero:\n{out}");
+    assert!(
+        out.contains("fatal decode"),
+        "the failure is typed, not a panic:\n{out}"
+    );
+    assert!(!out.contains("panicked"), "no untyped panic:\n{out}");
+    let pid: u32 = out
+        .split("producer pid ")
+        .nth(1)
+        .and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next())
+        .and_then(|d| d.parse().ok())
+        .unwrap_or_else(|| panic!("the film names its producer pid:\n{out}"));
+    assert!(
+        !std::path::Path::new(&format!("/proc/{pid}")).exists(),
+        "the producer grandchild {pid} outlived the failed film (orphaned)"
     );
 }

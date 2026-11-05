@@ -17,19 +17,40 @@
 //! causal attribution is claimed: the deterministic reference producer, no-edit vs edited at
 //! identical model ticks).
 
+#[path = "../examples/wire_instrument/channel.rs"]
+mod channel;
 #[path = "../examples/field_cinema/cinema.rs"]
 mod cinema;
+#[path = "../examples/wire_instrument/input.rs"]
+mod input;
 #[path = "../examples/field_cinema/live.rs"]
 mod live;
 #[path = "../examples/field_cinema/live_link.rs"]
 mod live_link;
+#[path = "../examples/wire_instrument/transport.rs"]
+mod transport;
 
 use cinema::{observe, SourceId};
 use gibson::field_view::{FieldExtent, FieldView};
 use gibson::wire::AckStatus;
 use gibson::Point;
 use live::{classify, Arc, Beat, CycleOutcome, Evidence, ExpectedEffect, ObsSummary, Verdict};
-use live_link::{arc_summary, stage_live, verdict_of, Link, LiveField};
+use live_link::{
+    arc_summary, stage_live, verdict_of, LiveField, LiveSession, ProducerSpec, LIVE_SOURCE,
+    SHUTDOWN_GRACE,
+};
+
+/// Spawn the reference lockstep producer through the certified session.
+fn live_session(freeze: bool) -> LiveSession {
+    LiveSession::spawn(&ProducerSpec::reference(freeze), LIVE_SOURCE)
+        .expect("spawn python3 bindings/python/producer.py --lockstep (is python3 on PATH?)")
+}
+
+/// Submit a set-amplitude edit and return the verdict correlated to ITS command id.
+fn edit(s: &mut LiveSession, v: f64) -> AckStatus {
+    let id = s.submit_amplitude(v).expect("deliver the edit");
+    s.await_verdict(id).expect("the edit's own verdict")
+}
 
 fn obs(seq: u64, v: Option<f64>) -> ObsSummary {
     ObsSummary::new(1, seq, seq, v)
@@ -348,30 +369,29 @@ fn a3_a_second_geometry_obeys_the_same_contract() {
 // ---------------------------------------------------------------------------------------------
 
 fn stage(f: &LiveField) -> ObsSummary {
-    let (o, _, _) = stage_live(&f.field);
+    let (o, _, _) = stage_live(f).unwrap();
     arc_summary(&o, f.cursor)
 }
 
 #[test]
 fn real_producer_noop_edit_is_indiscriminable_and_never_transforms() {
-    let mut link = Link::spawn(false);
+    let mut link = live_session(false);
     let mut arc = Arc::new();
-    arc.observe(stage(&link.recv_field()));
+    arc.observe(stage(&link.next_field().unwrap()));
     arc.discover();
-    link.send_advance();
-    arc.observe(stage(&link.recv_field()));
+    link.advance().unwrap();
+    arc.observe(stage(&link.next_field().unwrap()));
     assert_eq!(arc.intervene(1.0), Evidence::Indiscriminable);
-    link.send_amplitude(1.0);
-    let ack = link.recv_ack();
+    let ack = edit(&mut link, 1.0);
     assert_eq!(
         ack,
         AckStatus::Acknowledged,
         "the producer genuinely acks it"
     );
     arc.verdict(verdict_of(ack));
-    link.send_advance();
-    arc.observe(stage(&link.recv_field()));
-    link.finish();
+    link.advance().unwrap();
+    arc.observe(stage(&link.next_field().unwrap()));
+    link.finish(SHUTDOWN_GRACE);
     assert!(
         !arc.transformed(),
         "a real acknowledged no-op edit is not a transform"
@@ -382,16 +402,16 @@ fn real_producer_noop_edit_is_indiscriminable_and_never_transforms() {
 /// sample moves by far less than the 5% contract band (grid discretization only).
 #[test]
 fn real_producer_natural_variation_is_inside_the_declared_tolerance() {
-    let mut link = Link::spawn(false);
-    let mut prev = stage(&link.recv_field()).peak_value.unwrap();
+    let mut link = live_session(false);
+    let mut prev = stage(&link.next_field().unwrap()).peak_value.unwrap();
     let mut worst: f64 = 0.0;
     for _ in 0..12 {
-        link.send_advance();
-        let v = stage(&link.recv_field()).peak_value.unwrap();
+        link.advance().unwrap();
+        let v = stage(&link.next_field().unwrap()).peak_value.unwrap();
         worst = worst.max((v - prev).abs() / prev.abs());
         prev = v;
     }
-    link.finish();
+    link.finish(SHUTDOWN_GRACE);
     assert!(
         worst < 0.01,
         "measured relative natural drift {worst:.5} (declared band 0.05)"
@@ -405,24 +425,23 @@ fn real_producer_natural_variation_is_inside_the_declared_tolerance() {
 #[test]
 fn real_producer_matched_counterfactual_attributes_the_change_to_the_command() {
     // edited: seq1, advance → seq2 (calibration), set-amp 2.0 → ACK, advance → seq3.
-    let mut ed = Link::spawn(false);
-    let e1 = ed.recv_field();
-    ed.send_advance();
-    let e2 = ed.recv_field();
-    ed.send_amplitude(2.0);
-    assert_eq!(ed.recv_ack(), AckStatus::Acknowledged);
-    ed.send_advance();
-    let e3 = ed.recv_field();
-    ed.finish();
+    let mut ed = live_session(false);
+    let e1 = ed.next_field().unwrap();
+    ed.advance().unwrap();
+    let e2 = ed.next_field().unwrap();
+    assert_eq!(edit(&mut ed, 2.0), AckStatus::Acknowledged);
+    ed.advance().unwrap();
+    let e3 = ed.next_field().unwrap();
+    ed.finish(SHUTDOWN_GRACE);
 
     // counterfactual: the same script with the edit removed.
-    let mut cf = Link::spawn(false);
-    let c1 = cf.recv_field();
-    cf.send_advance();
-    let c2 = cf.recv_field();
-    cf.send_advance();
-    let c3 = cf.recv_field();
-    cf.finish();
+    let mut cf = live_session(false);
+    let c1 = cf.next_field().unwrap();
+    cf.advance().unwrap();
+    let c2 = cf.next_field().unwrap();
+    cf.advance().unwrap();
+    let c3 = cf.next_field().unwrap();
+    cf.finish(SHUTDOWN_GRACE);
 
     // Identical model ticks and identical pre-edit history.
     assert_eq!(e3.field.model_tick, c3.field.model_tick);
@@ -453,68 +472,65 @@ fn real_producer_matched_counterfactual_attributes_the_change_to_the_command() {
 
 #[test]
 fn real_producer_a_decrease_after_an_increase_is_a_second_evidenced_transform() {
-    let mut link = Link::spawn(false);
+    let mut link = live_session(false);
     let mut arc = Arc::new();
-    arc.observe(stage(&link.recv_field()));
+    arc.observe(stage(&link.next_field().unwrap()));
     arc.discover();
-    link.send_advance();
-    arc.observe(stage(&link.recv_field()));
+    link.advance().unwrap();
+    arc.observe(stage(&link.next_field().unwrap()));
 
     for target in [2.0, 0.5] {
         assert_eq!(arc.intervene(target), Evidence::Pending, "target {target}");
-        link.send_amplitude(target);
-        arc.verdict(verdict_of(link.recv_ack()));
-        link.send_advance();
+        arc.verdict(verdict_of(edit(&mut link, target)));
+        link.advance().unwrap();
         assert_eq!(
-            arc.observe(stage(&link.recv_field())),
+            arc.observe(stage(&link.next_field().unwrap())),
             Some(Evidence::Consistent),
             "target {target}"
         );
         // Recalibrate on the new state before the next intervention.
         arc.discover();
-        link.send_advance();
-        arc.observe(stage(&link.recv_field()));
+        link.advance().unwrap();
+        arc.observe(stage(&link.next_field().unwrap()));
     }
-    link.finish();
+    link.finish(SHUTDOWN_GRACE);
     assert_eq!(arc.transforms(), 2);
 }
 
 #[test]
 fn real_producer_refused_and_suppressed_never_transform() {
     // refused (out of range)
-    let mut link = Link::spawn(false);
+    let mut link = live_session(false);
     let mut arc = Arc::new();
-    arc.observe(stage(&link.recv_field()));
+    arc.observe(stage(&link.next_field().unwrap()));
     arc.discover();
-    link.send_advance();
-    arc.observe(stage(&link.recv_field()));
+    link.advance().unwrap();
+    arc.observe(stage(&link.next_field().unwrap()));
     arc.intervene(99.0);
-    link.send_amplitude(99.0);
-    let ack = link.recv_ack();
+    let ack = edit(&mut link, 99.0);
     assert_eq!(ack, AckStatus::Refused);
     arc.verdict(verdict_of(ack));
-    link.send_advance();
-    arc.observe(stage(&link.recv_field()));
-    link.finish();
+    link.advance().unwrap();
+    arc.observe(stage(&link.next_field().unwrap()));
+    link.finish(SHUTDOWN_GRACE);
     assert!(!arc.transformed());
 
     // suppressed (the mutation that removes the authoritative update)
-    let mut link = Link::spawn(true);
+    let mut link = live_session(true);
     let mut arc = Arc::new();
-    arc.observe(stage(&link.recv_field()));
+    arc.observe(stage(&link.next_field().unwrap()));
     arc.discover();
-    link.send_advance();
-    arc.observe(stage(&link.recv_field()));
+    link.advance().unwrap();
+    arc.observe(stage(&link.next_field().unwrap()));
     arc.intervene(2.0);
-    link.send_amplitude(2.0);
-    let ack = link.recv_ack();
+    let ack = edit(&mut link, 2.0);
     assert_eq!(ack, AckStatus::Acknowledged);
     arc.verdict(verdict_of(ack));
-    link.send_advance();
+    link.advance().unwrap();
     assert_eq!(
-        arc.observe(stage(&link.recv_field())),
+        arc.observe(stage(&link.next_field().unwrap())),
         Some(Evidence::Unchanged)
     );
-    link.finish();
+    link.finish(SHUTDOWN_GRACE);
     assert!(!arc.transformed());
 }
