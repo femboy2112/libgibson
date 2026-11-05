@@ -24,8 +24,13 @@ start from the [README](../README.md).
   navigation, horizontal scrolling, and bracketed paste. Mutations are byte-range
   edits and the cursor grapheme index is re-derived from the full resulting string, so
   boundary-merging insertions (combining accents, ZWJ emoji, skin-tone modifiers,
-  flags) preserve `cursor_grapheme <= grapheme_count`. Single-line paste normalizes
-  `\r\n`, `\r`, and `\n` to a space.
+  flags) preserve `cursor_grapheme <= grapheme_count`. Every insertion path (keys,
+  paste, `insert_str`, `with_text`) is single-line and control-free: line-break runs and
+  TAB become a space, other control characters are dropped. Painting is safe for any
+  string, including `Node::text_input` and the C ABI: a control-bearing or standalone
+  zero-width grapheme is drawn as one `U+FFFD` cell, a grapheme wider than two cells is
+  laid codepoint by codepoint, and one width contract governs the cursor, total width,
+  scrolling, painter and layout (#252).
 - **Static structured output** (TESTED): `commit_text`, `commit_rich_text`, and
   `commit_node` route through the same width-aware layout/wrapping engine as live
   nodes. Control characters in text are neutralized at the cell-model boundary, so they

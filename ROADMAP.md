@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current direction (2026-11-05): v0.6.0 — the merge-readiness candidate (Renaissance XIV)
+## Current direction (2026-11-05): v0.6.0 — the merge-readiness candidate (Renaissance XIV–XV)
 
 **Canonical roadmap: [issue #191](https://github.com/femboy2112/libgibson/issues/191).** This
 section reconciles #191's R6.1–R6.6 workstreams with what is actually built and verified. The
@@ -14,7 +14,8 @@ per-gate red/green evidence, mutation controls and remaining limits are in
 (`d8c7b99`, GitHub prerelease). On `main`, only **Milestone 1 (#198)** and **Phase 6 (#199)** have
 merged. Everything below lives on ONE consolidated integration branch,
 `feat/v0.6-RXIV-causal-audit-191`, proposed to `main` as a single PR that preserves the full
-ancestry of the Renaissance stack (`#241 ← … ← #251`) plus the RXIV corrections. Nothing is merged,
+ancestry of the Renaissance stack (`#241 ← … ← #251`) plus the RXIV corrections and the RXV
+text-input glyph-boundary repair (#252). Nothing is merged,
 tagged, released or published; a merge requires the independent audit's approval of the exact
 final SHA and then the owner's action.
 
@@ -37,7 +38,11 @@ The 40×15 scientific instrument (RXII); the display transport carrying origin/a
 probe painted on screen; grapheme-cluster-safe clipping; strict, bounded, atomically committed
 capture files and a causal trace (v2) wired into the instrument (`--trace`) and the film
 (`--record` / `--replay-film`). The Wave-3 editor drafts #176/#177 are **superseded** by the merged
-`instrument_workbench` (close recommended — owner's action).
+`instrument_workbench` (close recommended — owner's action). **RXV (#252):** the single-line text
+editor's last glyph boundary is closed — insertion is single-line and control-free, painting is
+safe for any string (a control-bearing or standalone zero-width grapheme becomes one `U+FFFD` cell,
+including through `Node::text_input` and the C ABI), and one width contract governs the cursor,
+total width, scrolling, painter and layout, verified on a vt100 model and a real PTY.
 
 ### R6.3 — Cross-language interaction contracts — **completed with documented limitation**
 C ABI v1 at **59** symbols (`abi/gibson-abi-v1.symbols`, `symbolic`-guarded), frozen
@@ -79,11 +84,15 @@ publication, supported-default change, or force-push without explicit maintainer
 its exact SHA.
 
 ### Longer-term horizon
-**v0.7:** playable public-SDK terminal Doom through verified input, raster, pacing and lifecycle
-contracts; the GPL adapter kept separate. **v0.8:** independently tested Rust/C/C++/Python/Go
-interactive capability coverage. **v0.9:** portability, performance, API stabilization and developer
-ergonomics. **v1.0:** reviewed stable CORE/API/ABI contracts with explicit support and compatibility
-obligations.
+**v0.7 — playable terminal Doom:** public raster / input / clock / lifecycle capabilities and an
+actual playable adapter, the GPL adapter kept in a separate repository; execution graph in
+[`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md) (starts from the merged `main`).
+**v0.8 — cross-language functionality:** independent Rust/C/C++/Python/Go clients built against
+installed artifacts and shared semantic fixtures. **v0.9 — portability and stabilization:**
+terminal/OS matrices, performance envelopes, API simplification, recovery behaviour and migration
+support. **v1.0 — stable reviewed CORE:** explicit API/ABI compatibility commitments, release
+tooling, independently verified support and a documented maintenance model. Optional graphics /
+media and sonification are not promoted without a named consumer.
 
 ---
 

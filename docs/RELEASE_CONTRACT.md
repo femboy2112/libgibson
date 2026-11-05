@@ -449,4 +449,22 @@ The v0.6 integration candidate is qualified in
   example-level, not a stable public file format.
 - **The performance envelope is one host's measurement** (`V06_PERFORMANCE_ENVELOPE.md`): no
   universal frame rate, no display latency, no streaming observation age.
+- **Text-input content is control-safe; the low-level cell API trusts its caller.** Since RXV
+  (#252) no C0, DEL or C1 control in text-input content — from `TextInputState`,
+  `Node::text_input` or `gibson_node_text_input` — can reach the terminal: insertion drops controls
+  and the painter draws any control-bearing or standalone zero-width grapheme as one `U+FFFD` cell.
+  `Node::text` / `Surface::print_str` skip control characters (unchanged) but attach zero-width
+  *format* characters (general category Cf, e.g. bidi overrides) to the preceding cell and emit
+  them; these are not terminal controls, but a terminal that implements bidirectional text may
+  reorder the line — this includes an unfocused `ui::text_input`, which is lowered to `Node::text`.
+  `Surface::set_cell`, `Glyph::new` and the `*_raw_ansi_unchecked` entry points place exactly what
+  they are given, by design; content handed to them must already be safe.
+- **Terminal widths follow one model, not every terminal.** The cell model measures with
+  `unicode-width`: East-Asian-ambiguous characters (box drawing, `U+FFFD`) are narrow, and an emoji
+  ZWJ sequence or a VS16 emoji-presentation sequence is one 2-cell cluster. A terminal configured
+  for ambiguous-wide characters, or one that draws ZWJ/VS16 components per codepoint (as the `vt100`
+  model does), can place later glyphs differently. The text editor lays a grapheme wider than two
+  cells codepoint by codepoint; elsewhere (`Node::text`) such a grapheme is still capped at two
+  cells and can drift by the excess on per-codepoint terminals. There is no runtime width probing
+  (e.g. mode 2027).
 - **Issue #15** (above) stays open.
