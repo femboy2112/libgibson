@@ -281,6 +281,13 @@ gibson_status_t gibson_node_stack(gibson_node_t **out);
 gibson_status_t gibson_node_dim(gibson_node_t **out);
 gibson_status_t gibson_node_text(const char *utf8_text, const gibson_style_t *style, int32_t wrap_mode, gibson_node_t **out);
 gibson_status_t gibson_node_spinner(uint32_t frame_index, const gibson_style_t *style, const char *label, gibson_node_t **out);
+/* Single-line text input. `value` may be arbitrary UTF-8: a grapheme that holds a control
+   character (C0, DEL, C1 -- e.g. the ESC of a pasted escape sequence) or a line/paragraph
+   separator, or that has zero display width standing alone, is painted as ONE U+FFFD cell, and a
+   grapheme wider than two cells is laid codepoint by codepoint, so no control from content reaches
+   the terminal and the cursor column matches the painted cells (issue #252). To store pasted text
+   the way the Rust TextInputState does, flatten line breaks and TAB to spaces and drop other
+   controls before passing it here. */
 gibson_status_t gibson_node_text_input(const char *value, uint32_t cursor_grapheme, const char *placeholder, const gibson_style_t *style, gibson_node_t **out);
 gibson_status_t gibson_node_border_box(int32_t border_type, const gibson_style_t *style, gibson_node_t **out);
 gibson_status_t gibson_node_rule(const char *title, const gibson_style_t *style, gibson_node_t **out);

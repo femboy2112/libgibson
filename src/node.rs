@@ -375,6 +375,14 @@ impl Node {
     }
 
     /// Creates a text input node.
+    ///
+    /// `value` may be any string — including one that never passed through
+    /// [`TextInputState`](crate::input::TextInputState). The painter applies the
+    /// editor's width contract itself: a grapheme holding a control character,
+    /// or of zero display width standing alone, is painted as one `U+FFFD`
+    /// cell and a grapheme wider than two cells is laid codepoint by codepoint,
+    /// so no control from content reaches the terminal and the cursor column
+    /// matches the painted cells.
     pub fn text_input(
         value: impl Into<String>,
         cursor_grapheme: usize,

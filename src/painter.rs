@@ -1,4 +1,5 @@
 use crate::cell::{Cell, Glyph, Style, TextAlign};
+use crate::input::{editor_cell_width, editor_cells, scroll_to_cursor};
 use crate::layout::{wrap_rich_text, wrap_text};
 use crate::node::{Node, NodeKind};
 use crate::surface::{Rect, Surface};
@@ -467,77 +468,85 @@ fn paint_text_input(
         }
     }
 
-    // Precompute display widths and cumulative column positions for each grapheme
+    // Cells per grapheme under the editor's width contract (issue #252,
+    // `TextInputState` docs): a 1- or 2-wide grapheme is one cell; a wider one is
+    // laid codepoint by codepoint over consecutive cells (same bytes, the advance
+    // a per-codepoint terminal makes); a grapheme holding a control or line
+    // separator, a standalone zero-width one, or one no cell can hold is one
+    // U+FFFD cell. This guard is the painter's own — `Node::text_input` and the C
+    // ABI take arbitrary strings — so no control from content reaches the
+    // terminal, and the glyph widths the ANSI compiler advances by sum to exactly
+    // the columns the cursor accounting gives each grapheme.
+    let mut cells: Vec<Glyph> = Vec::with_capacity(total_graphemes);
+    let mut first_cell = Vec::with_capacity(total_graphemes + 1);
     let mut col_positions = Vec::with_capacity(total_graphemes + 1);
-    let mut widths = Vec::with_capacity(total_graphemes);
     let mut acc_col: usize = 0;
     for &g in &graphemes {
         col_positions.push(acc_col);
-        let w = UnicodeWidthStr::width(g).max(1);
-        widths.push(w);
-        acc_col += w;
+        first_cell.push(cells.len());
+        editor_cells(g, |text, w| {
+            let glyph = Glyph::new(text);
+            debug_assert_eq!(glyph.display_width as usize, w);
+            acc_col += w;
+            cells.push(glyph);
+        });
+        debug_assert_eq!(
+            acc_col - col_positions[col_positions.len() - 1],
+            editor_cell_width(g)
+        );
     }
     col_positions.push(acc_col); // for cursor at end
+    first_cell.push(cells.len());
 
     let cursor_idx = cursor_grapheme.min(total_graphemes);
     let cursor_col = col_positions[cursor_idx];
     let visible_cols = rect.width as usize;
-
-    let mut scroll_col = scroll_offset;
-    if cursor_col < scroll_col {
-        scroll_col = cursor_col;
-    } else if cursor_col >= scroll_col + visible_cols {
-        scroll_col = cursor_col.saturating_sub(visible_cols) + 1;
-    }
+    // The cursor grapheme's full span (1 at the end-of-input insertion point).
+    let cursor_span = if cursor_idx < total_graphemes {
+        col_positions[cursor_idx + 1] - cursor_col
+    } else {
+        1
+    };
+    let scroll_col = scroll_to_cursor(scroll_offset, cursor_col, cursor_span, visible_cols);
     ctx.text_scroll_offset = Some(scroll_col);
 
-    let max_x = rect.x + rect.width;
+    // The hardware cursor marks the insertion point whether or not the glyph
+    // under it is painted (a grapheme wider than the whole input cannot be).
+    ctx.cursor_position = Some((rect.x + (cursor_col - scroll_col) as u16, y));
 
-    for (idx, &g) in graphemes.iter().enumerate() {
+    for idx in 0..total_graphemes {
         let g_col = col_positions[idx];
-        let g_w = widths[idx];
+        let g_end = col_positions[idx + 1];
 
-        // Check if fully left of viewport
-        if g_col + g_w <= scroll_col {
+        // Fully left of the viewport.
+        if g_end <= scroll_col {
             continue;
         }
-        // Check if at or beyond right of viewport
-        if g_col >= scroll_col + visible_cols {
+        // At or beyond the right edge; a grapheme only partly inside it is not
+        // drawn (a grapheme is painted whole or not at all).
+        if g_col >= scroll_col + visible_cols || g_end > scroll_col + visible_cols {
             break;
         }
-
+        // Straddling the left edge: blank its visible columns.
         if g_col < scroll_col {
-            let cell_x = rect.x;
-            surface.set_cell(cell_x, y, Cell::space(style));
+            for dx in 0..(g_end - scroll_col) {
+                surface.set_cell(rect.x + dx as u16, y, Cell::space(style));
+            }
             continue;
         }
 
-        let cell_x = rect.x + (g_col - scroll_col) as u16;
-        if cell_x + (g_w as u16) > max_x {
-            break;
-        }
-
-        let is_cursor = idx == cursor_idx;
-        let cell_style = if is_cursor {
-            ctx.cursor_position = Some((cell_x, y));
+        // The software cursor only highlights the glyph(s) already at the
+        // cursor; past the last grapheme nothing is fabricated.
+        let cell_style = if idx == cursor_idx {
             style.overlay(cursor_style)
         } else {
             style
         };
-
-        let glyph = Glyph::new(g);
-        surface.set_cell(cell_x, y, Cell::new(glyph, cell_style));
-    }
-
-    // Cursor at the end of the input (after the last grapheme): the hardware
-    // cursor marks the insertion point and no glyph is fabricated.
-    if cursor_idx >= total_graphemes
-        && cursor_col >= scroll_col
-        && cursor_col < scroll_col + visible_cols
-    {
-        let end_cursor_x = rect.x + (cursor_col - scroll_col) as u16;
-        if end_cursor_x < max_x {
-            ctx.cursor_position = Some((end_cursor_x, y));
+        let mut cell_x = rect.x + (g_col - scroll_col) as u16;
+        for glyph in &cells[first_cell[idx]..first_cell[idx + 1]] {
+            let w = glyph.display_width as u16;
+            surface.set_cell(cell_x, y, Cell::new(glyph.clone(), cell_style));
+            cell_x += w;
         }
     }
 }

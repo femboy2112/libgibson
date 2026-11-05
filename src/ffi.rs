@@ -1114,6 +1114,12 @@ pub unsafe extern "C" fn gibson_node_spinner(
     res.unwrap_or(GibsonStatus::ErrPanic)
 }
 
+/// Builds a single-line text input from arbitrary UTF-8 `value`. Painting is
+/// total and safe under the editor's width contract (see
+/// [`TextInputState`](crate::input::TextInputState)): a control-bearing or
+/// standalone zero-width grapheme is drawn as one `U+FFFD` cell and a grapheme
+/// wider than two cells is laid codepoint by codepoint, so no control from
+/// content reaches the terminal (issue #252).
 #[no_mangle]
 pub unsafe extern "C" fn gibson_node_text_input(
     value: *const c_char,

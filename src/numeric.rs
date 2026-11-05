@@ -20,6 +20,7 @@
 
 use crate::edit::{CancelReason, EditId, EditSession};
 use crate::input::TextInputState;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Why a numeric value, or its text form, was rejected.
 ///
@@ -351,9 +352,18 @@ impl NumericInput {
     /// A valid value previews; an invalid one is reported as
     /// [`NumericEdit::Invalid`]. Either way the episode stays open. Returns `None`
     /// if no episode is open.
+    ///
+    /// The text is kept exactly as given — not normalized like an editor
+    /// insertion — so a control character makes it [`NumericError::Unparseable`]
+    /// rather than silently becoming a different, valid number. (The text-input
+    /// painter draws any such character safely as `U+FFFD`.)
     pub fn set_text(&mut self, text: &str) -> Option<NumericEdit> {
         let id = self.session.current()?;
-        self.buffer = TextInputState::with_text(text);
+        self.buffer = TextInputState {
+            text: text.to_owned(),
+            cursor_grapheme: text.graphemes(true).count(),
+            scroll_offset: 0,
+        };
         match self.field.parse(&self.buffer.text) {
             Ok(value) => Some(NumericEdit::Preview { id, value }),
             Err(error) => Some(NumericEdit::Invalid { id, error }),
