@@ -1107,7 +1107,12 @@ fn run_replay(_args: &Args, path: &str) -> io::Result<()> {
     let digest = capture::content_digest(&frames);
     let mut ctx = Context::headless(RenderMode::Inline, 80, 30);
     let mut rendered = 0usize;
-    for f in &frames {
+    // Gate B1 replay honesty: read_capture has already rejected malformed frames, so a frame that
+    // fails to show here is one that parses but cannot be DISPLAYED (a non-invertible display
+    // geometry — the D3 UnsupportedView case). Record it explicitly; never drop it silently.
+    let mut unsupported: Vec<usize> = Vec::new();
+    for (i, f) in frames.iter().enumerate() {
+        let mut shown = false;
         if let Some(ext) = f.extent() {
             if let Some(view) = FieldView::new(ext, &f.data, f.mask.as_deref()) {
                 if let Ok((wv, area)) = viewport::world_view_for(&ext, 1) {
@@ -1115,16 +1120,37 @@ fn run_replay(_args: &Args, path: &str) -> io::Result<()> {
                     ctx.set_root(Node::raster(frame.surface));
                     ctx.render()?;
                     rendered += 1;
+                    shown = true;
                 }
             }
         }
+        if !shown {
+            unsupported.push(i);
+        }
     }
-    println!(
-        "wire_instrument replay: {} frames from {path} ({rendered} rendered)",
-        frames.len()
-    );
+    // The checksum is over content and reproduces regardless of what rendered, so print it either way.
     println!("replay-digest {digest:016x}");
-    Ok(())
+    if unsupported.is_empty() {
+        println!(
+            "wire_instrument replay: {} frames from {path} ({rendered} rendered)",
+            frames.len()
+        );
+        Ok(())
+    } else {
+        // An explicit partial/unsupported outcome — NOT a success receipt (Gate B1).
+        eprintln!(
+            "wire_instrument replay INCOMPLETE: {rendered}/{} rendered; unsupported display geometry at frames {unsupported:?}",
+            frames.len()
+        );
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "replay incomplete: {} of {} frames have an unsupported display geometry",
+                unsupported.len(),
+                frames.len()
+            ),
+        ))
+    }
 }
 
 fn main() -> io::Result<()> {
