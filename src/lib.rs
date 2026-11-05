@@ -91,7 +91,8 @@ pub mod story;
 pub mod surface;
 pub mod surface_fx;
 pub mod temporal;
-// Internal renderer plumbing (the atomic wire transaction). Crate-private: it has
+// Internal renderer plumbing (the batched wire transaction — not atomic I/O, see
+// `transaction.rs` and docs/RELEASE_CONTRACT.md §9). Crate-private: it has
 // no external consumers, is not re-exported, and its stability is the renderer's,
 // not a standalone public API. See docs/RELEASE_CONTRACT.md §2.
 pub(crate) mod transaction;

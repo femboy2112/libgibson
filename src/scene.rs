@@ -28,14 +28,25 @@
 //!
 //! * **Objects** are scene states; **morphisms** are effects. Composition
 //!   `f ; g` is [`Effect::sequence`]; the identity is [`Effect::identity`].
-//! * **Monoidal product** `f ⊗ g` is [`Effect::parallel`]: run both over the
-//!   same interval. Parallel effects on *independent* channels/targets commute;
+//! * **Parallel composition** `f ⊗ g` is [`Effect::parallel`]: run both over the
+//!   same interval (named by analogy to a monoidal product; it is not a strict
+//!   one). Parallel effects on *independent* channels/targets commute;
 //!   placement/scalar writes resolve by explicit write order. Displacements
 //!   add as integer vectors; surface operations append in deterministic order.
-//! * **Functor** `Render : SCENE → UI`: [`Scene::to_node`] maps a scene
-//!   presentation into ordinary `Node`s (a `Stack` of offset layers inside an
-//!   optional camera `Viewport`). It is **not** a second renderer; it produces
-//!   the same declarative render objects everything else uses.
+//!   This is a **timed scheduling algebra**, not a strict monoidal category: a
+//!   composite's duration is the *sum* under `;` but the *max* under `⊗`, so the
+//!   interchange law `(f⊗g);(h⊗k) = (f;h)⊗(g;k)` is conditional. It holds when
+//!   `f` and `g` have equal durations (so every primitive sees the same local
+//!   time on both sides) **and** the crossed operands `g` and `h` write
+//!   commuting channels (the two sides evaluate `g`,`h` in opposite orders).
+//!   Duration alignment alone is not sufficient: two aligned branches that
+//!   overwrite the same position disagree. See `docs/SCENE_ALGEBRA_LAWS.md`.
+//! * **Lowering** `Render : SCENE → UI`: [`Scene::to_node`] lowers an evaluated
+//!   scene *presentation* into ordinary `Node`s (a `Stack` of offset layers inside
+//!   an optional camera `Viewport`). It is an object/state map — **not** an
+//!   established strict functor (it has no action on effect *morphisms*; it factors
+//!   through the `Presentation`), and **not** a second renderer; it produces the
+//!   same declarative render objects everything else uses.
 //!
 //! Everything here is a pure function of its inputs and of time, so a scene
 //! frame is reproducible under [`crate::FixedStepClock`] and suitable for
@@ -74,7 +85,7 @@ pub enum Channel {
     Displacement,
     /// Ordered post-process endomorphisms of a realized entity surface.
     SurfaceFx,
-    /// Visibility in `[0, 1]`. Terminals have no alpha, so the render functor
+    /// Visibility in `[0, 1]`. Terminals have no alpha, so the render lowering
     /// thresholds at `> 0.0`; the precise value is available to raster effects.
     Visibility,
     /// Global camera offset in cells (one camera per scene).
@@ -294,8 +305,9 @@ impl Easing {
 
 /// A deterministic transformation of presentation channels.
 ///
-/// Morphisms compose with [`Effect::sequence`]; the monoidal product is
-/// [`Effect::parallel`]; [`Effect::identity`] is the no-op. See the module docs.
+/// Effects compose sequentially with [`Effect::sequence`] and in parallel with
+/// [`Effect::parallel`]; [`Effect::identity`] is the no-op. See the module docs for
+/// the (conditional) laws these obey.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
     /// Do nothing. Composition stays regular under conditionals.
@@ -387,9 +399,11 @@ pub enum Effect {
         duration: Duration,
         easing: Easing,
     },
-    /// Run all children over the same interval (monoidal product).
+    /// Run all children over the same interval (parallel composition; children
+    /// write in declaration order).
     Parallel(Vec<Effect>),
-    /// Run children one after another (categorical composition).
+    /// Run children one after another (sequential composition; a finished child
+    /// is re-evaluated at its end, so its final state persists).
     Sequence(Vec<Effect>),
     /// Run `inner` after `delay`.
     Delay(Duration, Box<Effect>),
@@ -584,7 +598,7 @@ impl Effect {
         Effect::Sequence(vec![self, other])
     }
 
-    /// Monoidal product: run `self` and `other` in parallel.
+    /// Parallel composition: run `self` and `other` over the same interval.
     pub fn with(self, other: Effect) -> Self {
         Effect::Parallel(vec![self, other])
     }
@@ -974,7 +988,7 @@ impl std::fmt::Display for SceneError {
     }
 }
 
-/// A set of semantically identified entities, plus the functor to ordinary `Node`s.
+/// A set of semantically identified entities, plus the lowering to ordinary `Node`s.
 #[derive(Debug, Clone, Default)]
 pub struct Scene {
     entities: Vec<SceneEntity>,
@@ -1274,7 +1288,8 @@ impl Scene {
         out
     }
 
-    /// The functor `Render : SCENE → UI`.
+    /// The lowering `Render : SCENE → UI` (an object/state map over a
+    /// [`Presentation`], not a strict functor — see the module docs).
     ///
     /// Produces an ordinary `Node` tree: a `Stack` of offset layers, wrapped in a
     /// camera `Viewport` when the camera is non-zero. Hidden entities are omitted.
@@ -1587,7 +1602,7 @@ mod tests {
         vis.eval(Duration::from_millis(100), &scene, &mut p);
         let resolved = scene.evaluate(&p);
         assert!(resolved[0].visible);
-        // The functor omits hidden entities.
+        // The lowering omits hidden entities.
         let node_hidden = scene.to_node(&Presentation::new(), 20.0, 5.0);
         assert!(node_hidden.children.is_empty());
         let node_shown = scene.to_node(&p, 20.0, 5.0);

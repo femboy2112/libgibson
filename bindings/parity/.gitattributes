@@ -1,0 +1,8 @@
+# The ANSI frame goldens are raw byte streams (contain ESC and CR); they must never be
+# EOL-normalized or treated as text, or the cross-ABI `cmp` would compare mangled bytes.
+golden_ansi.bin binary
+golden_depth_mono.bin binary
+golden_depth_ansi16.bin binary
+golden_depth_ansi256.bin binary
+# The cell-grid golden is LF-delimited ASCII; pin the EOL so a CRLF checkout can't break the cmp.
+golden_cells.txt text eol=lf

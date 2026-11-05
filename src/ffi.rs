@@ -25,6 +25,21 @@
 //!
 //!    (True append-compatibility — accepting smaller callers and writing a
 //!    prefix — is intentionally *not* claimed.)
+//!
+//! 4. **Additive growth keeps the version (Gate F5).** The Gate J/K work grew the
+//!    surface from 52 to 59 exported functions. Every addition is a *new* symbol;
+//!    no existing function's signature or semantics changed. New symbols are
+//!    invisible to an older client (it never resolves what it never references),
+//!    so additive growth alone does **not** bump [`GIBSON_ABI_VERSION`]. A bump is
+//!    reserved for a change that an existing client could observe: a changed
+//!    signature, or a changed layout of a public `#[repr(C)]` struct.
+//!
+//!    The one new public struct, [`GibsonCell`] (`gibson_cell_t`, with
+//!    [`GibsonStyle`] and [`GibsonColor`]), is therefore a frozen ABI-v1
+//!    compatibility commitment — unlike `gibson_stats_t` it is a plain fixed-size
+//!    value with no `struct_size` negotiation, so its size/alignment/field offsets
+//!    must not drift. `tests/ffi_abi_layout_freeze.rs` pins them (cell = 48 bytes,
+//!    align 4), turning any accidental reorder/resize red before release.
 
 use crate::cell::{Color, Line, RichText, Span, Style, TextAlign};
 use crate::context::Context;
@@ -77,6 +92,13 @@ pub const GIBSON_COLOR_BRIGHT_CYAN: i32 = 15;
 pub const GIBSON_COLOR_BRIGHT_WHITE: i32 = 16;
 pub const GIBSON_COLOR_ANSI256: i32 = 17;
 pub const GIBSON_COLOR_RGB: i32 = 18;
+
+// Color depth (pass to gibson_set_color_depth as int32_t). Mirrors
+// `gibson::capability::ColorDepth`; the downgrade ladder is TrueColor → Ansi256 → Ansi16 → Mono.
+pub const GIBSON_COLOR_DEPTH_MONO: i32 = 0;
+pub const GIBSON_COLOR_DEPTH_ANSI16: i32 = 1;
+pub const GIBSON_COLOR_DEPTH_ANSI256: i32 = 2;
+pub const GIBSON_COLOR_DEPTH_TRUECOLOR: i32 = 3;
 
 pub const GIBSON_ALIGN_LEFT: i32 = 0;
 pub const GIBSON_ALIGN_CENTER: i32 = 1;
@@ -183,6 +205,94 @@ pub fn style_from_ffi(s: &GibsonStyle) -> Result<Style, GibsonStatus> {
         underline: s.underline != 0,
         reverse: s.reverse != 0,
     })
+}
+
+/// Inverse of [`color_from_ffi`]: encodes an optional engine `Color` as an FFI color descriptor.
+/// `None` and `Color::Reset` both map to `GIBSON_COLOR_RESET` (the terminal default), so a
+/// round-trip through `color_from_ffi` is faithful up to that single, documented conflation.
+pub fn color_to_ffi(color: Option<Color>) -> GibsonColor {
+    let (color_type, r, g, b) = match color {
+        None | Some(Color::Reset) => (GIBSON_COLOR_RESET, 0, 0, 0),
+        Some(Color::Black) => (GIBSON_COLOR_BLACK, 0, 0, 0),
+        Some(Color::Red) => (GIBSON_COLOR_RED, 0, 0, 0),
+        Some(Color::Green) => (GIBSON_COLOR_GREEN, 0, 0, 0),
+        Some(Color::Yellow) => (GIBSON_COLOR_YELLOW, 0, 0, 0),
+        Some(Color::Blue) => (GIBSON_COLOR_BLUE, 0, 0, 0),
+        Some(Color::Magenta) => (GIBSON_COLOR_MAGENTA, 0, 0, 0),
+        Some(Color::Cyan) => (GIBSON_COLOR_CYAN, 0, 0, 0),
+        Some(Color::White) => (GIBSON_COLOR_WHITE, 0, 0, 0),
+        Some(Color::BrightBlack) => (GIBSON_COLOR_BRIGHT_BLACK, 0, 0, 0),
+        Some(Color::BrightRed) => (GIBSON_COLOR_BRIGHT_RED, 0, 0, 0),
+        Some(Color::BrightGreen) => (GIBSON_COLOR_BRIGHT_GREEN, 0, 0, 0),
+        Some(Color::BrightYellow) => (GIBSON_COLOR_BRIGHT_YELLOW, 0, 0, 0),
+        Some(Color::BrightBlue) => (GIBSON_COLOR_BRIGHT_BLUE, 0, 0, 0),
+        Some(Color::BrightMagenta) => (GIBSON_COLOR_BRIGHT_MAGENTA, 0, 0, 0),
+        Some(Color::BrightCyan) => (GIBSON_COLOR_BRIGHT_CYAN, 0, 0, 0),
+        Some(Color::BrightWhite) => (GIBSON_COLOR_BRIGHT_WHITE, 0, 0, 0),
+        Some(Color::Ansi256(i)) => (GIBSON_COLOR_ANSI256, i, 0, 0),
+        Some(Color::Rgb(r, g, b)) => (GIBSON_COLOR_RGB, r, g, b),
+    };
+    GibsonColor {
+        color_type,
+        r,
+        g,
+        b,
+        _pad: 0,
+    }
+}
+
+/// Inverse of [`style_from_ffi`]: encodes an engine `Style` as an FFI style descriptor.
+pub fn style_to_ffi(style: &Style) -> GibsonStyle {
+    GibsonStyle {
+        fg: color_to_ffi(style.fg),
+        bg: color_to_ffi(style.bg),
+        bold: style.bold as u8,
+        dim: style.dim as u8,
+        italic: style.italic as u8,
+        underline: style.underline as u8,
+        reverse: style.reverse as u8,
+        _reserved: [0; 3],
+    }
+}
+
+/// Maximum UTF-8 bytes of one cell's grapheme cluster carried inline by [`GibsonCell::glyph`].
+/// Most graphemes fit, but some do NOT — a ZWJ emoji sequence such as a family (👨‍👩‍👧‍👦, 25 bytes)
+/// or a long combining ("Zalgo") stack exceeds it. When a cluster is longer, `gibson_get_frame_cell`
+/// truncates `glyph` at a codepoint boundary AND sets the `glyph_truncated` flag
+/// ([`GibsonCell::_reserved`]`[0]`); the full untruncated bytes are then available from
+/// `gibson_get_frame_cell_glyph`.
+pub const GIBSON_CELL_GLYPH_CAP: usize = 16;
+
+/// FFI-safe view of one resolved frame cell (see `gibson_get_frame_cell`). `glyph` holds the
+/// grapheme's UTF-8 bytes (NOT NUL-terminated); `glyph_len` is how many are valid. `style` is
+/// already quantized to the context's color depth, so it matches the emitted ANSI wire.
+/// `_reserved[0]` is the **`glyph_truncated`** flag: `1` iff the cell's full cluster exceeded
+/// [`GIBSON_CELL_GLYPH_CAP`] and `glyph` holds only a codepoint-boundary prefix (fetch the whole
+/// cluster with `gibson_get_frame_cell_glyph`). The other `_reserved` bytes stay `0`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct GibsonCell {
+    pub glyph: [u8; GIBSON_CELL_GLYPH_CAP],
+    pub glyph_len: u8,
+    pub width: u8,
+    pub is_continuation: u8,
+    pub transparent: u8,
+    pub _reserved: [u8; 4],
+    pub style: GibsonStyle,
+}
+
+impl Default for GibsonCell {
+    fn default() -> Self {
+        Self {
+            glyph: [0; GIBSON_CELL_GLYPH_CAP],
+            glyph_len: 0,
+            width: 0,
+            is_continuation: 0,
+            transparent: 0,
+            _reserved: [0; 4],
+            style: GibsonStyle::default(),
+        }
+    }
 }
 
 /// Reads an optional style pointer, defaulting to plain when null.
@@ -405,6 +515,47 @@ pub unsafe extern "C" fn gibson_create_context(
     res.unwrap_or(GibsonStatus::ErrPanic)
 }
 
+/// Creates a **headless** context that renders into an in-memory buffer instead of a live
+/// terminal, with deterministic, TTY-independent semantics: a fixed `cols`×`rows` geometry,
+/// truecolor capabilities, and no process-global terminal lease. Unlike [`gibson_create_context`]
+/// — which samples `stdout` at create time and runs a suppressed no-op render when stdout is not a
+/// TTY — a headless context always emits the real ANSI frame, read back with
+/// [`gibson_get_rendered_output`]. Pass the same mode constants as `gibson_create_context`;
+/// `cols` and `rows` must be non-zero. On success `*out` owns a context freed by
+/// `gibson_destroy_context`.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_create_headless_context(
+    mode: i32,
+    cols: u16,
+    rows: u16,
+    out: *mut *mut GibsonContextOpaque,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if out.is_null() {
+            set_last_error("Null pointer provided for out context".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let m = match validate_mode(mode) {
+            Ok(m) => m,
+            Err(e) => return e,
+        };
+        if cols == 0 || rows == 0 {
+            set_last_error(format!(
+                "Headless geometry must be non-zero, got {cols}x{rows}"
+            ));
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let boxed = Box::new(GibsonContextOpaque {
+            inner: Context::headless(m, cols, rows),
+            last_paste_cstring: None,
+        });
+        *out = Box::into_raw(boxed);
+        GibsonStatus::Ok
+    }));
+
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gibson_destroy_context(ctx: *mut GibsonContextOpaque) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
@@ -440,6 +591,48 @@ pub unsafe extern "C" fn gibson_set_max_fps(
             return GibsonStatus::ErrInvalidParam;
         }
         (*ctx).inner.set_max_fps(fps);
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Overrides the color depth used for live frames and scrollback output, for a context created by
+/// either [`gibson_create_context`] or [`gibson_create_headless_context`]. `depth` is one of
+/// `GIBSON_COLOR_DEPTH_{MONO,ANSI16,ANSI256,TRUECOLOR}`; any other value sets `last_error`, returns
+/// `ErrInvalidParam`, and changes nothing.
+///
+/// It may be called at any time. The renderer reads the depth when it compiles a frame, so a lower
+/// depth downgrades the emitted SGR (truecolor RGB becomes a nearest-256/16 index, or no color at
+/// all under Mono). A change *after* a frame has painted is honored on the next `gibson_render`,
+/// which restyles the live frame in place — it does not wait for a content change (Gate K1/F1).
+///
+/// Two separate limitations remain: a `gibson_get_frame_cell` readback reflects the depth the
+/// current frame was *emitted* at, so a pending change with no repaint does not retouch an already-
+/// emitted frame (Gate F2); and scrollback/history lines already written keep the depth they were
+/// emitted with — the separate history-insertion path does not retroactively restyle them.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_set_color_depth(
+    ctx: *mut GibsonContextOpaque,
+    depth: i32,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() {
+            set_last_error("Null context provided to gibson_set_color_depth".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let d = match depth {
+            GIBSON_COLOR_DEPTH_MONO => crate::capability::ColorDepth::Mono,
+            GIBSON_COLOR_DEPTH_ANSI16 => crate::capability::ColorDepth::Ansi16,
+            GIBSON_COLOR_DEPTH_ANSI256 => crate::capability::ColorDepth::Ansi256,
+            GIBSON_COLOR_DEPTH_TRUECOLOR => crate::capability::ColorDepth::TrueColor,
+            other => {
+                set_last_error(format!(
+                    "Invalid color depth {other}; expected GIBSON_COLOR_DEPTH_MONO..=TRUECOLOR (0..=3)"
+                ));
+                return GibsonStatus::ErrInvalidParam;
+            }
+        };
+        (*ctx).inner.set_color_depth(d);
         GibsonStatus::Ok
     }));
     res.unwrap_or(GibsonStatus::ErrPanic)
@@ -921,6 +1114,12 @@ pub unsafe extern "C" fn gibson_node_spinner(
     res.unwrap_or(GibsonStatus::ErrPanic)
 }
 
+/// Builds a single-line text input from arbitrary UTF-8 `value`. Painting is
+/// total and safe under the editor's width contract (see
+/// [`TextInputState`](crate::input::TextInputState)): a control-bearing or
+/// standalone zero-width grapheme is drawn as one `U+FFFD` cell and a grapheme
+/// wider than two cells is laid codepoint by codepoint, so no control from
+/// content reaches the terminal (issue #252).
 #[no_mangle]
 pub unsafe extern "C" fn gibson_node_text_input(
     value: *const c_char,
@@ -1357,4 +1556,208 @@ pub unsafe extern "C" fn gibson_last_error_message(buf: *mut c_char, buf_len: us
         })
     }));
     res.unwrap_or(-1)
+}
+
+/// Copies the ANSI byte stream captured by a headless context (see
+/// [`gibson_create_headless_context`]) since its creation or the last drain, into the
+/// caller-provided `buf`. This is the binary-safe readback that makes cross-language *frame*
+/// parity possible; it mirrors `Context::rendered_bytes` and is **not** NUL-terminated.
+///
+/// `out_len` (required, non-null) always receives the number of bytes available. If `buf` is null
+/// or `cap` is smaller than that length, nothing is copied and `GIBSON_OK` is still returned — the
+/// two-call size-query form: call once with `cap == 0` (or `buf == NULL`) to learn the size,
+/// allocate, then call again. For an interactive (stdout-backed) context there is nothing to
+/// capture, so `*out_len` is `0`.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_get_rendered_output(
+    ctx: *mut GibsonContextOpaque,
+    buf: *mut u8,
+    cap: usize,
+    out_len: *mut usize,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || out_len.is_null() {
+            set_last_error("Null ctx or out_len for gibson_get_rendered_output".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let bytes = (*ctx).inner.rendered_bytes();
+        *out_len = bytes.len();
+        if !buf.is_null() && cap >= bytes.len() {
+            ptr::copy_nonoverlapping(bytes.as_ptr(), buf, bytes.len());
+        }
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Encodes one resolved [`crate::context::FrameCell`] into its FFI [`GibsonCell`]. The grapheme's
+/// UTF-8 bytes are copied up to [`GIBSON_CELL_GLYPH_CAP`], truncated at a codepoint boundary;
+/// `_reserved[0]` (the `glyph_truncated` flag) is set to `1` iff the full cluster exceeds the cap,
+/// so a caller can tell a cut glyph from an honestly short one and fetch the full bytes via
+/// `gibson_get_frame_cell_glyph`. Single-cell and bulk readback share this, so the two paths can
+/// never diverge.
+fn encode_cell(cell: &crate::context::FrameCell<'_>) -> GibsonCell {
+    let mut encoded = GibsonCell::default();
+    let bytes = cell.glyph.as_bytes();
+    let full_len = bytes.len();
+    let mut n = full_len.min(GIBSON_CELL_GLYPH_CAP);
+    while n > 0 && !cell.glyph.is_char_boundary(n) {
+        n -= 1;
+    }
+    encoded.glyph[..n].copy_from_slice(&bytes[..n]);
+    encoded.glyph_len = n as u8;
+    encoded.width = cell.width;
+    encoded.is_continuation = cell.is_continuation as u8;
+    encoded.transparent = cell.transparent as u8;
+    encoded._reserved[0] = u8::from(full_len > GIBSON_CELL_GLYPH_CAP); // glyph_truncated
+    encoded.style = style_to_ffi(&cell.style);
+    encoded
+}
+
+/// Writes the `(cols, rows)` geometry of the most recently rendered frame into `*out_cols` /
+/// `*out_rows`, or `(0, 0)` if there is no frame yet (e.g. a stdout-backed context whose render was
+/// a non-TTY no-op). A headless context always has a frame after `gibson_render`.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_get_frame_size(
+    ctx: *mut GibsonContextOpaque,
+    out_cols: *mut u16,
+    out_rows: *mut u16,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || out_cols.is_null() || out_rows.is_null() {
+            set_last_error("Null ctx/out_cols/out_rows for gibson_get_frame_size".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let (cols, rows) = (*ctx).inner.frame_size().unwrap_or((0, 0));
+        *out_cols = cols;
+        *out_rows = rows;
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Writes a display-accurate view of the cell at `(x, y)` in the most recently rendered frame into
+/// `*out` — the resolved *styled cell grid*, with the style quantized to the context's color depth.
+/// Returns `ErrInvalidParam` if `out` is null, if there is no frame yet, or if `(x, y)` is out of
+/// bounds; otherwise the grapheme's UTF-8 bytes are copied into `out->glyph` (up to
+/// `GIBSON_CELL_GLYPH_CAP`, truncated at a codepoint boundary) with `out->glyph_len` set to the
+/// number of bytes written.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_get_frame_cell(
+    ctx: *mut GibsonContextOpaque,
+    x: u16,
+    y: u16,
+    out: *mut GibsonCell,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || out.is_null() {
+            set_last_error("Null ctx or out for gibson_get_frame_cell".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let cell = match (*ctx).inner.frame_cell(x, y) {
+            Some(c) => c,
+            None => {
+                set_last_error(format!(
+                    "No frame cell at ({x}, {y}): no frame rendered yet or coordinate out of bounds"
+                ));
+                return GibsonStatus::ErrInvalidParam;
+            }
+        };
+        *out = encode_cell(&cell);
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Bulk readback: fills `out` with up to `max_cells` resolved cells in **row-major** order starting
+/// at `(x, y)` and continuing across row ends to the end of the frame; `*out_written` receives the
+/// count. One ABI call for a whole row (`max_cells = cols`) or whole frame (`max_cells = cols*rows`)
+/// instead of N, and it uses the exact same per-cell encoding as `gibson_get_frame_cell`, so the two
+/// can never diverge. `ErrInvalidParam` for a null `ctx`/`out`/`out_written`, no frame, or an
+/// out-of-bounds `(x, y)`.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_get_frame_cells(
+    ctx: *mut GibsonContextOpaque,
+    x: u16,
+    y: u16,
+    out: *mut GibsonCell,
+    max_cells: usize,
+    out_written: *mut usize,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || out.is_null() || out_written.is_null() {
+            set_last_error("Null ctx/out/out_written for gibson_get_frame_cells".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        *out_written = 0;
+        let (cols, rows) = match (*ctx).inner.frame_size() {
+            Some(sz) => sz,
+            None => {
+                set_last_error("No frame rendered yet for gibson_get_frame_cells".into());
+                return GibsonStatus::ErrInvalidParam;
+            }
+        };
+        let cols = cols as usize;
+        if cols == 0 || x as usize >= cols || y >= rows {
+            set_last_error(format!(
+                "gibson_get_frame_cells start ({x}, {y}) out of bounds for a {cols}x{rows} frame"
+            ));
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let total = cols * rows as usize;
+        let start = y as usize * cols + x as usize;
+        let count = max_cells.min(total - start);
+        for i in 0..count {
+            let idx = start + i;
+            let fx = (idx % cols) as u16;
+            let fy = (idx / cols) as u16;
+            match (*ctx).inner.frame_cell(fx, fy) {
+                Some(cell) => *out.add(i) = encode_cell(&cell),
+                None => break, // in-bounds by construction; defensive stop
+            }
+        }
+        *out_written = count;
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Writes the cell's **full** grapheme-cluster UTF-8 bytes (untruncated, NOT NUL-terminated) into
+/// `buf` — the escape hatch for clusters the inline `glyph` cap truncated (`glyph_truncated == 1`).
+/// `*out_len` ALWAYS receives the full byte length; the bytes are copied only if `buf` is non-null
+/// AND `cap >= *out_len`, so `*out_len > cap` means "not written — size up and retry" (mirroring
+/// `gibson_get_rendered_output`). A blank or continuation cell yields `*out_len == 0`.
+/// `ErrInvalidParam` for a null `ctx`/`out_len`, no frame, or an out-of-bounds `(x, y)`.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_get_frame_cell_glyph(
+    ctx: *mut GibsonContextOpaque,
+    x: u16,
+    y: u16,
+    buf: *mut u8,
+    cap: usize,
+    out_len: *mut usize,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || out_len.is_null() {
+            set_last_error("Null ctx or out_len for gibson_get_frame_cell_glyph".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        *out_len = 0;
+        let cell = match (*ctx).inner.frame_cell(x, y) {
+            Some(c) => c,
+            None => {
+                set_last_error(format!(
+                    "No frame cell at ({x}, {y}): no frame rendered yet or coordinate out of bounds"
+                ));
+                return GibsonStatus::ErrInvalidParam;
+            }
+        };
+        let bytes = cell.glyph.as_bytes();
+        *out_len = bytes.len();
+        if !buf.is_null() && cap >= bytes.len() {
+            ptr::copy_nonoverlapping(bytes.as_ptr(), buf, bytes.len());
+        }
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
 }

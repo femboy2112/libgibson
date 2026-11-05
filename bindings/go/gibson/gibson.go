@@ -102,7 +102,10 @@ func (c *Context) Close() {
 	}
 }
 
-// SetSyncUpdates enables or disables atomic terminal updates (DECSM 2026).
+// SetSyncUpdates enables or disables synchronized-update framing (DECSM 2026) around each
+// frame on a TTY. It asks the terminal to present each update as a unit; it is a presentation
+// request, not atomic I/O — a failed write can still leave a partial frame, which the renderer
+// detects and re-establishes on the next frame.
 func (c *Context) SetSyncUpdates(enabled bool) error {
 	var en C.int32_t
 	if enabled {

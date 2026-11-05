@@ -17,7 +17,140 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Development toward **0.6.0** ("Operation Instrumental Renaissance"). This is the working
 development line, **not a release** — the manifest reads `0.6.0-dev`. `GIBSON_ABI_VERSION`
-stays 1; MSRV stays 1.85; no C/C++/Python/Go surface changes.
+stays 1 — the C ABI grows only by **additive** functions (compatible, no version bump);
+MSRV stays 1.85.
+
+### Documentation — the terminal-write contract, RXVI ([#254](https://github.com/femboy2112/libgibson/issues/254))
+- **No current document promises an atomic terminal write any more.** README, DESIGN §8,
+  `docs/FEATURES.md` and the Release Contract (§2, §6) still described `TerminalTransaction` as
+  "a single atomic write" / "atomic from the terminal's perspective", said the renderer "always
+  knows" its live-region anchor, named the pre-RXIV `TerminalTransaction::commit`, and called
+  `?2026` a "wire-atomic write"; the Go binding called sync updates "atomic terminal updates". The
+  implementation (`commit_counted`: a counted write loop + one flush) and Release Contract §9 already
+  said otherwise. They now state one contract: batching, not atomic I/O; a zero-byte failure is a
+  certain no-op retried in place; a torn prefix or a failed flush voids the renderer's physical
+  belief (`Renderer::physical_state_uncertain()`), fullscreen recovery repaints exactly and inline
+  recovery abandons the torn region to scrollback; synchronized-update framing is a presentation
+  request. `Context::set_sync_updates` and `gibson_set_sync_updates` gained doc comments saying
+  so. Historical entries (ROADMAP Phase 1.75/1.85, the v0.5 roadmap, the acid-vs-crash note) are
+  kept and marked superseded. Filesystem atomicity of capture/trace files (`atomic_write`) is a
+  separate, tested contract and is unchanged.
+- `tests/doc_terminal_write_contract.rs` guards the current documentation: it fails on the
+  overclaims #254 found (14 hits at `4e33631`) and on the documents no longer stating the
+  counted-write contract. No code, ABI or behaviour change.
+
+### Fixed — Rust library (`gibson::input`, text-input painting and layout) and C ABI behaviour, RXV ([#252](https://github.com/femboy2112/libgibson/issues/252))
+- **Text-input content can no longer reach the terminal as a control, and the editor's columns
+  agree with the terminal's.** `paint_text_input` placed graphemes with `Surface::set_cell`,
+  bypassing the control guard `Surface::print_str` applies, so a pasted TAB, a raw ESC and the
+  CSI / OSC / DCS sequences it introduces, BEL, BS, DEL, NUL and C1 controls were emitted verbatim:
+  on the untouched candidate, 19/19 hostile payloads leaked through `Node::text_input`, every
+  representable one through `gibson_node_text_input`, and on a real PTY a pasted `ESC[2J` erased
+  the screen. Widths also disagreed — after pasting `foo\tbar` the cursor said column 7, the total
+  said 6, the compiler advanced 0 and the terminal 8.
+  - **Insertion is single-line and control-free.** Every `TextInputState` path —
+    `handle_event` (keys and bracketed paste), `insert_str`, `insert_char`, `with_text` — turns a
+    run of line breaks (CR, LF, VT, FF, NEL, U+2028, U+2029) into one space and a TAB into one
+    space, and drops every other control (`char::is_control`: C0, DEL, C1). `normalize_paste` is
+    that normalization (a behaviour change for its direct callers).
+  - **Painting is total.** For any string (the public `text` field, `Node::text_input`, the C ABI),
+    a grapheme holding a control character or a line/paragraph separator, or of zero display width
+    standing alone (a combining mark with no base, ZWSP, BOM, a bidi format character, a lone
+    variation selector), is painted as **one `U+FFFD` cell**: still a visible cursor stop that
+    Backspace removes, never a control.
+  - **One width contract** (`TextInputState` docs): a grapheme of width 1–2 is one cell; a grapheme
+    **wider than two cells** (a Devanagari conjunct with a spacing vowel sign such as `क्षि`, a run
+    of Hangul leading jamo — which GB6 joins into one grapheme of any length) is laid codepoint by
+    codepoint over consecutive cells, so the cells advance exactly as `unicode-width` and a
+    per-codepoint terminal do; a substituted grapheme is one cell. `cursor_display_column`,
+    `total_display_width`, `update_scroll`, the painter and the layout's intrinsic input width all
+    use it. (Before, a 40-jamo paste was counted as 2 columns and overwrote the widget beside the
+    input.)
+  - **Scrolling keeps the whole cursor grapheme visible**: a wide grapheme at the right edge was
+    left half outside the viewport and not drawn (and the hardware cursor was not placed).
+  - `NumericInput::set_text` keeps its text exactly as given, so a control character stays
+    `Unparseable` instead of being normalized into a different valid number.
+  - Behaviour changes, no API change: `with_text` and `insert_str` now normalize;
+    `total_display_width` sums per-grapheme cells instead of measuring the whole string;
+    `handle_event` returns `false` for a key or paste that changed nothing (e.g. a paste of only
+    controls), so a UI `on_edit` no longer fires for a no-op.
+  - Evidence: `tests/text_input_glyph_boundary.rs` (issue reproduction, 21 hostile payloads × 6
+    entry paths incl. the C ABI, a byte-grammar oracle, a vt100 screen/cursor/side-effect oracle,
+    every cursor position, wide clusters beside a neighbouring widget, scrolling, deletion, 40×15
+    mono, numeric text) and `tests/pty_text_input_paste.rs` (a hostile bracketed paste on a real PTY
+    matches its sanitized control); painter-guard and sanitizer mutations each turn their own tests
+    red.
+
+### Fixed — Rust library (`gibson::renderer`), RXIV
+- **Partial terminal writes no longer leave the renderer believing a torn frame never happened.**
+  `TerminalTransaction` is not atomic I/O (synchronized-update framing is a display hint), and a
+  failed commit could leave a prefix of a frame on the terminal while the renderer kept diffing
+  against its old belief — after a torn frame the screen failed to converge for 119/143 cut points
+  (fullscreen) and 120/157 (inline). Commits now count delivered bytes: a failure that sent
+  **nothing** is certain (the emission state is restored and a retry diffs in place); a delivered
+  prefix or a failed flush voids the physical belief, so the next fullscreen frame resets SGR,
+  clears and repaints, and an inline region is abandoned to scrollback and re-allocated. Additive:
+  `Renderer::physical_state_uncertain()`. (`tests/renderer_partial_write.rs`.)
+
+### Added — examples / tooling, RXIV (experimental, not library API)
+- **Interactive live instrument-film:** `field_cinema --live --interactive` (probe, target,
+  tracked command, correlated verdict, verified-difference composition; `--step`,
+  `--reduced-motion`, `--suppress`, `--shape ring`, `--mask-every N`, `--record DIR`,
+  `--replay-film DIR`) and `field_cinema --envelope` (a measured resource/latency envelope).
+- **`wire_instrument --trace PATH`:** commits the session's causal trace atomically.
+- **Reference producer:** opt-in `--shape ring` (non-Gaussian holdout) and `--mask-every N`;
+  defaults and the golden vector are byte-identical.
+- **CI / release:** the installed-SDK forcing consumer runs in the Bindings job and the release
+  cleanroom; a real-TTY input→state→render loop through ABI v1 (`ffi_realtty_probe abi-loop`).
+- **Research:** a real-PTY stock-vs-patched crossterm A/B for #15
+  (`docs/research/issue15_crossterm_ab/`). #15 is **not** fixed — blocked upstream.
+
+### Changed — examples (experimental), RXIV
+- **Cinematic TRANSFORM is gated by a typed effect contract** (`field_cinema/live.rs`): the RXIII
+  `peak >= 0.8·target` rule transformed on an unchanged measurement (incl. a real no-op edit).
+- **The live film runs on the instrument's certified transport/command channel** (`LiveSession`):
+  id- and source-correlated verdicts, typed fail-closed errors, supervised producer lifetime.
+- **Capture files:** writer and reader share one acceptance contract; an aggregate payload budget
+  (256 MiB default); strict readers reject trailing bytes (`read_capture_prefix_with` is the explicit
+  tolerant form); a different format version is `UnsupportedVersion`; files commit atomically.
+- **Causal trace format v2 (`WIRETRC2`):** commands record their arguments; `Failed` verdicts and
+  `TransportFailed` admission; v1 streams are `UnsupportedVersion`.
+- **`wire_instrument`:** the ROI window is computed against the physical terminal and the probe is
+  painted on the field; status clipping walks grapheme clusters.
+- **Docs:** `SCENE_ALGEBRA_LAWS.md` — interchange holds under S ∧ C (aligned first tile AND
+  commuting crossed writes); duration alignment alone is refuted. `scene.rs` docs stop calling
+  `Parallel` a monoidal product and `to_node` a functor.
+
+### Added — C ABI (`GIBSON_ABI_VERSION` stays 1; additive)
+- **`gibson_create_headless_context(mode, cols, rows, **out)`** + **`gibson_get_rendered_output(ctx, buf, cap, *out_len)`:**
+  a deterministic in-memory headless context plus a binary-safe readback of its ANSI frame
+  stream, so C and Python consumers can reach byte-exact ANSI *frame* parity with the native
+  renderer (#142, v0.6 Gate I). The v1 surface grows from 52 to 54 exported symbols; adding
+  functions is ABI-compatible, so `GIBSON_ABI_VERSION` is unchanged. Python binding:
+  `Context.headless(mode, cols, rows)` + `Context.rendered_output() -> bytes`.
+- **`gibson_set_color_depth(ctx, depth)`:** overrides a context's color depth
+  (`GIBSON_COLOR_DEPTH_{MONO,ANSI16,ANSI256,TRUECOLOR}`), so C and Python consumers can exercise
+  the 256-color / 16-color / mono SGR *downgrade* across the ABI — the capability-fallback path
+  the Gate I headless pair forced to truecolor and ceded (#142, v0.6 Gate J). The v1 surface grows
+  from 54 to 55 exported symbols; still additive, so `GIBSON_ABI_VERSION` is unchanged. Python
+  binding: `Context.set_color_depth(depth)` + the `ColorDepth` constants.
+- **`gibson_get_frame_size(ctx, *cols, *rows)`** + **`gibson_get_frame_cell(ctx, x, y, *cell)`:**
+  read back the resolved *styled cell grid* of the most recent frame — per cell, the grapheme, its
+  display width, continuation/transparency flags, and the full style (fg/bg/attrs) quantized to the
+  context's color depth, via the new `gibson_cell_t` (closing the styled-cell-grid half of the
+  Gate I cede, #142, v0.6 Gate J). Also adds the Rust seam `Context::frame_size` / `Context::frame_cell`
+  + the `FrameCell` view, and the inverse FFI converters `style_to_ffi` / `color_to_ffi`. The v1
+  surface grows from 55 to 57 exported symbols; still additive, so `GIBSON_ABI_VERSION` is
+  unchanged. Python binding: `Context.frame_size()` + `Context.frame_cell(x, y)` + `GibsonCell`.
+- **`gibson_get_frame_cells(ctx, x, y, *out, max, *written)`** + **`gibson_get_frame_cell_glyph(ctx, x, y, buf, cap, *len)`** + the **`glyph_truncated`** flag (`gibson_cell_t._reserved[0]`):
+  make the styled cell grid *honest* about grapheme clusters larger than the 16-byte inline cap (a
+  ZWJ family emoji is 25 bytes). `gibson_get_frame_cell` now sets `glyph_truncated` when it cut a
+  cluster; `gibson_get_frame_cell_glyph` returns the full (untruncated) bytes (size-query-first); and
+  `gibson_get_frame_cells` reads a whole row or frame in one call with the exact same per-cell
+  encoding. Corrects three docs that wrongly claimed "every grapheme fits" (#142, v0.6 Gate K). The
+  v1 surface grows from 57 to 59 exported symbols; still additive, so `GIBSON_ABI_VERSION` is
+  unchanged. Python binding: `Context.frame_cells()` + `Context.frame_cell_glyph(x, y)` +
+  `GibsonCell.glyph_truncated`.
 
 ### Fixed — Rust library (`gibson::scene`)
 - **`Scene::rename` now repairs a stale label index even when the new label equals the one

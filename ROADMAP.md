@@ -3,7 +3,104 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current direction (2026-10-19): v0.5.0 — Interactive Observable Instruments
+## Current direction (2026-11-05): v0.6.0 — the merge-readiness candidate (Renaissance XIV–XVI)
+
+**Canonical roadmap: [issue #191](https://github.com/femboy2112/libgibson/issues/191).** This
+section reconciles #191's R6.1–R6.6 workstreams with what is actually built and verified. The
+per-gate red/green evidence, mutation controls and remaining limits are in
+[`docs/V06_QUALIFICATION_LEDGER.md`](docs/V06_QUALIFICATION_LEDGER.md).
+
+**Baseline.** `main` is at `2ffdd92` (`0.6.0-dev`); the current published release is **v0.5.0**
+(`d8c7b99`, GitHub prerelease). On `main`, only **Milestone 1 (#198)** and **Phase 6 (#199)** have
+merged. Everything below lives on ONE consolidated integration branch,
+`feat/v0.6-RXIV-causal-audit-191`, proposed to `main` as a single PR that preserves the full
+ancestry of the Renaissance stack (`#241 ← … ← #251`) plus the RXIV corrections, the RXV
+text-input glyph-boundary repair (#252) and the RXVI terminal-write documentation contract
+(#254). Nothing is merged,
+tagged, released or published; a merge requires the independent audit's approval of the exact
+final SHA and then the owner's action.
+
+> **State legend.** *Released* = in v0.5.0. *Merged* = on `main`. *Candidate* = on the integration
+> PR, CI-green on its exact head, **not** on `main`. *Deferred* / *Blocked* as stated.
+
+### R6.1 — Instrument-driven cinematic grammar — **completed and verified (candidate)**
+The interactive live instrument-film (`field_cinema --live --interactive`): a real producer field,
+user probe navigation, target selection, the command through the certified tracked channel, the
+correlated verdict, the next authoritative field, and a scene-composed response to the **verified**
+difference; the scripted `--live` stays the deterministic CI film. TRANSFORM is gated by a typed
+effect contract (an ACK is not a change; a high unchanged value is not a change), proven against
+four real histories on **rendered surfaces** and a non-Gaussian holdout; causal attribution is
+claimed only via a matched counterfactual. *Limits:* the effect contract measures the peak sample
+against the requested amplitude (declared per source); auto-advance timing is untested.
+
+### R6.2 — Public consumer ergonomics & interaction depth — **completed and verified (candidate)**
+The 40×15 scientific instrument (RXII); the display transport carrying origin/anisotropy/zoom
+(Gate G); a probe-following ROI window computed against the **physical** terminal (RXIV F), with the
+probe painted on screen; grapheme-cluster-safe clipping; strict, bounded, atomically committed
+capture files and a causal trace (v2) wired into the instrument (`--trace`) and the film
+(`--record` / `--replay-film`). The Wave-3 editor drafts #176/#177 are **superseded** by the merged
+`instrument_workbench` (close recommended — owner's action). **RXV (#252):** the single-line text
+editor's last glyph boundary is closed — insertion is single-line and control-free, painting is
+safe for any string (a control-bearing or standalone zero-width grapheme becomes one `U+FFFD` cell,
+including through `Node::text_input` and the C ABI), and one width contract governs the cursor,
+total width, scrolling, painter and layout, verified on a vt100 model and a real PTY.
+
+### R6.3 — Cross-language interaction contracts — **completed with documented limitation**
+C ABI v1 at **59** symbols (`abi/gibson-abi-v1.symbols`, `symbolic`-guarded), frozen
+`gibson_cell_t`, no version bump. An installed-SDK forcing consumer (staged prefix, pkg-config only)
+runs in the CI Bindings job and the release cleanroom; a real-TTY input→state→render loop runs
+entirely through the ABI. *Limits:* a headless context has no input source; there is no sub-cell
+pixel raster; C++/Go/Python interactive parity is **not** claimed beyond the existing parity
+harnesses ([`docs/SDK_DOOM_HORIZON.md`](docs/SDK_DOOM_HORIZON.md)).
+
+### R6.4 — Extended graphics / media — **explicitly deferred by design**
+`gibson::media` (#186) and `media-deflate` (#188) stay open drafts, promoted only for a concrete
+consumer. HumanMusic / C137 / Homosapians research stays frozen with its music-freeze ledger.
+
+### R6.5 — Performance & resource envelopes — **completed with documented limitation**
+A measured envelope at an exact SHA ([`docs/V06_PERFORMANCE_ENVELOPE.md`](docs/V06_PERFORMANCE_ENVELOPE.md)):
+observation and command→verdict round trips, input→dispatch, scene evaluation, renderer
+generation, write+flush, producer cadence, coalescing, retained-byte high-water, RSS and cleanup.
+**Partial-write policy:** `TerminalTransaction` is **not** atomic I/O — synchronized-update framing
+is a display hint. The renderer counts delivered bytes: a failure that sent nothing is certain (the
+retry diffs in place); a torn prefix or an unconfirmed flush voids its physical belief, so the next
+fullscreen frame resets SGR, clears and repaints exactly, and an inline region is abandoned to
+scrollback and re-allocated (`tests/renderer_partial_write.rs`, every cut point). **RXVI (#254):**
+README, DESIGN, FEATURES and the Release Contract had kept describing the transaction as an atomic
+write; they now state the counted-write contract above, and `tests/doc_terminal_write_contract.rs`
+guards the current documentation against the overclaim.
+*Limits:* one host; no display FPS; streaming observation age unmeasured (no producer clock).
+
+### R6.6 — Long-standing terminal issues — **blocked upstream; documented limitation**
+Issue **#15**. A real-PTY A/B isolated from LibGibson
+([`docs/research/issue15_crossterm_ab/`](docs/research/issue15_crossterm_ab/)) shows stock
+crossterm 0.29.0 strands the key in a resize-then-key readiness batch (0/30 delivered) and the
+upstream fix #1128 delivers it (30/30). #1128 is unmerged and crates.io is still 0.29.0, so #15
+stays open and is **not** claimed fixed; the fork is not adopted. Next probe: re-run the A/B against
+the first crossterm release containing #1128, then un-ignore
+`event_pressure_pty::context_coincident_lone_key_delivery_acceptance`.
+
+### Constraints (unchanged)
+GitHub-first prereleases; C ABI v1; Rust MSRV 1.85; `main` merge-commit convention; the PCM audio
+golden and HumanMusic research are frozen; **no** tag, GitHub Release, registry (crates.io / PyPI)
+publication, supported-default change, or force-push without explicit maintainer authorization. The
+`main` merge of the integration PR is conditionally authorized only after independent approval of
+its exact SHA.
+
+### Longer-term horizon
+**v0.7 — playable terminal Doom:** public raster / input / clock / lifecycle capabilities and an
+actual playable adapter, the GPL adapter kept in a separate repository; execution graph in
+[`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md) (starts from the merged `main`).
+**v0.8 — cross-language functionality:** independent Rust/C/C++/Python/Go clients built against
+installed artifacts and shared semantic fixtures. **v0.9 — portability and stabilization:**
+terminal/OS matrices, performance envelopes, API simplification, recovery behaviour and migration
+support. **v1.0 — stable reviewed CORE:** explicit API/ABI compatibility commitments, release
+tooling, independently verified support and a documented maintenance model. Optional graphics /
+media and sonification are not promoted without a named consumer.
+
+---
+
+## v0.5.0 — Interactive Observable Instruments (RELEASED 2026-10-24, history)
 
 **Status (2026-10-19 snapshot): ROADMAP/PLANNING ONLY; no v0.5.0 release, merge, or new API accepted on main.**
 *Update 2026-10-24: the v0.5.0 interactive-instruments milestone is delivered and
@@ -441,7 +538,7 @@ one-arrow law, exact step replay and semantic-identity validation. Total:
 
 This round converted earlier over-strong claims into verified behavior and explicit gaps.
 
-- [x] **Atomic `TerminalTransaction`**: one `write_all` + `flush` batching synchronized-update begin/end (`CSI ?2026 h/l`), private modes, cursor motion, diff bytes, final cursor placement, and visibility. Sync-update ownership removed from `AnsiCompiler`.
+- [x] **Batched `TerminalTransaction`** *(this entry originally read "Atomic"; superseded — batching is not atomic I/O, and since RXIV Gate G3 the commit is `commit_counted`, a counted write loop + `flush` with partial-write recovery; see #254 and the Release Contract §9)*: one `write_all` + `flush` batching synchronized-update begin/end (`CSI ?2026 h/l`), private modes, cursor motion, diff bytes, final cursor placement, and visibility. Sync-update ownership removed from `AnsiCompiler`.
 - [x] **Explicit Physical Anchor**: `AnchorState::{Invalid, Stable{cols,rows,live_height}}` plus last cursor position/visibility. Empty cell diffs still emit when cursor state changes. Geometry changes invalidate the anchor, discard the diff baseline, re-anchor, and increment `anchor_resyncs`. Tested in `whole_renderer_vt100` and the PTY resize probe.
 - [x] **Two Insertion Strategies**: `InsertLineFastPath` and `RepaintFallback`, reported through `fast_insertions` / `insertion_repaints`. Universal zero-repaint is explicitly **not** claimed.
 - [x] **Unicode Mutation Invariant**: `TextInputState` uses byte-range edits and re-derives the cursor grapheme from the complete resulting string. `cursor_grapheme <= grapheme_count` holds across combining accents, ZWJ emoji, skin-tone modifiers, and flags. Deterministic randomized edit fuzzing included. Single-line paste normalizes `\r\n`, `\r`, `\n` to a space.
@@ -469,7 +566,7 @@ This round converted earlier over-strong claims into verified behavior and expli
 ## Phase 1.85: Compositor, Sub-cell Canvas & Determinism — IMPLEMENTED + TESTED
 
 - **Safety split**: safe `insert_text_before_live` / `insert_rich_text_before_live` / `insert_node_before_live`; raw is explicitly `insert_raw_lines_before_live_unchecked`. `Renderer::commit` is now safe text (`commit_text`), fixing the old name-inverts-safety bug. (`tests/safety_api.rs`)
-- **Exact wire metrics**: `TerminalTransaction::commit` returns the exact byte count including the synchronized-update terminator; renderer metrics no longer undercount. (`src/transaction.rs`)
+- **Exact wire metrics**: `TerminalTransaction::commit_counted` (named `commit` at the time) returns the exact byte count including the synchronized-update terminator; renderer metrics no longer undercount. (`src/transaction.rs`)
 - **Layer compositor**: `Node::stack()` + explicit `Cell::transparent` + `Node::dim()` style-only veil; overlay removal leaves no ghosts; floating modals do not reflow. (`tests/compositor.rs`, `whole_renderer_vt100`)
 - **Sub-cell canvases**: `BrailleCanvas`, `HalfBlockCanvas`, `braille_oscilloscope`; exact glyph/colour tests; bounded update cost. (`src/canvas.rs`, `tests/effects_perf.rs`)
 - **Deterministic clock**: `TimeSource`/`FixedStepClock` + motion helpers; scripted frames are reproducible. (`src/clock.rs`)

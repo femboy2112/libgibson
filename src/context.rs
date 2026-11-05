@@ -55,6 +55,25 @@ impl Write for OutputSink {
     }
 }
 
+/// A read-only view of one resolved cell in the most recently rendered frame, with its style
+/// already quantized to the depth that frame was *emitted* at (so `style` matches the ANSI wire
+/// actually written — even if the requested depth has since changed and not yet been repainted).
+/// Returned by [`Context::frame_cell`]; borrows the frame surface for the call's lifetime.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FrameCell<'a> {
+    /// The grapheme cluster painted in this cell (empty for a blank or continuation cell).
+    pub glyph: &'a str,
+    /// Display columns the glyph occupies: 0 (continuation/empty), 1, or 2.
+    pub width: u8,
+    /// True if this cell is the trailing half of a wide (width-2) glyph.
+    pub is_continuation: bool,
+    /// True if the cell is transparent (contributes nothing when composited).
+    pub transparent: bool,
+    /// The cell's style, quantized to the depth the frame was emitted at — fg/bg downgraded or
+    /// dropped exactly as the emitted SGR was (see [`Context::set_color_depth`]).
+    pub style: crate::cell::Style,
+}
+
 impl Context {
     pub fn new(mode: RenderMode) -> io::Result<Self> {
         let mut session = TerminalSession::new()?;
@@ -115,6 +134,11 @@ impl Context {
         }
     }
 
+    /// Enable or disable synchronized-update framing (`CSI ?2026 h` … `CSI ?2026 l`) around each
+    /// frame; on by default and emitted only on a TTY. It asks the terminal to present each update
+    /// as a unit. It is a presentation request, **not** atomic I/O: a write can still fail after a
+    /// prefix reached the terminal, and the renderer then re-establishes the screen on the next
+    /// frame (`docs/RELEASE_CONTRACT.md` §9).
     pub fn set_sync_updates(&mut self, enabled: bool) {
         self.session.set_sync_updates(enabled);
     }
@@ -143,6 +167,39 @@ impl Context {
     /// [`Context::set_capture_damage`] was enabled).
     pub fn last_dirty_cells(&self) -> &[(u16, u16)] {
         self.renderer.last_dirty_cells()
+    }
+
+    /// The `(cols, rows)` geometry of the most recently rendered frame, or `None` before the first
+    /// render. A headless context always has a frame after [`Context::render`]; a stdout-backed
+    /// context in a non-TTY process stays `None` (its render is a suppressed no-op).
+    pub fn frame_size(&self) -> Option<(u16, u16)> {
+        self.renderer
+            .last_frame_surface()
+            .map(|s| (s.width, s.height))
+    }
+
+    /// A display-accurate view of the cell at `(x, y)` in the most recently rendered frame — the
+    /// resolved *styled cell grid*, i.e. what the frame paints, not the logical node tree — with
+    /// its style quantized to the depth that frame was *emitted* at. A color-depth request made
+    /// after painting does not retouch an already-emitted frame; it takes effect on the next
+    /// repaint (Gate F2). `None` if there is no frame yet or `(x, y)` is out of bounds.
+    pub fn frame_cell(&self, x: u16, y: u16) -> Option<FrameCell<'_>> {
+        let surface = self.renderer.last_frame_surface()?;
+        let cell = surface.get(x, y)?;
+        // Quantize with the depth the frame was EMITTED at, not a depth requested after painting.
+        // These are set together after a successful commit, so a `Some(surface)` above implies a
+        // `Some(depth)` here; the fallback is only belt-and-suspenders (Gate F2).
+        let depth = self
+            .renderer
+            .last_emitted_depth()
+            .unwrap_or_else(|| self.session.color_depth());
+        Some(FrameCell {
+            glyph: cell.glyph.grapheme.as_str(),
+            width: cell.glyph.display_width,
+            is_continuation: cell.is_continuation,
+            transparent: cell.transparent,
+            style: crate::capability::quantize_style(cell.style, depth),
+        })
     }
 
     pub fn set_max_fps(&mut self, fps: u32) {

@@ -57,16 +57,26 @@ jobs:
 
   rust:
     name: Rust (fmt, clippy, test, build)
-    runs-on: ubuntu-latest
+    # Pinned to ubuntu-24.04 (not ubuntu-latest): this job runs byte-exact PCM goldens
+    # (tests/audio_pocket_voice.rs) that depend on the system libm. The ubuntu-latest roll to
+    # 26.04 changed libm and broke the golden on main; 24.04 is the environment it was green on.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      # Pinned to 1.98.1 (the golden's capture toolchain) alongside the ubuntu-24.04 pin above:
+      # this job runs byte-exact PCM goldens (tests/audio_pocket_voice.rs) sensitive to BOTH the
+      # compiler and the system libm. Pinning the toolchain ALONE did not restore the golden (it
+      # fails identically on 1.98.1 under ubuntu-26.04), so the decisive change was the runner
+      # image/libm roll; both are pinned here to the environment the golden was last green on.
+      # (MSRV pins 1.85 the same way below.)
       - name: Install Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
+          toolchain: "1.98.1"
           components: rustfmt, clippy
 
       - name: Cache cargo
@@ -152,6 +162,14 @@ jobs:
           gcc -Iinclude bindings/c/example.c -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/example_c
           /tmp/example_c
 
+      - name: Installed-SDK forcing consumer (staged prefix, pkg-config only)
+        # RXIV Gate G1: stage the SDK into a prefix OUTSIDE the checkout and build the Doom-shaped
+        # forcing consumer from a temp dir with ONLY pkg-config (no repo include/lib paths); it
+        # drives 240 frames of bulk readback + depth restyle + long-glyph recovery and exits
+        # nonzero on any violated invariant. A narrow output/readback slice — not input, not a
+        # pixel raster (docs/SDK_DOOM_HORIZON.md).
+        run: scripts/dev/sdk_forcing_consumer.sh
+
       - name: C++ example
         run: |
           g++ -std=c++17 -Iinclude bindings/cpp/example.cpp -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/example_cpp
@@ -162,6 +180,110 @@ jobs:
           PYTHONPATH: bindings/python
           LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
         run: python3 bindings/python/example.py
+
+      - name: FFI behavioral stats parity (C vs Python vs native golden)
+        # Drive one non-TTY plain-scrollback op-script through the C ABI and the Python ctypes
+        # binding, and require byte-identical engine accounting + committed wire stream across
+        # both AND against the committed golden that the Rust job verifies from the native API.
+        # Proves the bindings marshal into the same engine (not pixel/full-feature parity; #142).
+        env:
+          PYTHONPATH: bindings/python
+          LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
+        run: |
+          set -euo pipefail
+          gcc -Iinclude bindings/parity/parity.c -Ltarget/release -lgibson \
+            -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/parity_c
+          /tmp/parity_c "$RUNNER_TEMP/c_stats.txt" "$RUNNER_TEMP/c_wire.txt"
+          python3 bindings/parity/parity.py "$RUNNER_TEMP/py_stats.txt" "$RUNNER_TEMP/py_wire.txt"
+          echo "--- C stats ---"; cat "$RUNNER_TEMP/c_stats.txt"
+          echo "--- C wire ---"; cat "$RUNNER_TEMP/c_wire.txt"
+          cmp "$RUNNER_TEMP/c_stats.txt" "$RUNNER_TEMP/py_stats.txt"
+          cmp "$RUNNER_TEMP/c_stats.txt" bindings/parity/golden_stats.txt
+          cmp "$RUNNER_TEMP/c_wire.txt" "$RUNNER_TEMP/py_wire.txt"
+          cmp "$RUNNER_TEMP/c_wire.txt" bindings/parity/golden_wire.txt
+
+      - name: FFI pixel/ANSI frame parity (C vs Python vs native golden)
+        # Drive one headless frame op-script (an RGB-styled, bold text node) through the new C ABI
+        # (gibson_create_headless_context + gibson_get_rendered_output) and the Python binding, and
+        # require a byte-identical painted ANSI frame + painted stats across both AND against the
+        # committed golden the Rust job verifies from the native API. Closes the Gate H pixel/ANSI
+        # cede (#142, v0.6 Gate I); still not a pixel raster or full-feature parity.
+        env:
+          PYTHONPATH: bindings/python
+          LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
+        run: |
+          set -euo pipefail
+          gcc -Iinclude bindings/parity/parity_ansi.c -Ltarget/release -lgibson \
+            -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/parity_ansi_c
+          /tmp/parity_ansi_c "$RUNNER_TEMP/c_ansi_stats.txt" "$RUNNER_TEMP/c_ansi.bin"
+          python3 bindings/parity/parity_ansi.py "$RUNNER_TEMP/py_ansi_stats.txt" "$RUNNER_TEMP/py_ansi.bin"
+          echo "--- C ansi stats ---"; cat "$RUNNER_TEMP/c_ansi_stats.txt"
+          echo "--- C ansi frame ---"; od -c "$RUNNER_TEMP/c_ansi.bin"
+          cmp "$RUNNER_TEMP/c_ansi_stats.txt" "$RUNNER_TEMP/py_ansi_stats.txt"
+          cmp "$RUNNER_TEMP/c_ansi_stats.txt" bindings/parity/golden_ansi_stats.txt
+          cmp "$RUNNER_TEMP/c_ansi.bin" "$RUNNER_TEMP/py_ansi.bin"
+          cmp "$RUNNER_TEMP/c_ansi.bin" bindings/parity/golden_ansi.bin
+
+      - name: FFI color-depth downgrade parity (C vs Python vs native golden)
+        # Drive the same headless frame op-script through the new gibson_set_color_depth setter at
+        # each downgraded depth (mono / ansi16 / ansi256) and require a byte-identical painted ANSI
+        # frame across the C ABI, the Python binding, and the committed per-depth golden the Rust
+        # job verifies from the native API. Closes the Gate I truecolor-only cede (#142, v0.6
+        # Gate J). Truecolor parity is already covered by the step above.
+        env:
+          PYTHONPATH: bindings/python
+          LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
+        run: |
+          set -euo pipefail
+          gcc -Iinclude bindings/parity/parity_depth.c -Ltarget/release -lgibson \
+            -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/parity_depth_c
+          for pair in "0:mono" "1:ansi16" "2:ansi256"; do
+            d="${pair%%:*}"; name="${pair##*:}"
+            /tmp/parity_depth_c "$d" "$RUNNER_TEMP/c_depth_$name.bin"
+            python3 bindings/parity/parity_depth.py "$d" "$RUNNER_TEMP/py_depth_$name.bin"
+            echo "--- $name (depth $d) frame ---"; od -c "$RUNNER_TEMP/c_depth_$name.bin"
+            cmp "$RUNNER_TEMP/c_depth_$name.bin" "$RUNNER_TEMP/py_depth_$name.bin"
+            cmp "$RUNNER_TEMP/c_depth_$name.bin" "bindings/parity/golden_depth_$name.bin"
+          done
+
+      - name: FFI styled cell-grid parity (C vs Python vs native golden)
+        # Serialize the whole resolved styled cell grid of the canonical frame through the new
+        # gibson_get_frame_size + gibson_get_frame_cell, via the C ABI and the Python binding, and
+        # require a byte-identical serialization across both AND the committed golden the Rust job
+        # verifies from the native API. Closes the styled-cell-grid half of the Gate I cede (#142,
+        # v0.6 Gate J).
+        env:
+          PYTHONPATH: bindings/python
+          LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
+        run: |
+          set -euo pipefail
+          gcc -Iinclude bindings/parity/parity_cells.c -Ltarget/release -lgibson \
+            -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/parity_cells_c
+          /tmp/parity_cells_c "$RUNNER_TEMP/c_cells.txt"
+          python3 bindings/parity/parity_cells.py "$RUNNER_TEMP/py_cells.txt"
+          echo "--- C cells (head) ---"; head -8 "$RUNNER_TEMP/c_cells.txt"
+          cmp "$RUNNER_TEMP/c_cells.txt" "$RUNNER_TEMP/py_cells.txt"
+          cmp "$RUNNER_TEMP/c_cells.txt" bindings/parity/golden_cells.txt
+
+      - name: FFI long-glyph cell-grid parity (C vs Python vs native golden)
+        # Drive a frame with a 25-byte ZWJ family-emoji cluster (width 2, truncated by the 16-byte
+        # inline cap) through the Gate K readback trio — bulk gibson_get_frame_cells, the
+        # glyph_truncated flag, and gibson_get_frame_cell_glyph for the full bytes — via the C ABI
+        # and the Python binding, and require a byte-identical serialization across both AND the
+        # committed golden the Rust job verifies from the native API. This is the cross-language
+        # proof that a truncated cluster + its full bytes marshal identically (#142, v0.6 Gate K).
+        env:
+          PYTHONPATH: bindings/python
+          LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
+        run: |
+          set -euo pipefail
+          gcc -Iinclude bindings/parity/parity_cells_long.c -Ltarget/release -lgibson \
+            -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/parity_cells_long_c
+          /tmp/parity_cells_long_c "$RUNNER_TEMP/c_cells_long.txt"
+          python3 bindings/parity/parity_cells_long.py "$RUNNER_TEMP/py_cells_long.txt"
+          echo "--- C long cells (head) ---"; head -5 "$RUNNER_TEMP/c_cells_long.txt"
+          cmp "$RUNNER_TEMP/c_cells_long.txt" "$RUNNER_TEMP/py_cells_long.txt"
+          cmp "$RUNNER_TEMP/c_cells_long.txt" bindings/parity/golden_cells_long.txt
 
   asan:
     name: AddressSanitizer (C, C++)

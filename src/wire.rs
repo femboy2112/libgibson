@@ -116,6 +116,14 @@ impl WireLimits {
     /// [`max_payload_bytes`](WireLimits::max_payload_bytes) once the fixed command header is
     /// accounted for. A command whose `arg` exceeds this would encode to a frame the matching
     /// decoder must reject, so [`encode_command_checked`] and [`issue_command`] refuse it first.
+    ///
+    /// This saturates to 0 when `max_payload_bytes < COMMAND_HEAD_BYTES` — a budget too small
+    /// for *any* command, since even a zero-length `arg` still carries the 16-byte command head.
+    /// In that degenerate regime a 0 here does **not** mean "a zero-length arg fits": no command
+    /// fits at all. The authoritative admission test is the total-payload check in
+    /// [`encode_command_checked`]/[`issue_command`] (`COMMAND_HEAD_BYTES + arg.len()` against
+    /// `max_payload_bytes`), which refuses even the empty command under such a budget; this helper
+    /// is an exact convenience only for the realistic `max_payload_bytes >= COMMAND_HEAD_BYTES`.
     pub fn max_command_arg_bytes(&self) -> usize {
         self.max_payload_bytes.saturating_sub(COMMAND_HEAD_BYTES)
     }
@@ -491,7 +499,11 @@ pub fn encode_command_checked(
     command: &WireCommand,
     limits: WireLimits,
 ) -> Result<Vec<u8>, WireError> {
-    if command.arg.len() > limits.max_command_arg_bytes() {
+    // Guard the TOTAL payload (head + arg), exactly as `encode_field` does — not `arg` alone.
+    // `max_command_arg_bytes` floors at 0 under a sub-header budget, where an arg-only test would
+    // wrongly admit the empty command; checking the whole payload refuses it, so no frame beyond
+    // `max_payload_bytes` is ever emitted.
+    if COMMAND_HEAD_BYTES + command.arg.len() > limits.max_payload_bytes {
         return Err(WireError::EncodeTooLarge);
     }
     Ok(encode_command(source, cursor, command))
@@ -510,7 +522,9 @@ pub fn issue_command(
     command: WireCommand,
     limits: WireLimits,
 ) -> Result<crate::snapshot::Admission, WireError> {
-    if command.arg.len() > limits.max_command_arg_bytes() {
+    // Total-payload guard (head + arg), matching `encode_command_checked`: a sub-header budget
+    // refuses even the empty command rather than queue a frame the far-side decoder would reject.
+    if COMMAND_HEAD_BYTES + command.arg.len() > limits.max_payload_bytes {
         return Err(WireError::EncodeTooLarge);
     }
     Ok(bridge.issue(command))
@@ -601,6 +615,24 @@ impl FrameDecoder {
     /// Bytes currently buffered and not yet consumed.
     pub fn buffered_bytes(&self) -> usize {
         self.buf.len()
+    }
+
+    /// The accumulation-buffer ceiling: one maximum frame (`HEADER_BYTES + max_payload_bytes`).
+    /// A caller that feeds the decoder incrementally uses this (via [`remaining_capacity`])
+    /// to never offer more than fits, so a single read that straddles a frame boundary at the
+    /// ceiling can be split — feed, drain the completed frame to free room, feed the rest —
+    /// instead of tripping a spurious fatal `BufferOverflow` on legal input.
+    ///
+    /// [`remaining_capacity`]: FrameDecoder::remaining_capacity
+    pub fn buffer_ceiling_bytes(&self) -> usize {
+        self.buffer_ceiling()
+    }
+
+    /// Bytes that [`push`](FrameDecoder::push) can still accept before it would overflow the
+    /// one-frame ceiling: `buffer_ceiling_bytes() - buffered_bytes()`. Zero means the next push
+    /// must be preceded by a drain. This is never negative — `push` enforces the ceiling.
+    pub fn remaining_capacity(&self) -> usize {
+        self.buffer_ceiling().saturating_sub(self.buf.len())
     }
 
     /// Total fully-decoded messages.
@@ -1130,16 +1162,27 @@ impl Default for LedgerCapacity {
 
 /// The lifecycle state of a command the presenter issued on the return channel. Mirrors the
 /// five-state [`AckStatus`] vocabulary, but as a *tracked local state* rather than a wire
-/// value. `Accepted` and `Delivered` are **live** (a slot in the ledger); `Acknowledged`,
-/// `Refused` and `Failed` are **terminal** and pruned to counters, so they are never a live
-/// state (see [`CommandLedger`]).
+/// value. `Accepted`, `Delivered` and `TransportUncertain` are **live** (a slot in the ledger);
+/// `Acknowledged`, `Refused` and `Failed` are **terminal** and pruned to counters, so they are
+/// never a live state (see [`CommandLedger`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandState {
     /// Issued and queued locally; not yet delivered over the wire.
     Accepted,
-    /// Handed toward the producer; awaiting a verdict ack.
+    /// Handed toward the producer and confirmed flushed; awaiting a verdict ack.
     Delivered,
-    /// Terminal: the producer confirmed it (and the authoritative model moved).
+    /// The *complete* command frame was handed to the transport (`write_all` succeeded), but the
+    /// flush that would confirm it reached the far side failed. The producer may or may not have
+    /// received and applied it — delivery is **genuinely uncertain**, neither a confirmed
+    /// `Delivered` nor a known-absent `Accepted` (Gate D). A later genuine verdict ack resolves
+    /// it exactly as it would a `Delivered` command; the id is never re-delivered or reused, so a
+    /// possibly-received non-idempotent command is never silently retried.
+    TransportUncertain,
+    /// Terminal: the producer returned an accepting verdict for the command. This records the
+    /// command's *fate* — the producer acknowledged it — which is distinct from, and precedes, the
+    /// authoritative source-state change itself: the consumer observes that change separately, in
+    /// the producer's subsequent FIELD snapshot. The ack is the verdict on the command, never by
+    /// itself proof that the field moved (Gate D4).
     Acknowledged,
     /// Terminal: the producer declined it as typed backpressure — re-offer it.
     Refused,
@@ -1191,7 +1234,9 @@ pub enum LedgerReject {
     },
     /// An ack arrived for a command still only [`CommandState::Accepted`] — you cannot get a
     /// verdict on an edit that was never delivered. A producer acking an undelivered command
-    /// is a protocol fault, surfaced rather than trusted.
+    /// is a protocol fault, surfaced rather than trusted. Note that a
+    /// [`TransportUncertain`](CommandState::TransportUncertain) command does *not* land here: its
+    /// full frame did reach the transport, so a genuine ack legitimately reconciles it (Gate D).
     AckBeforeDelivery { command_id: u64 },
     /// An ack carried a non-terminal status ([`AckStatus::Accepted`] or
     /// [`AckStatus::Delivered`]) on the return channel, which only carries verdicts.
@@ -1274,6 +1319,9 @@ pub struct CommandLedger {
     last_issued: Option<u64>,
     issued: u64,
     delivered_ever: u64,
+    /// Commands that transitioned `Accepted` → [`TransportUncertain`](CommandState::TransportUncertain):
+    /// the full frame was handed to transport but the confirming flush failed (Gate D).
+    uncertain_ever: u64,
     acknowledged: u64,
     refused: u64,
     failed: u64,
@@ -1299,6 +1347,7 @@ impl CommandLedger {
             last_issued: None,
             issued: 0,
             delivered_ever: 0,
+            uncertain_ever: 0,
             acknowledged: 0,
             refused: 0,
             failed: 0,
@@ -1358,6 +1407,31 @@ impl CommandLedger {
         }
     }
 
+    /// Record that an accepted command's delivery is **transport-uncertain**: its complete frame
+    /// was handed to the transport (`write_all` succeeded) but the confirming flush failed, so the
+    /// producer may or may not have received it (Gate D). Legal exactly once, from
+    /// [`Accepted`](CommandState::Accepted).
+    ///
+    /// Unlike [`note_delivered`](Self::note_delivered) this does NOT advance `delivered_ever` — the
+    /// frame was not confirmed delivered — but it does leave the command **live and resolvable**:
+    /// a later genuine verdict ack reconciles it exactly as a `Delivered` command (see
+    /// [`apply_ack`](Self::apply_ack)). The command is never re-delivered under its id, so a
+    /// possibly-received non-idempotent command is not silently retried.
+    ///
+    /// Returns [`LedgerReject::UnknownCommand`] if the id is not outstanding, or
+    /// [`LedgerReject::NotAwaitingDelivery`] if it already left `Accepted`.
+    pub fn note_transport_uncertain(&mut self, command_id: u64) -> Result<(), LedgerReject> {
+        match self.live.get_mut(&command_id) {
+            None => Err(LedgerReject::UnknownCommand { command_id }),
+            Some(state @ CommandState::Accepted) => {
+                *state = CommandState::TransportUncertain;
+                self.uncertain_ever += 1;
+                Ok(())
+            }
+            Some(&mut state) => Err(LedgerReject::NotAwaitingDelivery { command_id, state }),
+        }
+    }
+
     /// Apply a verdict ack returned by the producer, resolving the command to its terminal
     /// fate and pruning it from the live set. On success returns the terminal
     /// [`CommandState`] ([`Acknowledged`](CommandState::Acknowledged),
@@ -1367,7 +1441,10 @@ impl CommandLedger {
     /// caller branching on the reject type always learns "was this command ever mine?" before
     /// anything about the ack's contents:
     /// * [`LedgerReject::UnknownCommand`] — no outstanding command with that id.
-    /// * [`LedgerReject::AckBeforeDelivery`] — the command was issued but never delivered.
+    /// * [`LedgerReject::AckBeforeDelivery`] — the command is still only `Accepted` (never handed
+    ///   to transport). A [`TransportUncertain`](CommandState::TransportUncertain) command does
+    ///   *not* reject here: its full frame did reach the transport, so a genuine ack reconciles it
+    ///   to its terminal fate exactly as it would a `Delivered` command (Gate D).
     /// * [`LedgerReject::NonTerminalAck`] — the ack status was `Accepted`/`Delivered`.
     pub fn apply_ack(&mut self, ack: WireAck) -> Result<CommandState, LedgerReject> {
         match self.live.get(&ack.command_id) {
@@ -1377,7 +1454,9 @@ impl CommandLedger {
             Some(CommandState::Accepted) => Err(LedgerReject::AckBeforeDelivery {
                 command_id: ack.command_id,
             }),
-            Some(CommandState::Delivered) => {
+            // A command whose full frame reached the transport — confirmed-flushed (`Delivered`)
+            // or flush-uncertain (`TransportUncertain`) — can be resolved by a genuine verdict.
+            Some(CommandState::Delivered) | Some(CommandState::TransportUncertain) => {
                 let terminal = match ack.status {
                     AckStatus::Acknowledged => CommandState::Acknowledged,
                     AckStatus::Refused => CommandState::Refused,
@@ -1395,11 +1474,15 @@ impl CommandLedger {
                     CommandState::Refused => self.refused += 1,
                     CommandState::Failed => self.failed += 1,
                     // Unreachable: `terminal` is one of the three above by construction.
-                    CommandState::Accepted | CommandState::Delivered => unreachable!(),
+                    CommandState::Accepted
+                    | CommandState::Delivered
+                    | CommandState::TransportUncertain => unreachable!(),
                 }
                 Ok(terminal)
             }
-            // Terminal states are pruned, so a live entry is only ever Accepted/Delivered.
+            // Terminal states are pruned, so a live entry is only ever Accepted / Delivered /
+            // TransportUncertain — all matched above. This arm guards a hypothetical desync loudly
+            // rather than trusting the invariant silently.
             Some(&other) => Err(LedgerReject::NotAwaitingDelivery {
                 command_id: ack.command_id,
                 state: other,
@@ -1434,6 +1517,15 @@ impl CommandLedger {
             .count() as u64
     }
 
+    /// Live commands [`TransportUncertain`](CommandState::TransportUncertain) — full frame handed
+    /// to transport, flush unconfirmed, awaiting a verdict that would reconcile them (Gate D).
+    pub fn uncertain_now(&self) -> u64 {
+        self.live
+            .values()
+            .filter(|&&s| s == CommandState::TransportUncertain)
+            .count() as u64
+    }
+
     /// Commands ever issued (tracked).
     pub fn issued(&self) -> u64 {
         self.issued
@@ -1441,6 +1533,11 @@ impl CommandLedger {
     /// Commands ever delivered (the `Accepted` → `Delivered` transition count).
     pub fn delivered_ever(&self) -> u64 {
         self.delivered_ever
+    }
+    /// Commands ever marked transport-uncertain (the `Accepted` →
+    /// [`TransportUncertain`](CommandState::TransportUncertain) transition count, Gate D).
+    pub fn uncertain_ever(&self) -> u64 {
+        self.uncertain_ever
     }
     /// Commands resolved as [`Acknowledged`](CommandState::Acknowledged).
     pub fn acknowledged(&self) -> u64 {
@@ -1466,21 +1563,25 @@ impl CommandLedger {
     /// rather than being hidden by a definitional restatement:
     ///
     /// * **Every issued command is in exactly one place:**
-    ///   `issued == accepted_now + delivered_ever` (live `Accepted` scan vs the delivered
-    ///   counter).
-    /// * **Everything delivered is either awaiting or resolved:**
-    ///   `delivered_ever == delivered_now + resolved` (live `Delivered` scan vs the terminal
-    ///   counters).
+    ///   `issued == accepted_now + delivered_ever + uncertain_ever` (live `Accepted` scan vs the
+    ///   two counters for commands that have left `Accepted`).
+    /// * **Everything that left `Accepted` is awaiting or resolved:**
+    ///   `delivered_ever + uncertain_ever == delivered_now + uncertain_now + resolved` (live
+    ///   `Delivered`/`TransportUncertain` scans vs the terminal counters).
     /// * **No terminal state ever leaks into the live set:**
-    ///   `outstanding == accepted_now + delivered_now` — every live entry is `Accepted` or
-    ///   `Delivered`, nothing else.
+    ///   `outstanding == accepted_now + delivered_now + uncertain_now` — every live entry is
+    ///   `Accepted`, `Delivered`, or `TransportUncertain`, nothing else.
     ///
-    /// Together these force `issued == accepted_now + delivered_now + resolved`: nothing the
-    /// presenter issued is unaccounted for and nothing was double-counted.
+    /// Together these force `issued == accepted_now + delivered_now + uncertain_now + resolved`:
+    /// nothing the presenter issued is unaccounted for and nothing was double-counted. A
+    /// transport-uncertain command (Gate D) is explicitly accounted — neither lost nor conflated
+    /// with a confirmed delivery.
     pub fn conserves(&self) -> bool {
-        self.issued == self.accepted_now() + self.delivered_ever
-            && self.delivered_ever == self.delivered_now() + self.resolved()
-            && self.outstanding() as u64 == self.accepted_now() + self.delivered_now()
+        self.issued == self.accepted_now() + self.delivered_ever + self.uncertain_ever
+            && self.delivered_ever + self.uncertain_ever
+                == self.delivered_now() + self.uncertain_now() + self.resolved()
+            && self.outstanding() as u64
+                == self.accepted_now() + self.delivered_now() + self.uncertain_now()
     }
 }
 

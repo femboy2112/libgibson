@@ -118,6 +118,21 @@ pub struct Renderer {
     /// (a single scalar, so no `capture_damage` gate).
     last_exact_changed: usize,
     last_frame_report: FrameReport,
+    /// The color depth the most recent frame was emitted at. A mid-session change
+    /// away from this (via `Context::set_color_depth`) forces an in-place restyle
+    /// repaint on the next frame, so a depth change after the first render is no
+    /// longer left stale on screen (closes the J1a/J1b "set depth before the first
+    /// render" caveat).
+    last_emitted_depth: Option<crate::capability::ColorDepth>,
+    /// A commit FAILED, possibly after a partial write (RXIV Gate G3): the terminal may hold a torn
+    /// prefix of a frame, so the renderer's belief about the physical screen (the previous surface,
+    /// the SGR the compiler thinks is set, the cursor, the inline region) is void. The next frame
+    /// re-establishes everything instead of diffing against a belief that is no longer true.
+    physical_uncertain: bool,
+    /// A frame that had to RE-ANCHOR (the terminal geometry changed) failed without delivering a
+    /// byte: the geometry was already observed, so the retry must still owe the canvas reset the
+    /// resize required (RXIV review finding 3). Cleared when a frame lands.
+    owed_reanchor: bool,
 }
 
 impl Renderer {
@@ -125,6 +140,7 @@ impl Renderer {
         Self {
             mode,
             previous_surface: None,
+            last_emitted_depth: None,
             compiler: AnsiCompiler::new(),
             live_region_height: 0,
             last_cursor_y: 0,
@@ -146,7 +162,30 @@ impl Renderer {
             last_dirty_cells: Vec::new(),
             last_exact_changed: 0,
             last_frame_report: FrameReport::default(),
+            physical_uncertain: false,
+            owed_reanchor: false,
         }
+    }
+
+    /// Whether the last terminal write failed and the physical screen state is uncertain (the next
+    /// frame will re-establish it). See [`Renderer::render`].
+    pub fn physical_state_uncertain(&self) -> bool {
+        self.physical_uncertain
+    }
+
+    /// Record a failed commit: the terminal may hold any prefix of the bytes that were attempted.
+    /// Nothing can un-send them, so the honest response is to void every belief about the physical
+    /// state and let the next frame re-establish it (RXIV Gate G3).
+    fn poison_physical_state(&mut self) {
+        self.physical_uncertain = true;
+        self.previous_surface = None;
+        self.last_cursor_visible = None;
+        self.last_cursor_desired = None;
+        // The inline region is addressed by relative motion from a cursor row we no longer know:
+        // it cannot be repaired in place, only abandoned.
+        self.live_region_height = 0;
+        self.last_cursor_y = 0;
+        self.last_cursor_x = 0;
     }
 
     /// Coordinates of the cells changed by the most recent rendered frame.
@@ -178,6 +217,23 @@ impl Renderer {
             .as_ref()
             .map(Surface::to_visible_lines)
             .unwrap_or_default()
+    }
+
+    /// The resolved cell surface of the most recently composed live frame, or `None` before the
+    /// first render. Carries the raw, un-quantized styles; [`crate::Context::frame_cell`] quantizes
+    /// them to the frame's *emitted* color depth (see [`Renderer::last_emitted_depth`]) for a
+    /// display-accurate readback.
+    pub(crate) fn last_frame_surface(&self) -> Option<&Surface> {
+        self.previous_surface.as_ref()
+    }
+
+    /// The color depth the most recently *committed* frame was emitted at, or `None` before the
+    /// first successful render. Advanced only after a successful commit and alongside
+    /// `previous_surface` (Gate F1), so it always corresponds to the surface
+    /// [`Renderer::last_frame_surface`] returns. A readback of that frame must quantize with this —
+    /// the depth actually on the wire — not a depth requested afterward (Gate F2).
+    pub(crate) fn last_emitted_depth(&self) -> Option<crate::capability::ColorDepth> {
+        self.last_emitted_depth
     }
 
     /// Marks the physical anchor as untrustworthy and discards diff state so the
@@ -230,7 +286,24 @@ impl Renderer {
         let (term_cols, term_rows) = session.terminal_size();
         // Color quality is decided centrally from the session's capabilities.
         self.compiler.color_depth = session.color_depth();
-        let reanchor = self.observe_geometry(term_cols, term_rows);
+        // A mid-session color-depth change (J1a's `gibson_set_color_depth`) must not
+        // leave stale SGR on cells the RAW diff considers unchanged. Force an in-place
+        // RESTYLE repaint — re-emit every content cell at the new depth — on the first
+        // frame whose depth differs from what we last emitted. Gated on an existing
+        // frame: the first frame is already a full repaint, and a resize (reanchor)
+        // nulls `previous_surface`, so restyle collides with neither and never
+        // reallocates Inline rows (which would ghost the old region H-1 rows below).
+        let restyle = self.previous_surface.is_some()
+            && self
+                .last_emitted_depth
+                .is_some_and(|d| d != self.compiler.color_depth);
+        // `last_emitted_depth` is *physical-emission* state: it records the depth of the SGR now on
+        // the terminal's cells, and it is advanced only AFTER a successful commit (alongside
+        // `previous_surface`), never here. Advancing it before the write — as this once did — made
+        // a FAILED depth-change write mark the new depth as emitted, so the retry computed
+        // `restyle == false` and silently skipped the repaint, leaving stale old-depth SGR on
+        // screen (Gate F1). On a failed commit the old value survives, so the retry restyles.
+        let reanchor = self.observe_geometry(term_cols, term_rows) || self.owed_reanchor;
         let is_full_repaint = self.previous_surface.is_none();
 
         let max_inline_rows = term_rows.saturating_sub(1).max(1);
@@ -252,8 +325,15 @@ impl Renderer {
         let mut next_surface = Surface::new(surface_width, surface_height);
         let paint_ctx = paint(root, &mut next_surface);
 
-        // 3. Diff pass
-        let diff = compute_diff(self.previous_surface.as_ref(), &next_surface);
+        // 3. Diff pass. On a restyle, diff against a blank baseline so every content
+        // cell is re-emitted at the new depth (the raw surface is unchanged, so a
+        // normal diff would emit nothing); the region is erased first (below) so no
+        // stale old-depth bytes survive.
+        let diff = if restyle {
+            compute_diff(None, &next_surface)
+        } else {
+            compute_diff(self.previous_surface.as_ref(), &next_surface)
+        };
         // Issue #47: expose the exact semantic changed-cell scalar the diff
         // already computed, so a consumer need not rerun layout/paint/diff to
         // observe it. Updated on every render, including settled/empty frames.
@@ -265,7 +345,10 @@ impl Renderer {
         // wire cost is one CSI K. Wire cost is returned separately as bytes.
         // A fullscreen resize invalidates the whole physical canvas, including
         // blank cells omitted by a fresh diff. Its clear addresses every cell.
-        let clears_canvas = self.mode == RenderMode::Fullscreen && reanchor;
+        // RXIV Gate G3: after a failed (possibly torn) commit the canvas holds unknown content, so a
+        // fullscreen recovery frame clears it exactly like a reanchor does.
+        let recover = self.physical_uncertain;
+        let clears_canvas = self.mode == RenderMode::Fullscreen && (reanchor || restyle || recover);
         let dirty_cells = if clears_canvas {
             total_cells
         } else {
@@ -302,7 +385,17 @@ impl Renderer {
             return Ok((0, total_cells, 0, false, paint_ctx));
         }
 
-        // 4. ANSI compilation and execution (single atomic transaction)
+        // 4. ANSI compilation and execution (single transaction — NOT atomic I/O, see Gate G3)
+        // Snapshot the emission state this frame is about to advance, so a failure that delivered
+        // ZERO bytes can restore it exactly (the terminal is then provably unchanged).
+        let pre_frame = (
+            self.compiler.cursor_x,
+            self.compiler.cursor_y,
+            self.compiler.current_style,
+            self.last_cursor_x,
+            self.last_cursor_y,
+            self.live_region_height,
+        );
         let mut tx = TerminalTransaction::new(writer, session.sync_updates());
         tx.begin();
 
@@ -316,7 +409,12 @@ impl Renderer {
                 if clears_canvas {
                     // Fresh diffs elide default blanks. After a resize those
                     // blanks can contain reflowed old content; establish the
-                    // blank baseline inside this same atomic transaction.
+                    // blank baseline inside this same transaction. A recovery
+                    // frame also re-enables auto-wrap, which a torn frame may
+                    // have left off (RXIV review finding 5).
+                    if recover {
+                        tx.push(b"\x1b[?7h");
+                    }
                     tx.push(b"\x1b[0m\x1b[2J");
                     self.compiler.current_style = Style::default();
                 }
@@ -338,6 +436,13 @@ impl Renderer {
                 }
             }
             RenderMode::Inline => {
+                if recover {
+                    // The torn region is abandoned to scrollback: reset SGR, step to a fresh line
+                    // below wherever the cursor was left, erase everything beneath it, and
+                    // allocate a new region there (the full-repaint path below).
+                    tx.push(b"\x1b[?7h\x1b[0m\r\n\x1b[J");
+                    self.compiler.current_style = Style::default();
+                }
                 if is_full_repaint {
                     if reanchor {
                         // Erase from the current row downward before rebuilding:
@@ -365,6 +470,13 @@ impl Renderer {
                         tx.push(b"\r");
                     }
                     self.compiler.reset_cursor(0, 0);
+                    if restyle {
+                        // Depth changed mid-session: clear the live region from its top
+                        // before repainting, so no cell keeps its old-depth SGR. No row
+                        // (re)allocation here — the region already exists, so this never
+                        // ghosts (unlike the first-frame `is_full_repaint` path).
+                        tx.push(b"\x1b[J");
+                    }
 
                     // If live region grew, emit newlines at bottom to allocate extra rows
                     if surface_height > self.live_region_height && self.live_region_height > 0 {
@@ -410,12 +522,37 @@ impl Renderer {
         }
 
         // Exact wire bytes, including the synchronized-update terminator that
-        // `commit` appends. Do not sample `buffer.len()` before committing.
+        // `commit_counted` appends. Do not sample `buffer.len()` before committing.
         // Split CPU-side generation from the blocking write/flush (#64).
         let generation_duration = frame_start.elapsed();
         let write_start = Instant::now();
         let bytes_emitted = if tx.buffered_len() > 0 {
-            tx.commit()?
+            match tx.commit_counted() {
+                Ok(n) => n,
+                Err(f) if f.is_certain_noop() => {
+                    // Not one byte of this frame reached the writer: the screen is exactly what
+                    // the renderer believes. Undo this frame's emission-state advance so a retry
+                    // diffs in place (Gate F1's in-place restyle survives) — and if this frame was
+                    // a re-anchor, the retry still owes its canvas reset (review finding 3).
+                    self.owed_reanchor = reanchor;
+                    (
+                        self.compiler.cursor_x,
+                        self.compiler.cursor_y,
+                        self.compiler.current_style,
+                        self.last_cursor_x,
+                        self.last_cursor_y,
+                        self.live_region_height,
+                    ) = pre_frame;
+                    return Err(f.error);
+                }
+                Err(f) => {
+                    // A prefix (or an unconfirmed flush) may have reached the terminal (Gate G3):
+                    // never claim it was left unchanged — void the physical belief so the next
+                    // frame re-establishes the screen.
+                    self.poison_physical_state();
+                    return Err(f.error);
+                }
+            }
         } else {
             0
         };
@@ -432,6 +569,12 @@ impl Renderer {
         };
 
         self.previous_surface = Some(next_surface);
+        self.physical_uncertain = false;
+        self.owed_reanchor = false;
+        // Physical-emission truth, advanced only now that the transaction committed: the cells on
+        // screen carry this depth's SGR. A failed commit returns via `?` above and leaves the prior
+        // value, so a retry re-detects the depth change and restyles (Gate F1).
+        self.last_emitted_depth = Some(self.compiler.color_depth);
         self.last_cursor_visible = Some(desired_visible);
         self.last_cursor_desired = paint_ctx.cursor_position;
         self.anchor = AnchorState::Stable {
@@ -472,6 +615,12 @@ impl Renderer {
 
         let mut tx = TerminalTransaction::new(writer, session.sync_updates());
         tx.begin();
+        if self.physical_uncertain {
+            // A previous write tore (Gate G3): the live region was abandoned, so start the
+            // committed lines on a fresh, erased line with a known SGR state.
+            tx.push(b"\x1b[?7h\x1b[0m\r\n\x1b[J");
+            self.compiler.current_style = Style::default();
+        }
 
         if self.live_region_height > 0 {
             if self.last_cursor_y > 0 {
@@ -499,10 +648,25 @@ impl Renderer {
             tx.push(b"\r\n");
         }
 
-        let bytes = tx.commit()?;
+        let bytes = match tx.commit_counted() {
+            Ok(n) => n,
+            // Nothing reached the writer: the terminal is unchanged, the belief stays valid.
+            Err(f) if f.is_certain_noop() => return Err(f.error),
+            Err(f) => {
+                // Possibly torn (Gate G3): void the physical belief before propagating.
+                self.poison_physical_state();
+                return Err(f.error);
+            }
+        };
 
         // Committing finalizes live state; the next live frame starts fresh.
         self.invalidate_anchor(false);
+        // INLINE: the lines landed on a fresh line with a known SGR state, so the physical position
+        // is known again (a torn region before them stays abandoned in scrollback). FULLSCREEN: the
+        // canvas is still uncertain — the next frame must re-establish it (review finding 4).
+        if self.mode == RenderMode::Inline {
+            self.physical_uncertain = false;
+        }
         self.total_commit_bytes += bytes as u64;
         Ok(bytes)
     }
@@ -744,6 +908,12 @@ impl Renderer {
         let mut tx = TerminalTransaction::new(writer, session.sync_updates());
         tx.begin();
         let strategy;
+        if self.physical_uncertain {
+            // A previous write tore (Gate G3): the fast path is already off (no trusted previous
+            // surface); begin the fallback on a fresh, erased line with a known SGR state.
+            tx.push(b"\x1b[?7h\x1b[0m\r\n\x1b[J");
+            self.compiler.current_style = Style::default();
+        }
 
         if !use_fast {
             // == RepaintFallback Strategy ==
@@ -825,7 +995,21 @@ impl Renderer {
             }
         }
 
-        let bytes = tx.commit()?;
+        let bytes = match tx.commit_counted() {
+            Ok(n) => n,
+            // Nothing reached the writer: the terminal is unchanged, the belief stays valid.
+            Err(f) if f.is_certain_noop() => return Err(f.error),
+            Err(f) => {
+                // Possibly torn (Gate G3): void the physical belief before propagating.
+                self.poison_physical_state();
+                return Err(f.error);
+            }
+        };
+        // A successful INLINE insertion re-establishes a known cursor position (Gate G3); a
+        // fullscreen canvas stays uncertain until a frame re-establishes it (review finding 4).
+        if self.mode == RenderMode::Inline {
+            self.physical_uncertain = false;
+        }
 
         self.history_insertions += 1;
         self.total_insertion_bytes += bytes as u64;
@@ -888,7 +1072,16 @@ impl Renderer {
             tx.push(b"\r");
         }
 
-        let bytes = tx.commit()?;
+        let bytes = match tx.commit_counted() {
+            Ok(n) => n,
+            // Nothing reached the writer: the terminal is unchanged, the belief stays valid.
+            Err(f) if f.is_certain_noop() => return Err(f.error),
+            Err(f) => {
+                // Possibly torn (Gate G3): void the physical belief before propagating.
+                self.poison_physical_state();
+                return Err(f.error);
+            }
+        };
 
         self.invalidate_anchor(false);
         self.total_control_bytes += bytes as u64;

@@ -1,0 +1,13 @@
+frames=1
+skipped_frames=0
+dirty_cells=6
+total_cells=24
+frame_bytes=77
+full_repaints=1
+history_insertions=0
+insertion_repaints=0
+fast_insertions=0
+insertion_bytes=0
+anchor_resyncs=0
+commit_bytes=0
+control_bytes=0

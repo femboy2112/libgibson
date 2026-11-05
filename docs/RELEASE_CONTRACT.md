@@ -166,8 +166,8 @@ but it is **not a supported Rust API**. Rust consumers should use the safe modul
 above. The stability promise attached to `ffi` is the **C ABI promise** (§5), not a
 Rust-level one.
 
-`transaction::TerminalTransaction` is internal renderer plumbing (the atomic wire
-transaction). As of the 0.1.0 candidate the `transaction` module is `pub(crate)` —
+`transaction::TerminalTransaction` is internal renderer plumbing (the batched wire
+transaction — not atomic I/O, see §9). As of the 0.1.0 candidate the `transaction` module is `pub(crate)` —
 it is **not** part of the public Rust API. (It was briefly `pub`; privatizing it
 before the first tag avoids a later `0.y` break, and it had no external consumers.)
 
@@ -230,7 +230,7 @@ The C ABI is the foundation the C, C++, Python, and Go bindings all stand on.
   exact-version discipline — the caller sets `struct_size = sizeof(gibson_stats_t)`
   and the engine validates `abi_version` against `GIBSON_ABI_VERSION` — **is
   preserved and must not be quietly changed.**
-- The ABI v1 surface is the set of **52 exported `gibson_*` symbols**, captured as a
+- The ABI v1 surface is the set of **59 exported `gibson_*` symbols**, captured as a
   baseline in [`../abi/gibson-abi-v1.symbols`](../abi/gibson-abi-v1.symbols) and
   guarded in CI. Symbols in that set must not disappear or change signature without
   an ABI-version bump.
@@ -336,12 +336,13 @@ fails CI early.
   release artifact is labeled `linux-x86_64` engineering alpha accordingly.
 - Negotiated terminal capability axes: color depth (TrueColor / 256 / 16 / mono)
   and insert-line support. **Synchronized updates (CSI ?2026) are *requested*, not
-  negotiated:** LibGibson emits the wrappers by default (opt out via
+  negotiated:** LibGibson emits the wrappers by default on a TTY (opt out via
   `Context::set_sync_updates(false)`) and does not gate them on capability
   detection, because unknown DEC private modes are ignored by conforming terminals.
   The `TerminalCapabilities::synchronized_updates` field is currently
-  detected-but-unused; the cadence beacon treats sync on/off as a measured variable,
-  and `?2026` guarantees only a wire-atomic write, not atomic panel presentation.
+  detected-but-unused; the cadence beacon treats sync on/off as a measured variable.
+  `?2026` is a presentation request only: it guarantees neither atomic I/O (a write can
+  still tear — see §9) nor atomic panel presentation.
 - **Glyph realization is an explicit policy/override axis — it is not font
   detection.** A terminal accepting UTF-8/Unicode does **not** imply its font can
   realize every glyph: the Linux kernel **virtual console** (TTY), for example, has a
@@ -423,3 +424,48 @@ path is as stated in `SECURITY.md`.
   merged; LibGibson stays on stock 0.29.0 and does **not** vendor the fork). The
   [Event Pressure Lab](EVENT_PRESSURE_LAB.md) reproduces it. This is an accepted
   Engineering Alpha limitation for 0.1.0; a merged upstream fix would let it close.
+  RXIV (2026-11-05) re-measured it on a real PTY isolated from LibGibson: stock 0.29.0
+  delivered 0/30 resize-then-key collisions, the #1128 fork 30/30
+  ([`research/issue15_crossterm_ab`](research/issue15_crossterm_ab/README.md)); it remains
+  an accepted limitation for v0.6 until a crossterm release contains the fix.
+
+### v0.6 Engineering Alpha limitations (stated, not hidden)
+
+The v0.6 integration candidate is qualified in
+[`V06_QUALIFICATION_LEDGER.md`](V06_QUALIFICATION_LEDGER.md). These are its declared limits:
+
+- **Terminal writes are not atomic.** A failed write may leave a torn prefix of a frame on the
+  terminal; synchronized-update framing is a display hint, not I/O rollback. The renderer reports it
+  (`Renderer::physical_state_uncertain()`) and re-establishes the screen on the next frame —
+  exactly in fullscreen mode; in inline mode the torn region is abandoned to scrollback, not
+  repaired. A failure that delivered no bytes is certain and retried in place.
+- **The C ABI's headless context is output-only.** `gibson_poll_event` reads a real TTY; there is no
+  event-injection entry point and no sub-cell pixel raster. Interactive parity across C++/Go/Python
+  is not claimed beyond the existing parity harnesses.
+- **The cinematic effect contract is single-quantity.** `field_cinema` judges the peak sample
+  against the requested amplitude with a declared tolerance; it claims consistency with a request,
+  never mechanism, and causal attribution only where a matched counterfactual exists.
+- **Capture / trace checksums are FNV-1a receipts**, not authentication; replay reproduces
+  decisions from recorded observations and does not re-execute a producer. These formats are
+  example-level, not a stable public file format.
+- **The performance envelope is one host's measurement** (`V06_PERFORMANCE_ENVELOPE.md`): no
+  universal frame rate, no display latency, no streaming observation age.
+- **Text-input content is control-safe; the low-level cell API trusts its caller.** Since RXV
+  (#252) no C0, DEL or C1 control in text-input content — from `TextInputState`,
+  `Node::text_input` or `gibson_node_text_input` — can reach the terminal: insertion drops controls
+  and the painter draws any control-bearing or standalone zero-width grapheme as one `U+FFFD` cell.
+  `Node::text` / `Surface::print_str` skip control characters (unchanged) but attach zero-width
+  *format* characters (general category Cf, e.g. bidi overrides) to the preceding cell and emit
+  them; these are not terminal controls, but a terminal that implements bidirectional text may
+  reorder the line — this includes an unfocused `ui::text_input`, which is lowered to `Node::text`.
+  `Surface::set_cell`, `Glyph::new` and the `*_raw_ansi_unchecked` entry points place exactly what
+  they are given, by design; content handed to them must already be safe.
+- **Terminal widths follow one model, not every terminal.** The cell model measures with
+  `unicode-width`: East-Asian-ambiguous characters (box drawing, `U+FFFD`) are narrow, and an emoji
+  ZWJ sequence or a VS16 emoji-presentation sequence is one 2-cell cluster. A terminal configured
+  for ambiguous-wide characters, or one that draws ZWJ/VS16 components per codepoint (as the `vt100`
+  model does), can place later glyphs differently. The text editor lays a grapheme wider than two
+  cells codepoint by codepoint; elsewhere (`Node::text`) such a grapheme is still capped at two
+  cells and can drift by the excess on per-codepoint terminals. There is no runtime width probing
+  (e.g. mode 2027).
+- **Issue #15** (above) stays open.

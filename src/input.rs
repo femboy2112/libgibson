@@ -2,12 +2,13 @@ use crossterm::event::{
     self, Event as CtEvent, KeyCode as CtKeyCode, KeyModifiers as CtKeyModifiers,
     MouseButton as CtMouseButton, MouseEvent as CtMouseEvent, MouseEventKind as CtMouseKind,
 };
+use std::borrow::Cow;
 use std::io;
 #[cfg(unix)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -552,12 +553,52 @@ fn wait_stdin_readable(slice: Duration) -> io::Result<StdinWait> {
 /// strategy can leave the cursor pointing past the end of the buffer and panic
 /// on the next backspace.
 ///
-/// ## Single-line paste policy
+/// ## Single-line, control-free insertion
 ///
-/// The editor model is single-line, so bracketed paste **normalizes every line
-/// break (`\r\n`, `\r`, `\n`) to a single space** before insertion. Multiline
-/// content is therefore flattened rather than rejected, which preserves the
-/// user's words without introducing newline graphemes into a one-row editor.
+/// The editor model is single-line and its buffer holds text, never terminal
+/// controls. Every insertion path — [`handle_event`](Self::handle_event) (typed
+/// keys and bracketed paste), [`insert_str`](Self::insert_str),
+/// [`insert_char`](Self::insert_char) and [`with_text`](Self::with_text) —
+/// applies [`normalize_paste`](Self::normalize_paste):
+///
+/// * each run of line breaks — CR, LF, VT, FF, NEL, U+2028 LINE SEPARATOR and
+///   U+2029 PARAGRAPH SEPARATOR — becomes **one space**, so multiline content is
+///   flattened rather than rejected and words never fuse;
+/// * each TAB becomes **one space** (a terminal would otherwise advance it to
+///   the next tab stop, which no cell model can predict);
+/// * every other control character — C0, DEL and C1 (`char::is_control`),
+///   including the ESC that introduces CSI/OSC/DCS sequences — is **dropped**,
+///   matching the guard [`Surface::print_str`](crate::surface::Surface::print_str)
+///   applies to ordinary text.
+///
+/// ## Width contract (issue #252)
+///
+/// One rule assigns every grapheme cluster its terminal cells, and the cursor
+/// column, [`total_display_width`](Self::total_display_width), scrolling, the
+/// painter and the emitted bytes all use it:
+///
+/// * a grapheme of display width 1 or 2 (`unicode-width`) is painted
+///   **verbatim** in one cell of that width;
+/// * a grapheme **wider than 2** — a Devanagari conjunct with a spacing vowel
+///   sign (`क्षि`, 3), a run of Hangul leading jamo — is painted **codepoint by
+///   codepoint** across consecutive cells (each base codepoint with the
+///   zero-width marks that follow it). The emitted bytes are unchanged and the
+///   cells advance exactly as `unicode-width` and a per-codepoint terminal
+///   measure them, so a long cluster can never overrun the input's cells;
+/// * otherwise it is painted as **one `U+FFFD` cell**: a grapheme holding a
+///   control character or a line/paragraph separator (raw content written into
+///   the public `text` field, or given to
+///   [`Node::text_input`](crate::node::Node::text_input) / the C ABI), a
+///   zero-width grapheme standing alone (a combining mark with no base, ZWSP,
+///   BOM, a bidi format character, a lone variation selector), or a codepoint
+///   no cell can hold (wider than 2). Such input is kept rather than rejected —
+///   typing a base before a lone combining mark legitimately merges the two —
+///   and stays a visible cursor stop that Backspace removes.
+///
+/// So no C0, DEL or C1 control from content can reach the terminal, and the
+/// editor's columns match `unicode-width`'s per-codepoint model. Terminals that
+/// size clusters differently (emoji ZWJ / VS16 sequences, ambiguous-wide
+/// settings) are a documented limit of the whole cell model, not of the editor.
 #[derive(Debug, Clone, Default)]
 pub struct TextInputState {
     pub text: String,
@@ -570,8 +611,13 @@ impl TextInputState {
         Self::default()
     }
 
+    /// A state holding `text` (normalized like any insertion — see the type
+    /// docs) with the cursor at its end.
     pub fn with_text(text: impl Into<String>) -> Self {
-        let t = text.into();
+        let mut t = text.into();
+        if let Cow::Owned(clean) = single_line(&t) {
+            t = clean;
+        }
         let count = t.graphemes(true).count();
         Self {
             text: t,
@@ -608,32 +654,23 @@ impl TextInputState {
         }
     }
 
-    /// Normalizes a paste payload to a single line (see type-level docs).
+    /// Normalizes text to the editor's single-line, control-free form: line-break
+    /// runs and TABs become spaces, every other control character is dropped
+    /// (see the type-level docs). Applied by every insertion path.
     pub fn normalize_paste(s: &str) -> String {
-        let mut out = String::with_capacity(s.len());
-        let mut last_was_break = false;
-        for c in s.chars() {
-            if c == '\r' || c == '\n' {
-                if !last_was_break {
-                    out.push(' ');
-                    last_was_break = true;
-                }
-            } else {
-                last_was_break = false;
-                out.push(c);
-            }
-        }
-        out
+        single_line(s).into_owned()
     }
 
-    /// Inserts a string at the current grapheme position.
+    /// Inserts a string at the current grapheme position, normalized like every
+    /// insertion (see the type-level docs).
     pub fn insert_str(&mut self, s: &str) {
+        let s = single_line(s);
         if s.is_empty() {
             return;
         }
         self.normalize();
         let byte_pos = self.cursor_byte_pos();
-        self.text.insert_str(byte_pos, s);
+        self.text.insert_str(byte_pos, &s);
         // Re-derive from the *complete* resulting string so boundary merges are respected.
         self.sync_cursor_from_byte(byte_pos + s.len());
         self.normalize();
@@ -756,8 +793,12 @@ impl TextInputState {
                             _ => false,
                         }
                     } else {
+                        // A control character typed as a key (e.g. a raw ESC
+                        // or TAB delivered as `Char`) inserts nothing — or a
+                        // space for TAB — so report only a real change.
+                        let before = self.text.len();
                         self.insert_char(c);
-                        true
+                        self.text.len() != before
                     }
                 }
                 KeyCode::Backspace => self.backspace(),
@@ -775,46 +816,171 @@ impl TextInputState {
                 _ => false,
             },
             Event::Paste(s) => {
-                let flat = Self::normalize_paste(s);
-                self.insert_str(&flat);
-                true
+                // `insert_str` normalizes; a paste of nothing but controls
+                // changes nothing and is reported as such.
+                let before = self.text.len();
+                self.insert_str(s);
+                self.text.len() != before
             }
             _ => false,
         }
     }
 
     /// Adjusts viewport scroll offset (in display columns) so the cursor is visible within `visible_width`.
+    ///
+    /// "Visible" means every cell of the grapheme under the cursor (or the
+    /// one-cell insertion point at the end) — a wide grapheme at the cursor is
+    /// never left half outside the viewport.
     pub fn update_scroll(&mut self, visible_width: usize) {
         if visible_width == 0 {
             return;
         }
-
-        let cursor_col = self.cursor_display_column();
-
-        if cursor_col < self.scroll_offset {
-            self.scroll_offset = cursor_col;
-        } else if cursor_col >= self.scroll_offset + visible_width {
-            self.scroll_offset = cursor_col.saturating_sub(visible_width) + 1;
-        }
+        let span = self
+            .text
+            .graphemes(true)
+            .nth(self.cursor_grapheme)
+            .map_or(1, editor_cell_width);
+        self.scroll_offset = scroll_to_cursor(
+            self.scroll_offset,
+            self.cursor_display_column(),
+            span,
+            visible_width,
+        );
     }
 
-    /// Returns the cursor position in monospace terminal display columns.
+    /// Returns the cursor position in monospace terminal display columns,
+    /// under the type's width contract.
     pub fn cursor_display_column(&self) -> usize {
-        let graphemes: Vec<&str> = self.text.graphemes(true).collect();
-        let mut col = 0;
-        for (i, &g) in graphemes.iter().enumerate() {
-            if i >= self.cursor_grapheme {
-                break;
-            }
-            col += UnicodeWidthStr::width(g).max(1);
-        }
-        col
+        self.text
+            .graphemes(true)
+            .take(self.cursor_grapheme)
+            .map(editor_cell_width)
+            .sum()
     }
 
-    /// Returns the total display width of the buffer in terminal columns.
+    /// Returns the total display width of the buffer in terminal columns,
+    /// under the type's width contract — always equal to
+    /// [`cursor_display_column`](Self::cursor_display_column) with the cursor
+    /// at the end.
     pub fn total_display_width(&self) -> usize {
-        UnicodeWidthStr::width(self.text.as_str())
+        self.text.graphemes(true).map(editor_cell_width).sum()
     }
+}
+
+/// The cell the single-line editor paints for a grapheme it cannot place
+/// verbatim (see [`TextInputState`] — *Width contract*).
+pub(crate) const UNRENDERABLE_GRAPHEME: &str = "\u{FFFD}";
+
+/// Line and paragraph breaks the single-line editor flattens to a space.
+fn is_line_break(c: char) -> bool {
+    matches!(
+        c,
+        '\r' | '\n' | '\u{0B}' | '\u{0C}' | '\u{85}' | '\u{2028}' | '\u{2029}'
+    )
+}
+
+/// The pieces of a grapheme wider than two cells: each base codepoint with the
+/// zero-width codepoints that follow it (leading zero-width codepoints join the
+/// first base).
+fn codepoint_pieces(g: &str) -> impl Iterator<Item = &str> {
+    let mut rest = g;
+    std::iter::from_fn(move || {
+        if rest.is_empty() {
+            return None;
+        }
+        let mut seen_base = false;
+        let mut end = rest.len();
+        for (i, c) in rest.char_indices() {
+            if UnicodeWidthChar::width(c).unwrap_or(0) > 0 {
+                if seen_base {
+                    end = i;
+                    break;
+                }
+                seen_base = true;
+            }
+        }
+        let (piece, tail) = rest.split_at(end);
+        rest = tail;
+        Some(piece)
+    })
+}
+
+/// How the editor places grapheme `g` (see [`TextInputState`] — *Width
+/// contract*): calls `cell` with each cell's text and width, left to right.
+/// Every cell is 1 or 2 wide; the widths sum to [`editor_cell_width`].
+pub(crate) fn editor_cells(g: &str, mut cell: impl FnMut(&str, usize)) {
+    if g.chars().any(|c| c.is_control() || is_line_break(c)) {
+        return cell(UNRENDERABLE_GRAPHEME, 1);
+    }
+    let w = UnicodeWidthStr::width(g);
+    match w {
+        0 => cell(UNRENDERABLE_GRAPHEME, 1),
+        1 | 2 => cell(g, w),
+        _ => {
+            if codepoint_pieces(g).any(|p| !(1..=2).contains(&UnicodeWidthStr::width(p))) {
+                return cell(UNRENDERABLE_GRAPHEME, 1);
+            }
+            for p in codepoint_pieces(g) {
+                cell(p, UnicodeWidthStr::width(p));
+            }
+        }
+    }
+}
+
+/// The terminal cells the editor gives grapheme `g` under the width contract.
+pub(crate) fn editor_cell_width(g: &str) -> usize {
+    let mut total = 0;
+    editor_cells(g, |_, w| total += w);
+    total
+}
+
+/// The scroll offset (display columns) closest to `scroll` that shows all
+/// `span` cells starting at `cursor_col` inside a `visible`-column viewport.
+/// A span wider than the viewport is left-aligned.
+pub(crate) fn scroll_to_cursor(
+    scroll: usize,
+    cursor_col: usize,
+    span: usize,
+    visible: usize,
+) -> usize {
+    let span = span.clamp(1, visible.max(1));
+    if cursor_col < scroll {
+        cursor_col
+    } else if cursor_col + span > scroll + visible {
+        cursor_col + span - visible
+    } else {
+        scroll
+    }
+}
+
+/// The single-line, control-free form of `s`, borrowed when already clean.
+fn single_line(s: &str) -> Cow<'_, str> {
+    if !s.chars().any(|c| c.is_control() || is_line_break(c)) {
+        return Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut in_break = false;
+    for c in s.chars() {
+        match c {
+            c if is_line_break(c) => {
+                if !in_break {
+                    out.push(' ');
+                    in_break = true;
+                }
+            }
+            '\t' => {
+                out.push(' ');
+                in_break = false;
+            }
+            // Dropped: an invisible control neither adds text nor ends a break run.
+            c if c.is_control() => {}
+            c => {
+                out.push(c);
+                in_break = false;
+            }
+        }
+    }
+    Cow::Owned(out)
 }
 
 #[cfg(test)]
@@ -896,6 +1062,44 @@ mod tests {
         assert_eq!(input.cursor_display_column(), 0);
         input.update_scroll(3);
         assert_eq!(input.scroll_offset, 0);
+    }
+
+    #[test]
+    fn update_scroll_keeps_a_wide_cursor_grapheme_wholly_visible() {
+        // 漢 sits at columns 2..4. With a 3-column viewport the old rule
+        // (cursor column 2 < 0 + 3, so no scroll) left its second half outside
+        // the viewport, so the painter could not draw the grapheme under the
+        // cursor (#252 review). Scrolling must bring both cells in.
+        let mut input = TextInputState::with_text("ab漢");
+        input.cursor_grapheme = 2;
+        input.update_scroll(3);
+        assert_eq!(input.scroll_offset, 1);
+        // A grapheme wider than the whole viewport is left-aligned.
+        input.scroll_offset = 0;
+        input.update_scroll(1);
+        assert_eq!(input.scroll_offset, 2);
+    }
+
+    #[test]
+    fn insertion_is_single_line_and_control_free() {
+        assert_eq!(
+            TextInputState::normalize_paste("a\r\n\r\nb\tc\x1b[2Jd\u{9b}e\x07"),
+            "a b c[2Jde"
+        );
+        let mut s = TextInputState::new();
+        assert!(
+            !s.handle_event(&Event::Paste("\x1b\x07".into())),
+            "a paste of only controls changes nothing and says so"
+        );
+        assert!(!s.handle_event(&Event::Key(KeyEvent::char('\x1b'))));
+        assert!(s.handle_event(&Event::Key(KeyEvent::char('\t'))));
+        assert_eq!(s.text, " ");
+        assert_eq!(TextInputState::with_text("x\ny").text, "x y");
+        // Every Unicode line break flattens; words never fuse.
+        assert_eq!(
+            TextInputState::normalize_paste("a\x0bb\x0cc\u{85}d\u{2028}e\u{2029}f"),
+            "a b c d e f"
+        );
     }
 
     // ---------------------------------------------------------------------

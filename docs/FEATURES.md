@@ -24,8 +24,13 @@ start from the [README](../README.md).
   navigation, horizontal scrolling, and bracketed paste. Mutations are byte-range
   edits and the cursor grapheme index is re-derived from the full resulting string, so
   boundary-merging insertions (combining accents, ZWJ emoji, skin-tone modifiers,
-  flags) preserve `cursor_grapheme <= grapheme_count`. Single-line paste normalizes
-  `\r\n`, `\r`, and `\n` to a space.
+  flags) preserve `cursor_grapheme <= grapheme_count`. Every insertion path (keys,
+  paste, `insert_str`, `with_text`) is single-line and control-free: line-break runs and
+  TAB become a space, other control characters are dropped. Painting is safe for any
+  string, including `Node::text_input` and the C ABI: a control-bearing or standalone
+  zero-width grapheme is drawn as one `U+FFFD` cell, a grapheme wider than two cells is
+  laid codepoint by codepoint, and one width contract governs the cursor, total width,
+  scrolling, painter and layout (#252).
 - **Static structured output** (TESTED): `commit_text`, `commit_rich_text`, and
   `commit_node` route through the same width-aware layout/wrapping engine as live
   nodes. Control characters in text are neutralized at the cell-model boundary, so they
@@ -40,15 +45,21 @@ start from the [README](../README.md).
 
 - **Explicit physical anchor** (TESTED): the renderer tracks `AnchorState` plus last
   cursor position/visibility; empty cell diffs still emit when cursor state changes.
-  Geometry changes invalidate the anchor and trigger a re-anchor.
+  Geometry changes invalidate the anchor and trigger a re-anchor; a possibly torn write
+  voids it the same way (`Renderer::physical_state_uncertain()`).
 - **Stateful differential ANSI compiler** (TESTED): groups dirty cells into contiguous
   runs, computes minimum-distance cursor repositioning, uses `CSI K` when content
   shrinks, and wraps diff emission in autowrap disabling (`CSI ? 7 l/h`).
   Synchronized-update (`CSI ? 2026 h/l`) ownership lives in `TerminalTransaction`, not
   the compiler.
-- **Atomic `TerminalTransaction`** (TESTED): batches sync-update markers, temporary
+- **Batched `TerminalTransaction`** (TESTED): batches sync-update markers, temporary
   private modes, cursor motion, framebuffer diff, final cursor placement, and cursor
-  visibility into one `write_all` + `flush`.
+  visibility into one buffer committed by `commit_counted` (a counted write loop + one
+  `flush`). It is **not atomic** I/O: a write can fail after a prefix reached the
+  terminal. A failure that delivered zero bytes is retried in place; a torn prefix or a
+  failed flush voids the renderer's physical belief and the next frame re-establishes the
+  screen (fullscreen exactly; inline abandons the torn region to scrollback). Partial-write
+  recovery is tested at every cut point (`renderer_partial_write`).
 - **Asynchronous scrollback insertion** (TESTED): the **safe** entry points are
   `insert_text_before_live`, `insert_rich_text_before_live` and
   `insert_node_before_live`; the only raw path is explicitly

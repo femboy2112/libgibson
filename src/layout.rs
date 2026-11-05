@@ -345,7 +345,12 @@ fn measure_leaf(
         NodeKind::TextInput {
             value, placeholder, ..
         } => {
-            let val_w = UnicodeWidthStr::width(&value[..]) as f32;
+            // The editor's width contract (`TextInputState` docs, issue #252), so the
+            // box is exactly as wide as the cells the painter will place.
+            let val_w = value
+                .graphemes(true)
+                .map(crate::input::editor_cell_width)
+                .sum::<usize>() as f32;
             let ph_w = placeholder
                 .as_ref()
                 .map(|p| UnicodeWidthStr::width(&p[..]) as f32)

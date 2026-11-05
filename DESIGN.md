@@ -73,7 +73,8 @@ The rendering lifecycle follows a decoupled vertical pipeline. Every stage is **
 ┌─────────────────────────┐
 │  TerminalTransaction    │  Batches sync-update begin/end, private modes,
 └───────────┬─────────────┘  cursor motion, diff bytes, cursor placement and
-            │                visibility into ONE write_all + flush
+            │                visibility into ONE counted write + flush
+            │                (batched, NOT atomic I/O — see §8)
             ▼
 ┌─────────────────────────┐
 │     Terminal Output     │  stdout
@@ -173,6 +174,8 @@ On terminal geometry change (`observe_geometry`):
 
 Re-anchoring is **PARTIALLY TESTED**. The relative erase-from-cursor-down reanchor is exercised in the whole-renderer and PTY tests. An **absolute cursor query (DSR) is not implemented**, so the engine cannot learn its absolute row from the terminal; it re-establishes the region by best-effort relative motion. This is a stated limitation, not a claim of exact recovery.
 
+The anchor is a **belief**, not knowledge of the screen. Besides geometry changes, a failed terminal write that may have delivered a prefix voids it (`Renderer::physical_state_uncertain()`); the next frame re-establishes the screen (§8).
+
 ---
 
 ## 7. Stateful ANSI Compiler
@@ -198,9 +201,9 @@ Key optimizations:
 
 ## 8. TerminalTransaction
 
-**IMPLEMENTED + TESTED** (`src/transaction.rs`; exercised by every whole-renderer test).
+**IMPLEMENTED + TESTED** (`src/transaction.rs`; exercised by every whole-renderer test; partial writes by `tests/renderer_partial_write.rs`).
 
-`TerminalTransaction` represents a single atomic write to the terminal. Its buffer accumulates:
+`TerminalTransaction` batches one terminal update into one buffer. Its buffer accumulates:
 
 1. Synchronized-update begin `\x1b[?2026h` (when enabled).
 2. Cursor motion / temporary private modes emitted by the renderer or compiler.
@@ -209,7 +212,14 @@ Key optimizations:
 5. Cursor visibility (`\x1b[?25h` / `\x1b[?25l`).
 6. Synchronized-update end `\x1b[?2026l`.
 
-`TerminalTransaction::commit` performs **one `write_all` followed by one `flush`**. This is what makes a frame atomic from the terminal's perspective and is the reason sync-update ownership was moved out of `AnsiCompiler`: the transaction, not the compiler, decides whether a given operation is wrapped. The compiler may legitimately be used to produce a patch that is embedded inside a larger transaction.
+`TerminalTransaction::commit_counted` writes the buffer with **a counted write loop** (retrying `Interrupted`, failing on a write that accepts zero bytes) **followed by one `flush`**. Batching is the reason sync-update ownership was moved out of `AnsiCompiler`: the transaction, not the compiler, decides whether a given operation is wrapped. The compiler may legitimately be used to produce a patch that is embedded inside a larger transaction.
+
+**The commit is not atomic.** No write loop — neither this one nor the single `write_all` it replaced in RXIV Gate G3 (this section previously described the transaction as atomic; that wording is superseded, #254) — can make terminal I/O all-or-nothing: a write can fail after a prefix of the buffer reached the terminal, and nothing can un-send it. Synchronized-update framing asks the terminal to present the update as a unit; it is a presentation request, not a transport guarantee, and a torn write can leave `?2026h` without its closing `?2026l`. A failed commit returns a `CommitFailure` carrying the bytes handed to the writer and whether the flush failed, and the renderer distinguishes:
+
+- **Certain no-op** (`CommitFailure::is_certain_noop()`: zero bytes written, not a flush failure) — the terminal is exactly as it was. The renderer restores the frame's emission state, so the retry diffs in place (a re-anchor frame still owes its canvas reset).
+- **Uncertain** (a prefix written, or every byte written but the flush failed) — the terminal may hold a torn frame. The renderer voids its physical belief (`physical_state_uncertain()` becomes true; no diff baseline, no cursor belief). The next **fullscreen** frame re-enables auto-wrap, resets SGR, clears and repaints exactly; the next **inline** frame abandons the torn region to scrollback (auto-wrap on, SGR reset, a fresh line, erase below) and allocates a new live region there.
+
+Recovery is swept at every cut point of fullscreen and inline frames against a vt100 oracle in `tests/renderer_partial_write.rs`.
 
 ---
 

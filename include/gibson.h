@@ -41,6 +41,15 @@ typedef enum {
     GIBSON_MODE_FULLSCREEN = 1
 } gibson_render_mode_t;
 
+/* Color depth (pass to gibson_set_color_depth as int32_t).
+   Downgrade ladder: TRUECOLOR -> ANSI256 -> ANSI16 -> MONO. */
+typedef enum {
+    GIBSON_COLOR_DEPTH_MONO = 0,
+    GIBSON_COLOR_DEPTH_ANSI16 = 1,
+    GIBSON_COLOR_DEPTH_ANSI256 = 2,
+    GIBSON_COLOR_DEPTH_TRUECOLOR = 3
+} gibson_color_depth_t;
+
 /* Colors (pass as int32_t) */
 typedef enum {
     GIBSON_COLOR_RESET = 0,
@@ -83,6 +92,27 @@ typedef struct {
     uint8_t reverse;
     uint8_t _reserved[3];
 } gibson_style_t;
+
+/* Max UTF-8 bytes of one cell's grapheme cluster carried inline by gibson_cell_t.glyph. Most
+   graphemes fit, but some do NOT (a ZWJ emoji sequence, e.g. a 4-person family, is 25 bytes; a
+   long combining "Zalgo" stack is more): a longer cluster is truncated at a codepoint boundary,
+   the glyph_truncated flag (_reserved[0]) is set, and the full bytes are available from
+   gibson_get_frame_cell_glyph. */
+#define GIBSON_CELL_GLYPH_CAP 16
+
+/* A resolved frame cell (see gibson_get_frame_cell). glyph holds the grapheme's UTF-8 bytes
+   (NOT NUL-terminated); glyph_len is how many are valid. style is quantized to the context's
+   color depth, so it matches the emitted ANSI wire. */
+typedef struct {
+    uint8_t glyph[GIBSON_CELL_GLYPH_CAP];
+    uint8_t glyph_len;
+    uint8_t width;          /* display columns: 0 (continuation/empty), 1, or 2 */
+    uint8_t is_continuation;
+    uint8_t transparent;
+    uint8_t _reserved[4];   /* [0] = glyph_truncated: 1 iff glyph was cut at the cap
+                               (fetch full bytes via gibson_get_frame_cell_glyph); [1..3]=0 */
+    gibson_style_t style;
+} gibson_cell_t;
 
 /* Border styles (pass as int32_t) */
 typedef enum {
@@ -188,9 +218,20 @@ void     gibson_stats_init(gibson_stats_t *out_stats);
 
 /* Context Lifecycle */
 gibson_status_t gibson_create_context(int32_t mode, gibson_context_t **out);
+/* Headless: renders into an in-memory buffer with deterministic, TTY-independent semantics
+   (fixed cols x rows, truecolor, no terminal lease). Read the ANSI frame via
+   gibson_get_rendered_output. cols and rows must be non-zero. (ABI v1, additive) */
+gibson_status_t gibson_create_headless_context(int32_t mode, uint16_t cols, uint16_t rows, gibson_context_t **out);
 void            gibson_destroy_context(gibson_context_t *ctx);
+/* Synchronized-update framing (CSI ?2026 h/l) around each frame on a TTY; on by default. A request
+   that the terminal present each update as a unit -- NOT atomic I/O: a failed write can leave a
+   partial frame, which the renderer re-establishes on the next frame. */
 gibson_status_t gibson_set_sync_updates(gibson_context_t *ctx, int32_t enabled);
 gibson_status_t gibson_set_max_fps(gibson_context_t *ctx, uint32_t fps);
+/* Overrides the color depth (one of gibson_color_depth_t); unknown values return
+   GIBSON_ERR_INVALID_PARAM. Call before the first render (see note at gibson_get_rendered_output).
+   (ABI v1, additive) */
+gibson_status_t gibson_set_color_depth(gibson_context_t *ctx, int32_t depth);
 
 /* UI & Rendering */
 gibson_status_t gibson_set_root_node(gibson_context_t *ctx, gibson_node_t *node);
@@ -216,6 +257,23 @@ gibson_status_t gibson_poll_event(gibson_context_t *ctx, uint32_t timeout_ms, gi
 /* Metrics & Diagnostics */
 gibson_status_t gibson_get_stats(gibson_context_t *ctx, gibson_stats_t *out_stats);
 int32_t         gibson_last_error_message(char *buf, size_t buf_len);
+/* Copies the headless ANSI frame stream into buf (binary-safe, NOT NUL-terminated).
+   out_len always receives the available size; pass buf=NULL or cap=0 to size-query first. */
+gibson_status_t gibson_get_rendered_output(gibson_context_t *ctx, uint8_t *buf, size_t cap, size_t *out_len);
+/* Resolved styled cell grid of the most recently rendered frame. frame_size writes (0,0) if there
+   is no frame yet; frame_cell returns GIBSON_ERR_INVALID_PARAM for a null out, no frame, or an
+   out-of-bounds (x,y). Style is quantized to the context's color depth. (ABI v1, additive) */
+gibson_status_t gibson_get_frame_size(gibson_context_t *ctx, uint16_t *out_cols, uint16_t *out_rows);
+gibson_status_t gibson_get_frame_cell(gibson_context_t *ctx, uint16_t x, uint16_t y, gibson_cell_t *out);
+/* Bulk readback: up to max_cells resolved cells row-major from (x,y) across row ends to the end of
+   the frame; *out_written = count. Same per-cell encoding as gibson_get_frame_cell. (ABI v1, additive) */
+gibson_status_t gibson_get_frame_cells(gibson_context_t *ctx, uint16_t x, uint16_t y,
+                                       gibson_cell_t *out, size_t max_cells, size_t *out_written);
+/* The cell's full (untruncated) grapheme-cluster UTF-8 bytes into buf. *out_len always = the full
+   length; bytes are copied only if buf != NULL && cap >= *out_len (so *out_len > cap => not
+   written). The escape hatch for glyph_truncated cells. (ABI v1, additive) */
+gibson_status_t gibson_get_frame_cell_glyph(gibson_context_t *ctx, uint16_t x, uint16_t y,
+                                            uint8_t *buf, size_t cap, size_t *out_len);
 
 /* Node Construction */
 gibson_status_t gibson_node_box_col(gibson_node_t **out);
@@ -226,6 +284,13 @@ gibson_status_t gibson_node_stack(gibson_node_t **out);
 gibson_status_t gibson_node_dim(gibson_node_t **out);
 gibson_status_t gibson_node_text(const char *utf8_text, const gibson_style_t *style, int32_t wrap_mode, gibson_node_t **out);
 gibson_status_t gibson_node_spinner(uint32_t frame_index, const gibson_style_t *style, const char *label, gibson_node_t **out);
+/* Single-line text input. `value` may be arbitrary UTF-8: a grapheme that holds a control
+   character (C0, DEL, C1 -- e.g. the ESC of a pasted escape sequence) or a line/paragraph
+   separator, or that has zero display width standing alone, is painted as ONE U+FFFD cell, and a
+   grapheme wider than two cells is laid codepoint by codepoint, so no control from content reaches
+   the terminal and the cursor column matches the painted cells (issue #252). To store pasted text
+   the way the Rust TextInputState does, flatten line breaks and TAB to spaces and drop other
+   controls before passing it here. */
 gibson_status_t gibson_node_text_input(const char *value, uint32_t cursor_grapheme, const char *placeholder, const gibson_style_t *style, gibson_node_t **out);
 gibson_status_t gibson_node_border_box(int32_t border_type, const gibson_style_t *style, gibson_node_t **out);
 gibson_status_t gibson_node_rule(const char *title, const gibson_style_t *style, gibson_node_t **out);

@@ -68,7 +68,9 @@ cinematic C ABI was added. `surface_fx.rs` is the only new core module.
    fragments in blank rows and after short rows. Geometry invalidation discarded
    the previous surface, and fresh diffs omitted default blanks. The renderer
    now clears the fullscreen canvas inside its normal atomic re-anchor
-   transaction; its affected-footprint capture includes that clear. The real
+   transaction *[historical wording, superseded by #254: the transaction batches the
+   clear into the same write; it is not atomic I/O]*; its affected-footprint capture
+   includes that clear. The real
    encounter resize regression and an independent minimal stale-row regression
    both pass. No demo emits terminal protocol bytes.
 3. **Scene time arithmetic.** Duration sums/delays could overflow; Repeat narrowed
