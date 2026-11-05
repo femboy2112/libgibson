@@ -108,6 +108,35 @@ key-then-resize control 30/30 on both. #1128 still open, crates.io still 0.29.0 
 2026-11-05): **blocked upstream**, not claimed fixed
 ([`research/issue15_crossterm_ab`](research/issue15_crossterm_ab/README.md)).
 
+## Independent adversarial review round · commit `b060093`
+
+An independent, read-only reviewer was given the RXIV code (not these conclusions) and asked to
+break five load-bearing pieces. It found **eight real defects — none a false TRANSFORM** — each of
+which was then reproduced RED on the unmodified head and fixed:
+
+| # | Defect | RED on `b70aa5c` | Repair |
+|---|---|---|---|
+| 1 (high) | An uncalibrated edit the producer applied was folded into calibration as "natural drift" → every later intervention `NonStationary` for the session | `NonStationary` where `Pending` was required (2 tests) | a cycle closing without TRANSFORM re-seeds calibration from the post-command regime |
+| 2 | An unmeasured frame counted as calibration while hiding the drift across it | 1.0, None, 9.0 armed `Pending` | calibration chains measured observations only |
+| 3 | A zero-byte-failed resize frame dropped its canvas reset | retry emitted no `2J` | `owed_reanchor` until a frame lands |
+| 4 | A fullscreen scrollback commit cleared the uncertainty without re-establishing the canvas | flag cleared; no `2J` next frame | only inline clears it |
+| 5 | A torn frame could leave auto-wrap off; recovery did not re-enable it | committed text before any `?7h` | every recovery prefix starts `?7h` |
+| 6 | No verdict deadline: a mute producer froze the film in INTERVENE | real-PTY film hung > 20 s | `VERDICT_DEADLINE` → typed failure, command recorded pending |
+| 7 | Frames after RETIRE were admitted | the post-RETIRE frame was returned | nothing admitted after RETIRE (`after_retire`) |
+| 8 | A producer descendant holding the pipes stalled teardown past any deadline | cleanup blocked 5.99 s | process-group kill + bounded joins |
+
+The review also confirmed what it could **not** break: no TRANSFORM on an ACK alone, an unchanged or
+too-high value, a stale cursor, an epoch break, NaN/±inf, refused-then-retried or repeat-after-
+TRANSFORM; wrong-id / wrong-source / duplicate / pre-decoded early ACKs fail closed; the capture
+closure, charge-before-allocate and strict reads; `atomic_write` never touching the target on
+failure; the counted-commit certain/uncertain split. Residuals kept as **stated limits** (not
+fixed): an ACK that guesses the next command id and is decoded *during* `submit` is accepted (an
+inherent wire race without a delivery handshake); the film's two record files are committed by two
+atomic writes, so a failure between them leaves a mismatched pair that replay detects
+(`ChecksumMismatch`) but cannot repair; extreme legal geometry (origin ~1e13, cell 1e-3) can paint
+the probe marker up to tens of columns from its cell through floating-point rounding (it stays
+inside the area).
+
 ## R6.1–R6.6 verdicts
 
 | Workstream | Verdict |
