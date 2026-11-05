@@ -616,7 +616,9 @@ fn film_loop(
         if let Some(id) = film.pending() {
             match session.poll_verdict(id) {
                 Ok(Some(st)) => film.on_verdict(id, st, now),
-                Ok(None) => {}
+                Ok(None) => {
+                    film.check_verdict_deadline(now);
+                }
                 Err(e) => film.on_failure(&e, now),
             }
         }

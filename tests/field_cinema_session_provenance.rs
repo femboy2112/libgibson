@@ -744,3 +744,55 @@ fn the_real_reference_film_correlates_its_verdict_by_command_id() {
     assert!(end.graceful);
     let _ = Verdict::Refused; // (the refused path is pinned in field_cinema_effect_contract.rs)
 }
+
+/// RXIV review finding 7: a frame AFTER the producer retired its source is out of contract — it
+/// must never be admitted (it could otherwise reach the arc) and the ordered end follows the frames
+/// that PRECEDED the RETIRE only.
+#[test]
+fn review_frames_after_retire_are_never_admitted() {
+    let (mut s, _) = hostile(
+        cat(&[
+            field(1, 1, 1, 1.0),
+            encode_retire(1, SourceCursor::new(1, 2)),
+            field(1, 1, 3, 2.0),
+        ]),
+        vec![],
+        Faults::default(),
+    );
+    assert_eq!(s.next_field().unwrap().cursor, SourceCursor::new(1, 1));
+    assert!(matches!(s.next_field(), Err(LiveError::Retired { .. })));
+    assert_eq!(s.counters().after_retire, 1);
+}
+
+/// RXIV review finding 8: a producer that leaves a DESCENDANT holding its stdout/stderr must not
+/// stall cleanup — reaping the direct child does not close a pipe a descendant still holds. The
+/// session kills the producer's whole process group, and its joins are bounded.
+#[test]
+fn review_a_descendant_holding_the_pipes_cannot_stall_cleanup() {
+    let s = LiveSession::spawn(
+        &ProducerSpec::custom("sh", &["-c", "sleep 6 & echo bg=$! >&2; exec sleep 30"]),
+        1,
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let bg: u32 = loop {
+        let t = s.stderr_tail();
+        if let Some(v) = t.split("bg=").nth(1) {
+            if let Some(n) = v.split_whitespace().next().and_then(|d| d.parse().ok()) {
+                break n;
+            }
+        }
+        assert!(Instant::now() < deadline, "no bg pid in stderr: {t:?}");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let pid = s.producer_pid().unwrap();
+    let t0 = Instant::now();
+    drop(s);
+    let took = t0.elapsed();
+    assert!(
+        took < Duration::from_secs(3),
+        "cleanup took {took:?} — a descendant holding the pipe stalled the join"
+    );
+    assert_reaped(pid);
+    assert_reaped(bg);
+}

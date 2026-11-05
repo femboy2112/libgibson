@@ -534,3 +534,48 @@ fn real_producer_refused_and_suppressed_never_transform() {
     link.finish(SHUTDOWN_GRACE);
     assert!(!arc.transformed());
 }
+
+// ---------------------------------------------------------------------------------------------
+// RXIV review findings (independent adversarial review of b70aa5c), pinned red-first
+// ---------------------------------------------------------------------------------------------
+
+/// Finding 1: an UNCALIBRATED intervention that the producer acknowledges and APPLIES must not be
+/// folded into natural-variation calibration — that recorded the command's own effect as "drift"
+/// and locked every later intervention in NonStationary for the rest of the session.
+#[test]
+fn review_an_applied_uncalibrated_edit_does_not_poison_calibration() {
+    let mut a = Arc::new();
+    a.observe(obs(1, Some(1.0)));
+    assert_eq!(a.intervene(2.0), Evidence::Uncalibrated);
+    a.verdict(Verdict::Acknowledged);
+    a.observe(obs(2, Some(2.0))); // the edit genuinely applied
+    a.discover();
+    a.observe(obs(3, Some(2.0)));
+    assert_eq!(
+        a.intervene(1.0),
+        Evidence::Pending,
+        "the post-command regime calibrates afresh"
+    );
+}
+
+/// Finding 1 (variant): an Inconsistent cycle that runs out its window likewise must not record
+/// the post-command level as natural drift.
+#[test]
+fn review_an_expired_inconsistent_cycle_does_not_poison_calibration() {
+    let (mut a, _) = acked(1.0, 2.0, &[Some(1.6), Some(1.6), Some(1.6)]);
+    assert_eq!(a.beat(), Beat::Discover);
+    a.observe(obs(6, Some(1.6)));
+    assert_eq!(a.intervene(3.0), Evidence::Pending);
+}
+
+/// Finding 2: an unmeasured frame between two measured ones must not count as calibration while
+/// hiding the drift across it.
+#[test]
+fn review_an_unmeasured_gap_does_not_hide_drift() {
+    let mut a = Arc::new();
+    a.observe(obs(1, Some(1.0)));
+    a.discover();
+    a.observe(obs(2, None));
+    a.observe(obs(3, Some(9.0)));
+    assert_eq!(a.intervene(4.0), Evidence::NonStationary);
+}

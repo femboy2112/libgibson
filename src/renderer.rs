@@ -129,6 +129,10 @@ pub struct Renderer {
     /// the SGR the compiler thinks is set, the cursor, the inline region) is void. The next frame
     /// re-establishes everything instead of diffing against a belief that is no longer true.
     physical_uncertain: bool,
+    /// A frame that had to RE-ANCHOR (the terminal geometry changed) failed without delivering a
+    /// byte: the geometry was already observed, so the retry must still owe the canvas reset the
+    /// resize required (RXIV review finding 3). Cleared when a frame lands.
+    owed_reanchor: bool,
 }
 
 impl Renderer {
@@ -159,6 +163,7 @@ impl Renderer {
             last_exact_changed: 0,
             last_frame_report: FrameReport::default(),
             physical_uncertain: false,
+            owed_reanchor: false,
         }
     }
 
@@ -298,7 +303,7 @@ impl Renderer {
         // a FAILED depth-change write mark the new depth as emitted, so the retry computed
         // `restyle == false` and silently skipped the repaint, leaving stale old-depth SGR on
         // screen (Gate F1). On a failed commit the old value survives, so the retry restyles.
-        let reanchor = self.observe_geometry(term_cols, term_rows);
+        let reanchor = self.observe_geometry(term_cols, term_rows) || self.owed_reanchor;
         let is_full_repaint = self.previous_surface.is_none();
 
         let max_inline_rows = term_rows.saturating_sub(1).max(1);
@@ -404,7 +409,12 @@ impl Renderer {
                 if clears_canvas {
                     // Fresh diffs elide default blanks. After a resize those
                     // blanks can contain reflowed old content; establish the
-                    // blank baseline inside this same atomic transaction.
+                    // blank baseline inside this same transaction. A recovery
+                    // frame also re-enables auto-wrap, which a torn frame may
+                    // have left off (RXIV review finding 5).
+                    if recover {
+                        tx.push(b"\x1b[?7h");
+                    }
                     tx.push(b"\x1b[0m\x1b[2J");
                     self.compiler.current_style = Style::default();
                 }
@@ -430,7 +440,7 @@ impl Renderer {
                     // The torn region is abandoned to scrollback: reset SGR, step to a fresh line
                     // below wherever the cursor was left, erase everything beneath it, and
                     // allocate a new region there (the full-repaint path below).
-                    tx.push(b"\x1b[0m\r\n\x1b[J");
+                    tx.push(b"\x1b[?7h\x1b[0m\r\n\x1b[J");
                     self.compiler.current_style = Style::default();
                 }
                 if is_full_repaint {
@@ -522,7 +532,9 @@ impl Renderer {
                 Err(f) if f.is_certain_noop() => {
                     // Not one byte of this frame reached the writer: the screen is exactly what
                     // the renderer believes. Undo this frame's emission-state advance so a retry
-                    // diffs in place (Gate F1's in-place restyle survives).
+                    // diffs in place (Gate F1's in-place restyle survives) — and if this frame was
+                    // a re-anchor, the retry still owes its canvas reset (review finding 3).
+                    self.owed_reanchor = reanchor;
                     (
                         self.compiler.cursor_x,
                         self.compiler.cursor_y,
@@ -558,6 +570,7 @@ impl Renderer {
 
         self.previous_surface = Some(next_surface);
         self.physical_uncertain = false;
+        self.owed_reanchor = false;
         // Physical-emission truth, advanced only now that the transaction committed: the cells on
         // screen carry this depth's SGR. A failed commit returns via `?` above and leaves the prior
         // value, so a retry re-detects the depth change and restyles (Gate F1).
@@ -605,7 +618,7 @@ impl Renderer {
         if self.physical_uncertain {
             // A previous write tore (Gate G3): the live region was abandoned, so start the
             // committed lines on a fresh, erased line with a known SGR state.
-            tx.push(b"\x1b[0m\r\n\x1b[J");
+            tx.push(b"\x1b[?7h\x1b[0m\r\n\x1b[J");
             self.compiler.current_style = Style::default();
         }
 
@@ -648,9 +661,12 @@ impl Renderer {
 
         // Committing finalizes live state; the next live frame starts fresh.
         self.invalidate_anchor(false);
-        // The lines landed on a fresh line with a known SGR state: the physical position is known
-        // again (a torn region before them stays abandoned in scrollback).
-        self.physical_uncertain = false;
+        // INLINE: the lines landed on a fresh line with a known SGR state, so the physical position
+        // is known again (a torn region before them stays abandoned in scrollback). FULLSCREEN: the
+        // canvas is still uncertain — the next frame must re-establish it (review finding 4).
+        if self.mode == RenderMode::Inline {
+            self.physical_uncertain = false;
+        }
         self.total_commit_bytes += bytes as u64;
         Ok(bytes)
     }
@@ -895,7 +911,7 @@ impl Renderer {
         if self.physical_uncertain {
             // A previous write tore (Gate G3): the fast path is already off (no trusted previous
             // surface); begin the fallback on a fresh, erased line with a known SGR state.
-            tx.push(b"\x1b[0m\r\n\x1b[J");
+            tx.push(b"\x1b[?7h\x1b[0m\r\n\x1b[J");
             self.compiler.current_style = Style::default();
         }
 
@@ -989,8 +1005,11 @@ impl Renderer {
                 return Err(f.error);
             }
         };
-        // A successful insertion re-establishes a known cursor position (Gate G3).
-        self.physical_uncertain = false;
+        // A successful INLINE insertion re-establishes a known cursor position (Gate G3); a
+        // fullscreen canvas stays uncertain until a frame re-establishes it (review finding 4).
+        if self.mode == RenderMode::Inline {
+            self.physical_uncertain = false;
+        }
 
         self.history_insertions += 1;
         self.total_insertion_bytes += bytes as u64;

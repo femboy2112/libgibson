@@ -323,3 +323,102 @@ fn a_failure_that_delivered_nothing_keeps_the_physical_state_certain() {
         );
     }
 }
+
+// ---- RXIV review findings 3–5 (independent adversarial review of b70aa5c), red-first ----------
+
+/// Finding 3: a RESIZE frame whose commit delivered nothing still owes the canvas reset the resize
+/// required. Restoring the emission state must not drop that obligation (the retry would otherwise
+/// leave reflowed old content in cells the fresh diff elides).
+#[test]
+fn review_a_zero_byte_failed_resize_frame_keeps_its_canvas_reset() {
+    let (mut r, mut s) = (
+        Renderer::new(RenderMode::Fullscreen),
+        TerminalSession::headless(W, H),
+    );
+    let mut ok = Vec::new();
+    render(&mut r, &mut s, f1(), &mut ok).unwrap();
+    s.set_terminal_size(W - 4, H);
+    let mut dead = FailAfter {
+        budget: 0,
+        sink: Vec::new(),
+    };
+    assert!(render(&mut r, &mut s, f2(), &mut dead).is_err());
+    let mut retry = Vec::new();
+    render(&mut r, &mut s, f2(), &mut retry).unwrap();
+    assert!(
+        retry.windows(4).any(|w| w == b"\x1b[2J"),
+        "the retried resize frame must still clear the canvas"
+    );
+}
+
+/// Finding 4: in FULLSCREEN mode a successful scrollback commit does not re-establish the canvas,
+/// so it must not clear the "physical state uncertain" mark left by a torn frame.
+#[test]
+fn review_a_fullscreen_commit_does_not_clear_the_uncertainty() {
+    let (mut r, mut s) = (
+        Renderer::new(RenderMode::Fullscreen),
+        TerminalSession::headless(W, H),
+    );
+    let mut ok = Vec::new();
+    render(&mut r, &mut s, f1(), &mut ok).unwrap();
+    let mut torn = FailAfter {
+        budget: 9,
+        sink: Vec::new(),
+    };
+    assert!(render(&mut r, &mut s, f2(), &mut torn).is_err());
+    let mut committed = Vec::new();
+    r.commit_text("a committed line", &mut s, &mut committed)
+        .unwrap();
+    assert!(r.physical_state_uncertain());
+    let mut next = Vec::new();
+    render(&mut r, &mut s, f3_other(), &mut next).unwrap();
+    assert!(
+        next.windows(4).any(|w| w == b"\x1b[2J"),
+        "the canvas is still re-established after the commit"
+    );
+}
+
+/// Finding 5: a torn frame can leave auto-wrap OFF (`?7l` delivered, `?7h` not). Every recovery
+/// path must re-enable it before writing, or scrollback lines are clipped permanently.
+#[test]
+fn review_recovery_re_enables_autowrap_before_writing() {
+    let (mut r, mut s) = (
+        Renderer::new(RenderMode::Inline),
+        TerminalSession::headless(W, 40),
+    );
+    let mut ok = Vec::new();
+    render(&mut r, &mut s, f1(), &mut ok).unwrap();
+    // Cut frame 2 right after its `?7l`.
+    let cut = {
+        let (mut r2, mut s2) = (
+            Renderer::new(RenderMode::Inline),
+            TerminalSession::headless(W, 40),
+        );
+        let mut a = Vec::new();
+        render(&mut r2, &mut s2, f1(), &mut a).unwrap();
+        let mut b = Vec::new();
+        render(&mut r2, &mut s2, f2(), &mut b).unwrap();
+        b.windows(5)
+            .position(|w| w == b"\x1b[?7l")
+            .expect("frame 2 disables autowrap")
+            + 5
+    };
+    let mut torn = FailAfter {
+        budget: cut,
+        sink: Vec::new(),
+    };
+    assert!(render(&mut r, &mut s, f2(), &mut torn).is_err());
+    let mut committed = Vec::new();
+    r.commit_text(
+        "a long committed line that is wider than the terminal",
+        &mut s,
+        &mut committed,
+    )
+    .unwrap();
+    let wrap_on = committed.windows(5).position(|w| w == b"\x1b[?7h");
+    let text_at = committed.windows(6).position(|w| w == b"a long");
+    assert!(
+        matches!((wrap_on, text_at), (Some(w), Some(t)) if w < t),
+        "auto-wrap must be re-enabled before the committed text"
+    );
+}

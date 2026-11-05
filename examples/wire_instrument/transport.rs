@@ -735,11 +735,31 @@ impl Reader {
     }
 
     /// Join the reader thread. The producer's stdout closing (e.g. after `child.kill()`) ends the
-    /// read loop, so this returns promptly.
+    /// read loop, so this returns promptly — UNLESS a descendant of the producer still holds the
+    /// pipe open; prefer [`join_within`](Self::join_within) on teardown paths.
     pub fn join(&mut self) {
         if let Some(h) = self.handle.take() {
             let _ = h.join();
         }
+    }
+
+    /// Join the reader thread if it finishes within `limit`; otherwise DETACH it and return `false`
+    /// (RXIV review finding 8). Reaping the producer does not close a pipe that one of its
+    /// descendants still holds, and a blocking read cannot be interrupted, so an unbounded join
+    /// could outlive any deadline. A detached reader ends on its own when the pipe finally closes.
+    pub fn join_within(&mut self, limit: Duration) -> bool {
+        let Some(h) = self.handle.take() else {
+            return true;
+        };
+        let deadline = Instant::now() + limit;
+        while !h.is_finished() {
+            if Instant::now() >= deadline {
+                return false; // detached
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        let _ = h.join();
+        true
     }
 }
 
@@ -770,7 +790,15 @@ pub struct ProducerOwner {
     child: Child,
     stdin: Option<ChildStdin>,
     reader: Reader,
+    /// The child was spawned as the leader of its own process group: teardown kills the whole
+    /// group, so a descendant cannot keep the producer's pipes (and this owner's joins) alive.
+    group_leader: bool,
+    /// `shutdown` already reaped the child (Drop must not signal a possibly recycled group id).
+    reaped: bool,
 }
+
+/// Upper bound on joining the reader thread during teardown (see [`Reader::join_within`]).
+pub const READER_JOIN_BOUND: Duration = Duration::from_millis(500);
 
 impl ProducerOwner {
     /// Take ownership of the spawned `child`, its `stdin` (if piped), and the `reader` thread.
@@ -779,6 +807,34 @@ impl ProducerOwner {
             child,
             stdin,
             reader,
+            group_leader: false,
+            reaped: false,
+        }
+    }
+
+    /// Like [`new`](Self::new), for a child spawned as the leader of a NEW process group
+    /// (`CommandExt::process_group(0)`): teardown then kills the whole group (RXIV review finding 8).
+    pub fn new_group_leader(child: Child, stdin: Option<ChildStdin>, reader: Reader) -> Self {
+        Self {
+            child,
+            stdin,
+            reader,
+            group_leader: true,
+            reaped: false,
+        }
+    }
+
+    /// SIGKILL the producer's whole process group (descendants included). Only for a group this
+    /// owner created; sent while the group still has a member, so its id cannot have been recycled.
+    fn kill_group(&self) {
+        #[cfg(unix)]
+        if self.group_leader && !self.reaped {
+            if let Ok(pgid) = i32::try_from(self.child.id()) {
+                // SAFETY: plain kill(2) on the process group this owner created.
+                unsafe {
+                    libc::kill(-pgid, libc::SIGKILL);
+                }
+            }
         }
     }
 
@@ -815,12 +871,17 @@ impl ProducerOwner {
                 break (st, true);
             }
             if Instant::now() >= deadline {
+                self.kill_group();
                 let _ = self.child.kill();
                 break (self.child.wait()?, false);
             }
             thread::sleep(Duration::from_millis(1));
         };
-        self.reader.join();
+        // Descendants left behind by a graceful leader still keep the group alive (so its id is
+        // not recyclable) and may hold the pipes: end them too.
+        self.kill_group();
+        self.reaped = true;
+        self.reader.join_within(READER_JOIN_BOUND);
         Ok((status, graceful))
     }
 }
@@ -829,11 +890,13 @@ impl Drop for ProducerOwner {
     fn drop(&mut self) {
         // EOF to the producer's stdin for a graceful exit…
         drop(self.stdin.take());
-        // …with a hard backstop so no child outlives us (idempotent if it already exited).
+        // …with a hard backstop so no child (nor, for a group leader, any descendant) outlives us…
+        self.kill_group();
         let _ = self.child.kill();
         // Reap through the OS wait handle — prevents a zombie and closes the child's stdout…
         let _ = self.child.wait();
-        // …so the reader's read loop hits EOF and this join returns promptly, never detached.
-        self.reader.join();
+        // …so the reader's read loop hits EOF. The join is BOUNDED: a pipe held open by something
+        // outside the group cannot stall teardown past READER_JOIN_BOUND (the reader detaches).
+        self.reader.join_within(READER_JOIN_BOUND);
     }
 }

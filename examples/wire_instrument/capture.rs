@@ -441,6 +441,12 @@ pub fn validate_capture(
                 cells,
             });
         }
+        // Every on-disk length must survive its u32 field BEFORE the first byte is written
+        // (review: a frame past u32::MAX samples could otherwise fail mid-write).
+        len_u32(f.data.len())?;
+        if let Some(m) = &f.mask {
+            len_u32(m.len())?;
+        }
         budget.charge(cells, std::mem::size_of::<f64>())?;
         if let Some(m) = &f.mask {
             if m.len() != f.data.len() {

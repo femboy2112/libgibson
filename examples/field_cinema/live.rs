@@ -237,12 +237,20 @@ pub enum CycleOutcome {
     Void { reason: Evidence },
 }
 
-/// Natural-variation calibration over consecutive in-session observations taken while no effect was
-/// pending.
+/// Natural-variation calibration over in-session observations taken while no effect was pending.
+///
+/// The chain is over MEASURED observations only (RXIV review finding 2): an unmeasured frame can
+/// neither count as calibration nor hide the drift across it — the next measured value is compared
+/// with the last measured one. The baseline candidate is still the LATEST observation (measured or
+/// not), so an unmeasured latest frame is an unmeasurable baseline.
 #[derive(Debug, Clone, Copy)]
 struct Calibration {
+    /// Measured observations in the chain.
     count: usize,
-    last: Option<ObsSummary>,
+    /// The newest in-session observation (the baseline candidate).
+    latest: Option<ObsSummary>,
+    /// The newest MEASURED observation in the chain.
+    last_measured: Option<f64>,
     drift_high_water: f64,
 }
 
@@ -250,32 +258,37 @@ impl Calibration {
     fn empty() -> Self {
         Self {
             count: 0,
-            last: None,
+            latest: None,
+            last_measured: None,
             drift_high_water: 0.0,
         }
     }
 
     fn seeded(o: ObsSummary) -> Self {
         Self {
-            count: 1,
-            last: Some(o),
+            count: usize::from(o.measured().is_some()),
+            latest: Some(o),
+            last_measured: o.measured(),
             drift_high_water: 0.0,
         }
     }
 
     /// Fold an observation in; a different epoch restarts calibration, a stale cursor is ignored.
     fn fold(&mut self, o: ObsSummary) {
-        match self.last {
+        match self.latest {
             Some(prev) if prev.epoch != o.epoch => *self = Self::seeded(o),
             Some(prev) if o.seq <= prev.seq => {}
-            Some(prev) => {
-                if let (Some(a), Some(b)) = (prev.measured(), o.measured()) {
-                    self.drift_high_water = self.drift_high_water.max((b - a).abs());
-                }
-                self.count += 1;
-                self.last = Some(o);
-            }
             None => *self = Self::seeded(o),
+            Some(_) => {
+                self.latest = Some(o);
+                if let Some(m) = o.measured() {
+                    if let Some(p) = self.last_measured {
+                        self.drift_high_water = self.drift_high_water.max((m - p).abs());
+                    }
+                    self.last_measured = Some(m);
+                    self.count += 1;
+                }
+            }
         }
     }
 }
@@ -423,7 +436,12 @@ impl Arc {
             self.last_outcome = Some(CycleOutcome::Unevidenced { last: ev });
             self.effect = None;
             self.beat = Beat::Discover;
-            self.calib.fold(o);
+            // An ACKNOWLEDGED command may have changed the source even when it was not evidenced
+            // (e.g. an uncalibrated request that applied): pre-command observations cannot
+            // calibrate what follows, so the post-command regime calibrates afresh (RXIV review
+            // finding 1 — folding here recorded the command's own effect as natural drift and
+            // locked every later intervention in NonStationary).
+            self.calib = Calibration::seeded(o);
         }
         ev
     }
@@ -460,7 +478,7 @@ impl Arc {
     }
 
     fn arm(&self, target: f64) -> Result<ExpectedEffect, Evidence> {
-        let Some(base) = self.calib.last else {
+        let Some(base) = self.calib.latest else {
             return Err(Evidence::UnmeasurableBaseline);
         };
         let Some(b) = base.measured() else {

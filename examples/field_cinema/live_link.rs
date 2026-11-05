@@ -282,6 +282,8 @@ pub struct LiveCounters {
     pub out_of_contract: u64,
     /// Consecutive same-source FIELDs the reader lawfully coalesced (from the reader).
     pub coalesced: u64,
+    /// Messages that arrived after the producer RETIRED its source (never admitted).
+    pub after_retire: u64,
 }
 
 /// What a finished session reports about its producer.
@@ -329,16 +331,24 @@ impl StderrTail {
         String::from_utf8_lossy(&bytes).into_owned()
     }
 
-    fn join(&mut self) {
-        if let Some(h) = self.handle.take() {
-            let _ = h.join();
+    /// Join the collector if it finishes within `limit`; otherwise detach it (a pipe held open by
+    /// a descendant must not stall teardown — RXIV review finding 8).
+    fn join_within(&mut self, limit: Duration) {
+        let Some(h) = self.handle.take() else { return };
+        let deadline = Instant::now() + limit;
+        while !h.is_finished() {
+            if Instant::now() >= deadline {
+                return; // detached
+            }
+            thread::sleep(Duration::from_millis(1));
         }
+        let _ = h.join();
     }
 }
 
 impl Drop for StderrTail {
     fn drop(&mut self) {
-        self.join();
+        self.join_within(Duration::from_millis(500));
     }
 }
 
@@ -375,16 +385,22 @@ pub struct LiveSession {
 impl LiveSession {
     /// Launch `spec` as a supervised producer process addressed as source `dest`.
     pub fn spawn(spec: &ProducerSpec, dest: u64) -> Result<Self, LiveError> {
-        let mut child = Command::new(&spec.program)
-            .args(&spec.args)
+        let mut cmd = Command::new(&spec.program);
+        cmd.args(&spec.args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| LiveError::Spawn {
-                program: spec.program.clone(),
-                kind: e.kind(),
-            })?;
+            .stderr(Stdio::piped());
+        // The producer leads its own process group, so teardown can end everything it spawned
+        // (RXIV review finding 8: a descendant holding the pipes stalled cleanup).
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
+        let mut child = cmd.spawn().map_err(|e| LiveError::Spawn {
+            program: spec.program.clone(),
+            kind: e.kind(),
+        })?;
         let stdin = child.stdin.take();
         let stderr = StderrTail::spawn(child.stderr.take());
         let Some(stdout) = child.stdout.take() else {
@@ -396,7 +412,7 @@ impl LiveSession {
             });
         };
         let reader = Reader::spawn(stdout, DEFAULT_CONTROL_CAP);
-        let owner = ProducerOwner::new(child, stdin, reader);
+        let owner = ProducerOwner::new_group_leader(child, stdin, reader);
         Ok(Self::with_io(Io::Process { owner, stderr }, dest))
     }
 
@@ -539,7 +555,7 @@ impl LiveSession {
     fn settled_stderr(&mut self) -> String {
         if let Io::Process { owner, stderr } = &mut self.io {
             if matches!(owner.try_wait(), Ok(Some(_))) {
-                stderr.join();
+                stderr.join_within(Duration::from_millis(100));
             }
             return stderr.text();
         }
@@ -547,6 +563,12 @@ impl LiveSession {
     }
 
     fn process(&mut self, msg: WireMessage) {
+        // The configured source RETIRED: anything after that is out of contract and never admitted
+        // (RXIV review finding 7 — a post-RETIRE frame previously reached the arc).
+        if matches!(self.ended, Some(LiveError::Retired { .. })) {
+            self.counters.after_retire += 1;
+            return;
+        }
         match classify_source(self.dest, self.observed_epoch, msg.source, msg.cursor.epoch) {
             SourceVerdict::Foreign => {
                 self.counters.foreign += 1;
@@ -799,7 +821,7 @@ impl LiveSession {
                     Ok((st, g)) => (Some(st), g),
                     Err(_) => (None, false),
                 };
-                stderr.join();
+                stderr.join_within(Duration::from_millis(500));
                 SessionEnd {
                     exit,
                     graceful,

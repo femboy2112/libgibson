@@ -543,3 +543,46 @@ fn reduced_motion_cuts_instantly_while_full_motion_animates_the_transform() {
         "reduced motion: the post-TRANSFORM frame is final immediately (a cut, no movement)"
     );
 }
+
+/// RXIV review finding 6, headlessly: a command whose verdict never arrives fails the film TYPED at
+/// the deadline, and the recorded outcome carries the command as still pending.
+#[test]
+fn a_verdict_that_never_arrives_fails_typed_and_is_recorded_pending() {
+    let (tx, rx) = mpsc_channel();
+    tx.send(bump(1.0, 1)).unwrap();
+    let responder = Responder {
+        tx,
+        script: VecDeque::from(vec![bump(1.0, 2)]), // answers the ADVANCE, never the edit
+        dec: FrameDecoder::new(),
+        flush_fails: false,
+        fail_this_flush: false,
+    };
+    let reader = ChanReader {
+        rx,
+        buf: Vec::new(),
+        pos: 0,
+    };
+    let mut s = LiveSession::over_pipes(reader, responder, LIVE_SOURCE);
+    let mut film = Film::new(FilmConfig {
+        reduced_motion: true,
+        auto_advance: false,
+    });
+    film.on_field(s.next_field().unwrap(), ms(1));
+    film.on_field(s.step().unwrap(), ms(2));
+    let FilmAction::Submit(v) = film.on_key(KeyCode::Enter, ms(3)) else {
+        panic!()
+    };
+    let id = s.submit_amplitude(v).unwrap();
+    film.on_submitted(id, Admission::Accepted, ms(4));
+    assert!(!film.check_verdict_deadline(ms(4) + film::VERDICT_DEADLINE - ms(1)));
+    assert!(film.check_verdict_deadline(ms(4) + film::VERDICT_DEADLINE));
+    assert!(film.failure().unwrap().contains("the command's ACK"));
+    assert!(matches!(
+        film.record().trace.events().last(),
+        Some(trace::TraceEvent::Outcome {
+            kind: trace::OutcomeKind::FatalTransport,
+            pending_commands: 1
+        })
+    ));
+    assert!(!film.arc().transformed());
+}

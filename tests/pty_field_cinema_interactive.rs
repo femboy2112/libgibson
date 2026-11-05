@@ -398,3 +398,53 @@ fn a_killed_film_still_ends_its_reference_producer_via_stdin_eof() {
     }
     assert_gone(pid);
 }
+
+/// RXIV review finding 6: a producer that never answers a command must not freeze the film. After
+/// the verdict deadline the film reports a TYPED failure (the command's fate is unknown — never
+/// treated as acknowledged or refused), keeps the final state visible, and exits nonzero on q.
+#[test]
+fn interactive_a_verdict_that_never_arrives_fails_typed_after_the_deadline() {
+    use gibson::field_view::FieldExtent;
+    use gibson::wire::{encode_field, SourceCursor, WireField, WireLimits};
+    let dir = scratch("silent-verdict");
+    std::fs::create_dir_all(&dir).unwrap();
+    let extent = FieldExtent::new(gibson::Point::new(0.0, 0.0), 1.0, 1.0, 16, 8).unwrap();
+    let field = WireField {
+        extent,
+        model_tick: 1,
+        data: (0..128).map(|i| (i as f64 / 128.0).cos()).collect(),
+        mask: None,
+    };
+    let bytes = encode_field(1, SourceCursor::new(1, 1), &field, WireLimits::default()).unwrap();
+    let frame = dir.join("one.bin");
+    std::fs::write(&frame, bytes).unwrap();
+    let fake = dir.join("mute-producer");
+    std::fs::write(
+        &fake,
+        format!(
+            // Publishes one field, keeps its stdout OPEN, never reads or answers a command.
+            "#!/bin/sh\ntrap '' HUP\ncat '{}'\nexec sleep 60\n",
+            frame.display()
+        ),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut f = Film::boot(
+        100,
+        32,
+        false,
+        &[],
+        &[("GIBSON_PYTHON", fake.to_str().unwrap())],
+    );
+    f.wait_text("The source speaks");
+    f.key(b"\r");
+    f.wait_text("verdict awaiting #1");
+    f.wait_text("PRODUCER FAILURE");
+    f.wait_text("the command's ACK");
+    let (ok, out) = f.quit();
+    assert!(!ok, "{out}");
+    assert!(out.contains("film-failure: timed out"), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

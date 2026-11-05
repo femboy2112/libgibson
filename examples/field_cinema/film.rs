@@ -61,6 +61,9 @@ pub const CAMERA_TWEEN: Duration = Duration::from_millis(520);
 pub const CAPTION_SLIDE: Duration = Duration::from_millis(420);
 pub const TRANSFORM_JOLT: Duration = Duration::from_millis(320);
 pub const VERDICT_FLASH: Duration = Duration::from_millis(900);
+/// How long the film waits for a correlated verdict before failing typed (RXIV review finding 6): a
+/// producer that never answers must not freeze the film in INTERVENE.
+pub const VERDICT_DEADLINE: Duration = Duration::from_secs(4);
 /// Auto-advance cadence (one lockstep frame per period, never more than one in flight).
 pub const AUTO_PERIOD: Duration = Duration::from_millis(160);
 
@@ -121,6 +124,7 @@ pub struct Film {
     probe: Option<(usize, usize)>,
     target: f64,
     pending: Option<u64>,
+    pending_since: Duration,
     last_command: Option<(u64, f64, Admission)>,
     last_verdict: Option<(u64, AckStatus, Duration)>,
     last_evidence: Option<Evidence>,
@@ -147,6 +151,7 @@ impl Film {
             probe: None,
             target: 2.0,
             pending: None,
+            pending_since: Duration::ZERO,
             last_command: None,
             last_verdict: None,
             last_evidence: None,
@@ -290,6 +295,7 @@ impl Film {
         });
         self.mark_beat(before, now);
         self.pending = Some(command_id);
+        self.pending_since = now;
         self.last_command = Some((command_id, self.target, admission));
         self.note.clear();
     }
@@ -337,6 +343,27 @@ impl Film {
         self.mark_beat(before, now);
         self.pending = None;
         self.last_verdict = Some((command_id, status, now));
+    }
+
+    /// Fail the film, typed, if a command's verdict has not arrived within [`VERDICT_DEADLINE`]. The
+    /// command's fate is UNKNOWN — it is neither acknowledged nor refused, and the recorded outcome
+    /// carries it as pending. Returns whether the deadline fired.
+    pub fn check_verdict_deadline(&mut self, now: Duration) -> bool {
+        if self.failure.is_some() || self.pending.is_none() {
+            return false;
+        }
+        let waited = now.saturating_sub(self.pending_since);
+        if waited < VERDICT_DEADLINE {
+            return false;
+        }
+        self.on_failure(
+            &LiveError::Timeout {
+                waiting_for: "the command's ACK",
+                elapsed: waited,
+            },
+            now,
+        );
+        true
     }
 
     /// The session failed (typed). The film resolves, records the outcome, and shows the reason
