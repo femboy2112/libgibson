@@ -84,8 +84,8 @@ fn the_live_film_walks_the_arc_and_exits_cleanly_on_a_real_pty() {
         "the accepted film must reach the TRANSFORM beat:\n{out}"
     );
     assert!(
-        out.contains("transformation earned"),
-        "the accepted film announces the earned transform:\n{out}"
+        out.contains("the change is evidenced"),
+        "the accepted film announces the evidenced transform:\n{out}"
     );
     assert!(
         out.contains("resolves on a transformed field"),
@@ -104,11 +104,11 @@ fn the_suppressed_film_honestly_refuses_to_transform_on_a_real_pty() {
         "the suppressed edit is still acknowledged on the wire:\n{out}"
     );
     assert!(
-        !out.contains("transformation earned"),
+        !out.contains("the change is evidenced"),
         "a suppressed edit must NOT announce a transform:\n{out}"
     );
     assert!(
-        out.contains("no authoritative change, no transformation (honest)"),
+        out.contains("no consistent change, no transformation (honest)"),
         "the suppressed film stays honest:\n{out}"
     );
     assert!(

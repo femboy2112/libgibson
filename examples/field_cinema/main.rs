@@ -244,8 +244,8 @@ fn run_live(args: &[String]) -> ExitCode {
 
     // ESTABLISH — the unsolicited seq=1 authoritative field sets the baseline.
     let f0 = link.recv_field();
-    let (o0, shot0, _surf0) = stage_live(&f0);
-    arc.observe(arc_summary(&o0));
+    let (o0, shot0, _surf0) = stage_live(&f0.field);
+    arc.observe(arc_summary(&o0, f0.cursor));
     let baseline = o0.peak_value.unwrap_or(f64::NAN);
     beat_line(
         &mut out,
@@ -253,48 +253,67 @@ fn run_live(args: &[String]) -> ExitCode {
         &format!("baseline peak {baseline:.3}"),
     );
     if !reduced {
-        dump_surface(&mut out, &mono_preview(&f0, &shot0));
+        dump_surface(&mut out, &mono_preview(&f0.field, &shot0));
         let _ = writeln!(out);
     }
 
-    // DISCOVER → INTERVENE — probe the field, then issue a validated edit.
+    // DISCOVER — probe the field and watch it evolve one tick: the natural-variation calibration
+    // the effect contract requires before any change can be attributed.
     arc.discover();
-    beat_line(&mut out, arc.beat(), "probing the field center");
-    arc.intervene();
+    link.send_advance();
+    let fc = link.recv_field();
+    let (oc, _shotc, _surfc) = stage_live(&fc.field);
+    arc.observe(arc_summary(&oc, fc.cursor));
+    let (n, drift) = arc.calibration();
     beat_line(
         &mut out,
         arc.beat(),
-        &format!("issuing set-amplitude {LIVE_TARGET:.1}"),
+        &format!("probing the field center; natural variation {drift:.4} over {n} observations"),
+    );
+    // INTERVENE — arm the expected effect against the calibrated baseline.
+    let armed = arc.intervene(LIVE_TARGET);
+    beat_line(
+        &mut out,
+        arc.beat(),
+        &format!(
+            "issuing set-amplitude {LIVE_TARGET:.1} (expected effect: {})",
+            if armed.is_unevidenceable() {
+                armed.label()
+            } else {
+                "evidenceable"
+            }
+        ),
     );
 
     // The producer's TRUE verdict.
     link.send_amplitude(LIVE_TARGET);
     let ack = link.recv_ack();
-    arc.verdict(verdict_of(ack), LIVE_TARGET);
+    arc.verdict(verdict_of(ack));
     beat_line(&mut out, arc.beat(), &format!("producer verdict: {ack:?}"));
 
     // Advance one tick and OBSERVE the authoritative field. This — not the ack — is the only
     // path into TRANSFORM.
     link.send_advance();
     let f1 = link.recv_field();
-    let (o1, shot1, _surf1) = stage_live(&f1);
-    arc.observe(arc_summary(&o1));
+    let (o1, shot1, _surf1) = stage_live(&f1.field);
+    let ev = arc.observe(arc_summary(&o1, f1.cursor));
     let after = o1.peak_value.unwrap_or(f64::NAN);
+    let label = ev.map_or("unclassified", |e| e.label());
     match arc.beat() {
         Beat::Transform => beat_line(
             &mut out,
             arc.beat(),
-            &format!("the field MOVED to peak {after:.3} — the change is witnessed, transformation earned"),
+            &format!("observed peak {after:.3}: {label} — the change is evidenced (not a proof of mechanism)"),
         ),
         _ => beat_line(
             &mut out,
             arc.beat(),
             &format!(
-                "acknowledged, but the field held at peak {after:.3} — no authoritative change, no transformation (honest)"
+                "acknowledged, observed peak {after:.3}: {label} — no consistent change, no transformation (honest)"
             ),
         ),
     }
-    dump_surface(&mut out, &mono_preview(&f1, &shot1));
+    dump_surface(&mut out, &mono_preview(&f1.field, &shot1));
     let _ = writeln!(
         out,
         "  shot focus=({:.1},{:.1}) zoom={:.2} {} {:?}",
@@ -340,20 +359,26 @@ fn film_frames(suppress: bool) -> (Vec<Beat>, Surface) {
     let mut arc = Arc::new();
     let mut beats = Vec::new();
 
-    let (o0, _s0, _surf0) = stage_live(&link.recv_field());
-    arc.observe(arc_summary(&o0));
+    let f0 = link.recv_field();
+    let (o0, _s0, _surf0) = stage_live(&f0.field);
+    arc.observe(arc_summary(&o0, f0.cursor));
     beats.push(arc.beat());
     arc.discover();
+    link.send_advance();
+    let fc = link.recv_field();
+    let (oc, _sc, _surfc) = stage_live(&fc.field);
+    arc.observe(arc_summary(&oc, fc.cursor));
     beats.push(arc.beat());
-    arc.intervene();
+    arc.intervene(LIVE_TARGET);
     beats.push(arc.beat());
     link.send_amplitude(LIVE_TARGET);
     let ack = link.recv_ack();
-    arc.verdict(verdict_of(ack), LIVE_TARGET);
+    arc.verdict(verdict_of(ack));
     beats.push(arc.beat());
     link.send_advance();
-    let (o1, _s1, surf1) = stage_live(&link.recv_field());
-    arc.observe(arc_summary(&o1));
+    let f1 = link.recv_field();
+    let (o1, _s1, surf1) = stage_live(&f1.field);
+    arc.observe(arc_summary(&o1, f1.cursor));
     beats.push(arc.beat());
     arc.resolve();
     beats.push(arc.beat());

@@ -51,6 +51,14 @@ pub fn python() -> String {
     std::env::var("GIBSON_PYTHON").unwrap_or_else(|_| "python3".to_string())
 }
 
+/// One authoritative FIELD as received: the frame's wire identity (source + cursor) and payload.
+#[derive(Debug, Clone)]
+pub struct LiveField {
+    pub source: u64,
+    pub cursor: SourceCursor,
+    pub field: WireField,
+}
+
 /// A live lockstep producer: one real frame at a time, over real pipes, no sleeps anywhere.
 pub struct Link {
     child: Child,
@@ -116,11 +124,16 @@ impl Link {
         }
     }
 
-    /// Read the next FIELD. The producer emits seq=1 UNSOLICITED on start; afterward each ADVANCE
-    /// yields exactly one FIELD (a control signal, never acked).
-    pub fn recv_field(&mut self) -> WireField {
-        match self.recv().body {
-            WireBody::Field(f) => f,
+    /// Read the next FIELD with its wire cursor. The producer emits seq=1 UNSOLICITED on start;
+    /// afterward each ADVANCE yields exactly one FIELD (a control signal, never acked).
+    pub fn recv_field(&mut self) -> LiveField {
+        let msg = self.recv();
+        match msg.body {
+            WireBody::Field(field) => LiveField {
+                source: msg.source,
+                cursor: msg.cursor,
+                field,
+            },
             other => panic!("expected a FIELD, got {other:?}"),
         }
     }
@@ -171,10 +184,11 @@ pub fn mono_preview(f: &WireField, shot: &Shot) -> Surface {
         .surface
 }
 
-/// Bridge a real observation into the arc's presentation-free summary. The arc judges only the
-/// peak VALUE (amplitude) — exactly what a set-amplitude edit moves — never the field bytes.
-pub fn arc_summary(obs: &FieldObservation) -> ObsSummary {
-    ObsSummary::new(obs.tick, obs.peak_value)
+/// Bridge a real observation into the arc's presentation-free summary, carrying the producer's
+/// wire cursor (its observation chronology — what makes a stale or repeated frame detectable). The
+/// arc judges only the peak VALUE (amplitude) — exactly what a set-amplitude edit moves.
+pub fn arc_summary(obs: &FieldObservation, cursor: SourceCursor) -> ObsSummary {
+    ObsSummary::new(cursor.epoch, cursor.sequence, obs.tick, obs.peak_value)
 }
 
 /// Map the producer's wire verdict onto the arc's verdict. The producer's authoritative fates are

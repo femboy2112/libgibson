@@ -34,8 +34,8 @@ use live::{Arc, Beat, Verdict};
 use live_link::{arc_summary, stage_live, verdict_of, Link};
 
 /// The presenter's intended target for the set-amplitude edit (its own command stamp — the arc's
-/// transform threshold is `0.8 * TARGET`). The producer's authoritative value is observed, not
-/// trusted.
+/// effect contract judges the observation against it within a declared tolerance). The producer's
+/// authoritative value is observed, not trusted.
 const TARGET: f64 = 2.0;
 
 /// Everything one live history produces, so histories can be compared on every bearing the film
@@ -60,27 +60,34 @@ fn drive_edit(freeze: bool, amp: f64) -> Film {
     let mut beats = Vec::new();
 
     // ESTABLISH — the unsolicited seq=1 authoritative field sets the baseline.
-    let (o0, _s0, _surf0) = stage_live(&link.recv_field());
-    arc.observe(arc_summary(&o0));
+    let f0 = link.recv_field();
+    let (o0, _s0, _surf0) = stage_live(&f0.field);
+    arc.observe(arc_summary(&o0, f0.cursor));
     beats.push(arc.beat());
 
-    // DISCOVER → INTERVENE — the viewer probes, then issues a validated edit.
+    // DISCOVER — the viewer probes while one natural tick calibrates the source's variation (the
+    // effect contract requires it before any change can be attributed). Then INTERVENE.
     arc.discover();
+    link.send_advance();
+    let fc = link.recv_field();
+    let (oc, _sc, _surfc) = stage_live(&fc.field);
+    arc.observe(arc_summary(&oc, fc.cursor));
     beats.push(arc.beat());
-    arc.intervene();
+    arc.intervene(amp);
     beats.push(arc.beat());
 
     // The producer renders its TRUE verdict. ACK arms AWAIT; REFUSED disarms to DISCOVER.
     link.send_amplitude(amp);
     let ack = link.recv_ack();
-    arc.verdict(verdict_of(ack), TARGET);
+    arc.verdict(verdict_of(ack));
     beats.push(arc.beat());
 
     // Advance one tick and OBSERVE the authoritative field that follows. This — not the ack — is
     // the only thing that can carry the arc into TRANSFORM.
     link.send_advance();
-    let (o1, s1, surf1) = stage_live(&link.recv_field());
-    arc.observe(arc_summary(&o1));
+    let f1 = link.recv_field();
+    let (o1, s1, surf1) = stage_live(&f1.field);
+    arc.observe(arc_summary(&o1, f1.cursor));
     beats.push(arc.beat());
 
     // RESOLVE — the transform latch (if earned) survives the close.
@@ -107,20 +114,23 @@ fn drive_no_edit() -> Film {
     let mut arc = Arc::new();
     let mut beats = Vec::new();
 
-    let (o0, _s0, _surf0) = stage_live(&link.recv_field());
-    arc.observe(arc_summary(&o0));
+    let f0 = link.recv_field();
+    let (o0, _s0, _surf0) = stage_live(&f0.field);
+    arc.observe(arc_summary(&o0, f0.cursor));
     beats.push(arc.beat());
     arc.discover();
     beats.push(arc.beat());
 
     link.send_advance();
-    let (o1, _s1, _surf1) = stage_live(&link.recv_field());
-    arc.observe(arc_summary(&o1));
+    let f1 = link.recv_field();
+    let (o1, _s1, _surf1) = stage_live(&f1.field);
+    arc.observe(arc_summary(&o1, f1.cursor));
     beats.push(arc.beat());
 
     link.send_advance();
-    let (o2, s2, surf2) = stage_live(&link.recv_field());
-    arc.observe(arc_summary(&o2));
+    let f2 = link.recv_field();
+    let (o2, s2, surf2) = stage_live(&f2.field);
+    arc.observe(arc_summary(&o2, f2.cursor));
     beats.push(arc.beat());
 
     arc.resolve();
@@ -233,8 +243,13 @@ fn the_identical_real_ack_is_separated_only_by_the_observed_field() {
 #[test]
 fn removing_the_authoritative_update_breaks_the_positive_film() {
     let mut link = Link::spawn(false);
-    let (o0, _s0, _surf0) = stage_live(&link.recv_field());
-    let baseline = arc_summary(&o0);
+    let f0 = link.recv_field();
+    let (o0, _s0, _surf0) = stage_live(&f0.field);
+    let baseline = arc_summary(&o0, f0.cursor);
+    link.send_advance();
+    let fc = link.recv_field();
+    let (oc, _sc, _surfc) = stage_live(&fc.field);
+    let calibration = arc_summary(&oc, fc.cursor);
 
     link.send_amplitude(TARGET);
     let ack = link.recv_ack();
@@ -245,8 +260,9 @@ fn removing_the_authoritative_update_breaks_the_positive_film() {
     );
 
     link.send_advance();
-    let (o1, _s1, _surf1) = stage_live(&link.recv_field());
-    let authoritative = arc_summary(&o1); // the real doubled field
+    let f1 = link.recv_field();
+    let (o1, _s1, _surf1) = stage_live(&f1.field);
+    let authoritative = arc_summary(&o1, f1.cursor); // the real doubled field
     link.finish();
 
     assert!(
@@ -258,19 +274,24 @@ fn removing_the_authoritative_update_breaks_the_positive_film() {
     let mut truth = Arc::new();
     truth.observe(baseline);
     truth.discover();
-    truth.intervene();
-    truth.verdict(Verdict::Acknowledged, TARGET);
+    truth.observe(calibration);
+    truth.intervene(TARGET);
+    truth.verdict(Verdict::Acknowledged);
     truth.observe(authoritative);
     truth.resolve();
 
-    // Mutant: identical beats, identical real ack — but the authoritative update is REMOVED; the
-    // arc re-observes the baseline instead. The ONLY difference from truth is the observed field.
+    // Mutant: identical beats, identical real ack — but the authoritative update is REMOVED: the
+    // post-ack frame carries the newer cursor but the pre-edit (calibration) measurement. The ONLY
+    // difference from truth is the observed value.
     let mut mutant = Arc::new();
     mutant.observe(baseline);
     mutant.discover();
-    mutant.intervene();
-    mutant.verdict(Verdict::Acknowledged, TARGET);
-    mutant.observe(baseline); // authoritative update dropped
+    mutant.observe(calibration);
+    mutant.intervene(TARGET);
+    mutant.verdict(Verdict::Acknowledged);
+    let mut dropped = authoritative;
+    dropped.peak_value = calibration.peak_value; // authoritative update dropped
+    mutant.observe(dropped);
     mutant.resolve();
 
     assert!(
