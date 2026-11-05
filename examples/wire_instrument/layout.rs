@@ -174,18 +174,21 @@ pub fn clip(s: &str, w: u16) -> String {
     if w == 0 {
         return String::new();
     }
-    // Reserve one column for the ellipsis; take whole chars by display width so a wide glyph that
-    // would straddle the cut is dropped rather than split.
+    // Reserve one column for the ellipsis; take whole GRAPHEME CLUSTERS by display width (RXIV
+    // Gate F). Iterating scalars could cut a multi-codepoint cluster — a ZWJ emoji family, a flag's
+    // regional-indicator pair, a base with several combining marks — leaving a dangling ZWJ or a lone
+    // indicator on screen; a cluster that would straddle the cut is dropped whole.
+    use unicode_segmentation::UnicodeSegmentation;
     let budget = w - 1;
     let mut out = String::new();
     let mut cols = 0usize;
-    for ch in s.chars() {
-        let cw = display_cols(ch.encode_utf8(&mut [0u8; 4]));
-        if cols + cw > budget {
+    for g in s.graphemes(true) {
+        let gw = display_cols(g);
+        if cols + gw > budget {
             break;
         }
-        out.push(ch);
-        cols += cw;
+        out.push_str(g);
+        cols += gw;
     }
     out.push('…');
     out

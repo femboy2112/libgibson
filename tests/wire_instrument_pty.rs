@@ -220,7 +220,13 @@ fn pty_walkthrough_truecolor_80x30() {
 }
 
 /// RXIII Gate D (consumer navigation) on a live terminal. A field WIDER than the display budget
-/// (300 columns vs the 240-column viewport cap) is streamed to an 80×30 terminal. The ROI viewport
+/// (300 columns vs the 240-column viewport cap) is streamed to an 80×30 terminal.
+///
+/// RXIV Gate F correction: RXIII pinned windows computed against the 240-column LOGICAL budget
+/// (`[0..240)`, `[30..270)`, `[60..300)`) on a terminal that physically shows 80 columns — the
+/// defect Gate F executed (the probe at column 100 sat inside the logical window but off the
+/// screen). The window is now computed against the PHYSICAL terminal width, so the expectations
+/// below are the 80-column windows. The ROI viewport
 /// must (a) announce the visible window at boot — the whole field does not fit — anchored at column
 /// 0, (b) FOLLOW the probe as the operator arrows right, advancing the window so the probed column
 /// stays on-screen, and (c) clamp the window at the field's right edge without overscrolling. The
@@ -233,14 +239,14 @@ fn pty_roi_window_follows_the_probe_across_a_wide_field() {
     let mut h = Walk::boot(80, 30, 300, 8, false);
     h.wait_text("source 1");
 
-    // At boot the probe is at column 0; the window shows [0..240) of the 300-column field and says
-    // so — proving the operator is told the field extends past the right edge.
-    h.wait_text("window cols [0..240) rows [0..8) of 300x8");
+    // At boot the probe is at column 0; the window shows [0..80) of the 300-column field — what the
+    // 80-column terminal can physically show — and says so.
+    h.wait_text("window cols [0..80) rows [0..8) of 300x8");
 
-    // Arrow right 150 times: the probe reaches column 150, and the window re-centers to [30..270)
-    // so the probed column is still on-screen (roi_axis centers: 150 - 240/2 = 30).
+    // Arrow right 150 times: the probe reaches column 150, and the window re-centers to [110..190)
+    // so the probed column is physically on-screen (roi_axis centers: 150 - 80/2 = 110).
     h.send(&b"\x1b[C".repeat(150));
-    h.wait_text("window cols [30..270) rows [0..8) of 300x8");
+    h.wait_text("window cols [110..190) rows [0..8) of 300x8");
     assert!(
         h.screen().contains("probe (150,0)"),
         "the probe readout tracks the navigated column:\n{}",
@@ -248,14 +254,14 @@ fn pty_roi_window_follows_the_probe_across_a_wide_field() {
     );
 
     // Arrow right well past the end: the probe clamps to the last column (299). The window clamps
-    // to the right edge [60..300) for every probe >= 180, so it is not a unique synchroniser — wait
+    // to the right edge [220..300) for every probe >= 260, so it is not a unique synchroniser — wait
     // on the probe column itself (draining every buffered key) and then confirm the window is parked
     // at the right edge, full, never scrolled past the field.
     h.send(&b"\x1b[C".repeat(260));
     h.wait_text("probe (299,0)");
     assert!(
         h.screen()
-            .contains("window cols [60..300) rows [0..8) of 300x8"),
+            .contains("window cols [220..300) rows [0..8) of 300x8"),
         "the window clamps to the field's right edge without overscrolling:\n{}",
         h.screen()
     );
@@ -448,4 +454,59 @@ fn pty_interactive_session_commits_a_faithful_causal_trace() {
     ));
     assert_eq!(history.len(), 6, "nothing else happened: {history:?}");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RXIV Gate F — the probe must be PHYSICALLY visible, not merely inside a logical window. A
+/// 300-column field on an 80-column terminal, probe driven to source columns 100 and then 200: the
+/// painted marker ('X', outside the density ramp) must be on the 80-column VT screen, at the column
+/// the window label implies, and the label must describe only what the terminal can show.
+#[test]
+fn pty_probe_marker_is_physically_visible_on_a_terminal_narrower_than_the_field() {
+    let mut w = Walk::boot(80, 30, 300, 8, false);
+    w.wait_text("probe (0,0)");
+    let mut at = 0usize;
+    for target in [100usize, 200] {
+        w.send(&b"\x1b[C".repeat(target - at));
+        at = target;
+        w.wait_text(&format!("probe ({target},0)"));
+        w.pump(Duration::from_millis(120));
+        let screen = w.screen();
+        let rows: Vec<&str> = screen.lines().collect();
+        let marker = rows
+            .iter()
+            .take(8)
+            .enumerate()
+            .find_map(|(r, line)| line.chars().position(|c| c == 'X').map(|c| (r, c)));
+        let label = screen
+            .split("window cols [")
+            .nth(1)
+            .and_then(|r| r.split(')').next())
+            .unwrap_or_else(|| panic!("window label missing:\n{screen}"))
+            .to_string();
+        let (a, b): (usize, usize) = {
+            let mut it = label.split("..").map(|v| v.parse::<usize>().unwrap());
+            (it.next().unwrap(), it.next().unwrap())
+        };
+        let (row, col) = marker.unwrap_or_else(|| {
+            panic!(
+                "probe {target}: no marker on the physical 80-col screen (window label [{a}..{b})):\n{screen}"
+            )
+        });
+        assert_eq!(row, 0, "single-row probe sits on raster row 0");
+        assert!(col < 80, "marker must be on screen, got column {col}");
+        assert!(
+            b - a <= 80,
+            "the window label [{a}..{b}) claims more columns than an 80-col terminal shows"
+        );
+        assert!(
+            a <= target && target < b,
+            "probe {target} inside [{a}..{b})"
+        );
+        assert_eq!(
+            col,
+            target - a,
+            "marker column == source column − window start"
+        );
+    }
+    w.assert_quit_restored();
 }

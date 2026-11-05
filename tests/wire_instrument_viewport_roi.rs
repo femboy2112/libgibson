@@ -185,3 +185,59 @@ fn a_field_that_fits_is_panned_exactly_like_the_origin_view() {
         );
     }
 }
+
+/// RXIV Gate F — ONE geometry contract for pan, source clipping and PHYSICAL terminal width. For
+/// every sampled probe, terminal size, magnification and an anisotropic offset-origin geometry, the
+/// bounded ROI view (`world_view_for_probe_in`) (a) never claims an area larger than the terminal
+/// can show, (b) maps the probed cell to a terminal cell INSIDE that physical area, and (c) maps
+/// every terminal cell of the area back to a source cell inside the announced window.
+#[test]
+fn the_physical_roi_view_keeps_every_probe_on_the_terminal_that_shows_it() {
+    use gibson::field_view::FieldExtent;
+    use gibson::Point;
+    let geometries = [
+        FieldExtent::new(Point::new(0.0, 0.0), 1.0, 1.0, 300, 90).unwrap(),
+        FieldExtent::new(Point::new(-37.5, 12.0), 0.25, 1.75, 257, 61).unwrap(),
+    ];
+    for ext in geometries {
+        for (tw, th) in [(24u16, 6u16), (40, 9), (80, 24), (120, 40)] {
+            for ppc in [1u16, 2, 3] {
+                let bound = viewport::physical_bound(tw, th);
+                for col in (0..ext.cols()).step_by(13).chain([ext.cols() - 1]) {
+                    for row in (0..ext.rows()).step_by(11).chain([ext.rows() - 1]) {
+                        let (wv, area) =
+                            viewport::world_view_for_probe_in(&ext, ppc, (col, row), bound)
+                                .expect("ordinary geometry");
+                        assert!(area.width <= tw && area.height <= th);
+                        let c = ext.cell_center(col, row).unwrap();
+                        let cell = wv.world_to_cell(c.x, c.y);
+                        let &(cx, cy) = cell.value().unwrap_or_else(|| {
+                            panic!("probe ({col},{row}) off-view at {tw}x{th} ppc {ppc}")
+                        });
+                        assert!(
+                            cx < area.width && cy < area.height,
+                            "probe ({col},{row}) painted at ({cx},{cy}) outside {}x{}",
+                            area.width,
+                            area.height
+                        );
+                        // (c) the area's corner cells map back inside the announced window.
+                        let (pc, pr) =
+                            viewport::roi_origin(ext.cols(), ext.rows(), area, ppc, (col, row));
+                        let vc = (area.width / ppc).max(1) as usize;
+                        let vr = (area.height / ppc).max(1) as usize;
+                        assert!(
+                            pc <= col && col < pc + vc,
+                            "col {col} in [{pc}..{})",
+                            pc + vc
+                        );
+                        assert!(
+                            pr <= row && row < pr + vr,
+                            "row {row} in [{pr}..{})",
+                            pr + vr
+                        );
+                    }
+                }
+            }
+        }
+    }
+}

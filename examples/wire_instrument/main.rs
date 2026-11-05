@@ -57,6 +57,10 @@ use channel::CommandChannel;
 use input::{InputAction, SourceVerdict};
 use transport::{ProducerOwner, Reader};
 
+/// Text rows the roomy layout prints below the raster (source, probe, window, edit, latency,
+/// status): the raster may use the rest of the terminal height.
+const ROOMY_HUD_ROWS: u16 = 6;
+
 /// The producer's one command kind: an 8-byte LE f64 target amplitude in [0, 10].
 const KIND_SET_AMPLITUDE: u32 = 1;
 /// Lockstep control (selfcheck only): advance the model one tick. Never acked, so it must NOT be
@@ -235,10 +239,19 @@ fn build_root(
                 // field stays on-screen — the Gate G correspondence, extended to fields larger than
                 // the viewport. The COMPACT path keeps the origin-anchored top-left clip that its
                 // certified honest-truncation marker describes (panning would contradict the marker).
+                // RXIV Gate F: the roomy path's window is computed against the PHYSICAL terminal
+                // (its width, and the rows left after the readout lines), not the 240×80 logical
+                // budget — one geometry contract for pan, clipping and terminal width, so the
+                // probed cell is always on the physical screen.
                 let staged = if compact {
                     viewport::world_view_for(&ext, ppc)
                 } else {
-                    viewport::world_view_for_probe(&ext, ppc, probe)
+                    viewport::world_view_for_probe_in(
+                        &ext,
+                        ppc,
+                        probe,
+                        viewport::physical_bound(term_w, term_h.saturating_sub(ROOMY_HUD_ROWS)),
+                    )
                 };
                 match staged {
                     Ok((wv, area)) => {
@@ -357,8 +370,27 @@ fn build_root(
                                 ext.rows(),
                             )
                         });
+                        // RXIV Gate F: paint the probe ON the field, at the terminal cell the display
+                        // transport maps the probed source cell to — so the physical screen, not just
+                        // the readout, shows where the probe is (verifiable on a VT screen). 'X' is
+                        // outside the density ramp, so it can never be mistaken for a sample.
+                        let mut surface = frame.surface;
+                        if let Some(c) = ext.cell_center(pix, piy) {
+                            if let Some(&(cx, cy)) = wv.world_to_cell(c.x, c.y).value() {
+                                if cx < surface.width && cy < surface.height {
+                                    surface.set_cell(
+                                        cx,
+                                        cy,
+                                        gibson::Cell::new(
+                                            gibson::Glyph::from_char('X'),
+                                            Style::new().bold().reverse(),
+                                        ),
+                                    );
+                                }
+                            }
+                        }
                         let mut root = root
-                            .child(Node::raster(frame.surface))
+                            .child(Node::raster(surface))
                             .child(Node::text(hud_src, Style::default()))
                             .child(Node::text(hud_probe, Style::default()));
                         if let Some(win_line) = win_line {

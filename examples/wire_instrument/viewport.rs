@@ -140,6 +140,59 @@ pub fn world_view_for_probe(
     Ok((view, area))
 }
 
+/// The physical bound a raster may occupy: the terminal columns and the rows left for it after the
+/// readouts (RXIV Gate F). The logical budget [`MAX_VIEW_COLS`]×[`MAX_VIEW_ROWS`] alone is not a
+/// viewport — on an 80-column terminal a 240-column raster is clipped by the terminal, so a probe
+/// inside the LOGICAL window could sit off the PHYSICAL screen.
+pub fn physical_bound(term_w: u16, rows_available: u16) -> (u16, u16) {
+    (term_w.max(1), rows_available.max(1))
+}
+
+/// [`world_view_for`] with the display area additionally clamped to a physical `bound` (see
+/// [`physical_bound`]). The SAME transport (pan to origin, per-axis zoom, typed refusal); only the
+/// area shrinks to what the terminal can actually show.
+pub fn world_view_for_in(
+    ext: &gibson::field_view::FieldExtent,
+    ppc: u16,
+    bound: (u16, u16),
+) -> Result<(gibson::world_view::WorldView, gibson::Rect), UnsupportedView> {
+    let (view, area) = world_view_for(ext, ppc)?;
+    let w = area.width.min(bound.0.max(1));
+    let h = area.height.min(bound.1.max(1));
+    if (w, h) == (area.width, area.height) {
+        return Ok((view, area));
+    }
+    let area = gibson::Rect::new(0, 0, w, h);
+    let (pan, zoom) = (view.pan(), view.zoom());
+    let view = gibson::world_view::WorldView::new(area)
+        .with_pan(pan.0, pan.1)
+        .with_pixels_per_cell(1, 1)
+        .with_zoom(zoom.0, zoom.1);
+    Ok((view, area))
+}
+
+/// [`world_view_for_probe`] within a physical `bound`: ONE geometry contract for viewport pan,
+/// source clipping and terminal width — the region-of-interest window is computed against the area
+/// the terminal can show, so the probed cell is always physically on screen.
+pub fn world_view_for_probe_in(
+    ext: &gibson::field_view::FieldExtent,
+    ppc: u16,
+    probe: (usize, usize),
+    bound: (u16, u16),
+) -> Result<(gibson::world_view::WorldView, gibson::Rect), UnsupportedView> {
+    let (view, area) = world_view_for_in(ext, ppc, bound)?;
+    let (pan_col, pan_row) = roi_origin(ext.cols(), ext.rows(), area, ppc, probe);
+    if pan_col == 0 && pan_row == 0 {
+        return Ok((view, area));
+    }
+    let origin = ext.origin();
+    let view = view.with_pan(
+        origin.x + pan_col as f64 * ext.cell_w(),
+        origin.y + pan_row as f64 * ext.cell_h(),
+    );
+    Ok((view, area))
+}
+
 /// Why a field's geometry has no numerically invertible display mapping at a given `ppc`: the
 /// per-axis `zoom = ppc / cell_size` is non-finite (overflowed) or zero, so `WorldView` cannot
 /// invert it and there is no honest terminal-cell <-> field-index correspondence. Carries the

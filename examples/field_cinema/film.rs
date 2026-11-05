@@ -956,7 +956,9 @@ fn render_field(
                 s.set_cell(
                     cx,
                     cy,
-                    Cell::new(Glyph::from_char('+'), Style::new().bold().reverse()),
+                    // 'X' is outside the density ramp (` .:-=+*#%@`), so the marker is never
+                    // mistaken for a sample in a monochrome frame.
+                    Cell::new(Glyph::from_char('X'), Style::new().bold().reverse()),
                 );
             }
         }
