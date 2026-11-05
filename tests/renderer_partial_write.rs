@@ -1,6 +1,7 @@
 //! RXIV Gate G3 — partial terminal-write recovery through the REAL renderer.
 //!
-//! `TerminalTransaction::commit` is a single `write_all` + `flush`, and `write_all` can fail after a
+//! `TerminalTransaction::commit_counted` is a counted write loop + `flush` (before this gate, one
+//! `write_all` + `flush`), and a write can fail after a
 //! partial write: the terminal may hold a torn PREFIX of a frame (synchronized-update framing is a
 //! display hint, not I/O rollback). Nothing can un-send those bytes. The question this battery
 //! settles is what the renderer does NEXT.

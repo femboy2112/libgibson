@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current direction (2026-11-05): v0.6.0 — the merge-readiness candidate (Renaissance XIV–XV)
+## Current direction (2026-11-05): v0.6.0 — the merge-readiness candidate (Renaissance XIV–XVI)
 
 **Canonical roadmap: [issue #191](https://github.com/femboy2112/libgibson/issues/191).** This
 section reconciles #191's R6.1–R6.6 workstreams with what is actually built and verified. The
@@ -14,8 +14,9 @@ per-gate red/green evidence, mutation controls and remaining limits are in
 (`d8c7b99`, GitHub prerelease). On `main`, only **Milestone 1 (#198)** and **Phase 6 (#199)** have
 merged. Everything below lives on ONE consolidated integration branch,
 `feat/v0.6-RXIV-causal-audit-191`, proposed to `main` as a single PR that preserves the full
-ancestry of the Renaissance stack (`#241 ← … ← #251`) plus the RXIV corrections and the RXV
-text-input glyph-boundary repair (#252). Nothing is merged,
+ancestry of the Renaissance stack (`#241 ← … ← #251`) plus the RXIV corrections, the RXV
+text-input glyph-boundary repair (#252) and the RXVI terminal-write documentation contract
+(#254). Nothing is merged,
 tagged, released or published; a merge requires the independent audit's approval of the exact
 final SHA and then the owner's action.
 
@@ -64,7 +65,10 @@ generation, write+flush, producer cadence, coalescing, retained-byte high-water,
 is a display hint. The renderer counts delivered bytes: a failure that sent nothing is certain (the
 retry diffs in place); a torn prefix or an unconfirmed flush voids its physical belief, so the next
 fullscreen frame resets SGR, clears and repaints exactly, and an inline region is abandoned to
-scrollback and re-allocated (`tests/renderer_partial_write.rs`, every cut point).
+scrollback and re-allocated (`tests/renderer_partial_write.rs`, every cut point). **RXVI (#254):**
+README, DESIGN, FEATURES and the Release Contract had kept describing the transaction as an atomic
+write; they now state the counted-write contract above, and `tests/doc_terminal_write_contract.rs`
+guards the current documentation against the overclaim.
 *Limits:* one host; no display FPS; streaming observation age unmeasured (no producer clock).
 
 ### R6.6 — Long-standing terminal issues — **blocked upstream; documented limitation**
@@ -534,7 +538,7 @@ one-arrow law, exact step replay and semantic-identity validation. Total:
 
 This round converted earlier over-strong claims into verified behavior and explicit gaps.
 
-- [x] **Atomic `TerminalTransaction`**: one `write_all` + `flush` batching synchronized-update begin/end (`CSI ?2026 h/l`), private modes, cursor motion, diff bytes, final cursor placement, and visibility. Sync-update ownership removed from `AnsiCompiler`.
+- [x] **Batched `TerminalTransaction`** *(this entry originally read "Atomic"; superseded — batching is not atomic I/O, and since RXIV Gate G3 the commit is `commit_counted`, a counted write loop + `flush` with partial-write recovery; see #254 and the Release Contract §9)*: one `write_all` + `flush` batching synchronized-update begin/end (`CSI ?2026 h/l`), private modes, cursor motion, diff bytes, final cursor placement, and visibility. Sync-update ownership removed from `AnsiCompiler`.
 - [x] **Explicit Physical Anchor**: `AnchorState::{Invalid, Stable{cols,rows,live_height}}` plus last cursor position/visibility. Empty cell diffs still emit when cursor state changes. Geometry changes invalidate the anchor, discard the diff baseline, re-anchor, and increment `anchor_resyncs`. Tested in `whole_renderer_vt100` and the PTY resize probe.
 - [x] **Two Insertion Strategies**: `InsertLineFastPath` and `RepaintFallback`, reported through `fast_insertions` / `insertion_repaints`. Universal zero-repaint is explicitly **not** claimed.
 - [x] **Unicode Mutation Invariant**: `TextInputState` uses byte-range edits and re-derives the cursor grapheme from the complete resulting string. `cursor_grapheme <= grapheme_count` holds across combining accents, ZWJ emoji, skin-tone modifiers, and flags. Deterministic randomized edit fuzzing included. Single-line paste normalizes `\r\n`, `\r`, `\n` to a space.
@@ -562,7 +566,7 @@ This round converted earlier over-strong claims into verified behavior and expli
 ## Phase 1.85: Compositor, Sub-cell Canvas & Determinism — IMPLEMENTED + TESTED
 
 - **Safety split**: safe `insert_text_before_live` / `insert_rich_text_before_live` / `insert_node_before_live`; raw is explicitly `insert_raw_lines_before_live_unchecked`. `Renderer::commit` is now safe text (`commit_text`), fixing the old name-inverts-safety bug. (`tests/safety_api.rs`)
-- **Exact wire metrics**: `TerminalTransaction::commit` returns the exact byte count including the synchronized-update terminator; renderer metrics no longer undercount. (`src/transaction.rs`)
+- **Exact wire metrics**: `TerminalTransaction::commit_counted` (named `commit` at the time) returns the exact byte count including the synchronized-update terminator; renderer metrics no longer undercount. (`src/transaction.rs`)
 - **Layer compositor**: `Node::stack()` + explicit `Cell::transparent` + `Node::dim()` style-only veil; overlay removal leaves no ghosts; floating modals do not reflow. (`tests/compositor.rs`, `whole_renderer_vt100`)
 - **Sub-cell canvases**: `BrailleCanvas`, `HalfBlockCanvas`, `braille_oscilloscope`; exact glyph/colour tests; bounded update cost. (`src/canvas.rs`, `tests/effects_perf.rs`)
 - **Deterministic clock**: `TimeSource`/`FixedStepClock` + motion helpers; scripted frames are reproducible. (`src/clock.rs`)

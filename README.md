@@ -64,9 +64,14 @@ When live content is finalized you call `ctx.commit_text(...)` (aliased
 > Repainting a 3-line live prompt costs the same whether there are 10 lines or
 > 100,000 lines behind it. **Live-region cost is independent of transcript size.**
 
-The rendering path is a clean vertical pipeline — a single atomic write per frame,
-with an explicit physical **anchor** so the renderer always knows where its live
-region actually is:
+The rendering path is a clean vertical pipeline — one batched terminal transaction per
+frame, with an explicit physical **anchor**: the renderer's tracked belief about where its
+live region actually is. The transaction is **not atomic** I/O: a write can fail after a
+prefix of the frame has reached the terminal, and nothing can un-send it. The renderer
+counts the bytes it delivered — a failure that sent none is retried in place; after a torn
+prefix or a failed flush, `Renderer::physical_state_uncertain()` reports it and the next
+frame re-establishes the screen (fullscreen repaints exactly; inline abandons the torn
+region to scrollback). See the [Release Contract](docs/RELEASE_CONTRACT.md) §9.
 
 ```
   UI tree (declarative Node hierarchy)
@@ -75,7 +80,7 @@ region actually is:
   Diff (previous vs next frame, per cell)
       │  AnsiCompiler (stateful minimal patch stream)
       ▼  TerminalTransaction (sync-update + cursor motion + diff bytes,
-  Terminal      as ONE write_all + flush) ← anchored by Renderer::AnchorState
+  Terminal      one counted write + flush) ← anchored by Renderer::AnchorState
 ```
 
 An unchanged framebuffer does **not** mean "nothing to emit": a cursor move or a
@@ -88,7 +93,8 @@ The core engine is **implemented and tested on Linux x86_64**. A few of the load
 - **Grapheme-aware cell model** — Unicode clusters, CJK width, combining marks, emoji,
   with wide-glyph overwrite protection.
 - **Differential ANSI rendering** — minimal per-cell diff, contiguous-run batching,
-  and one atomic `TerminalTransaction` per frame with synchronized-update framing.
+  and one batched `TerminalTransaction` per frame with synchronized-update framing (a
+  presentation request, not atomic I/O; a torn write is detected and recovered).
 - **Scrollback insertion without repaint** — `CSI L` fast path to insert history above
   a live region, with an always-correct repaint fallback.
 - **Flexbox layout** (Taffy) — rows/columns, constraints, padding, gaps, alignment,

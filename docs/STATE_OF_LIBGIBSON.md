@@ -172,7 +172,7 @@ Application state / input dispatch
                   ↓
        AnsiCompiler: runs, styles, cursor motion
                   ↓
-       TerminalTransaction: modes + bytes + cursor, write_all + flush
+       TerminalTransaction: modes + bytes + cursor, counted write + flush
                   ↓
                terminal
 ```
@@ -193,7 +193,7 @@ Runtime responsibilities, verified in source:
 | [Layout](../src/layout.rs) / [Painter](../src/painter.rs) | Taffy tree is rebuilt per layout; Node gets computed rectangles. Painter realizes cells and requested cursor. |
 | [Surface](../src/surface.rs) / [Cell](../src/cell.rs) | Graphemes, wide continuations, style/transparent overlays, clipping and ordinary storage. |
 | [Diff](../src/diff.rs) / [ANSI](../src/ansi.rs) | Semantic comparison and terminal patch compilation; compiler does not own synchronized-update lifecycle. |
-| [Transaction](../src/transaction.rs) | One buffered write_all/flush per transaction, including synchronized-update markers. This is batching, not a kernel-level atomicity guarantee. |
+| [Transaction](../src/transaction.rs) | One buffer per transaction, including synchronized-update markers, committed by `commit_counted` (a counted write loop + one flush). This is batching, not an atomicity guarantee: a write can tear after a prefix, and the renderer recovers (see *Partial-write recovery* below). |
 | [Input](../src/input.rs), [Focus](../src/focus.rs), [Viewport](../src/viewport.rs) | Key/paste/resize, grapheme editing, focus identity and scroll offsets. No DOM or built-in bubbling. |
 
 Load-bearing boundaries are clean: semantic updates stay upstream; Nodes do not

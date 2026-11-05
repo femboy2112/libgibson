@@ -223,6 +223,9 @@ gibson_status_t gibson_create_context(int32_t mode, gibson_context_t **out);
    gibson_get_rendered_output. cols and rows must be non-zero. (ABI v1, additive) */
 gibson_status_t gibson_create_headless_context(int32_t mode, uint16_t cols, uint16_t rows, gibson_context_t **out);
 void            gibson_destroy_context(gibson_context_t *ctx);
+/* Synchronized-update framing (CSI ?2026 h/l) around each frame on a TTY; on by default. A request
+   that the terminal present each update as a unit -- NOT atomic I/O: a failed write can leave a
+   partial frame, which the renderer re-establishes on the next frame. */
 gibson_status_t gibson_set_sync_updates(gibson_context_t *ctx, int32_t enabled);
 gibson_status_t gibson_set_max_fps(gibson_context_t *ctx, uint32_t fps);
 /* Overrides the color depth (one of gibson_color_depth_t); unknown values return

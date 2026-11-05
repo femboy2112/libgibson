@@ -20,6 +20,25 @@ development line, **not a release** — the manifest reads `0.6.0-dev`. `GIBSON_
 stays 1 — the C ABI grows only by **additive** functions (compatible, no version bump);
 MSRV stays 1.85.
 
+### Documentation — the terminal-write contract, RXVI ([#254](https://github.com/femboy2112/libgibson/issues/254))
+- **No current document promises an atomic terminal write any more.** README, DESIGN §8,
+  `docs/FEATURES.md` and the Release Contract (§2, §6) still described `TerminalTransaction` as
+  "a single atomic write" / "atomic from the terminal's perspective", said the renderer "always
+  knows" its live-region anchor, named the pre-RXIV `TerminalTransaction::commit`, and called
+  `?2026` a "wire-atomic write"; the Go binding called sync updates "atomic terminal updates". The
+  implementation (`commit_counted`: a counted write loop + one flush) and Release Contract §9 already
+  said otherwise. They now state one contract: batching, not atomic I/O; a zero-byte failure is a
+  certain no-op retried in place; a torn prefix or a failed flush voids the renderer's physical
+  belief (`Renderer::physical_state_uncertain()`), fullscreen recovery repaints exactly and inline
+  recovery abandons the torn region to scrollback; synchronized-update framing is a presentation
+  request. `Context::set_sync_updates` and `gibson_set_sync_updates` gained doc comments saying
+  so. Historical entries (ROADMAP Phase 1.75/1.85, the v0.5 roadmap, the acid-vs-crash note) are
+  kept and marked superseded. Filesystem atomicity of capture/trace files (`atomic_write`) is a
+  separate, tested contract and is unchanged.
+- `tests/doc_terminal_write_contract.rs` guards the current documentation: it fails on the
+  overclaims #254 found (14 hits at `4e33631`) and on the documents no longer stating the
+  counted-write contract. No code, ABI or behaviour change.
+
 ### Fixed — Rust library (`gibson::input`, text-input painting and layout) and C ABI behaviour, RXV ([#252](https://github.com/femboy2112/libgibson/issues/252))
 - **Text-input content can no longer reach the terminal as a control, and the editor's columns
   agree with the terminal's.** `paint_text_input` placed graphemes with `Surface::set_cell`,

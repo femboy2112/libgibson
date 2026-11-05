@@ -166,8 +166,8 @@ but it is **not a supported Rust API**. Rust consumers should use the safe modul
 above. The stability promise attached to `ffi` is the **C ABI promise** (§5), not a
 Rust-level one.
 
-`transaction::TerminalTransaction` is internal renderer plumbing (the atomic wire
-transaction). As of the 0.1.0 candidate the `transaction` module is `pub(crate)` —
+`transaction::TerminalTransaction` is internal renderer plumbing (the batched wire
+transaction — not atomic I/O, see §9). As of the 0.1.0 candidate the `transaction` module is `pub(crate)` —
 it is **not** part of the public Rust API. (It was briefly `pub`; privatizing it
 before the first tag avoids a later `0.y` break, and it had no external consumers.)
 
@@ -336,12 +336,13 @@ fails CI early.
   release artifact is labeled `linux-x86_64` engineering alpha accordingly.
 - Negotiated terminal capability axes: color depth (TrueColor / 256 / 16 / mono)
   and insert-line support. **Synchronized updates (CSI ?2026) are *requested*, not
-  negotiated:** LibGibson emits the wrappers by default (opt out via
+  negotiated:** LibGibson emits the wrappers by default on a TTY (opt out via
   `Context::set_sync_updates(false)`) and does not gate them on capability
   detection, because unknown DEC private modes are ignored by conforming terminals.
   The `TerminalCapabilities::synchronized_updates` field is currently
-  detected-but-unused; the cadence beacon treats sync on/off as a measured variable,
-  and `?2026` guarantees only a wire-atomic write, not atomic panel presentation.
+  detected-but-unused; the cadence beacon treats sync on/off as a measured variable.
+  `?2026` is a presentation request only: it guarantees neither atomic I/O (a write can
+  still tear — see §9) nor atomic panel presentation.
 - **Glyph realization is an explicit policy/override axis — it is not font
   detection.** A terminal accepting UTF-8/Unicode does **not** imply its font can
   realize every glyph: the Linux kernel **virtual console** (TTY), for example, has a

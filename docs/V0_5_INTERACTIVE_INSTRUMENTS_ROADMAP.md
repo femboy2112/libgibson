@@ -13,7 +13,7 @@ This document changes **proposed v0.5 scope and sequencing**, not the historical
 
 ## 1. Why the course correction is necessary
 
-The v0.4.0 foundation already provides one cell-`Surface` rendering pipeline, a diff/atomic terminal writer, scrollback vs live-region semantics, Taffy layout, glyph/color degradation, headless capture, scene/temporal effects, RGB/Braille/HalfBlock realization, semantic UI, and an experimental audio/HumanMusic engine. The absent interface is *authoritative interactive manipulation*: mouse/focus events, rendered-layout hit targets, world-coordinate conversion, reversible tool gestures, bounded producer snapshots, and linked scientific views.
+The v0.4.0 foundation already provides one cell-`Surface` rendering pipeline, a diff/atomic terminal writer *[historical wording, superseded by #254: a batched writer, not atomic I/O — see the Release Contract §9]*, scrollback vs live-region semantics, Taffy layout, glyph/color degradation, headless capture, scene/temporal effects, RGB/Braille/HalfBlock realization, semantic UI, and an experimental audio/HumanMusic engine. The absent interface is *authoritative interactive manipulation*: mouse/focus events, rendered-layout hit targets, world-coordinate conversion, reversible tool gestures, bounded producer snapshots, and linked scientific views.
 
 SmartChem 3.0 intends a falling-sand/reactive-transport **application**: walls, heater regions, valve-like controls, parameters, and observed chemical states. LibGibson supplies the **instruments**, never the chemical laws, solver, safety decisions or source truth. SmartChem is Python/NumPy/SciPy based; a Rust-only UI is not yet a direct Python consumer SDK.
 

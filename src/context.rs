@@ -134,6 +134,11 @@ impl Context {
         }
     }
 
+    /// Enable or disable synchronized-update framing (`CSI ?2026 h` … `CSI ?2026 l`) around each
+    /// frame; on by default and emitted only on a TTY. It asks the terminal to present each update
+    /// as a unit. It is a presentation request, **not** atomic I/O: a write can still fail after a
+    /// prefix reached the terminal, and the renderer then re-establishes the screen on the next
+    /// frame (`docs/RELEASE_CONTRACT.md` §9).
     pub fn set_sync_updates(&mut self, enabled: bool) {
         self.session.set_sync_updates(enabled);
     }

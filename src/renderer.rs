@@ -522,7 +522,7 @@ impl Renderer {
         }
 
         // Exact wire bytes, including the synchronized-update terminator that
-        // `commit` appends. Do not sample `buffer.len()` before committing.
+        // `commit_counted` appends. Do not sample `buffer.len()` before committing.
         // Split CPU-side generation from the blocking write/flush (#64).
         let generation_duration = frame_start.elapsed();
         let write_start = Instant::now();

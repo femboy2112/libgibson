@@ -11,7 +11,7 @@
 //!   `Context::render` (renderer generation), and every 25th frame a keyboard edit: key →
 //!   command written+flushed (input-to-dispatch) → correlated verdict (command-to-verdict).
 //! * **B. terminal write path** — the renderer committing alternating film frames into an OS pipe
-//!   drained concurrently: the blocking `write_all + flush` time. An OS pipe is not a physical
+//!   drained concurrently: the blocking write + flush time. An OS pipe is not a physical
 //!   terminal; no display frame rate is inferred from it.
 //! * **C. streaming** — the free-running producer (`--hz 0`) consumed at ~60 Hz through the
 //!   bounded coalescing reader: producer model cadence, consumer observation rate, lawful
