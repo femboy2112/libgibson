@@ -390,3 +390,178 @@ fn to_node_factors_through_presentation_so_it_is_a_lowering_not_a_strict_functor
         "to_node factors through Presentation — an object lowering, not a functor on morphisms"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// RXIV Gate E — the overlap counterexample and the sharpened interchange condition.
+// ---------------------------------------------------------------------------------------------
+
+fn ms(n: u64) -> Duration {
+    Duration::from_millis(n)
+}
+
+/// A one-second no-op delay (an operand that occupies time but writes nothing).
+fn idle(d: Duration) -> Effect {
+    Effect::Delay(d, Box::new(Effect::Identity))
+}
+
+/// The four interchange operands `f, g, h, k` assembled both ways.
+fn both_sides(f: &Effect, g: &Effect, h: &Effect, k: &Effect) -> (Effect, Effect) {
+    let left = Effect::sequence([
+        Effect::parallel([f.clone(), g.clone()]),
+        Effect::parallel([h.clone(), k.clone()]),
+    ]);
+    let right = Effect::parallel([
+        Effect::sequence([f.clone(), h.clone()]),
+        Effect::sequence([g.clone(), k.clone()]),
+    ]);
+    (left, right)
+}
+
+fn offset_at(e: &Effect, t: Duration, scene: &Scene, id: SceneId) -> (i32, i32) {
+    let mut p = Presentation::new();
+    e.eval(t, scene, &mut p);
+    p.offset_of(scene, id)
+}
+
+/// **COUNTEREXAMPLE (interchange under duration alignment alone).** RXIV Gate E.
+///
+/// RXIII recorded "interchange holds under duration-aligned tiles" as a conditional law. That
+/// statement is too strong: alignment synchronizes *when* each primitive runs, but not the ORDER in
+/// which the two sides apply their writes. Four one-second operands on ONE entity:
+///   f = idle, g = Position → 10, h = Position → 6, k = idle.
+/// Every duration is 1s, so both sides last 2s and every primitive sees the same local time — yet
+/// the left side evaluates `…g, h…` and the right side `…h, g…`, and Position is a last-write-wins
+/// override. At t = 1.5s: left = h's mid-ramp 3 (h wrote last), right = g's endpoint 10 (g wrote
+/// last). Recorded RED against the RXIII claim (`left: (3, 0)`, `right: (10, 0)`) before this test
+/// was written in its refutation form.
+#[test]
+fn interchange_fails_under_duration_alignment_when_crossed_operands_overwrite_one_channel() {
+    let mut scene = Scene::new();
+    let e = scene.add(SceneEntity::new("e", dot("e")));
+    let t = SceneTarget::Id(e);
+    let one = secs(1);
+    let (f, g, h, k) = (
+        idle(one),
+        Effect::translate(t, (0.0, 0.0), (10.0, 0.0), one),
+        Effect::translate(t, (0.0, 0.0), (6.0, 0.0), one),
+        idle(one),
+    );
+    let (left, right) = both_sides(&f, &g, &h, &k);
+
+    // The synchronization condition HOLDS: identical durations on both sides.
+    assert_eq!(left.duration(), secs(2));
+    assert_eq!(right.duration(), secs(2));
+
+    // Before the seam only g has run, in the same position on both sides: they agree.
+    assert_eq!(offset_at(&left, ms(500), &scene, e), (5, 0));
+    assert_eq!(offset_at(&right, ms(500), &scene, e), (5, 0));
+
+    // After the seam the write ORDER differs: left ends on h, right ends on g.
+    assert_eq!(
+        offset_at(&left, ms(1500), &scene, e),
+        (3, 0),
+        "left: …g, h… — h wrote last"
+    );
+    assert_eq!(
+        offset_at(&right, ms(1500), &scene, e),
+        (10, 0),
+        "right: …h, g… — g wrote last"
+    );
+    assert_eq!(offset_at(&left, secs(2), &scene, e), (6, 0));
+    assert_eq!(offset_at(&right, secs(2), &scene, e), (10, 0));
+
+    // Observable, not a bookkeeping artifact: the rendered frames differ.
+    let (mut pl, mut pr) = (Presentation::new(), Presentation::new());
+    left.eval(ms(1500), &scene, &mut pl);
+    right.eval(ms(1500), &scene, &mut pr);
+    assert_ne!(
+        format!("{:?}", scene.to_node(&pl, 16.0, 4.0)),
+        format!("{:?}", scene.to_node(&pr, 16.0, 4.0))
+    );
+}
+
+/// **VALID UNDER CONDITIONS (S ∧ C).** The positive controls for the sharpened law.
+///
+/// S: `dur(f) = dur(g)`. C: the crossed operands `g` and `h` write commuting channels. With the
+/// SAME timing as the counterexample, restoring C restores interchange at every sampled instant —
+/// (a) by moving `h` to a different entity (disjoint override footprints), and (b) by making the
+/// crossed writes additive `Displace`s on the same entity (integer vector sum commutes).
+#[test]
+fn interchange_holds_under_alignment_when_the_crossed_writes_commute() {
+    let one = secs(1);
+    let samples = [0u64, 250, 500, 1000, 1250, 1500, 2000, 3000];
+
+    // (a) Disjoint footprints.
+    let mut scene = Scene::new();
+    let e = scene.add(SceneEntity::new("e", dot("e")));
+    let e2 = scene.add(SceneEntity::new("e2", dot("e2")));
+    let (f, g, h, k) = (
+        idle(one),
+        Effect::translate(SceneTarget::Id(e), (0.0, 0.0), (10.0, 0.0), one),
+        Effect::translate(SceneTarget::Id(e2), (0.0, 0.0), (6.0, 0.0), one),
+        idle(one),
+    );
+    let (left, right) = both_sides(&f, &g, &h, &k);
+    for t in samples {
+        for id in [e, e2] {
+            assert_eq!(
+                offset_at(&left, ms(t), &scene, id),
+                offset_at(&right, ms(t), &scene, id),
+                "disjoint footprints at {t}ms"
+            );
+        }
+    }
+
+    // (b) Same entity, but the crossed writes are additive displacements.
+    let mut scene = Scene::new();
+    let e = scene.add(SceneEntity::new("e", dot("e")));
+    let t = SceneTarget::Id(e);
+    let (f, g, h, k) = (
+        idle(one),
+        Effect::displace(t, (0.0, 0.0), (10.0, 0.0), one),
+        Effect::displace(t, (0.0, 0.0), (6.0, 0.0), one),
+        idle(one),
+    );
+    let (left, right) = both_sides(&f, &g, &h, &k);
+    for t in samples {
+        assert_eq!(
+            offset_at(&left, ms(t), &scene, e),
+            offset_at(&right, ms(t), &scene, e),
+            "commuting displacements at {t}ms"
+        );
+    }
+    assert_eq!(
+        offset_at(&left, ms(1500), &scene, e),
+        (13, 0),
+        "10 + round(6·0.5)"
+    );
+}
+
+/// **VALID UNDER CONDITIONS — the synchronization condition is `dur(f) = dur(g)`, not "all
+/// tiles aligned".** Derived from `eval`: with `dur(f) = dur(g) = δ`, both sides hand every
+/// primitive the same local time at every global `t` (before δ only `f,g` run; after δ, `f,g` sit
+/// at their ends and `h,k` run at `t − δ`), and both totals are `δ + max(dur h, dur k)`. So the
+/// SECOND tile need not be aligned. Pinned with `dur(h) = 1s ≠ dur(k) = 3s` on independent
+/// entities, sampled across both seams.
+#[test]
+fn first_tile_alignment_with_commuting_writes_suffices_for_interchange() {
+    let (scene, [a, b, c, d]) = quad();
+    let (f, g, h, k) = (
+        slide(a, secs(1)),
+        slide(b, secs(1)),
+        slide(c, secs(1)),
+        slide(d, secs(3)),
+    );
+    let (left, right) = both_sides(&f, &g, &h, &k);
+    assert_eq!(left.duration(), secs(4), "1 + max(1, 3)");
+    assert_eq!(right.duration(), secs(4), "max(1+1, 1+3)");
+    for t in [0u64, 500, 999, 1000, 1500, 2000, 2500, 3500, 4000, 5000] {
+        for id in [a, b, c, d] {
+            assert_eq!(
+                offset_at(&left, ms(t), &scene, id),
+                offset_at(&right, ms(t), &scene, id),
+                "first-tile alignment at {t}ms"
+            );
+        }
+    }
+}
