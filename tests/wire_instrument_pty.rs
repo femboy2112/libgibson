@@ -203,6 +203,50 @@ fn pty_walkthrough_truecolor_80x30() {
     h.assert_quit_restored();
 }
 
+/// RXIII Gate D (consumer navigation) on a live terminal. A field WIDER than the display budget
+/// (300 columns vs the 240-column viewport cap) is streamed to an 80×30 terminal. The ROI viewport
+/// must (a) announce the visible window at boot — the whole field does not fit — anchored at column
+/// 0, (b) FOLLOW the probe as the operator arrows right, advancing the window so the probed column
+/// stays on-screen, and (c) clamp the window at the field's right edge without overscrolling. The
+/// oracle is the window readout through the vt100 screen, on its own row so it never straddles a
+/// wrap. This is the end-to-end proof that the headless ROI correspondence
+/// (`wire_instrument_viewport_roi.rs`) is actually wired to the keyboard.
+#[test]
+fn pty_roi_window_follows_the_probe_across_a_wide_field() {
+    // 300-column field on an 80×30 terminal: non-compact, so the roomy ROI path drives the display.
+    let mut h = Walk::boot(80, 30, 300, 8, false);
+    h.wait_text("source 1");
+
+    // At boot the probe is at column 0; the window shows [0..240) of the 300-column field and says
+    // so — proving the operator is told the field extends past the right edge.
+    h.wait_text("window cols [0..240) rows [0..8) of 300x8");
+
+    // Arrow right 150 times: the probe reaches column 150, and the window re-centers to [30..270)
+    // so the probed column is still on-screen (roi_axis centers: 150 - 240/2 = 30).
+    h.send(&b"\x1b[C".repeat(150));
+    h.wait_text("window cols [30..270) rows [0..8) of 300x8");
+    assert!(
+        h.screen().contains("probe (150,0)"),
+        "the probe readout tracks the navigated column:\n{}",
+        h.screen()
+    );
+
+    // Arrow right well past the end: the probe clamps to the last column (299). The window clamps
+    // to the right edge [60..300) for every probe >= 180, so it is not a unique synchroniser — wait
+    // on the probe column itself (draining every buffered key) and then confirm the window is parked
+    // at the right edge, full, never scrolled past the field.
+    h.send(&b"\x1b[C".repeat(260));
+    h.wait_text("probe (299,0)");
+    assert!(
+        h.screen()
+            .contains("window cols [60..300) rows [0..8) of 300x8"),
+        "the window clamps to the field's right edge without overscrolling:\n{}",
+        h.screen()
+    );
+
+    h.assert_quit_restored();
+}
+
 /// H1 (#143, Gate H) instrumented the `--selfcheck` delivery leg; I2 wires the SAME
 /// issue->confirmed-write+flush leg into the INTERACTIVE path. The HUD shows
 /// `command-dispatch leg: count N`: zero before any send, N after N confirmed Enter deliveries.

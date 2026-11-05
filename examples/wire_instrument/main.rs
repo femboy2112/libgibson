@@ -223,7 +223,17 @@ fn build_root(
                 // renders off-view/distorted while the probe reads real values. And a geometry
                 // whose zoom overflows to non-finite (D3) has NO invertible mapping: show the
                 // still-exact probe value and an explicit notice, never a blank that contradicts it.
-                match viewport::world_view_for(&ext, ppc) {
+                // RXIII Gate D (consumer navigation): the ROOMY path follows the probe with a
+                // region-of-interest pan, so a probe navigated past the display budget on a large
+                // field stays on-screen — the Gate G correspondence, extended to fields larger than
+                // the viewport. The COMPACT path keeps the origin-anchored top-left clip that its
+                // certified honest-truncation marker describes (panning would contradict the marker).
+                let staged = if compact {
+                    viewport::world_view_for(&ext, ppc)
+                } else {
+                    viewport::world_view_for_probe(&ext, ppc, probe)
+                };
+                match staged {
                     Ok((wv, area)) => {
                         let frame = view.render(&wv, area, Colormap::Density, RangePolicy::Auto);
                         let r = &frame.report;
@@ -317,10 +327,37 @@ fn build_root(
                         let hud_probe = format!(
                             "probe ({pix},{piy}) = {sample_txt}    pending set-amplitude = {pending_amp:.1}  [ / ] adjust · Enter send"
                         );
-                        return root
+                        // When the field is larger than the viewport, the ROI pan shows only a
+                        // WINDOW of it — so state which columns/rows are on-screen on their own line,
+                        // else a panned view silently hides that cells 0.. exist. Omitted entirely
+                        // for a field that fits (the window is the whole field), so the ordinary
+                        // readout is unchanged. Its own row (starting at column 0) keeps the readout
+                        // legible rather than trailing off the end of the long probe line.
+                        let (pan_col, pan_row) =
+                            viewport::roi_origin(ext.cols(), ext.rows(), area, ppc, probe);
+                        let vppc = ppc.max(1) as usize;
+                        let view_cols = (area.width as usize / vppc).max(1);
+                        let view_rows = (area.height as usize / vppc).max(1);
+                        let windowed = ext.cols() > view_cols || ext.rows() > view_rows;
+                        let win_line = windowed.then(|| {
+                            format!(
+                                "window cols [{}..{}) rows [{}..{}) of {}x{}  (arrows pan)",
+                                pan_col,
+                                (pan_col + view_cols).min(ext.cols()),
+                                pan_row,
+                                (pan_row + view_rows).min(ext.rows()),
+                                ext.cols(),
+                                ext.rows(),
+                            )
+                        });
+                        let mut root = root
                             .child(Node::raster(frame.surface))
                             .child(Node::text(hud_src, Style::default()))
-                            .child(Node::text(hud_probe, Style::default()))
+                            .child(Node::text(hud_probe, Style::default()));
+                        if let Some(win_line) = win_line {
+                            root = root.child(Node::text(win_line, Style::default()));
+                        }
+                        return root
                             .child(Node::text(hud_edit, Style::default()))
                             .child(Node::text(cmd_leg.to_string(), Style::default()))
                             .child(Node::text(status_line, Style::default()));
