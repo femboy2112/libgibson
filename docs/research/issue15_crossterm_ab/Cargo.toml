@@ -1,0 +1,18 @@
+# Isolated stock-vs-patched crossterm experiment for issue #15 (RXIV Gate G4). NOT part of the
+# LibGibson build: its own workspace root, built only on purpose (see README.md).
+[workspace]
+
+[package]
+name = "issue15-crossterm-ab"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# Stock arm. For the patched arm replace with:
+# crossterm = { git = "https://github.com/femboy2112/crossterm", branch = "fix-1126-unix-mio-readiness-batch" }
+crossterm = "=0.29.0"
+portable-pty = "0.9"
+
+[profile.dev]
+debug = false
