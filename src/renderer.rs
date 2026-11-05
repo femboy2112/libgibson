@@ -380,7 +380,17 @@ impl Renderer {
             return Ok((0, total_cells, 0, false, paint_ctx));
         }
 
-        // 4. ANSI compilation and execution (single atomic transaction)
+        // 4. ANSI compilation and execution (single transaction — NOT atomic I/O, see Gate G3)
+        // Snapshot the emission state this frame is about to advance, so a failure that delivered
+        // ZERO bytes can restore it exactly (the terminal is then provably unchanged).
+        let pre_frame = (
+            self.compiler.cursor_x,
+            self.compiler.cursor_y,
+            self.compiler.current_style,
+            self.last_cursor_x,
+            self.last_cursor_y,
+            self.live_region_height,
+        );
         let mut tx = TerminalTransaction::new(writer, session.sync_updates());
         tx.begin();
 
@@ -507,14 +517,28 @@ impl Renderer {
         let generation_duration = frame_start.elapsed();
         let write_start = Instant::now();
         let bytes_emitted = if tx.buffered_len() > 0 {
-            match tx.commit() {
+            match tx.commit_counted() {
                 Ok(n) => n,
-                Err(e) => {
-                    // The terminal may hold a torn prefix of this frame (Gate G3): never claim it
-                    // was left unchanged — void the physical belief so the next frame
-                    // re-establishes the screen.
+                Err(f) if f.is_certain_noop() => {
+                    // Not one byte of this frame reached the writer: the screen is exactly what
+                    // the renderer believes. Undo this frame's emission-state advance so a retry
+                    // diffs in place (Gate F1's in-place restyle survives).
+                    (
+                        self.compiler.cursor_x,
+                        self.compiler.cursor_y,
+                        self.compiler.current_style,
+                        self.last_cursor_x,
+                        self.last_cursor_y,
+                        self.live_region_height,
+                    ) = pre_frame;
+                    return Err(f.error);
+                }
+                Err(f) => {
+                    // A prefix (or an unconfirmed flush) may have reached the terminal (Gate G3):
+                    // never claim it was left unchanged — void the physical belief so the next
+                    // frame re-establishes the screen.
                     self.poison_physical_state();
-                    return Err(e);
+                    return Err(f.error);
                 }
             }
         } else {
@@ -611,12 +635,14 @@ impl Renderer {
             tx.push(b"\r\n");
         }
 
-        let bytes = match tx.commit() {
+        let bytes = match tx.commit_counted() {
             Ok(n) => n,
-            Err(e) => {
+            // Nothing reached the writer: the terminal is unchanged, the belief stays valid.
+            Err(f) if f.is_certain_noop() => return Err(f.error),
+            Err(f) => {
                 // Possibly torn (Gate G3): void the physical belief before propagating.
                 self.poison_physical_state();
-                return Err(e);
+                return Err(f.error);
             }
         };
 
@@ -953,12 +979,14 @@ impl Renderer {
             }
         }
 
-        let bytes = match tx.commit() {
+        let bytes = match tx.commit_counted() {
             Ok(n) => n,
-            Err(e) => {
+            // Nothing reached the writer: the terminal is unchanged, the belief stays valid.
+            Err(f) if f.is_certain_noop() => return Err(f.error),
+            Err(f) => {
                 // Possibly torn (Gate G3): void the physical belief before propagating.
                 self.poison_physical_state();
-                return Err(e);
+                return Err(f.error);
             }
         };
         // A successful insertion re-establishes a known cursor position (Gate G3).
@@ -1025,12 +1053,14 @@ impl Renderer {
             tx.push(b"\r");
         }
 
-        let bytes = match tx.commit() {
+        let bytes = match tx.commit_counted() {
             Ok(n) => n,
-            Err(e) => {
+            // Nothing reached the writer: the terminal is unchanged, the belief stays valid.
+            Err(f) if f.is_certain_noop() => return Err(f.error),
+            Err(f) => {
                 // Possibly torn (Gate G3): void the physical belief before propagating.
                 self.poison_physical_state();
-                return Err(e);
+                return Err(f.error);
             }
         };
 

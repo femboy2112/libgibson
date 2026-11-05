@@ -298,3 +298,28 @@ fn a_failed_commit_marks_the_physical_state_uncertain_until_a_frame_lands() {
         "the recovery frame re-establishes the canvas"
     );
 }
+
+/// A failure that delivered ZERO bytes is CERTAIN (the terminal is unchanged): the renderer stays
+/// certain and the retry diffs in place — the RXI Gate F1 in-place restyle contract. Only a prefix
+/// (or an unconfirmed flush) makes the physical state uncertain.
+#[test]
+fn a_failure_that_delivered_nothing_keeps_the_physical_state_certain() {
+    for mode in [RenderMode::Fullscreen, RenderMode::Inline] {
+        let (mut r, mut s) = (Renderer::new(mode), TerminalSession::headless(W, H));
+        let mut term = Vec::new();
+        render(&mut r, &mut s, f1(), &mut term).unwrap();
+        let mut dead = FailAfter {
+            budget: 0,
+            sink: Vec::new(),
+        };
+        assert!(render(&mut r, &mut s, f2(), &mut dead).is_err());
+        assert!(dead.sink.is_empty());
+        assert!(!r.physical_state_uncertain(), "{mode:?}: nothing was sent");
+        let mut retry = Vec::new();
+        render(&mut r, &mut s, f2(), &mut retry).unwrap();
+        assert!(
+            !retry.windows(4).any(|w| w == b"\x1b[2J"),
+            "{mode:?}: a certain no-op failure needs no canvas reset"
+        );
+    }
+}
