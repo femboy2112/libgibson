@@ -124,6 +124,11 @@ pub struct Renderer {
     /// longer left stale on screen (closes the J1a/J1b "set depth before the first
     /// render" caveat).
     last_emitted_depth: Option<crate::capability::ColorDepth>,
+    /// A commit FAILED, possibly after a partial write (RXIV Gate G3): the terminal may hold a torn
+    /// prefix of a frame, so the renderer's belief about the physical screen (the previous surface,
+    /// the SGR the compiler thinks is set, the cursor, the inline region) is void. The next frame
+    /// re-establishes everything instead of diffing against a belief that is no longer true.
+    physical_uncertain: bool,
 }
 
 impl Renderer {
@@ -153,7 +158,29 @@ impl Renderer {
             last_dirty_cells: Vec::new(),
             last_exact_changed: 0,
             last_frame_report: FrameReport::default(),
+            physical_uncertain: false,
         }
+    }
+
+    /// Whether the last terminal write failed and the physical screen state is uncertain (the next
+    /// frame will re-establish it). See [`Renderer::render`].
+    pub fn physical_state_uncertain(&self) -> bool {
+        self.physical_uncertain
+    }
+
+    /// Record a failed commit: the terminal may hold any prefix of the bytes that were attempted.
+    /// Nothing can un-send them, so the honest response is to void every belief about the physical
+    /// state and let the next frame re-establish it (RXIV Gate G3).
+    fn poison_physical_state(&mut self) {
+        self.physical_uncertain = true;
+        self.previous_surface = None;
+        self.last_cursor_visible = None;
+        self.last_cursor_desired = None;
+        // The inline region is addressed by relative motion from a cursor row we no longer know:
+        // it cannot be repaired in place, only abandoned.
+        self.live_region_height = 0;
+        self.last_cursor_y = 0;
+        self.last_cursor_x = 0;
     }
 
     /// Coordinates of the cells changed by the most recent rendered frame.
@@ -313,7 +340,10 @@ impl Renderer {
         // wire cost is one CSI K. Wire cost is returned separately as bytes.
         // A fullscreen resize invalidates the whole physical canvas, including
         // blank cells omitted by a fresh diff. Its clear addresses every cell.
-        let clears_canvas = self.mode == RenderMode::Fullscreen && (reanchor || restyle);
+        // RXIV Gate G3: after a failed (possibly torn) commit the canvas holds unknown content, so a
+        // fullscreen recovery frame clears it exactly like a reanchor does.
+        let recover = self.physical_uncertain;
+        let clears_canvas = self.mode == RenderMode::Fullscreen && (reanchor || restyle || recover);
         let dirty_cells = if clears_canvas {
             total_cells
         } else {
@@ -386,6 +416,13 @@ impl Renderer {
                 }
             }
             RenderMode::Inline => {
+                if recover {
+                    // The torn region is abandoned to scrollback: reset SGR, step to a fresh line
+                    // below wherever the cursor was left, erase everything beneath it, and
+                    // allocate a new region there (the full-repaint path below).
+                    tx.push(b"\x1b[0m\r\n\x1b[J");
+                    self.compiler.current_style = Style::default();
+                }
                 if is_full_repaint {
                     if reanchor {
                         // Erase from the current row downward before rebuilding:
@@ -470,7 +507,16 @@ impl Renderer {
         let generation_duration = frame_start.elapsed();
         let write_start = Instant::now();
         let bytes_emitted = if tx.buffered_len() > 0 {
-            tx.commit()?
+            match tx.commit() {
+                Ok(n) => n,
+                Err(e) => {
+                    // The terminal may hold a torn prefix of this frame (Gate G3): never claim it
+                    // was left unchanged — void the physical belief so the next frame
+                    // re-establishes the screen.
+                    self.poison_physical_state();
+                    return Err(e);
+                }
+            }
         } else {
             0
         };
@@ -487,6 +533,7 @@ impl Renderer {
         };
 
         self.previous_surface = Some(next_surface);
+        self.physical_uncertain = false;
         // Physical-emission truth, advanced only now that the transaction committed: the cells on
         // screen carry this depth's SGR. A failed commit returns via `?` above and leaves the prior
         // value, so a retry re-detects the depth change and restyles (Gate F1).
@@ -531,6 +578,12 @@ impl Renderer {
 
         let mut tx = TerminalTransaction::new(writer, session.sync_updates());
         tx.begin();
+        if self.physical_uncertain {
+            // A previous write tore (Gate G3): the live region was abandoned, so start the
+            // committed lines on a fresh, erased line with a known SGR state.
+            tx.push(b"\x1b[0m\r\n\x1b[J");
+            self.compiler.current_style = Style::default();
+        }
 
         if self.live_region_height > 0 {
             if self.last_cursor_y > 0 {
@@ -558,10 +611,20 @@ impl Renderer {
             tx.push(b"\r\n");
         }
 
-        let bytes = tx.commit()?;
+        let bytes = match tx.commit() {
+            Ok(n) => n,
+            Err(e) => {
+                // Possibly torn (Gate G3): void the physical belief before propagating.
+                self.poison_physical_state();
+                return Err(e);
+            }
+        };
 
         // Committing finalizes live state; the next live frame starts fresh.
         self.invalidate_anchor(false);
+        // The lines landed on a fresh line with a known SGR state: the physical position is known
+        // again (a torn region before them stays abandoned in scrollback).
+        self.physical_uncertain = false;
         self.total_commit_bytes += bytes as u64;
         Ok(bytes)
     }
@@ -803,6 +866,12 @@ impl Renderer {
         let mut tx = TerminalTransaction::new(writer, session.sync_updates());
         tx.begin();
         let strategy;
+        if self.physical_uncertain {
+            // A previous write tore (Gate G3): the fast path is already off (no trusted previous
+            // surface); begin the fallback on a fresh, erased line with a known SGR state.
+            tx.push(b"\x1b[0m\r\n\x1b[J");
+            self.compiler.current_style = Style::default();
+        }
 
         if !use_fast {
             // == RepaintFallback Strategy ==
@@ -884,7 +953,16 @@ impl Renderer {
             }
         }
 
-        let bytes = tx.commit()?;
+        let bytes = match tx.commit() {
+            Ok(n) => n,
+            Err(e) => {
+                // Possibly torn (Gate G3): void the physical belief before propagating.
+                self.poison_physical_state();
+                return Err(e);
+            }
+        };
+        // A successful insertion re-establishes a known cursor position (Gate G3).
+        self.physical_uncertain = false;
 
         self.history_insertions += 1;
         self.total_insertion_bytes += bytes as u64;
@@ -947,7 +1025,14 @@ impl Renderer {
             tx.push(b"\r");
         }
 
-        let bytes = tx.commit()?;
+        let bytes = match tx.commit() {
+            Ok(n) => n,
+            Err(e) => {
+                // Possibly torn (Gate G3): void the physical belief before propagating.
+                self.poison_physical_state();
+                return Err(e);
+            }
+        };
 
         self.invalidate_anchor(false);
         self.total_control_bytes += bytes as u64;
