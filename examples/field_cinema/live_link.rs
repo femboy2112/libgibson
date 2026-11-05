@@ -643,6 +643,22 @@ impl LiveSession {
         self.wait_for("a FIELD", |s| s.fields.pop_front())
     }
 
+    /// The next admitted FIELD if one is already decoded, without waiting (interactive consumers
+    /// that must keep painting). An ordered end is returned once no earlier frame is pending.
+    pub fn poll_field(&mut self) -> Result<Option<LiveField>, LiveError> {
+        self.pump();
+        if let Some(t) = &self.terminal {
+            return Err(t.clone());
+        }
+        if let Some(f) = self.fields.pop_front() {
+            return Ok(Some(f));
+        }
+        if let Some(e) = &self.ended {
+            return Err(e.clone());
+        }
+        Ok(None)
+    }
+
     /// The newest admitted FIELD, discarding older queued ones (streaming consumers).
     pub fn latest_field(&mut self) -> Result<Option<LiveField>, LiveError> {
         self.pump();

@@ -23,14 +23,19 @@
 //! `tests/field_cinema_causal_oracle.rs`.
 
 mod cinema;
+mod film;
 mod live;
 mod live_link;
 // The certified presentation-side transport, command channel, and source classifier from the
 // scientific instrument — reused, not reimplemented (RXIV Gate B).
+#[path = "../wire_instrument/capture.rs"]
+mod capture;
 #[path = "../wire_instrument/channel.rs"]
 mod channel;
 #[path = "../wire_instrument/input.rs"]
 mod input;
+#[path = "../wire_instrument/trace.rs"]
+mod trace;
 #[path = "../wire_instrument/transport.rs"]
 mod transport;
 
@@ -64,7 +69,13 @@ fn main() -> ExitCode {
     if args.iter().any(|a| a == "--selfcheck") {
         return selfcheck();
     }
+    if let Some(dir) = arg_value(&args, "--replay-film") {
+        return replay_film_cmd(dir);
+    }
     if args.iter().any(|a| a == "--live") {
+        if args.iter().any(|a| a == "--interactive") {
+            return run_interactive_film(&args);
+        }
         return run_live(&args);
     }
 
@@ -193,6 +204,13 @@ fn print_help() {
          --suppress       (with --live) --freeze-amplitude the producer: the honest non-transform\n\
          --reduced-motion (with --live) show only the key beats' frames, not every drift\n\
          --replay         (with --live) run the film twice and prove it is byte-identical\n\
+         --interactive    (with --live) the interactive instrument-film: arrows probe, [ ] target,\n\
+                          Enter intervene, space step, a auto, r resolve, q quit\n\
+         --step           (with --interactive) start paused (space advances one frame)\n\
+         --shape ring     (with --interactive) the non-Gaussian holdout source\n\
+         --mask-every N   (with --interactive) a deterministic sparse mask on the source\n\
+         --record DIR     (with --interactive) commit the film's capture + causal trace to DIR\n\
+         --replay-film DIR  re-derive a recorded film's decisions with no producer\n\
          --help           this message\n\n\
          --live spawns bindings/python/producer.py; set GIBSON_PYTHON to pick the interpreter."
     );
@@ -449,6 +467,240 @@ fn film_frames(suppress: bool) -> Result<(Vec<Beat>, Surface), LiveError> {
     beats.push(arc.beat());
     session.finish(SHUTDOWN_GRACE);
     Ok((beats, surf1))
+}
+
+// ---------------------------------------------------------------------------
+// --live --interactive — the interactive instrument-film (RXIV Gate C) with causal
+// record/replay (Gate D4). The scripted --live above stays the deterministic CI film.
+// ---------------------------------------------------------------------------
+
+fn arg_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.as_str())
+}
+
+fn run_interactive_film(args: &[String]) -> ExitCode {
+    use film::{Film, FilmConfig};
+    let has = |f: &str| args.iter().any(|a| a == f);
+    let mut extra: Vec<&str> = Vec::new();
+    if let Some(shape) = arg_value(args, "--shape") {
+        extra.extend(["--shape", shape]);
+    }
+    if let Some(m) = arg_value(args, "--mask-every") {
+        extra.extend(["--mask-every", m]);
+    }
+    let spec = ProducerSpec::reference_with(has("--suppress"), &extra);
+    let mut session = match LiveSession::spawn(&spec, LIVE_SOURCE) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("field_cinema --live --interactive FAILED — {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let pid = session.producer_pid().unwrap_or(0);
+    // If terminal init fails the session drops here and reaps the producer.
+    let mut ctx = match gibson::context::Context::fullscreen() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("field_cinema --live --interactive: terminal init failed — {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut film = Film::new(FilmConfig {
+        reduced_motion: has("--reduced-motion"),
+        auto_advance: !has("--step"),
+    });
+    film.set_producer_pid(session.producer_pid());
+    let loop_result = film_loop(&mut ctx, &mut session, &mut film);
+    let restore_result = ctx.restore();
+    let end = session.finish(SHUTDOWN_GRACE);
+
+    let mut ok = loop_result.is_ok() && restore_result.is_ok() && film.failure().is_none();
+    if let Some(dir) = arg_value(args, "--record") {
+        match record_film(std::path::Path::new(dir), film.record()) {
+            Ok((cap, causal)) => println!(
+                "film-record: {dir} ({} frames{}, {} events; capture-digest {cap:016x} causal-digest {causal:016x})",
+                film.record().frames.len(),
+                if film.record().frames_truncated { ", truncated" } else { "" },
+                film.record().trace.len(),
+            ),
+            Err(e) => {
+                eprintln!("film-record FAILED: {e}");
+                ok = false;
+            }
+        }
+    }
+    println!("film-path: {}", film::beat_path(film.beats()));
+    println!(
+        "film-beats-digest: {:016x}",
+        film::beats_digest(film.beats())
+    );
+    println!(
+        "film-summary: transforms {} · outcome {:?} · producer pid {pid} exit {} ({})",
+        film.arc().transforms(),
+        film.arc().last_outcome(),
+        end.exit.map_or("unknown".to_string(), |s| s.to_string()),
+        if end.graceful {
+            "graceful"
+        } else {
+            "killed after grace"
+        },
+    );
+    if let Some(f) = film.failure() {
+        println!("film-failure: {f}");
+    }
+    if let Err(e) = loop_result {
+        eprintln!("field_cinema --live --interactive: {e}");
+    }
+    if ok {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// The interactive loop: inbound frames (in stream order) then the correlated verdict, then input,
+/// then at most one auto-advance in flight, then paint.
+fn film_loop(
+    ctx: &mut gibson::context::Context,
+    session: &mut LiveSession,
+    film: &mut film::Film,
+) -> io::Result<()> {
+    use film::FilmAction;
+    use gibson::capability::ColorDepth;
+    use gibson::input::Event;
+    use std::time::{Duration, Instant};
+    let start = Instant::now();
+    let mut awaiting_field = true; // seq 1 arrives unsolicited
+    let mut last_advance = Instant::now();
+    loop {
+        let ev = ctx.run_once(Duration::from_millis(16))?;
+        let now = start.elapsed();
+        // Frames before the verdict: a frame that predates the ACK reaches the arc while it is
+        // still in INTERVENE, where it neither calibrates nor evidences.
+        loop {
+            match session.poll_field() {
+                Ok(Some(f)) => {
+                    film.on_field(f, now);
+                    awaiting_field = false;
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    film.on_failure(&e, now);
+                    break;
+                }
+            }
+        }
+        if let Some(id) = film.pending() {
+            match session.poll_verdict(id) {
+                Ok(Some(st)) => film.on_verdict(id, st, now),
+                Ok(None) => {}
+                Err(e) => film.on_failure(&e, now),
+            }
+        }
+        if let Some(Event::Key(k)) = &ev {
+            match film.on_key(k.code, now) {
+                FilmAction::Quit => {
+                    film.finish(now);
+                    break;
+                }
+                FilmAction::Submit(v) => match session.submit_amplitude(v) {
+                    Ok(id) => film.on_submitted(id, trace::Admission::Accepted, now),
+                    Err(LiveError::Transport {
+                        command_id: Some(id),
+                        uncertain: true,
+                        ..
+                    }) => film.on_submitted(id, trace::Admission::TransportUncertain, now),
+                    Err(e) => film.on_submit_failed(&e, now),
+                },
+                FilmAction::Step => {
+                    if !awaiting_field && film.failure().is_none() {
+                        match session.advance() {
+                            Ok(()) => {
+                                awaiting_field = true;
+                                last_advance = Instant::now();
+                            }
+                            Err(e) => film.on_failure(&e, now),
+                        }
+                    }
+                }
+                FilmAction::Nothing => {}
+            }
+        }
+        if film.auto()
+            && !awaiting_field
+            && film.pending().is_none()
+            && last_advance.elapsed() >= film::AUTO_PERIOD
+        {
+            match session.advance() {
+                Ok(()) => {
+                    awaiting_field = true;
+                    last_advance = Instant::now();
+                }
+                Err(e) => film.on_failure(&e, now),
+            }
+        }
+        let (w, h) = ctx.session.terminal_size();
+        let mono = ctx.session.color_depth() == ColorDepth::Mono;
+        ctx.set_root(film.view(now, w, h, mono));
+    }
+    Ok(())
+}
+
+/// Commit the film's record atomically: `film.capture` (frames) and `film.trace` (causal trace).
+fn record_film(dir: &std::path::Path, rec: &film::FilmRecord) -> io::Result<(u64, u64)> {
+    std::fs::create_dir_all(dir)?;
+    capture::write_capture_file(
+        &dir.join("film.capture"),
+        &rec.frames,
+        &capture::CaptureLimits::default(),
+    )?;
+    capture::atomic_write(&dir.join("film.trace"), |w| {
+        trace::write_trace(w, &rec.trace).map_err(io::Error::from)
+    })?;
+    Ok((
+        capture::content_digest(&rec.frames),
+        rec.trace.causal_digest(),
+    ))
+}
+
+/// Replay a recorded film with NO producer: re-derive its decisions from the record alone.
+fn replay_film_cmd(dir: &str) -> ExitCode {
+    let d = std::path::Path::new(dir);
+    let read = || -> Result<(Vec<capture::CapturedFrame>, trace::CausalTrace), String> {
+        let cap = std::fs::read(d.join("film.capture")).map_err(|e| e.to_string())?;
+        let tr = std::fs::read(d.join("film.trace")).map_err(|e| e.to_string())?;
+        let frames = capture::read_capture(&mut cap.as_slice()).map_err(|e| e.to_string())?;
+        let t = trace::read_trace(&mut tr.as_slice()).map_err(|e| e.to_string())?;
+        Ok((frames, t))
+    };
+    let (frames, t) = match read() {
+        Ok(v) => v,
+        Err(e) => {
+            println!("film-replay FAILED: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match film::replay_film(&frames, &t) {
+        Ok(r) => {
+            println!("film-path: {}", film::beat_path(&r.beats));
+            println!("film-beats-digest: {:016x}", film::beats_digest(&r.beats));
+            println!(
+                "film-replay: transforms {} · outcome {:?} · capture-digest {:016x} causal-digest {:016x}",
+                r.transforms,
+                r.last_outcome,
+                capture::content_digest(&frames),
+                t.causal_digest(),
+            );
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            println!("film-replay FAILED: {e:?}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

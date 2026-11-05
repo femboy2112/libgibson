@@ -53,6 +53,44 @@ def gaussian_field(cols, rows, t, amplitude=1.0):
     return data
 
 
+def ring_field(cols, rows, t, amplitude=1.0):
+    """A NON-Gaussian holdout source (RXIV Gate C): a bright arc travelling around a ring. Natural
+    evolution rotates the arc; `amplitude` scales the whole field (so a set-amplitude edit is the
+    same causal lever as on the Gaussian), but the geometry -- an annulus, not a compact lobe --
+    exercises framing and observation code that a single bump never would."""
+    cx, cy = (cols - 1) / 2.0, (rows - 1) / 2.0
+    radius = 0.36 * min(cols, rows)
+    width = max(1.5, 0.08 * min(cols, rows))
+    phase = t * 0.35
+    data = []
+    for iy in range(rows):
+        for ix in range(cols):
+            dx, dy = ix - cx, iy - cy
+            d = math.hypot(dx, dy)
+            radial = math.exp(-((d - radius) ** 2) / (2.0 * width * width))
+            arc = 0.75 + 0.25 * math.cos(math.atan2(dy, dx) - phase)
+            data.append(amplitude * radial * arc)
+    return data
+
+
+def field_mask(cols, rows, every):
+    """A deterministic sparse mask (True = present): cell (ix, iy) is masked when
+    (7*ix + 3*iy) % every == 0. `every` == 0 means no mask at all."""
+    if every <= 0:
+        return None
+    return [((7 * ix + 3 * iy) % every) != 0 for iy in range(rows) for ix in range(cols)]
+
+
+def field_for(args, seq, amplitude):
+    """The configured source's field at `seq` (shape + optional mask)."""
+    shape = getattr(args, "shape", "gaussian")
+    if shape == "ring":
+        data = ring_field(args.cols, args.rows, float(seq), amplitude)
+    else:
+        data = gaussian_field(args.cols, args.rows, float(seq), amplitude)
+    return data, field_mask(args.cols, args.rows, getattr(args, "mask_every", 0))
+
+
 def classify_command(kind, arg):
     """Decide a return-channel command's fate against this producer's contract. Returns
     ``(status, value)``: the matching ``ACK_*`` status and, for an acknowledged
@@ -112,11 +150,11 @@ def drain_and_ack_commands(decoder_buf, source, state):
 def _emit_field(out, args, seq, amplitude):
     """Write one FIELD frame for `seq` at `amplitude`. Byte-for-byte what serve() emits per
     tick, so the lockstep driver and the streaming server produce identical wire bytes."""
-    data = gaussian_field(args.cols, args.rows, float(seq), amplitude)
+    data, mask = field_for(args, seq, amplitude)
     out.write(wire.encode_field(
         source=args.source, epoch=args.epoch, sequence=seq,
         cols=args.cols, rows=args.rows, origin=(args.origin_x, args.origin_y),
-        cell_w=args.cell_w, cell_h=args.cell_h, model_tick=seq, data=data))
+        cell_w=args.cell_w, cell_h=args.cell_h, model_tick=seq, data=data, mask=mask))
     out.flush()
 
 
@@ -188,7 +226,7 @@ def serve(args):
     import time
 
     for seq in range(1, args.frames + 1):
-        data = gaussian_field(args.cols, args.rows, float(seq), state["amplitude"])
+        data, mask = field_for(args, seq, state["amplitude"])
         frame = wire.encode_field(
             source=args.source,
             epoch=args.epoch,
@@ -200,6 +238,7 @@ def serve(args):
             cell_h=args.cell_h,
             model_tick=seq,  # this producer's logical tick == its sequence here
             data=data,
+            mask=mask,
         )
         out.write(frame)
         out.flush()
@@ -244,6 +283,10 @@ def main():
                     help="deterministic frame-at-a-time driver for the causal test (test-only)")
     ap.add_argument("--freeze-amplitude", action="store_true",
                     help="ack a valid set-amplitude Acknowledged but do NOT apply it (causal mutation control)")
+    ap.add_argument("--shape", choices=["gaussian", "ring"], default="gaussian",
+                    help="field geometry: the Gaussian bump (default) or the non-Gaussian ring holdout")
+    ap.add_argument("--mask-every", type=int, default=0,
+                    help="mask cells where (7*ix + 3*iy) %% N == 0 (0 = no mask)")
     args = ap.parse_args()
 
     if args.golden:
