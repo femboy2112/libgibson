@@ -182,24 +182,82 @@ fn dist2(a: (u8, u8, u8), b: (u8, u8, u8)) -> u32 {
     (dr * dr + dg * dg + db * db) as u32
 }
 
+/// The six levels of the xterm 6x6x6 colour cube (indices 16..=231), per channel.
+const CUBE_LEVELS: [u8; 6] = [0, 95, 135, 175, 215, 255];
+
+/// For each 8-bit channel value, the index of the nearest cube level; on a tie (a value exactly
+/// between two levels) the LOWER index, which is what a first-minimum scan in index order picks.
+const NEAREST_CUBE_LEVEL: [u8; 256] = {
+    let mut t = [0u8; 256];
+    let mut v = 0;
+    while v < 256 {
+        let mut best = 0;
+        let mut best_d = u32::MAX;
+        let mut k = 0;
+        while k < 6 {
+            let diff = v as i32 - CUBE_LEVELS[k] as i32;
+            let d = (diff * diff) as u32;
+            if d < best_d {
+                best_d = d;
+                best = k;
+            }
+            k += 1;
+        }
+        t[v] = best as u8;
+        v += 1;
+    }
+    t
+};
+
+/// Nearest xterm-256 index (16..=255) by squared RGB distance, in O(1) (#260).
+///
+/// Exactly equal to scanning the cube (16..=231) and then the grey ramp (232..=255) in index
+/// order, keeping the first strict minimum — the previous implementation, kept as the test
+/// oracle `nearest256_scan` and checked against this one over all 2^24 inputs:
+///
+/// * Cube: squared distance is a sum of independent per-channel terms, so the minimum is the
+///   per-channel nearest level, and the scan's first minimum (index `16 + 36r + 6g + b`
+///   ascending, i.e. lexicographic `(r, g, b)`) is the lowest tied level in every channel.
+/// * Grey: `sum_c (c - v)^2` is a parabola in `v` centred on the channel mean, so only the two
+///   ramp levels around the mean can be nearest; both are compared exactly, lower index first.
+/// * A grey replaces the cube winner only on a strictly smaller distance, as in the scan.
 fn nearest256(rgb: (u8, u8, u8)) -> u8 {
-    // Prefer the 6x6x6 color cube (16..=231); gray ramp is handled naturally by
-    // the cube except for near-neutral values, which we snap to the ramp.
-    let mut best = 16u8;
-    let mut best_d = u32::MAX;
-    for idx in 16u16..=231 {
-        let i = idx as u8;
-        let c = crate::cell::xterm_rgb(i);
-        let d = dist2(rgb, c);
+    let (ri, gi, bi) = (
+        NEAREST_CUBE_LEVEL[rgb.0 as usize],
+        NEAREST_CUBE_LEVEL[rgb.1 as usize],
+        NEAREST_CUBE_LEVEL[rgb.2 as usize],
+    );
+    let cube = (
+        CUBE_LEVELS[ri as usize],
+        CUBE_LEVELS[gi as usize],
+        CUBE_LEVELS[bi as usize],
+    );
+    let mut best = 16 + 36 * ri + 6 * gi + bi;
+    let mut best_d = dist2(rgb, cube);
+    // Grey ramp v_k = 8 + 10k, k in 0..=23. The mean m minimises the parabola; the nearest ramp
+    // levels to m are k0 = floor((m - 8) / 10) and k0 + 1 (clamped), compared lowest-first.
+    let sum = rgb.0 as i32 + rgb.1 as i32 + rgb.2 as i32;
+    // floor((sum/3 - 8) / 10) == floor((sum - 24) / 30) for integers (floor division).
+    let k0 = (sum - 24).div_euclid(30).clamp(0, 23);
+    for k in [k0, (k0 + 1).min(23)] {
+        let v = (8 + 10 * k) as u8;
+        let d = dist2(rgb, (v, v, v));
         if d < best_d {
             best_d = d;
-            best = i;
+            best = 232 + k as u8;
         }
     }
-    for idx in 232u16..=255 {
+    best
+}
+
+/// The pre-#260 implementation: a first-minimum scan over all 240 entries. Test oracle only.
+#[cfg(test)]
+fn nearest256_scan(rgb: (u8, u8, u8)) -> u8 {
+    let mut best = 16u8;
+    let mut best_d = u32::MAX;
+    for idx in 16u16..=255 {
         let i = idx as u8;
-        let c = crate::cell::xterm_rgb(i);
-        let d = dist2(rgb, c);
+        let d = dist2(rgb, crate::cell::xterm_rgb(i));
         if d < best_d {
             best_d = d;
             best = i;
@@ -286,6 +344,83 @@ pub fn quantize_style(style: crate::cell::Style, depth: ColorDepth) -> crate::ce
 
 #[cfg(test)]
 mod tests {
+
+    /// Channel values that exercise every decision boundary: cube-level midpoints (where the
+    /// per-channel nearest level ties or flips) and a dense stride over the whole range.
+    fn boundary_channel_values() -> Vec<u8> {
+        let mut v: Vec<u8> = (0..=255).step_by(8).collect();
+        for m in [47u8, 48, 115, 155, 195, 235] {
+            for d in [m - 1, m, m + 1] {
+                v.push(d);
+            }
+        }
+        v.extend([
+            1, 2, 3, 7, 8, 9, 13, 238, 239, 247, 248, 249, 252, 253, 254, 255,
+        ]);
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+
+    #[test]
+    fn nearest256_equals_the_full_scan_on_every_boundary_combination() {
+        let vals = boundary_channel_values();
+        for &r in &vals {
+            for &g in &vals {
+                for &b in &vals {
+                    assert_eq!(
+                        super::nearest256((r, g, b)),
+                        super::nearest256_scan((r, g, b)),
+                        "rgb ({r},{g},{b})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nearest256_equals_the_full_scan_along_the_grey_axis_and_its_neighbours() {
+        // The grey ramp competes with the cube near neutral colours; walk every grey and every
+        // one-step neighbour in each channel.
+        for v in 0..=255u8 {
+            for (dr, dg, db) in [
+                (0i16, 0i16, 0i16),
+                (1, 0, 0),
+                (0, 1, 0),
+                (0, 0, 1),
+                (-1, 0, 0),
+                (0, -1, 0),
+                (0, 0, -1),
+                (1, 1, -1),
+            ] {
+                let c = |x: i16| (i16::from(v) + x).clamp(0, 255) as u8;
+                let rgb = (c(dr), c(dg), c(db));
+                assert_eq!(
+                    super::nearest256(rgb),
+                    super::nearest256_scan(rgb),
+                    "rgb {rgb:?}"
+                );
+            }
+        }
+    }
+
+    /// The whole input domain: all 2^24 colours. Run with
+    /// `cargo test --release --lib nearest256_exhaustive -- --ignored` (a few seconds in release).
+    #[test]
+    #[ignore = "exhaustive 2^24 sweep; run in release"]
+    fn nearest256_exhaustive() {
+        for r in 0..=255u8 {
+            for g in 0..=255u8 {
+                for b in 0..=255u8 {
+                    assert_eq!(
+                        super::nearest256((r, g, b)),
+                        super::nearest256_scan((r, g, b)),
+                        "rgb ({r},{g},{b})"
+                    );
+                }
+            }
+        }
+    }
     use super::*;
 
     #[test]

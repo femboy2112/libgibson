@@ -21,6 +21,15 @@ line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 remains **prepar
 `9a899e1`** (release state 1 — not tagged, not released); a future `v0.6.0` tag names that commit,
 not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
 
+### Changed — Rust library (`gibson::capability`), performance ([#260](https://github.com/femboy2112/libgibson/issues/260))
+- **256-colour quantization is O(1) and exactly equal to the old scan.** `nearest256` no longer
+  scans 240 palette entries per colour: the cube's nearest entry is the per-channel nearest level
+  (lowest on ties) and the grey ramp contributes only the two levels around the channel mean, the
+  grey winning only on a strictly smaller distance — the old scan's exact rule. Proven equal over
+  all 2²⁴ colours (`nearest256_exhaustive`, run in release). On the v0.7 raster-ingest bench the
+  256-colour render stage drops from 8.2 / 14.7 / 35.1 ms to 0.37 / 0.85 / 1.96 ms (p50 at
+  80×25 / 120×40 / 200×60) with byte-identical frames. No output change.
+
 ### Fixed — Rust library (`gibson::context`) and C ABI behaviour ([#259](https://github.com/femboy2112/libgibson/issues/259))
 - **A headless `Context` no longer reads the real terminal.** `TerminalSession::headless` presents
   as a TTY so rendering behaves as on a terminal, and `Context::poll_event` / `run_once` (and
