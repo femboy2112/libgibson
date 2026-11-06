@@ -261,3 +261,135 @@ fn a_headless_poll_never_waits() {
         t.elapsed()
     );
 }
+
+#[test]
+fn the_paste_text_is_copied_at_push_time() {
+    let ctx = Ctx::headless(10, 3);
+    let mut bytes = b"copied, not borrowed\0".to_vec();
+    let ev = GibsonEvent {
+        paste_str: bytes.as_ptr().cast(),
+        ..blank(GIBSON_EVENT_PASTE)
+    };
+    assert_eq!(ctx.push(&ev), GibsonStatus::Ok);
+    // The caller reuses and frees its buffer before the event is delivered.
+    bytes.iter_mut().for_each(|b| *b = b'X');
+    drop(bytes);
+    let got = ctx.poll();
+    assert_eq!(meaning(&got).5.as_deref(), Some("copied, not borrowed"));
+}
+
+#[test]
+fn only_the_fields_an_event_uses_need_to_be_initialised() {
+    use std::mem::MaybeUninit;
+    let ctx = Ctx::headless(10, 3);
+    // A C caller that sets just event_type, key_code and modifiers (the header allows it).
+    let mut raw = MaybeUninit::<GibsonEvent>::uninit();
+    let p = raw.as_mut_ptr();
+    unsafe {
+        ptr::addr_of_mut!((*p).event_type).write(GIBSON_EVENT_KEY);
+        ptr::addr_of_mut!((*p).key_code).write(u32::from('k'));
+        ptr::addr_of_mut!((*p).modifiers).write(GIBSON_MOD_ALT_BITS);
+    }
+    assert_eq!(unsafe { gibson_push_event(ctx.0, p) }, GibsonStatus::Ok);
+    // Poll writes every field, so a polled event can be pushed straight back. The buffer starts
+    // as 0xAA garbage (initialised, so reading it back is defined either way).
+    let mut polled = MaybeUninit::<GibsonEvent>::uninit();
+    unsafe { ptr::write_bytes(polled.as_mut_ptr(), 0xAA, 1) };
+    assert_eq!(
+        unsafe { gibson_poll_event(ctx.0, 0, polled.as_mut_ptr()) },
+        GibsonStatus::Ok
+    );
+    let polled = unsafe { polled.assume_init() };
+    assert_eq!(polled._pad, [0; 3]);
+    assert_eq!(
+        (polled.event_type, polled.key_code, polled.modifiers),
+        (GIBSON_EVENT_KEY, u32::from('k'), GIBSON_MOD_ALT_BITS)
+    );
+    assert_eq!(ctx.push(&polled), GibsonStatus::Ok);
+    assert_eq!(meaning(&ctx.poll()), meaning(&polled));
+}
+
+#[test]
+fn a_delivered_resize_schedules_a_render_and_a_pushed_one_does_not() {
+    let ctx = Ctx::headless(20, 5);
+    let mut root = ptr::null_mut();
+    assert_eq!(
+        unsafe { gibson_node_text(c"x".as_ptr(), ptr::null(), GIBSON_WRAP_NONE, &mut root) },
+        GibsonStatus::Ok
+    );
+    assert_eq!(
+        unsafe { gibson_set_root_node(ctx.0, root) },
+        GibsonStatus::Ok
+    );
+    assert_eq!(unsafe { gibson_render(ctx.0) }, GibsonStatus::Ok);
+    // Rendered when due, never forced: polls render_if_due for `window`, reporting whether it drew.
+    let drew_within = |window: Duration| {
+        let end = Instant::now() + window;
+        while Instant::now() < end {
+            let mut rendered = 0;
+            assert_eq!(
+                unsafe { gibson_render_if_due(ctx.0, &mut rendered) },
+                GibsonStatus::Ok
+            );
+            if rendered != 0 {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        false
+    };
+    assert!(
+        !drew_within(Duration::from_millis(100)),
+        "nothing changed, yet it drew"
+    );
+    assert_eq!(ctx.push(&resize(41, 9)), GibsonStatus::Ok);
+    assert!(
+        !drew_within(Duration::from_millis(100)),
+        "a queued resize already scheduled a render"
+    );
+    assert_eq!(ctx.poll().event_type, GIBSON_EVENT_RESIZE);
+    assert!(
+        drew_within(Duration::from_secs(2)),
+        "a delivered resize did not schedule a render"
+    );
+    let (mut w, mut h) = (0u16, 0u16);
+    assert_eq!(
+        unsafe { gibson_get_frame_size(ctx.0, &mut w, &mut h) },
+        GibsonStatus::Ok
+    );
+    assert_eq!((w, h), (41, 9));
+}
+
+#[test]
+fn an_inline_resize_sets_the_width_and_bounds_the_height() {
+    let inline_frame = |lines: usize| {
+        let mut ctx = ptr::null_mut();
+        assert_eq!(
+            unsafe { gibson_create_headless_context(GIBSON_MODE_INLINE, 20, 5, &mut ctx) },
+            GibsonStatus::Ok
+        );
+        let ctx = Ctx(ctx);
+        let text = CString::new(vec!["line"; lines].join("\n")).unwrap();
+        let mut root = ptr::null_mut();
+        assert_eq!(
+            unsafe { gibson_node_text(text.as_ptr(), ptr::null(), GIBSON_WRAP_NONE, &mut root) },
+            GibsonStatus::Ok
+        );
+        assert_eq!(
+            unsafe { gibson_set_root_node(ctx.0, root) },
+            GibsonStatus::Ok
+        );
+        assert_eq!(ctx.push(&resize(40, 6)), GibsonStatus::Ok);
+        assert_eq!(ctx.poll().event_type, GIBSON_EVENT_RESIZE);
+        assert_eq!(unsafe { gibson_render(ctx.0) }, GibsonStatus::Ok);
+        let (mut w, mut h) = (0u16, 0u16);
+        assert_eq!(
+            unsafe { gibson_get_frame_size(ctx.0, &mut w, &mut h) },
+            GibsonStatus::Ok
+        );
+        (w, h)
+    };
+    // As tall as the content, at most rows - 1, and always the new width.
+    assert_eq!(inline_frame(1), (40, 1));
+    assert_eq!(inline_frame(20), (40, 5));
+}

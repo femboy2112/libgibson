@@ -256,7 +256,9 @@ gibson_status_t gibson_clear_live_region(gibson_context_t *ctx);
 /* On a terminal context, reads the terminal (waiting up to timeout_ms). On a HEADLESS context,
    delivers the events queued by gibson_push_event, oldest first, each exactly once, without
    waiting; GIBSON_EVENT_NONE when the queue is empty. A delivered RESIZE also sets the headless
-   geometry, so the next render lays out at cols x rows. */
+   terminal size and schedules a render, as a real resize does: a FULLSCREEN frame is then
+   cols x rows; an INLINE frame is cols wide and, as on a terminal, as tall as its content (at most
+   rows - 1). Every field of out_event is written, so a polled event can be pushed back as is. */
 gibson_status_t gibson_poll_event(gibson_context_t *ctx, uint32_t timeout_ms, gibson_event_t *out_event);
 
 /* Most undelivered events one headless context holds (see gibson_push_event). */
@@ -269,7 +271,7 @@ gibson_status_t gibson_poll_event(gibson_context_t *ctx, uint32_t timeout_ms, gi
              always the special keys (gibson_poll_event encodes them the same way).
      PASTE:  paste_str is a non-NULL, NUL-terminated UTF-8 string; it is copied.
      RESIZE: cols and rows are both non-zero.
-   Fields the event type does not use are ignored. Returns GIBSON_ERR_INVALID_PARAM for a NULL
+   Fields the event type does not use are ignored and may be left uninitialized. Returns GIBSON_ERR_INVALID_PARAM for a NULL
    argument, a terminal (non-headless) context or an unrepresentable event, and
    GIBSON_ERR_QUEUE_FULL when GIBSON_EVENT_QUEUE_CAPACITY events are undelivered. A refused event
    is not queued, and nothing already queued is displaced. (ABI v1, additive) */

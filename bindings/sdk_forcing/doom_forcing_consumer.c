@@ -145,6 +145,10 @@ int main(void) {
         }
     }
 
+    /* The frames are pinned: the same 240 frames the v0.6 consumer rendered from simulated input
+       (docs/V07_BASELINE.md). A different value means the frames changed. */
+    if (checksum != 15734824182601092804ULL) { free(bulk); return fail("frame checksum != the pinned 15734824182601092804"); }
+
     /* ---- (3) A live mid-session color-depth change restyles the readback ---- */
     gibson_style_t styled;
     memset(&styled, 0, sizeof styled);

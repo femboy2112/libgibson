@@ -912,6 +912,8 @@ pub unsafe extern "C" fn gibson_poll_event(
         (*out_event).event_type = GIBSON_EVENT_NONE;
         (*out_event).key_code = 0;
         (*out_event).modifiers = 0;
+        // Every field written, padding included: a polled event can be pushed back as is.
+        (*out_event)._pad = [0; 3];
         (*out_event).cols = 0;
         (*out_event).rows = 0;
         (*out_event).paste_str = ptr::null();
@@ -988,14 +990,19 @@ pub unsafe extern "C" fn gibson_poll_event(
 /// Translates a C event into an engine event for [`gibson_push_event`]: the inverse of the
 /// encoding [`gibson_poll_event`] writes, so a pushed event polls back unchanged.
 ///
+/// Reads only the fields the event's type uses, each through the raw pointer: the header lets a
+/// caller leave the other fields (and `_pad`) uninitialised, so the struct is never borrowed whole.
+///
 /// # Safety
-/// For a paste event, `ev.paste_str` must be null or point to a NUL-terminated string.
-unsafe fn event_from_c(ev: &GibsonEvent) -> Result<Event, String> {
-    match ev.event_type {
+/// `ev` must point to a properly aligned `gibson_event_t` whose `event_type` and the fields its
+/// type uses are initialised; for a paste, `paste_str` is null or NUL-terminated.
+unsafe fn event_from_c(ev: *const GibsonEvent) -> Result<Event, String> {
+    match ptr::addr_of!((*ev).event_type).read() {
         GIBSON_EVENT_KEY => {
-            let modifiers = KeyModifiers::from_bits(ev.modifiers)
-                .ok_or_else(|| format!("unknown modifier bits {:#04x}", ev.modifiers))?;
-            let code = match ev.key_code {
+            let bits = ptr::addr_of!((*ev).modifiers).read();
+            let modifiers = KeyModifiers::from_bits(bits)
+                .ok_or_else(|| format!("unknown modifier bits {bits:#04x}"))?;
+            let code = match ptr::addr_of!((*ev).key_code).read() {
                 GIBSON_KEY_ENTER => KeyCode::Enter,
                 GIBSON_KEY_LEFT => KeyCode::Left,
                 GIBSON_KEY_RIGHT => KeyCode::Right,
@@ -1017,22 +1024,24 @@ unsafe fn event_from_c(ev: &GibsonEvent) -> Result<Event, String> {
             Ok(Event::Key(KeyEvent::new(code, modifiers)))
         }
         GIBSON_EVENT_PASTE => {
-            if ev.paste_str.is_null() {
+            let text = ptr::addr_of!((*ev).paste_str).read();
+            if text.is_null() {
                 return Err("paste event with a null paste_str".into());
             }
-            let text = CStr::from_ptr(ev.paste_str)
+            let text = CStr::from_ptr(text)
                 .to_str()
                 .map_err(|_| "paste_str is not valid UTF-8".to_string())?;
             Ok(Event::Paste(text.to_owned()))
         }
         GIBSON_EVENT_RESIZE => {
-            if ev.cols == 0 || ev.rows == 0 {
-                return Err(format!(
-                    "resize to {}x{}: both must be non-zero",
-                    ev.cols, ev.rows
-                ));
+            let (cols, rows) = (
+                ptr::addr_of!((*ev).cols).read(),
+                ptr::addr_of!((*ev).rows).read(),
+            );
+            if cols == 0 || rows == 0 {
+                return Err(format!("resize to {cols}x{rows}: both must be non-zero"));
             }
-            Ok(Event::Resize(ev.cols, ev.rows))
+            Ok(Event::Resize(cols, rows))
         }
         other => Err(format!("event_type {other} cannot be pushed")),
     }
@@ -1067,7 +1076,7 @@ pub unsafe extern "C" fn gibson_push_event(
             );
             return GibsonStatus::ErrInvalidParam;
         }
-        let ev = match event_from_c(&*event) {
+        let ev = match event_from_c(event) {
             Ok(ev) => ev,
             Err(msg) => {
                 set_last_error(format!("gibson_push_event: {msg}"));
