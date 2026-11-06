@@ -53,6 +53,26 @@ would kill or reshape it.
 
 Order: **A → {B, C} → D; B → F → G; {B, C, D} → E → H; {B, C} → I → J.**
 
+## Progress ledger (updated 2026-11-05)
+
+States: **merged** (on `main`), **in review** (an open PR, awaiting the gate its risk tier requires —
+for #266 a green release preflight, blocked by the hangup-gate failures under diagnosis in #269),
+**not started**. Each node closes only on its own oracle, not because
+this table looks complete.
+
+| Node | State | Where | Evidence and limits |
+|---|---|---|---|
+| A. Baseline | **merged** | #262 (`fb9b6f5`) | [`V07_BASELINE.md`](V07_BASELINE.md): forcing consumer identical at `f6cd8c7` and `7f57047`; ABI 59 = 59 |
+| B. Raster ingest | **measured, merged**; quantizer fix **merged** | #262 · #263 (`7888d4a`, Tier B) | Bench + 8-test oracle (all 21 configurations parsed back). Found #260: 256-colour render 4.7–7.2× truecolor; #263 makes it O(1), proven equal over all 2²⁴ inputs, 18–22× faster, byte-identical. No fit/ingest API yet — the consumer-side fit is exact and cheap; an ABI symbol waits for node I. |
+| C. Event injection | Rust **merged**; C ABI **not started** | #265 (`a172723`, Tier B) | `InjectedQueue` (bounded FIFO, refusal not drop, receipts); identical headless digests across runs, batching and the `ScriptedSource` route. Found and fixed **#259**: a headless `Context` read the real terminal. `gibson_push_event` (ABI 59 → 60) pending with its layout freeze + installed consumer. |
+| D. Held keys | **merged** | #265 (`a172723`, Tier B) | `HoldTracker`: explicit grace/repeat model on simulation tics, never a synthetic release; matches an independent per-tic simulator; cadence-invariant; a distinct-model review found an end-of-time invariant breach, fixed red-first. Real terminal repeat rate not yet measured. Focus-loss release needs a restore-tracked toggle: **#267**. |
+| E. Synthetic forcing example | **in review** | #266 | DEEP SIGNAL: original raycaster on the public API; headless replay equality at 4 cadences + 40×15 ASCII; every level solvable; real-PTY play at 80×24 colour and 40×15 ASCII. |
+| F. Pacing & backpressure | **in review** (game-level) | #266 | Simulation keeps wall-clock pace, presentation drops frames: slow PTY reader → 172–175 of ~176 tics with ~15 frames presented; red against a 4-tic catch-up cap (45 of 178). A terminal that stops reading stalls the synchronous loop. |
+| G. Resize | **in review** (game-level) | #266 | Real-PTY resize sweep mid-play (5 geometries, terminal model resized at the exact byte offset): every view row repainted, HUD on the last rows in the right form. Found and fixed a HUD that lagged a late `Resize` event. Raster re-scale is per-frame by construction; a library-level resize contract test is still open. |
+| H. Lifecycle | partial | #266 | Quit and hangup restore the terminal (PTY-tested for quit); panic/signal paths for the game not yet tested. |
+| I. Cross-language leg | not started | — | Needs C's `gibson_push_event` (node C) and a raster entry point only if the C consumer needs it. |
+| J. GPL adapter | not started | separate repository | Never in this repository. |
+
 ## Not in v0.7
 
 Pixel-accurate rendering (the cell grid stays the finest unit), audio, networked play, non-Linux
