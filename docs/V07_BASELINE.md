@@ -20,7 +20,7 @@ for the stated host and SHA only; none is a universal FPS claim.
 
 | SHA | Result |
 |---|---|
-| `f6cd8c7` ([42129557477](https://github.com/femboy2112/libgibson/actions/runs/42129557477)) | `doom_forcing_consumer: OK frames=240 grid=64x8 cells_read=122880 long_glyph=25B ansi=8825B checksum=15734824182601092804` |
+| `f6cd8c7` ([42129557477](https://github.com/femboy2112/libgibson/actions/runs/42129557477)) | `doom_forcing_consumer: OK  frames=240 grid=64x8 cells_read=122880 long_glyph=25B ansi=8825B checksum=15734824182601092804` |
 | `7f57047` ([42134572298](https://github.com/femboy2112/libgibson/actions/runs/42134572298)) | identical line, identical checksum |
 
 `check-abi`: 59 baseline symbols = 59 built, at both SHAs. The consumer is unchanged, so its
@@ -39,12 +39,16 @@ about a terminal's parse/display cost or physical FPS.
 - **Build:** `--release`, rustc 1.97.0-nightly (2026-04-14), library at `f6cd8c7`.
 - **Command:** `systemd-run --user --scope -p MemoryMax=512M taskset -c 0 raster_ingest_bench --frames 120`
   (one core, 512 MB cap). Wall time 11.5 s for all 21 configurations; peak RSS **6.7 MB**.
-- **Correctness first** (`tests/raster_ingest_oracle.rs`, 7 tests): uniform colour fits to itself;
+- **Correctness first** (`tests/raster_ingest_oracle.rs`, 8 tests): uniform colour fits to itself;
   an aligned checkerboard lands exactly at 80×25; a single lit corner pixel stays in its corner
-  sample; the integer filter equals an independent floating-point route **bit for bit** on five
-  frames at all three grids; the sample rectangles tile the source exactly once; a source circle
-  stays round at 80×25 (±1 sample) and the stretch distortion at 120×40 / 200×60 is measured
-  and bounded at 8%; every cell read back through `Context::frame_cell` matches the model.
+  sample; **`fit_box` partitions the source** at every grid (lighting any one source pixel lights
+  exactly one sample — driven through `fit_box` itself); its averaging equals a float route bit for
+  bit (the rectangle bounds are shared, so that route checks the averaging only); a source circle
+  stays round at 80×25 (±1 sample) and the stretch distortion at 120×40 / 200×60 is measured and
+  bounded at 8%; and for **all 21 timed configurations** the ANSI bytes the renderer emits, parsed
+  by a terminal model (`vt100`), show exactly the lowered cells — every glyph within its family's
+  declared repertoire, and exact RGB in truecolor. One frame (42) per configuration is checked, not
+  every timed frame.
 
 Per frame, microseconds (p50 unless two values = p50/p95); bytes, dirty cells and allocations
 are means over 120 frames:
@@ -75,12 +79,17 @@ are means over 120 frames:
 
 Stages: **gen** = producing the 320×200 frame; **fit** = consumer box filter; **lower** =
 `to_surface` / `to_mono_surface` (+ glyph transcode); **render** = `Context::render` (layout,
-paint, diff, ANSI); **write** = `write_all` + `flush` into the pipe.
+paint, diff, ANSI); **write** = `write_all` + `flush` into the pipe. **Write is an upper bound,
+not a clean split:** pinned to one core, the drain thread shares the CPU — a frame larger than the
+64 KiB pipe buffer (truecolor at 120×40 and 200×60) blocks until the reader runs, so its copy lands
+in `write`, and a smaller frame's drain cost can land in the next frame's stages. **Noise floor:**
+every configuration does identical `gen` work, yet its p50 ranges 158–251 µs across rows — a
+single run on this shared host resolves differences of roughly 1.6× at best.
 
 ### What the numbers say
 
-1. **256-colour quantization dominates.** Render is ~7× truecolor and ~20× 16-colour on these
-   dense, changing frames (35.1 ms p50 at 200×60 — more than a 35 Hz tic by itself) while
+1. **256-colour quantization dominates.** Render is 4.7–7.2× truecolor and 20–22× 16-colour on
+   these dense, changing frames (35.1 ms p50 at 200×60 — more than a 35 Hz tic by itself) while
    emitting *fewer* bytes than truecolor. `nearest256` (`src/capability.rs:185`) scans 240
    palette entries per colour. Filed as **#260** with an exact-equivalence acceptance (an O(1)
    quantizer proven equal to the scan over all 2²⁴ inputs). Tier B; not changed here.

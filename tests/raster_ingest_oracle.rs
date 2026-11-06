@@ -1,7 +1,9 @@
 //! v0.7 node B — correctness oracle for the raster-ingest bench's consumer-side fit + lowering.
-//! A timing only counts if the pixels it times are right: known patterns must land exactly,
-//! an independent floating-point route must agree with the integer box filter bit for bit,
-//! and per-cell readback through the one renderer must match the model.
+//! What it pins: known patterns land exactly; `fit_box` partitions the source (each source pixel
+//! reaches exactly one sample) at every bench grid; its averaging matches a float route; and for
+//! **every** timed configuration the ANSI bytes the renderer emits, parsed back by a terminal
+//! model, show exactly the lowered cells (truecolor also exact RGB). One frame per configuration
+//! is checked, not every timed frame.
 // The shared bench module carries items only the example binary uses.
 #![allow(dead_code)]
 #[path = "../examples/raster_ingest_bench/lower.rs"]
@@ -72,7 +74,9 @@ fn a_single_lit_corner_pixel_stays_in_its_corner() {
     }
 }
 
-/// Independent route: float mean over the same declared rectangles, rounded half-up.
+/// Second route for the AVERAGING: a float mean, rounded half-up, over the same declared
+/// rectangles (the rectangle bounds are shared with `fit_box`; the partition test below pins
+/// them through `fit_box` itself).
 fn fit_reference(src: &RgbRaster, dw: u16, dh: u16) -> Vec<(u8, u8, u8)> {
     let (sw, sh) = (src.width() as usize, src.height() as usize);
     let mut out = Vec::with_capacity(dw as usize * dh as usize);
@@ -97,7 +101,7 @@ fn fit_reference(src: &RgbRaster, dw: u16, dh: u16) -> Vec<(u8, u8, u8)> {
 }
 
 #[test]
-fn the_integer_box_filter_matches_an_independent_float_route_bit_for_bit() {
+fn the_integer_averaging_matches_a_float_route_bit_for_bit() {
     for n in [0u32, 1, 17, 63, 200] {
         let src = source_frame(n);
         for (cols, rows) in GRIDS {
@@ -112,21 +116,27 @@ fn the_integer_box_filter_matches_an_independent_float_route_bit_for_bit() {
 }
 
 #[test]
-fn every_source_pixel_is_counted_exactly_once_when_downsampling() {
+fn every_source_pixel_lands_in_exactly_one_sample() {
+    // Driven through `fit_box` itself: light ONE source pixel on black and count the samples it
+    // reaches. Overlapping rectangles would light two; a gap would light none. The fit is
+    // separable (x-interval x y-interval), so a full row and a full column cover every bound.
     for (cols, rows) in GRIDS {
         let (w, h) = fitted_size(cols, rows);
-        let (sw, sh) = (u32::from(SOURCE_W), u32::from(SOURCE_H));
-        let span = |d: u32, s: u32, n: u32| {
-            let a = d * s / n;
-            ((d + 1) * s / n).max(a + 1).min(s) - a
+        let lit_samples = |px: i32, py: i32| {
+            let mut src = filled((0, 0, 0));
+            src.set(px, py, (255, 255, 255));
+            fit_box(&src, w, h)
+                .pixels()
+                .iter()
+                .filter(|&&p| p != (0, 0, 0))
+                .count()
         };
-        let xs: u32 = (0..u32::from(w)).map(|d| span(d, sw, u32::from(w))).sum();
-        let ys: u32 = (0..u32::from(h)).map(|d| span(d, sh, u32::from(h))).sum();
-        assert_eq!(
-            (xs, ys),
-            (sw, sh),
-            "{cols}x{rows}: rectangles tile the source"
-        );
+        for x in 0..i32::from(SOURCE_W) {
+            assert_eq!(lit_samples(x, 0), 1, "{cols}x{rows}: source column {x}");
+        }
+        for y in 0..i32::from(SOURCE_H) {
+            assert_eq!(lit_samples(0, y), 1, "{cols}x{rows}: source row {y}");
+        }
     }
 }
 
@@ -185,6 +195,85 @@ fn per_cell_readback_through_the_renderer_matches_the_model() {
                 Some(Color::Rgb(bottom.0, bottom.1, bottom.2)),
                 "({x},{y}) bg"
             );
+        }
+    }
+}
+
+#[test]
+fn every_timed_configuration_emits_exactly_the_lowered_cells() {
+    use gibson::capability::ColorDepth;
+    use gibson::glyph::SubcellGlyphMode;
+    let src = source_frame(42);
+    let mut configs = Vec::new();
+    for depth in [
+        ColorDepth::TrueColor,
+        ColorDepth::Ansi256,
+        ColorDepth::Ansi16,
+    ] {
+        configs.push((Lowering::HalfBlockColor, depth));
+    }
+    for mode in [
+        SubcellGlyphMode::Braille2x4,
+        SubcellGlyphMode::HalfBlock1x2,
+        SubcellGlyphMode::Block,
+        SubcellGlyphMode::Ascii,
+    ] {
+        configs.push((Lowering::Mono(mode), ColorDepth::Mono));
+    }
+    let blank = |g: &str| g.is_empty() || g == " ";
+    // Each lowering's declared repertoire (from `SubcellGlyphMode`'s documentation), checked
+    // independently of `lower()` so a wrong glyph family cannot pass by self-consistency.
+    let in_repertoire = |lowering: Lowering, g: &str| -> bool {
+        let mut chars = g.chars();
+        let (Some(c), None) = (chars.next(), chars.next()) else {
+            return blank(g);
+        };
+        match lowering {
+            Lowering::HalfBlockColor => c == '▀',
+            Lowering::Mono(SubcellGlyphMode::Braille2x4) => ('\u{2800}'..='\u{28FF}').contains(&c),
+            Lowering::Mono(SubcellGlyphMode::HalfBlock1x2) => " ▀▄█".contains(c),
+            Lowering::Mono(SubcellGlyphMode::Block) => " ░▒▓█".contains(c),
+            Lowering::Mono(SubcellGlyphMode::Ascii) => " .:-=+*#@".contains(c),
+            Lowering::Mono(_) => false,
+        }
+    };
+    for (cols, rows) in GRIDS {
+        let (w, h) = fitted_size(cols, rows);
+        let fitted = fit_box(&src, w, h);
+        for &(lowering, depth) in &configs {
+            let surface = lower(&fitted, lowering);
+            let mut ctx = Context::headless(RenderMode::Fullscreen, cols, rows);
+            ctx.set_color_depth(depth);
+            ctx.set_root(Node::raster(surface.clone()));
+            ctx.render().unwrap();
+            let bytes = ctx.take_output();
+            let mut term = vt100::Parser::new(rows, cols, 0);
+            term.process(bytes.as_bytes());
+            let screen = term.screen();
+            let tag = format!("{cols}x{rows} {} {depth:?}", lowering.name());
+            for y in 0..rows {
+                for x in 0..cols {
+                    let want = surface.get(x, y).unwrap();
+                    let got = screen.cell(y, x).expect("cell on screen");
+                    let (g, e) = (got.contents(), want.glyph.grapheme.as_str());
+                    assert!(
+                        g == e || (blank(&g) && blank(e)),
+                        "{tag} ({x},{y}): {g:?} != {e:?}"
+                    );
+                    assert!(
+                        in_repertoire(lowering, &g),
+                        "{tag} ({x},{y}): {g:?} is outside the family"
+                    );
+                    if depth == ColorDepth::TrueColor {
+                        let rgb = |c: Option<Color>| match c {
+                            Some(Color::Rgb(r, g, b)) => vt100::Color::Rgb(r, g, b),
+                            other => panic!("{tag}: expected RGB, got {other:?}"),
+                        };
+                        assert_eq!(got.fgcolor(), rgb(want.style.fg), "{tag} ({x},{y}) fg");
+                        assert_eq!(got.bgcolor(), rgb(want.style.bg), "{tag} ({x},{y}) bg");
+                    }
+                }
+            }
         }
     }
 }
