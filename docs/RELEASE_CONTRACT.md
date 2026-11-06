@@ -81,8 +81,9 @@ surface is versioned as a minor to signal its scope — not because anything bro
   "a prepared release candidate, not yet tagged" — the wording of its version-bump commit,
   not reconciled after the tag.)*
 - **0.6.0** is the latest such milestone and is **prepared in source only** (state 1): the
-  manifests read `0.6.0`, but nothing is tagged, released on GitHub or published to a
-  registry, and the latest *released* version remains 0.5.0. It integrates the v0.6
+  manifests read `0.6.0` at `9a899e1` (the commit a future `v0.6.0` tag names; `main` has since
+  opened `0.7.0-dev`), but nothing is tagged, released on GitHub or published to a registry, and
+  the latest *released* version remains 0.5.0. It integrates the v0.6
   "Instrumental Renaissance": a live Python↔Rust wire instrument and instrument-driven
   cinema (examples), renderer recovery from partial terminal writes (§9), the text-input
   glyph-boundary repair, and **seven additive C ABI functions (52 → 59; headless contexts,

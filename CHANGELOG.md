@@ -15,7 +15,25 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-Nothing yet.
+Development toward **0.7.0** — a playable terminal software-graphics engine
+([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)). This is the working development
+line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 remains **prepared in source at
+`9a899e1`** (release state 1 — not tagged, not released); a future `v0.6.0` tag names that commit,
+not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
+
+### Added — examples / tooling (v0.7 nodes A, B; not library API)
+- **`docs/V07_BASELINE.md`**: the merged v0.6 engine measured before any v0.7 library change — the
+  installed-SDK forcing consumer at `f6cd8c7` and `7f57047` (identical output, checksum
+  `15734824182601092804`), `check-abi` 59 = 59, and the first raster-ingest numbers.
+- **`examples/raster_ingest_bench`**: a deterministic moving 320×200 software framebuffer fitted
+  onto 80×25 / 120×40 / 200×60 (consumer-side integer box filter — LibGibson has no public fit
+  primitive, #128/#129), lowered in colour and four monochrome glyph families, rendered by the one
+  renderer, written into an OS pipe (not a terminal); per-stage timings, bytes, dirty cells and
+  allocations; `--selfcheck`.
+- **`tests/raster_ingest_oracle.rs`**: exact pattern fits, bit-for-bit agreement with an
+  independent float route, exact source tiling, a measured aspect bound, and per-cell readback
+  through the renderer — a timing counts only for pixels proven right.
+- The bench's first finding — 256-colour render ~7× truecolor on dense frames — is filed as #260.
 
 ## [0.6.0] — prepared in source 2026-11-05 · not tagged, not released
 

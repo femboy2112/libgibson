@@ -15,8 +15,9 @@ the RXIV corrections, the RXV text-input glyph-boundary repair (#252) and the RX
 documentation contract (#254) — **merged to `main` through #253** on 2026-11-05 (merge commit
 `f6cd8c7`, parents `2ffdd92` + `eaa0d1c`), after an independent audit approved exactly `eaa0d1c`;
 exact-main CI 8/8. RXVII then fixed the event-pressure harness race (#255) and bumped the manifests
-to `0.6.0`. **v0.6.0 is prepared in source only** (Release Contract §1, state 1): not tagged, not
-released, not on any registry. The current published release is **v0.5.0** (`d8c7b99`, GitHub
+to `0.6.0` (merge `9a899e1`, #261). **v0.6.0 is prepared in source only** (Release Contract §1,
+state 1) at `9a899e1`: not tagged, not released, not on any registry; `main` has since opened
+`0.7.0-dev` for the v0.7 work below ("Longer-term horizon"). The current published release is **v0.5.0** (`d8c7b99`, GitHub
 prerelease). *(Until this bump the section described the integration as an unmerged candidate.)*
 
 > **State legend.** *Released* = in v0.5.0. *Merged* = on `main` (v0.6.0, prepared in source, not
