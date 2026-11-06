@@ -240,6 +240,38 @@ fn the_end_of_time_saturates_instead_of_wrapping() {
     assert_eq!(ended[0].ended_at, u64::MAX);
 }
 
+#[test]
+fn an_observation_at_the_last_tic_holds_nothing() {
+    // [MAX, MAX) is empty: the hold is reported ended at once and never stored, so the
+    // invariant `ends_at > now` survives and `is_held` cannot disagree with `advance`.
+    let mut h = tracker();
+    let ended = h.observe(u64::MAX, 'w').unwrap();
+    assert_eq!(ended.len(), 1);
+    assert_eq!(
+        (ended[0].key, ended[0].ended_at, ended[0].end),
+        ('w', u64::MAX, HoldEnd::Timeout)
+    );
+    assert!(!h.is_held('w'));
+    assert_eq!(h.held().count(), 0);
+    assert!(h.advance(u64::MAX).unwrap().is_empty());
+    // A hold live just before the end saturates to `ends_at == MAX`; observing at MAX first
+    // reports that hold's timeout, then the new, empty hold - two records, nothing left held.
+    let mut h = tracker();
+    h.observe(u64::MAX - 2, 'w').unwrap();
+    let ended = h.observe(u64::MAX, 'w').unwrap();
+    assert_eq!(ended.len(), 2, "{ended:?}");
+    assert_eq!(
+        (ended[0].hold.started, ended[0].ended_at),
+        (u64::MAX - 2, u64::MAX)
+    );
+    assert_eq!(
+        (ended[1].hold.started, ended[1].ended_at),
+        (u64::MAX, u64::MAX)
+    );
+    assert!(ended.iter().all(|e| e.end == HoldEnd::Timeout));
+    assert!(!h.is_held('w'));
+}
+
 // ---------------------------------------------------------------- reference oracle
 
 #[derive(Clone, Copy, Debug)]
