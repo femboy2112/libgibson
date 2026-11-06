@@ -14,7 +14,8 @@ platform,” universal 60 FPS, or modern Rust/C feature parity.
 
 **v0.6.0 prepared in source (2026-11-05) — not released:** the v0.6 "Instrumental
 Renaissance" integration merged to `main` through #253 (merge `f6cd8c7`, after an
-independent audit approved its exact head `eaa0d1c`), and the manifests now read `0.6.0`.
+independent audit approved its exact head `eaa0d1c`), and the manifests read `0.6.0` at `9a899e1`
+(`main` has since opened `0.7.0-dev`).
 That is release state 1 of the Release Contract §1: **not tagged, not released on GitHub,
 not on any registry**; the latest released version, and the one the install instructions
 use, remains v0.5.0. v0.6 adds a live Python↔Rust wire instrument and instrument-driven
