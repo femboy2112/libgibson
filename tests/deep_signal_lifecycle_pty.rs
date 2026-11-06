@@ -282,12 +282,27 @@ fn every_quit_key_restores_the_terminal() {
 fn a_signal_ends_the_session_even_when_the_terminal_stops_reading() {
     let trace = trace_path("stalled");
     let mut cap = launch(&trace, &[], None);
-    // Stop reading the terminal while the view keeps changing: frame writes fill the PTY and
-    // the game blocks inside a write, where its loop cannot notice a signal.
-    for _ in 0..50 {
-        cap.write(b"d").unwrap();
-        std::thread::sleep(Duration::from_millis(30));
+    // Stop reading the terminal while the view keeps changing, until the game's output stops
+    // growing although input keeps arriving: its frame write is blocked on the full PTY, where
+    // the loop cannot notice a signal.
+    let mut last = usize::MAX;
+    let mut stalled = false;
+    for _ in 0..100 {
+        for _ in 0..5 {
+            cap.write(b"d").unwrap();
+            std::thread::sleep(Duration::from_millis(30));
+        }
+        let now = cap.unread_output().expect("FIONREAD");
+        if now > 0 && now == last {
+            stalled = true;
+            break;
+        }
+        last = now;
     }
+    assert!(
+        stalled,
+        "the game's output never stopped growing ({last} bytes unread)"
+    );
     let pid = libc::pid_t::try_from(cap.process_id()).unwrap();
     // SAFETY: plain kill(2) to our own direct child, which is still running (not reaped).
     assert_eq!(unsafe { libc::kill(pid, libc::SIGTERM) }, 0);
@@ -297,11 +312,62 @@ fn a_signal_ends_the_session_even_when_the_terminal_stops_reading() {
         Some(signal_name(libc::SIGTERM).as_str()),
         "{status:?}"
     );
-    // Control: the terminal really was stalled, so the orderly shutdown (which writes the trace)
-    // could not run. A responsive terminal would have taken the orderly path instead.
+    // The orderly stop could not run (it writes the trace after restoring; restoring writes to
+    // the stalled terminal) ...
     assert!(
         !trace.exists(),
-        "the trace was written: the terminal never stalled, so this test proved nothing"
+        "the orderly stop ran, so the terminal was not stalled"
+    );
+    // ... but the watchdog put the line settings back before dying.
+    let lflag = cap.local_flags().expect("tcgetattr on the master");
+    assert_eq!(lflag & COOKED, COOKED, "left raw: c_lflag={lflag:#x}");
+    let _ = cap.finish();
+}
+
+#[test]
+fn without_a_watchdog_a_stop_signal_keeps_its_default_action() {
+    // RLIMIT_NPROC 0: the watchdog thread cannot be created. Then nothing could end a caught
+    // signal whose loop is stuck, so the game must not catch it at all.
+    let game = example_path("deep_signal");
+    // bash: dash's `ulimit` has no -u.
+    let mut cmd = CommandBuilder::new("bash");
+    cmd.args(["-c", "ulimit -u 0 && exec \"$0\" \"$@\""]);
+    cmd.arg(&game);
+    cmd.args(["--seed", "7", "--max-seconds", "30"]);
+    cmd.env("TERM", "xterm-256color");
+    let mut cap = Capture::spawn(cmd, 80, 24, Duration::from_secs(45));
+    let framed = |o: &[u8]| String::from_utf8_lossy(o).contains("SHARDS");
+    cap.collect_until(framed).expect("first frame");
+    // collect_until also returns on EOF (#272): require the frame, and a live game.
+    assert!(
+        framed(cap.raw()),
+        "no frame drawn: {:?}",
+        String::from_utf8_lossy(cap.raw())
+    );
+    assert!(cap.try_wait().unwrap().is_none(), "the game exited early");
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::fs::read_to_string(format!("/proc/{}/status", cap.process_id()))
+            .expect("/proc status");
+        let caught = status
+            .lines()
+            .find_map(|l| l.strip_prefix("SigCgt:"))
+            .and_then(|v| u64::from_str_radix(v.trim(), 16).ok())
+            .expect("SigCgt");
+        assert_eq!(
+            caught & (1 << (libc::SIGTERM - 1)),
+            0,
+            "SIGTERM caught without a watchdog: SigCgt={caught:#x}"
+        );
+    }
+    let pid = libc::pid_t::try_from(cap.process_id()).unwrap();
+    // SAFETY: plain kill(2) to our own direct child, which is still running (not reaped).
+    assert_eq!(unsafe { libc::kill(pid, libc::SIGTERM) }, 0);
+    let status = wait_exit(&mut cap, Duration::from_secs(2), true);
+    assert_eq!(
+        status.signal(),
+        Some(signal_name(libc::SIGTERM).as_str()),
+        "{status:?}"
     );
     let _ = cap.finish();
 }

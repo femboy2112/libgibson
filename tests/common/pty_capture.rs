@@ -196,6 +196,17 @@ impl Capture {
         self.master.get_termios().map(|t| format!("{t:?}"))
     }
 
+    /// Bytes the child has written that this capture has not read yet (`FIONREAD` on the master).
+    pub fn unread_output(&self) -> io::Result<usize> {
+        let fd = self.master.as_raw_fd().expect("Unix PTY descriptor");
+        let mut n: libc::c_int = 0;
+        // SAFETY: `fd` is a valid open descriptor; `n` is a valid out-pointer for FIONREAD.
+        if unsafe { libc::ioctl(fd, libc::FIONREAD, &mut n) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(usize::try_from(n).unwrap_or(0))
+    }
+
     /// The pty pair's `c_lflag`, read through the master. On Linux a pty master's `TCGETS`
     /// reports the slave's termios, so this observes the child's raw/cooked mode from outside.
     pub fn local_flags(&self) -> io::Result<u64> {
