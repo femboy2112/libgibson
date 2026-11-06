@@ -3,27 +3,26 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current direction (2026-11-05): v0.6.0 — the merge-readiness candidate (Renaissance XIV–XVI)
+## Current direction (2026-11-05): v0.6.0 — merged and prepared in source (Renaissance XIV–XVII)
 
 **Canonical roadmap: [issue #191](https://github.com/femboy2112/libgibson/issues/191).** This
 section reconciles #191's R6.1–R6.6 workstreams with what is actually built and verified. The
 per-gate red/green evidence, mutation controls and remaining limits are in
 [`docs/V06_QUALIFICATION_LEDGER.md`](docs/V06_QUALIFICATION_LEDGER.md).
 
-**Baseline.** `main` is at `2ffdd92` (`0.6.0-dev`); the current published release is **v0.5.0**
-(`d8c7b99`, GitHub prerelease). On `main`, only **Milestone 1 (#198)** and **Phase 6 (#199)** have
-merged. Everything below lives on ONE consolidated integration branch,
-`feat/v0.6-RXIV-causal-audit-191`, proposed to `main` as a single PR that preserves the full
-ancestry of the Renaissance stack (`#241 ← … ← #251`) plus the RXIV corrections, the RXV
-text-input glyph-boundary repair (#252) and the RXVI terminal-write documentation contract
-(#254). Nothing is merged,
-tagged, released or published; a merge requires the independent audit's approval of the exact
-final SHA and then the owner's action.
+**Baseline.** The consolidated v0.6 integration — the full Renaissance stack (`#241 ← … ← #251`),
+the RXIV corrections, the RXV text-input glyph-boundary repair (#252) and the RXVI terminal-write
+documentation contract (#254) — **merged to `main` through #253** on 2026-11-05 (merge commit
+`f6cd8c7`, parents `2ffdd92` + `eaa0d1c`), after an independent audit approved exactly `eaa0d1c`;
+exact-main CI 8/8. RXVII then fixed the event-pressure harness race (#255) and bumped the manifests
+to `0.6.0`. **v0.6.0 is prepared in source only** (Release Contract §1, state 1): not tagged, not
+released, not on any registry. The current published release is **v0.5.0** (`d8c7b99`, GitHub
+prerelease). *(Until this bump the section described the integration as an unmerged candidate.)*
 
-> **State legend.** *Released* = in v0.5.0. *Merged* = on `main`. *Candidate* = on the integration
-> PR, CI-green on its exact head, **not** on `main`. *Deferred* / *Blocked* as stated.
+> **State legend.** *Released* = in v0.5.0. *Merged* = on `main` (v0.6.0, prepared in source, not
+> released). *Deferred* / *Blocked* as stated.
 
-### R6.1 — Instrument-driven cinematic grammar — **completed and verified (candidate)**
+### R6.1 — Instrument-driven cinematic grammar — **completed and verified (merged)**
 The interactive live instrument-film (`field_cinema --live --interactive`): a real producer field,
 user probe navigation, target selection, the command through the certified tracked channel, the
 correlated verdict, the next authoritative field, and a scene-composed response to the **verified**
@@ -33,13 +32,13 @@ four real histories on **rendered surfaces** and a non-Gaussian holdout; causal 
 claimed only via a matched counterfactual. *Limits:* the effect contract measures the peak sample
 against the requested amplitude (declared per source); auto-advance timing is untested.
 
-### R6.2 — Public consumer ergonomics & interaction depth — **completed and verified (candidate)**
+### R6.2 — Public consumer ergonomics & interaction depth — **completed and verified (merged)**
 The 40×15 scientific instrument (RXII); the display transport carrying origin/anisotropy/zoom
 (Gate G); a probe-following ROI window computed against the **physical** terminal (RXIV F), with the
 probe painted on screen; grapheme-cluster-safe clipping; strict, bounded, atomically committed
 capture files and a causal trace (v2) wired into the instrument (`--trace`) and the film
 (`--record` / `--replay-film`). The Wave-3 editor drafts #176/#177 are **superseded** by the merged
-`instrument_workbench` (close recommended — owner's action). **RXV (#252):** the single-line text
+`instrument_workbench` (#176 is closed; closing #177 remains the owner's call). **RXV (#252):** the single-line text
 editor's last glyph boundary is closed — insertion is single-line and control-free, painting is
 safe for any string (a control-bearing or standalone zero-width grapheme becomes one `U+FFFD` cell,
 including through `Node::text_input` and the C ABI), and one width contract governs the cursor,
@@ -84,8 +83,10 @@ the first crossterm release containing #1128, then un-ignore
 GitHub-first prereleases; C ABI v1; Rust MSRV 1.85; `main` merge-commit convention; the PCM audio
 golden and HumanMusic research are frozen; **no** tag, GitHub Release, registry (crates.io / PyPI)
 publication, supported-default change, or force-push without explicit maintainer authorization. The
-`main` merge of the integration PR is conditionally authorized only after independent approval of
-its exact SHA.
+integration PR merged only after independent approval of its exact SHA; the v0.6.0 source bump does
+not authorize a tag or release. Later merges follow the risk tiers recorded in the qualification
+ledger (Tier A low-risk, Tier B runtime/API with independent review, Tier C never without explicit
+authorization).
 
 ### Longer-term horizon
 **v0.7 — playable terminal Doom:** public raster / input / clock / lifecycle capabilities and an

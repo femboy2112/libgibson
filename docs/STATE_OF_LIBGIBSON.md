@@ -12,6 +12,18 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.6.0 prepared in source (2026-11-05) — not released:** the v0.6 "Instrumental
+Renaissance" integration merged to `main` through #253 (merge `f6cd8c7`, after an
+independent audit approved its exact head `eaa0d1c`), and the manifests now read `0.6.0`.
+That is release state 1 of the Release Contract §1: **not tagged, not released on GitHub,
+not on any registry**; the latest released version, and the one the install instructions
+use, remains v0.5.0. v0.6 adds a live Python↔Rust wire instrument and instrument-driven
+cinema (examples), renderer recovery from partial terminal writes (counted write + flush,
+not atomic I/O — Release Contract §9), the text-input glyph-boundary repair, and seven
+additive C ABI functions (52 → 59: headless contexts, rendered-output and cell-grid
+readback, color-depth selection; `GIBSON_ABI_VERSION` stays 1; MSRV 1.85). Per-gate
+evidence and remaining limits: [`V06_QUALIFICATION_LEDGER.md`](V06_QUALIFICATION_LEDGER.md).
+
 **v0.5.0 released (2026-10-24):** **v0.5.0 — Interactive instruments** is released on
 GitHub as an Engineering Alpha (tag → `v0.5.0` at `d8c7b99`, prerelease-flagged, Linux
 x86_64; native SDK archive + Python wheel/sdist attached; not published to

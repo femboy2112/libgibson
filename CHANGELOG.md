@@ -15,10 +15,28 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-Development toward **0.6.0** ("Operation Instrumental Renaissance"). This is the working
-development line, **not a release** — the manifest reads `0.6.0-dev`. `GIBSON_ABI_VERSION`
-stays 1 — the C ABI grows only by **additive** functions (compatible, no version bump);
-MSRV stays 1.85.
+Nothing yet.
+
+## [0.6.0] — prepared in source 2026-11-05 · not tagged, not released
+
+**Release state 1 of 3** ([Release Contract §1](docs/RELEASE_CONTRACT.md#1-versioning-model)): the
+manifests read `0.6.0`, but there is no `v0.6.0` tag, GitHub release or registry upload; the latest
+*released* version remains **0.5.0**, and the README install instructions stay on it. "Operation
+Instrumental Renaissance": the v0.6 integration merged through #253 (merge `f6cd8c7`, independent
+audit approval of exactly `eaa0d1c`). `GIBSON_ABI_VERSION` stays 1 — the C ABI grew only by
+**additive** functions (52 → 59, compatible, no version bump); MSRV stays 1.85.
+
+### Release engineering — source version 0.6.0, RXVII
+- **Version prepared in source:** `Cargo.toml`, `Cargo.lock` (the `libgibson` entry only),
+  `bindings/python/pyproject.toml` and `THIRD-PARTY-NOTICES.md` move from `0.6.0-dev` to `0.6.0`.
+  The packaged file list (`cargo package --list`, 183 files) and the resolved dependency tree are
+  identical to `0.6.0-dev` apart from the crate's own version string.
+- **Release states defined ([#257](https://github.com/femboy2112/libgibson/issues/257)):** the
+  Release Contract §1 now distinguishes *prepared in source*, *tagged and released on GitHub* and
+  *published through registries*, and states which one each milestone has reached. It had still
+  called **0.5.0** "a prepared release candidate, not yet tagged" — v0.5.0 was tagged and published
+  as a GitHub prerelease on 2026-10-24 (`v0.5.0` → `d8c7b99`). README, ROADMAP and
+  STATE_OF_LIBGIBSON now say v0.6.0 is prepared in source, not released.
 
 ### Fixed — test harness (`event_pressure_lab`), RXVII ([#255](https://github.com/femboy2112/libgibson/issues/255))
 - **Parallel event-pressure trials no longer collide on their scratch directory.** The trial
