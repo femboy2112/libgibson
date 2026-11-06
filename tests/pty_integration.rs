@@ -147,6 +147,20 @@ fn collect_until_fails_when_its_predicate_never_holds() {
         .collect_until(never)
         .expect_err("deadline before the marker");
     assert_eq!(err.kind(), std::io::ErrorKind::TimedOut, "{err}");
+    assert!(
+        err.to_string().contains("waiting"),
+        "the error carries the tail: {err}"
+    );
+    let _ = capture.finish();
+
+    // Control: a marker printed just before the child exits is still Ok (the final chunk is
+    // read and checked before EOF is reported).
+    let mut cmd = CommandBuilder::new("sh");
+    cmd.args(["-c", "printf READY"]);
+    let mut capture = pty_capture::Capture::spawn(cmd, 80, 24, Duration::from_secs(10));
+    capture
+        .collect_until(|b| String::from_utf8_lossy(b).contains("READY"))
+        .expect("the marker before exit");
     let _ = capture.finish();
 
     // Control: a marker that does appear is Ok.
