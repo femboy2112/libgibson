@@ -184,8 +184,11 @@ static int raster_leg(int *phase_out, size_t *cells_checked, double *us_per_fram
                 (*cells_checked)++;
             }
     }
-    if (clock_gettime(CLOCK_MONOTONIC, &t1) != 0 && rc == 0) rc = fail("raster: clock_gettime");
-    *us_per_frame = ((double)(t1.tv_sec - t0.tv_sec) * 1e6 + (double)(t1.tv_nsec - t0.tv_nsec) / 1e3) / RFRAMES;
+    if (clock_gettime(CLOCK_MONOTONIC, &t1) == 0) {
+        *us_per_frame = ((double)(t1.tv_sec - t0.tv_sec) * 1e6 + (double)(t1.tv_nsec - t0.tv_nsec) / 1e3) / RFRAMES;
+    } else if (rc == 0) {
+        rc = fail("raster: clock_gettime");
+    }
     *phase_out = phase;
     free(cells);
     gibson_destroy_context(ctx);
