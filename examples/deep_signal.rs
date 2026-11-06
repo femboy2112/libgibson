@@ -8,7 +8,8 @@
 //! `RgbRaster` at the terminal's own sub-cell resolution and lowered through the one renderer
 //! (`Node::canvas`); a fixed 35 Hz simulation (`FixedTimestep::exact`) that presentation can
 //! fall behind but never changes; held-key inference on a press-only terminal
-//! (`gibson::hold::HoldTracker`); deterministic replay from a recorded `(tic, event)` trace
+//! (`gibson::hold::HoldTracker`), released at once when the terminal reports a focus loss;
+//! deterministic replay from a recorded `(tic, event)` trace
 //! through an injected source; capability fallbacks (colour half-blocks, Braille / block /
 //! ASCII monochrome) where shape, not colour alone, carries hazards and shards.
 //!
@@ -698,6 +699,12 @@ fn parse() -> Result<Option<Opts>, String> {
 fn play(o: Opts) -> std::io::Result<()> {
     stop_signal::install();
     let mut ctx = Context::new(RenderMode::Fullscreen)?;
+    // Focus reporting, through the session so restore, Drop and the panic hook turn it off
+    // again. Raw mode first, so an immediate focus report is never echoed by a cooked terminal.
+    // A lost focus releases every held key at once (`ReleaseCause::FocusLost`): the terminal
+    // stops autorepeating, but the key may still be down.
+    ctx.session.enter_interactive()?;
+    ctx.session.set_focus_reporting(true)?;
     if o.look != Look::Color {
         ctx.set_color_depth(ColorDepth::Mono);
     }
