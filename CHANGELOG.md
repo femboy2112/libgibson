@@ -49,6 +49,20 @@ not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
   across runs, across injection batching and against the `ScriptedSource` route; dropping,
   delaying or order-sensitively reordering one event changes them.
 
+### Added — examples (v0.7 node E; not library API)
+- **`examples/deep_signal` — DEEP SIGNAL**, an original playable first-person terminal maze built
+  only on the public API (no copyrighted assets or engine code): seeded sectors of growing size,
+  signal shards (depth-tested diamonds), hatched hazard floors that pulse live, an uplink that
+  opens when every shard is recovered. A fixed-point 35 Hz simulation (`FixedTimestep::exact`)
+  that presentation can fall behind but never changes; held keys via `HoldTracker`; inputs stamped
+  with their simulation tic (`--record`); DDA raycasting straight into an `RgbRaster` at the
+  canvas's sub-cell resolution; colour half-blocks or Braille / block / ASCII monochrome with a
+  width-aware HUD (40 columns); every transition effect reads world state. `--selfcheck` injects a
+  scripted trace through `InjectedQueue` into a headless context and requires identical replays,
+  the same world digest at presentation cadences 1/2/3/7 and at 40×15 ASCII, and a painted view.
+  Tests: `deep_signal_sim` (6) and a real-PTY playthrough `deep_signal_pty` (2: 80×24 colour,
+  40×15 ASCII).
+
 ### Added — examples / tooling (v0.7 nodes A, B; not library API)
 - **`docs/V07_BASELINE.md`**: the merged v0.6 engine measured before any v0.7 library change — the
   installed-SDK forcing consumer at `f6cd8c7` and `7f57047` (identical output, checksum
