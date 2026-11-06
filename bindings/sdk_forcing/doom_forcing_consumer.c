@@ -130,12 +130,19 @@ static int raster_leg(int *phase_out, size_t *cells_checked, double *us_per_fram
     static uint8_t px[RH][RW][3];
     gibson_context_t *ctx = NULL;
     OK(gibson_create_headless_context(GIBSON_MODE_FULLSCREEN, RW, RH / 2, &ctx));
-    OK(gibson_set_color_depth(ctx, GIBSON_COLOR_DEPTH_TRUECOLOR));
+    if (gibson_set_color_depth(ctx, GIBSON_COLOR_DEPTH_TRUECOLOR) != GIBSON_OK) {
+        gibson_destroy_context(ctx);
+        return fail("raster: set_color_depth");
+    }
     gibson_cell_t *cells = calloc((size_t)RW * (RH / 2), sizeof *cells);
     if (!cells) { gibson_destroy_context(ctx); return fail("allocate raster readback"); }
     int phase = 0, expected = 0, rc = 0;
     struct timespec t0, t1;
-    clock_gettime(CLOCK_MONOTONIC, &t0);
+    if (clock_gettime(CLOCK_MONOTONIC, &t0) != 0) {
+        free(cells);
+        gibson_destroy_context(ctx);
+        return fail("raster: clock_gettime");
+    }
     for (int f = 0; f < RFRAMES && rc == 0; f++) {
         /* Input: 'a' every third frame, else 'd'. The phase moves only on a polled key. */
         gibson_event_t k;
@@ -144,14 +151,23 @@ static int raster_leg(int *phase_out, size_t *cells_checked, double *us_per_fram
         k.key_code = (f % 3 == 0) ? 'a' : 'd';
         expected += (f % 3 == 0) ? -1 : 1;
         if (gibson_push_event(ctx, &k) != GIBSON_OK) { rc = fail("raster: push"); break; }
+        int delivered = 0;
+        uint32_t got = 0;
         for (;;) {
             gibson_event_t ev;
             if (gibson_poll_event(ctx, 0, &ev) != GIBSON_OK) { rc = fail("raster: poll"); break; }
             if (ev.event_type == GIBSON_EVENT_NONE) break;
+            delivered++;
+            got = ev.key_code;
             if (ev.event_type == GIBSON_EVENT_KEY && ev.key_code == 'd') phase++;
             if (ev.event_type == GIBSON_EVENT_KEY && ev.key_code == 'a') phase--;
         }
         if (rc) break;
+        /* Every frame: exactly the one key pushed, delivered, and the phase it implies. */
+        if (delivered != 1 || got != k.key_code || phase != expected) {
+            rc = fail("raster: this frame's injected key was not delivered exactly once");
+            break;
+        }
         paint(px, phase);
         if (stage_raster(ctx, px) != GIBSON_OK || gibson_render(ctx) != GIBSON_OK) { rc = fail("raster: render"); break; }
         size_t written = 0;
@@ -168,7 +184,7 @@ static int raster_leg(int *phase_out, size_t *cells_checked, double *us_per_fram
                 (*cells_checked)++;
             }
     }
-    clock_gettime(CLOCK_MONOTONIC, &t1);
+    if (clock_gettime(CLOCK_MONOTONIC, &t1) != 0 && rc == 0) rc = fail("raster: clock_gettime");
     *us_per_frame = ((double)(t1.tv_sec - t0.tv_sec) * 1e6 + (double)(t1.tv_nsec - t0.tv_nsec) / 1e3) / RFRAMES;
     *phase_out = phase;
     free(cells);
