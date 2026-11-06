@@ -37,7 +37,7 @@ fn replay(trace: &std::path::Path) -> String {
 
 /// One live session: hold "turn right", lose focus inside the hold's grace window, regain it,
 /// quit. Returns the raw terminal output and the recorded trace.
-fn live_session(trace: &std::path::Path) -> (Vec<u8>, String) {
+fn live_session(trace: &std::path::Path) -> String {
     let _ = std::fs::remove_file(trace);
     let mut cmd = CommandBuilder::new(example_path("deep_signal"));
     cmd.args(["--seed", "7", "--max-seconds", "30", "--record"]);
@@ -73,8 +73,22 @@ fn live_session(trace: &std::path::Path) -> (Vec<u8>, String) {
     }
     cap.collect_for(Duration::from_millis(100)).unwrap();
     let raw = cap.finish();
-    let recorded = std::fs::read_to_string(trace).expect("trace written");
-    (raw, recorded)
+    // Checked on every session, usable for the replay discriminator or not.
+    let has = |raw: &[u8], seq: &[u8]| raw.windows(seq.len()).any(|w| w == seq);
+    assert!(
+        has(&raw, b"\x1b[?1004h"),
+        "focus reporting enabled while playing"
+    );
+    // Restore turned reporting off after the last time it was turned on.
+    let on = raw
+        .windows(8)
+        .rposition(|w| w == b"\x1b[?1004h")
+        .expect("enabled");
+    assert!(
+        has(&raw[on..], b"\x1b[?1004l"),
+        "focus reporting left on after exit"
+    );
+    std::fs::read_to_string(trace).expect("trace written")
 }
 
 /// The tic of the recorded focus loss and the session's end tic.
@@ -92,39 +106,25 @@ fn focus_and_end_tics(recorded: &str) -> (u64, u64) {
 
 #[test]
 fn a_focus_loss_is_reported_recorded_and_releases_the_held_turn() {
-    let has = |raw: &[u8], seq: &[u8]| raw.windows(seq.len()).any(|w| w == seq);
     let trace = std::env::temp_dir().join(format!("deep_signal_focus_{}.tsv", std::process::id()));
     // The discriminator below needs simulation tics after the focus loss: replay never runs the
     // end tic, so a loss read in the same poll batch as the quit (the game descheduled through
     // the waits) changes nothing, correctly. Such a run cannot judge the release; it is redone,
     // a bounded number of times, and never counted as a pass.
     let mut attempts = Vec::new();
-    let (raw, recorded) = loop {
-        let (raw, recorded) = live_session(&trace);
+    let recorded = loop {
+        let recorded = live_session(&trace);
         let (focus, end) = focus_and_end_tics(&recorded);
         attempts.push((focus, end));
         // The repeat timeout is 4 tics: the trajectories can differ only in the tics after it.
         if end >= focus + 5 {
-            break (raw, recorded);
+            break recorded;
         }
         assert!(
             attempts.len() < 3,
             "no session ran tics after its focus loss: (focus, end) tics {attempts:?}"
         );
     };
-    assert!(
-        has(&raw, b"\x1b[?1004h"),
-        "focus reporting enabled while playing"
-    );
-    // Restore turned reporting off after the last time it was turned on.
-    let on = raw
-        .windows(8)
-        .rposition(|w| w == b"\x1b[?1004h")
-        .expect("enabled");
-    assert!(
-        has(&raw[on..], b"\x1b[?1004l"),
-        "focus reporting left on after exit"
-    );
     // The focus loss changed the simulation: without it the turn runs on to the end of its
     // grace window, so the same trace minus that line replays to a different trajectory.
     let with = replay(&trace);
