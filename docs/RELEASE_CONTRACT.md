@@ -68,18 +68,50 @@ surface is versioned as a minor to signal its scope — not because anything bro
   milestone. A real-audio-device backend is the optional `audio-cpal` feature, so the
   mandatory build, `cargo test` and CI never need system audio libraries.
 
-- **0.5.0** is the latest such milestone (a prepared release candidate, not yet tagged): it
-  adds the experimental, Rust-only interactive-instrument surface (spatial input and
-  hit-map, reversible authoring, `gibson::plot` / field view, bounded transport). It is
-  additive apart from one documented Rust CORE source-break (`Node` gained a public
+- **0.5.0** is such a milestone and is **tagged and released on GitHub** (state 2 below):
+  tag `v0.5.0` → `d8c7b99`, GitHub prerelease of 2026-10-24 with the native SDK archive,
+  its checksum and the Python wheel/sdist; not published to any registry. It adds the
+  experimental, Rust-only interactive-instrument surface (spatial input and hit-map,
+  reversible authoring, `gibson::plot` / field view, bounded transport). It is additive
+  apart from one documented Rust CORE source-break (`Node` gained a public
   `tag: Option<u32>` field); **the C ABI is unchanged (`GIBSON_ABI_VERSION` stays 1)**,
   none of the new surface is exposed through C, C++, Python or Go, and MSRV stays 1.85.
-  It remains an engineering alpha (Linux x86_64, GitHub-only prerelease).
+  It remains an engineering alpha (Linux x86_64, GitHub-only prerelease). *(Until
+  [#257](https://github.com/femboy2112/libgibson/issues/257) this entry still called 0.5.0
+  "a prepared release candidate, not yet tagged" — the wording of its version-bump commit,
+  not reconciled after the tag.)*
+- **0.6.0** is the latest such milestone and is **prepared in source only** (state 1): the
+  manifests read `0.6.0`, but nothing is tagged, released on GitHub or published to a
+  registry, and the latest *released* version remains 0.5.0. It integrates the v0.6
+  "Instrumental Renaissance": a live Python↔Rust wire instrument and instrument-driven
+  cinema (examples), renderer recovery from partial terminal writes (§9), the text-input
+  glyph-boundary repair, and **seven additive C ABI functions (52 → 59; headless contexts,
+  rendered-output and cell-grid readback, color-depth selection) with
+  `GIBSON_ABI_VERSION` staying 1**. Experimental Rust surfaces changed shape where the
+  work required it (for example the instrument-telemetry `Stage` set gained a stage), which
+  a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
+
+**Release states.** A version passes through three separate states, and every document
+that names a version says which one it has reached:
+
+1. **Prepared in source** — `Cargo.toml`, `Cargo.lock` and the lockstep wrapper metadata
+   carry the version on `main`. Nothing is tagged and nothing is installable as that
+   release; README install instructions keep pointing at the latest *released* version.
+2. **Tagged and released on GitHub** — a `v<version>` tag (plus the Go module tag
+   `bindings/go/v<version>`) names a `main` commit, and a GitHub prerelease attaches the
+   artifacts of §7. Install instructions move to this version.
+3. **Published through registries** — crates.io, PyPI or the Go module proxy. No
+   LibGibson version has reached this state.
+
+Each transition is a separate, explicitly approved step ([`RELEASING.md`](RELEASING.md)); a
+version bump alone never implies a tag, a release or a registry upload.
 
 The conceptual progression: `0.1.x` established the framebuffer / renderer / terminal
 substrate; `0.2.x` adds the semantic UI / design-system layer; `0.3.x` adds the
 experimental temporal display axis; `0.4.x` adds the experimental audio /
-HumanMusic axis; `0.5.x` adds the experimental interactive-instrument surface; later `0.x` milestones continue resolving architecture, portability and
+HumanMusic axis; `0.5.x` adds the experimental interactive-instrument surface; `0.6.x`
+connects that surface to live producers and grows the C ABI additively for headless,
+inspectable consumers; later `0.x` milestones continue resolving architecture, portability and
 stability debt; `1.0` waits until the CORE public contract (§3) is genuinely stable and
 frozen.
 

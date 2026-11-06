@@ -1,4 +1,4 @@
-# v0.6 Qualification Ledger (Renaissance XIV — final causal audit; XV — the glyph boundary; XVI — the terminal-write contract)
+# v0.6 Qualification Ledger (Renaissance XIV — final causal audit; XV — the glyph boundary; XVI — the terminal-write contract; XVII — merge and source version)
 
 The release-qualification record for the v0.6 integration candidate. It records, per gate, the
 defect an independent audit named, the **red** evidence executed against the unmodified code, the
@@ -173,12 +173,22 @@ promised it. Documentation-contract defect; no runtime counterexample was involv
 | Preservation (local, `fbe86e5`) | `fmt --check`, `clippy --all-targets --all-features -D warnings` (1.98.1), `RUSTDOCFLAGS=-D warnings cargo doc --no-deps`, `cargo +1.85 check --locked --lib`, `gofmt -l` clean. Targeted, serial: `text_input_glyph_boundary` 13/13, `pty_text_input_paste` 1/1 (real PTY), `renderer_partial_write` 8/8, `field_cinema_effect_contract` 25/25, `field_cinema_causal_oracle` 9/9, `field_cinema_interactive_oracle` 16/16, `field_cinema_session_provenance` 31/31, `field_cinema_live_wire` 6/6, `wire_instrument_source_lifecycle` 3/3, `wire_instrument_channel` 8/8, `wire_instrument_trace` 7/7, `ffi_abi_layout_freeze` 4/4, `audio_pocket_voice` 4/4 (frozen PCM golden; `tests/audio_pocket_voice.rs` and `docs/fixtures/` unchanged since `4e33631`). Exported `gibson_*` symbols of the built library = the 59-symbol baseline. The full suite, CI and Release Preflight run on the exact head (recorded on the PR). |
 | Limits | A textual guard, not a semantic proof: it catches the phrases #254 found and close paraphrases in the scoped files; a novel paraphrase, or an overclaim in a file outside its scope, is not caught. Lines mentioning files are skipped so filesystem atomicity stays expressible, which also hides a terminal overclaim written on such a line. Historical documents outside the scope are annotated, not policed. |
 
+## Renaissance XVII — the merge, the harness race and the source version (#253, #255, #257)
+
+| | |
+|---|---|
+| Merge | The independent audit approved exactly `eaa0d1c` (GO). Revalidated before acting: PR head `eaa0d1c`, base `main` `2ffdd92`, 133 ahead / 0 behind, mergeable CLEAN, all 8 CI jobs + both preflights green on that head, 0 unresolved threads, every stacked v0.6 PR head (#200–#251) an ancestor of it. Merged with a merge commit and a head-SHA guard: **`f6cd8c7`**, parents `2ffdd92` (first) + `eaa0d1c`; its tree is byte-identical to `eaa0d1c`. Exact-main CI [42129557477](https://github.com/femboy2112/libgibson/actions/runs/42129557477) 8/8: Rust job 2376 passed / 0 failed / 23 ignored; ABI 59 = 59; hangup gate attempt 1/3; installed-SDK forcing consumer `OK frames=240 grid=64x8 cells_read=122880 … checksum=15734824182601092804`. #252 and #254 closed on merge. The 39 stacked PRs whose bases were feature branches (#207–#251) were closed as *integrated via #253* with per-PR ancestry evidence; none was merged on its own. |
+| #255 (harness race) | `event_pressure_lab` trial directories were named `pid` + CLOCK_MONOTONIC µs, so parallel test threads collided with `EEXIST`. RED: the legacy name reproduced verbatim under a frozen clock and barrier-synchronized starts — 1 of 16 creators wins, deterministically. Repair: a process-wide sequence, exclusive creation, a bounded skip of existing names, other errors propagated. GREEN: `event_pressure_trial_dir` 6/6; full local suite 2363 passed / 0 failed. Mutants M0–M3 killed. A blind adversarial review found nothing material (3 nits recorded on the PR). Tier A; merged as #258 (**`7f57047`**, parents `f6cd8c7` + `37dc9f8`) after exact-head CI [42132595230](https://github.com/femboy2112/libgibson/actions/runs/42132595230) + preflight [42132595076](https://github.com/femboy2112/libgibson/actions/runs/42132595076). |
+| #257 (release states) | Release Contract §1 still called v0.5.0 "a prepared release candidate, not yet tagged"; `v0.5.0` → `d8c7b99` is a published GitHub prerelease (2026-10-24). §1 now defines three states (prepared in source / tagged and released on GitHub / published through registries) and labels each milestone. |
+| Source version | `0.6.0-dev` → `0.6.0` in `Cargo.toml`, `Cargo.lock` (the crate's entry only), `pyproject.toml` and the regenerated notices. `cargo package --list` (183 files) and the resolved dependency tree are unchanged apart from the crate's own version. **v0.6.0 is release state 1 only: not tagged, not released, not published**; tagging and release need separate authorization. |
+| Limits | The #255 tests exercise `create_trial_dir`; re-inlining the legacy name in `Trial::start` would be caught only probabilistically by the parallel PTY suite. The merge proves integration on `main`, not new runtime capability. |
+
 ## R6.1–R6.6 verdicts
 
 | Workstream | Verdict |
 |---|---|
-| R6.1 instrument-driven cinematic grammar | **Completed and verified** (candidate) — limits under Gate A/C |
-| R6.2 consumer ergonomics & interaction depth | **Completed and verified** (candidate); #176/#177 superseded; the text-input glyph boundary (#252) closed in RXV |
+| R6.1 instrument-driven cinematic grammar | **Completed and verified** (merged, `f6cd8c7`) — limits under Gate A/C |
+| R6.2 consumer ergonomics & interaction depth | **Completed and verified** (merged, `f6cd8c7`); #176/#177 superseded; the text-input glyph boundary (#252) closed in RXV |
 | R6.3 cross-language interaction contracts | **Completed with documented limitation** — headless output-only, no pixel raster, no claimed C++/Go/Python interactive parity |
 | R6.4 extended graphics / media | **Explicitly deferred by design** (#186/#188) |
 | R6.5 performance & resource envelopes | **Completed with documented limitation** — one-host envelope + a truthful, tested partial-write policy |
@@ -191,4 +201,5 @@ integration PR that preserves the full Renaissance ancestry. Its exact-head deve
 publication-free Release Preflight run IDs — on that same SHA, never an earlier green head — are
 recorded on the PR (recording them here would change the SHA they certify). Merge requires the
 independent audit's approval of that SHA, then the owner's action; no tag, release or registry
-publication is part of this candidate.
+publication is part of this candidate. **Outcome (RXVII):** approved head `eaa0d1c` merged as
+`f6cd8c7`; exact-main CI 8/8 (see the Renaissance XVII table).

@@ -26,6 +26,10 @@ procedural audio.
 > **v0.5.0 (interactive instruments) is now the published engineering-alpha release**
 > (Linux x86_64, GitHub-only prerelease). It adds an experimental, Rust-only
 > interactive/observable instrument platform. The install commands below point at v0.5.0.
+>
+> `main` carries **v0.6.0 prepared in source** — merged and version-bumped, but **not tagged or
+> released**; the install commands stay on v0.5.0 until a v0.6.0 release exists
+> ([release states](docs/RELEASE_CONTRACT.md#1-versioning-model)).
 
 > **Engineering alpha.** Linux x86_64 is the best-tested environment. The core
 > engine is implemented and tested; Scene, Story, software graphics, and audio /
