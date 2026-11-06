@@ -12,7 +12,10 @@
 //! | lower   | `RgbRaster` → cells (`to_surface` / `to_mono_surface` + glyph transcode) |
 //! | render  | `Context::render`: layout, paint, diff and ANSI compilation, headless |
 //! | write   | `write_all` + `flush` of that frame's bytes into a pipe — **a pipe, not a terminal**: |
-//! |         | it says nothing about a terminal's parse/display time or physical FPS |
+//! |         | it says nothing about a terminal's parse/display time or physical FPS. On one core |
+//! |         | the drain thread shares the CPU: a frame larger than the 64 KiB pipe buffer blocks |
+//! |         | until the reader runs (its copy lands in `write`); a smaller frame's drain cost can |
+//! |         | land in the next frame's stages. `write` is an upper bound, not a clean split. |
 //!
 //! Numbers are for the host and SHA they were measured on; nothing here is a universal FPS
 //! claim. Build with `--release` for timings (debug numbers are not meaningful).
@@ -102,7 +105,7 @@ fn mean(v: &[u64]) -> u64 {
     }
 }
 
-/// An OS pipe whose read end is drained by a thread, so writes measure the write path only.
+/// An OS pipe whose read end is drained by a thread (see the `write` caveat above).
 fn drained_pipe() -> (std::fs::File, std::thread::JoinHandle<u64>) {
     let mut fds = [0; 2];
     // SAFETY: `fds` is a valid 2-element array for pipe(2).
@@ -199,11 +202,20 @@ fn configs(grids: &[(u16, u16)]) -> Vec<Config> {
     v
 }
 
-fn parse_grids(s: &str) -> Vec<(u16, u16)> {
+/// `"80x25,120x40"` -> grids; any malformed entry is an error, never silently dropped.
+fn parse_grids(s: &str) -> Result<Vec<(u16, u16)>, String> {
     s.split(',')
-        .filter_map(|g| {
-            let (c, r) = g.split_once('x')?;
-            Some((c.trim().parse().ok()?, r.trim().parse().ok()?))
+        .map(|g| {
+            let bad = || format!("bad grid {g:?} (want COLSxROWS)");
+            let (c, r) = g.split_once('x').ok_or_else(bad)?;
+            let (c, r): (u16, u16) = (
+                c.trim().parse().map_err(|_| bad())?,
+                r.trim().parse().map_err(|_| bad())?,
+            );
+            if c == 0 || r == 0 {
+                return Err(bad());
+            }
+            Ok((c, r))
         })
         .collect()
 }
@@ -272,7 +284,17 @@ fn main() {
     while let Some(a) = it.next() {
         match a.as_str() {
             "--frames" => frames = it.next().and_then(|v| v.parse().ok()).unwrap_or(frames),
-            "--grids" => grids = it.next().map(|v| parse_grids(v)).unwrap_or(grids),
+            "--grids" => match it.next().map(|v| parse_grids(v)) {
+                Some(Ok(g)) => grids = g,
+                Some(Err(e)) => {
+                    eprintln!("{e}");
+                    std::process::exit(2);
+                }
+                None => {
+                    eprintln!("--grids needs a value");
+                    std::process::exit(2);
+                }
+            },
             other => {
                 eprintln!("unknown argument {other}");
                 std::process::exit(2);

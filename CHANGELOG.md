@@ -39,10 +39,13 @@ not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
   primitive, #128/#129), lowered in colour and four monochrome glyph families, rendered by the one
   renderer, written into an OS pipe (not a terminal); per-stage timings, bytes, dirty cells and
   allocations; `--selfcheck`.
-- **`tests/raster_ingest_oracle.rs`**: exact pattern fits, bit-for-bit agreement with an
-  independent float route, exact source tiling, a measured aspect bound, and per-cell readback
-  through the renderer — a timing counts only for pixels proven right.
-- The bench's first finding — 256-colour render ~7× truecolor on dense frames — is filed as #260.
+- **`tests/raster_ingest_oracle.rs`** (8): exact pattern fits, `fit_box` partitions the source
+  (each source pixel reaches exactly one sample, driven through `fit_box`), averaging equal to a
+  float route, a measured aspect bound, and — for all 21 timed configurations — the emitted ANSI
+  bytes parsed by a terminal model match the lowered cells (glyph family checked independently;
+  exact RGB in truecolor). One frame per configuration, not every timed frame.
+- The bench's first finding — 256-colour render 4.7–7.2× truecolor on dense frames — is filed as
+  #260.
 
 ## [0.6.0] — prepared in source 2026-11-05 · not tagged, not released
 
