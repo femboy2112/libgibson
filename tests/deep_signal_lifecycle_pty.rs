@@ -263,3 +263,65 @@ fn diagnostics_that_cannot_be_written_do_not_panic() {
     assert_trace_written(&trace, "quit with stderr unwritable");
     let _ = cap.finish();
 }
+
+#[test]
+fn every_quit_key_restores_the_terminal() {
+    for (key, name) in [(&b"q"[..], "q"), (b"\x1b", "Esc"), (b"\x03", "Ctrl-C")] {
+        let trace = trace_path(&format!("quit{}", key[0]));
+        let mut cap = launch(&trace, &[], None);
+        cap.write(key).unwrap();
+        let status = wait_exit(&mut cap, Duration::from_secs(10), true);
+        assert_restored(&cap, name);
+        assert!(status.success(), "{name}: {status:?}");
+        assert_trace_written(&trace, name);
+        let _ = cap.finish();
+    }
+}
+
+#[test]
+fn a_signal_ends_the_session_even_when_the_terminal_stops_reading() {
+    let trace = trace_path("stalled");
+    let mut cap = launch(&trace, &[], None);
+    // Stop reading the terminal while the view keeps changing: frame writes fill the PTY and
+    // the game blocks inside a write, where its loop cannot notice a signal.
+    for _ in 0..50 {
+        cap.write(b"d").unwrap();
+        std::thread::sleep(Duration::from_millis(30));
+    }
+    let pid = libc::pid_t::try_from(cap.process_id()).unwrap();
+    // SAFETY: plain kill(2) to our own direct child, which is still running (not reaped).
+    assert_eq!(unsafe { libc::kill(pid, libc::SIGTERM) }, 0);
+    let status = wait_exit(&mut cap, Duration::from_secs(8), false);
+    assert_eq!(
+        status.signal(),
+        Some(signal_name(libc::SIGTERM).as_str()),
+        "{status:?}"
+    );
+    // Control: the terminal really was stalled, so the orderly shutdown (which writes the trace)
+    // could not run. A responsive terminal would have taken the orderly path instead.
+    assert!(
+        !trace.exists(),
+        "the trace was written: the terminal never stalled, so this test proved nothing"
+    );
+    let _ = cap.finish();
+}
+
+#[test]
+fn argument_errors_with_an_unwritable_stderr_do_not_panic() {
+    let full = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .expect("/dev/full");
+    let status = std::process::Command::new(example_path("deep_signal"))
+        .arg("--not-an-option")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(full)
+        .status()
+        .expect("run deep_signal");
+    assert_eq!(
+        status.code(),
+        Some(2),
+        "a usage error exits 2, not 101: {status:?}"
+    );
+}
