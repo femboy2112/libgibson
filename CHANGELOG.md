@@ -21,6 +21,34 @@ line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 remains **prepar
 `9a899e1`** (release state 1 — not tagged, not released); a future `v0.6.0` tag names that commit,
 not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
 
+### Fixed — Rust library (`gibson::context`) and C ABI behaviour ([#259](https://github.com/femboy2112/libgibson/issues/259))
+- **A headless `Context` no longer reads the real terminal.** `TerminalSession::headless` presents
+  as a TTY so rendering behaves as on a terminal, and `Context::poll_event` / `run_once` (and
+  `gibson_poll_event`, which calls `poll_event`) gated only on that flag — so a headless context
+  read the process's controlling terminal: with no terminal it failed (`"Failed to initialize
+  input reader"`), and under a real PTY it **consumed the user's keystrokes**. `poll_event` now
+  answers `Ok(None)` at once on a headless context and `run_once` takes the off-terminal branch;
+  headless input arrives only through an injected source (`Context::poll_from`). Non-headless TTY
+  contexts are unchanged. `tests/headless_input_boundary.rs` (5) includes a real-PTY leg that typed
+  `x` + Enter and saw both reach the headless context before the fix.
+
+### Added — Rust library, experimental (v0.7 nodes C, D)
+- **`gibson::hold::HoldTracker`** — held-key inference for press-only terminals as an explicit
+  model on a caller-supplied simulation tic: the first observation holds for `initial_grace`
+  tics (bridging the autorepeat delay), each later one re-arms `repeat_timeout`; a hold ends by
+  `Timeout` or by a declared release (focus lost, disconnected, explicit) and is returned as an
+  `EndedHold` record — **never** a synthetic key-release `Event`. Pure (no clock, no I/O); ended
+  holds are returned, not retained; a regressing tic is an error that changes nothing.
+  `tests/input_hold.rs` (18) checks it against an independent per-tic simulator on 300 seeded
+  traces, proves the ended records independent of advance cadence, and runs a 35 Hz
+  `FixedTimestep` simulation under 15/35/60/144 fps presentation with identical results.
+- **`gibson::event_source::InjectedQueue`** (+ `InjectionReceipts`, `QueueFull`) — a bounded FIFO
+  `EventSource` for drivers that inject input while the consumer runs: fixed capacity, a push into
+  a full queue is refused with the event handed back, polls never wait, and receipts conserve
+  `accepted == delivered + len`. `tests/input_injection.rs` (10): identical headless frame digests
+  across runs, across injection batching and against the `ScriptedSource` route; dropping,
+  delaying or order-sensitively reordering one event changes them.
+
 ### Added — examples / tooling (v0.7 nodes A, B; not library API)
 - **`docs/V07_BASELINE.md`**: the merged v0.6 engine measured before any v0.7 library change — the
   installed-SDK forcing consumer at `f6cd8c7` and `7f57047` (identical output, checksum
