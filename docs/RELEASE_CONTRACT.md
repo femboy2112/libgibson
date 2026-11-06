@@ -463,7 +463,8 @@ path is as stated in `SECURITY.md`.
 
 ### v0.6 Engineering Alpha limitations (stated, not hidden)
 
-The v0.6 integration candidate is qualified in
+The v0.6 integration — merged to `main` through #253 as `f6cd8c7`, and v0.6.0 prepared in source
+(state 1 of §1, not released) — is qualified in
 [`V06_QUALIFICATION_LEDGER.md`](V06_QUALIFICATION_LEDGER.md). These are its declared limits:
 
 - **Terminal writes are not atomic.** A failed write may leave a torn prefix of a frame on the

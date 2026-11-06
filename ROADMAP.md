@@ -38,7 +38,7 @@ The 40×15 scientific instrument (RXII); the display transport carrying origin/a
 probe painted on screen; grapheme-cluster-safe clipping; strict, bounded, atomically committed
 capture files and a causal trace (v2) wired into the instrument (`--trace`) and the film
 (`--record` / `--replay-film`). The Wave-3 editor drafts #176/#177 are **superseded** by the merged
-`instrument_workbench` (close recommended — owner's action). **RXV (#252):** the single-line text
+`instrument_workbench` (#176 is closed; closing #177 remains the owner's call). **RXV (#252):** the single-line text
 editor's last glyph boundary is closed — insertion is single-line and control-free, painting is
 safe for any string (a control-bearing or standalone zero-width grapheme becomes one `U+FFFD` cell,
 including through `Node::text_input` and the C ABI), and one width contract governs the cursor,

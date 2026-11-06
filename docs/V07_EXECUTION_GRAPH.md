@@ -1,8 +1,8 @@
 # v0.7 execution graph — a playable terminal Doom through public interfaces
 
-**Status: PLAN.** Nothing here is in the v0.6 candidate, and no v0.7 ABI is added by it. Work starts
-on a successor branch cut from the **actual** `main` head produced by the approved merge of the v0.6
-integration PR — never from the integration branch itself.
+**Status: PLAN, in execution.** Nothing here is part of v0.6.0, and no v0.7 ABI is added by it. The
+approved v0.6 integration merged as `f6cd8c7` (#253); v0.7 work branches from the **actual** `main`
+that contains it — never from the integration branch itself.
 
 ## What v0.6 already proves (preserved evidence, not re-litigated)
 
