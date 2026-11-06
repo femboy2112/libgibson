@@ -7,7 +7,10 @@
 //! - produce a frame of exactly the new geometry,
 //! - leave no cell from an earlier frame: every cell carries the current paint.
 //!
-//! Growth and shrinkage both, including to 1×1, from a context that had already rendered.
+//! Growth and shrinkage both, including to 1×1, from a context that had already rendered. The
+//! canvas covers the whole frame, so this checks the glyph readback of a fully repainted frame;
+//! physical clearing of uncovered terminal areas on resize is covered in
+//! `tests/whole_renderer_vt100.rs`.
 use gibson::cell::{Cell, Glyph, Style};
 use gibson::context::{Context, RenderMode};
 use gibson::event_source::InjectedQueue;
@@ -21,6 +24,16 @@ use std::time::{Duration, Instant};
 /// The glyph a generation paints everywhere: 'A' for the first, 'B' for the next, and so on.
 fn generation_glyph(generation: u32) -> char {
     char::from(b'A' + (generation % 26) as u8)
+}
+
+/// Waits until the scheduler's frame budget allows a frame, so a `false` from `render_if_due`
+/// means "nothing to draw", not "too soon".
+fn wait_until_due(ctx: &Context) {
+    let end = Instant::now() + Duration::from_secs(2);
+    while !ctx.scheduler.time_until_next_frame().is_zero() {
+        assert!(Instant::now() < end, "the frame budget never elapsed");
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }
 
 /// Renders when due, never forced; fails if nothing is drawn within two seconds.
@@ -79,26 +92,42 @@ fn a_resize_repaints_a_full_size_canvas_at_exactly_the_new_geometry() {
         .enumerate()
     {
         let what = format!("{}x{} -> {cols}x{rows}", size.0, size.1);
-        // Nothing has changed yet: a due render draws nothing.
+        // Nothing has changed yet: a render that is due draws nothing.
+        wait_until_due(&ctx);
         assert!(
             !ctx.render_if_due().expect("render_if_due"),
             "{what}: drew before the resize arrived"
         );
         generation.store(step as u32 + 1, Ordering::SeqCst);
+        rects.lock().unwrap().clear();
         ctx.session.set_terminal_size(cols, rows);
         queue.push(Event::Resize(cols, rows)).expect("queue");
+        // Queued but not yet delivered: still nothing to draw, and the canvas is not called.
+        wait_until_due(&ctx);
+        assert!(
+            !ctx.render_if_due().expect("render_if_due"),
+            "{what}: a queued, undelivered resize already drew"
+        );
+        assert!(
+            rects.lock().unwrap().is_empty(),
+            "{what}: painted before delivery"
+        );
         assert_eq!(
             ctx.poll_from(&mut queue, Duration::ZERO).expect("poll"),
             Some(Event::Resize(cols, rows))
         );
-        rects.lock().unwrap().clear();
         render_when_due(&mut ctx);
 
         let painted = rects.lock().unwrap().clone();
         assert_eq!(
-            painted.last().map(|r| (r.width, r.height)),
-            Some((cols, rows)),
-            "{what}: the canvas was not handed the new geometry: {painted:?}"
+            painted.last().copied(),
+            Some(Rect {
+                x: 0,
+                y: 0,
+                width: cols,
+                height: rows
+            }),
+            "{what}: the canvas was not handed the new rect: {painted:?}"
         );
         assert_eq!(ctx.frame_size(), Some((cols, rows)), "{what}: frame size");
         let g = generation_glyph(step as u32 + 1);
