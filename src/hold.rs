@@ -5,8 +5,8 @@
 //! steady rate (commonly 25–40 Hz). Outside optional keyboard protocols it reports **no
 //! release**, and [`KeyEvent`](crate::input::KeyEvent) carries no press / repeat / release kind.
 //! A program that acts *while* a key is held — continuous movement, a held trigger — therefore
-//! has to infer the hold. [`HoldTracker`] makes that inference explicit, deterministic and
-//! labelled as a model:
+//! has to infer the hold. [`HoldTracker`](crate::hold::HoldTracker) makes that inference explicit,
+//! deterministic and labelled as a model:
 //!
 //! * **Simulation time only.** Every call takes a tic (`u64`) supplied by the caller's
 //!   fixed-step simulation (for example [`FixedTimestep`](crate::clock::FixedTimestep)). The
@@ -17,10 +17,11 @@
 //!   Each later observation while the key is held is treated as autorepeat and re-arms the end
 //!   `repeat_timeout` tics after it.
 //! * **The end is inferred, never reported as a release.** A hold ends when its deadline passes
-//!   ([`HoldEnd::Timeout`]) or when the caller ends holds for a declared reason
-//!   ([`HoldEnd::Released`] — focus lost, input disconnected, or an explicit release). No
+//!   ([`HoldEnd::Timeout`](crate::hold::HoldEnd::Timeout)) or when the caller ends holds for a
+//!   declared reason ([`HoldEnd::Released`](crate::hold::HoldEnd::Released) — focus lost, input
+//!   disconnected, or an explicit release). No
 //!   synthetic key-release [`Event`] is ever produced: an ended hold is returned as model output
-//!   ([`EndedHold`]) that says how it ended.
+//!   ([`EndedHold`](crate::hold::EndedHold)) that says how it ended.
 //!
 //! **The rule, exactly.** Let `L` be a key's latest observation. Its timeout `T` is
 //! `initial_grace` if `L` started the hold, and `repeat_timeout` otherwise. Unless a release
