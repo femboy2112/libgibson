@@ -489,6 +489,144 @@ impl EventTrace {
     }
 }
 
+/// Counts kept by an [`InjectedQueue`]. `accepted == delivered + len()` at all times;
+/// `refused` counts pushes turned away because the queue was full.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct InjectionReceipts {
+    /// Events accepted into the queue.
+    pub accepted: u64,
+    /// Pushes refused because the queue was at capacity (the event was handed back).
+    pub refused: u64,
+    /// Events delivered to a poller.
+    pub delivered: u64,
+}
+
+/// A push into a full [`InjectedQueue`] was refused. The event is handed back unchanged; nothing
+/// already queued was displaced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueueFull {
+    /// The refused event, returned to the caller.
+    pub event: Event,
+    /// The queue's fixed capacity.
+    pub capacity: usize,
+}
+
+impl std::fmt::Display for QueueFull {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "injected-event queue is full ({} events)", self.capacity)
+    }
+}
+
+impl std::error::Error for QueueFull {}
+
+/// A bounded, first-in-first-out queue of injected events, polled like any other
+/// [`EventSource`] (v0.7 execution graph, node C).
+///
+/// [`ScriptedSource`] replays a sequence fixed at construction. `InjectedQueue` serves a driver
+/// that produces input *while* the consumer runs — a test harness, a replay player stepping a
+/// fixed-tic simulation, a headless host forwarding events — with no terminal involved:
+///
+/// * **Order.** Events are delivered exactly in the order they were accepted, one per poll.
+/// * **Capacity.** Fixed at construction (at least 1). A push into a full queue is **refused**
+///   and the event handed back in [`QueueFull`]; nothing already queued is displaced and nothing
+///   is dropped silently.
+/// * **No waiting, no clock.** A poll never blocks or sleeps: an empty queue answers `Ok(None)`
+///   at once and reports zero elapsed time. Interleaving input with simulation and rendering is
+///   the caller's loop (for example: push a tic's events, drain them, then step the tic).
+/// * **Provenance.** Everything this source delivers was injected; it never reads the terminal.
+///   Polling it through [`Context::poll_from`](crate::context::Context::poll_from) keeps
+///   synthetic input apart from terminal observations, which only
+///   [`Context::poll_event`](crate::context::Context::poll_event) delivers.
+/// * **Receipts.** [`InjectionReceipts`] account for every push.
+///
+/// ```
+/// use gibson::event_source::{EventSource, InjectedQueue};
+/// use gibson::input::Event;
+/// use std::time::Duration;
+///
+/// let mut q = InjectedQueue::with_capacity(2);
+/// q.push(Event::Resize(80, 24)).unwrap();
+/// q.push(Event::Tick).unwrap();
+/// let full = q.push(Event::Resize(40, 15)).unwrap_err();
+/// assert_eq!(full.event, Event::Resize(40, 15)); // handed back, not lost
+/// assert_eq!(q.poll_event(Duration::ZERO).unwrap(), Some(Event::Resize(80, 24)));
+/// assert_eq!(q.receipts().refused, 1);
+/// ```
+#[derive(Debug, Clone)]
+pub struct InjectedQueue {
+    queue: VecDeque<Event>,
+    capacity: usize,
+    receipts: InjectionReceipts,
+}
+
+impl InjectedQueue {
+    /// Upper bound on the storage reserved up front; a larger capacity grows on demand.
+    const PREALLOCATE_MAX: usize = 1024;
+
+    /// An empty queue holding at most `capacity` events (clamped to at least 1).
+    pub fn with_capacity(capacity: usize) -> Self {
+        let capacity = capacity.max(1);
+        Self {
+            queue: VecDeque::with_capacity(capacity.min(Self::PREALLOCATE_MAX)),
+            capacity,
+            receipts: InjectionReceipts::default(),
+        }
+    }
+
+    /// Appends `event`, or refuses it with [`QueueFull`] if the queue holds `capacity` events.
+    pub fn push(&mut self, event: Event) -> Result<(), QueueFull> {
+        if self.queue.len() >= self.capacity {
+            self.receipts.refused += 1;
+            return Err(QueueFull {
+                event,
+                capacity: self.capacity,
+            });
+        }
+        self.queue.push_back(event);
+        self.receipts.accepted += 1;
+        Ok(())
+    }
+
+    /// Events waiting to be delivered.
+    pub fn len(&self) -> usize {
+        self.queue.len()
+    }
+
+    /// `true` when no event is waiting.
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
+    }
+
+    /// The fixed capacity.
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    /// The push / delivery counts.
+    pub fn receipts(&self) -> InjectionReceipts {
+        self.receipts
+    }
+}
+
+impl EventSource for InjectedQueue {
+    /// Delivers the oldest queued event, or `Ok(None)` at once when empty. `timeout` is ignored:
+    /// the queue never waits.
+    fn poll_event(&mut self, _timeout: Duration) -> io::Result<Option<Event>> {
+        let event = self.queue.pop_front();
+        if event.is_some() {
+            self.receipts.delivered += 1;
+        }
+        Ok(event)
+    }
+
+    fn poll_event_timed(&mut self, timeout: Duration) -> io::Result<TimedPoll> {
+        Ok(TimedPoll {
+            event: self.poll_event(timeout)?,
+            elapsed: Duration::ZERO,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
