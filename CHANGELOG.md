@@ -21,6 +21,20 @@ line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 remains **prepar
 `9a899e1`** (release state 1 — not tagged, not released); a future `v0.6.0` tag names that commit,
 not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
 
+### Added — C ABI v1 (additive, 59 → 60 symbols): injected input for a headless context
+- **`gibson_push_event(ctx, const gibson_event_t *event)`** queues a key, paste or resize event on
+  a headless context; `gibson_poll_event` delivers queued events oldest first, each exactly once,
+  without waiting. The encoding is exactly what `gibson_poll_event` writes, so a pushed event polls
+  back unchanged. The queue is bounded at `GIBSON_EVENT_QUEUE_CAPACITY` (1024): a push beyond it
+  returns the new **`GIBSON_ERR_QUEUE_FULL`** (-5) and displaces nothing. Unrepresentable events
+  (unknown type or modifier bits, a non-scalar `key_code`, a null or non-UTF-8 paste, a zero-sized
+  resize) and terminal contexts are refused with `GIBSON_ERR_INVALID_PARAM`. A delivered resize
+  sets the headless geometry. Existing clients see no change: a headless poll with nothing pushed
+  is still `GIBSON_EVENT_NONE`, and the new status is returned only by the new function.
+- `gibson_event_t`'s layout is now frozen by test (it becomes caller-built input).
+- The installed-SDK forcing consumer moves its marker only by pushed-and-polled keys; its frames
+  and checksum are unchanged (`15734824182601092804`).
+
 ### Changed — Rust library (`gibson::capability`), performance ([#260](https://github.com/femboy2112/libgibson/issues/260))
 - **256-colour quantization is O(1) and exactly equal to the old scan.** `nearest256` no longer
   scans 240 palette entries per colour: the cube's nearest entry is the per-channel nearest level

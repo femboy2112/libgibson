@@ -51,6 +51,7 @@ gibson_node_stack
 gibson_node_text
 gibson_node_text_input
 gibson_poll_event
+gibson_push_event
 gibson_render
 gibson_render_if_due
 gibson_request_render

@@ -27,7 +27,7 @@
 //!    prefix — is intentionally *not* claimed.)
 //!
 //! 4. **Additive growth keeps the version (Gate F5).** The Gate J/K work grew the
-//!    surface from 52 to 59 exported functions. Every addition is a *new* symbol;
+//!    surface from 52 to 59 exported functions; v0.7 adds `gibson_push_event` (60). Every addition is a *new* symbol;
 //!    no existing function's signature or semantics changed. New symbols are
 //!    invisible to an older client (it never resolves what it never references),
 //!    so additive growth alone does **not** bump [`GIBSON_ABI_VERSION`]. A bump is
@@ -43,7 +43,8 @@
 
 use crate::cell::{Color, Line, RichText, Span, Style, TextAlign};
 use crate::context::Context;
-use crate::input::{Event, KeyCode};
+use crate::event_source::InjectedQueue;
+use crate::input::{Event, KeyCode, KeyEvent, KeyModifiers};
 use crate::node::{Node, WrapMode};
 use crate::renderer::RenderMode;
 use crate::scheduler::RenderStats;
@@ -109,6 +110,10 @@ pub const GIBSON_EVENT_KEY: i32 = 1;
 pub const GIBSON_EVENT_PASTE: i32 = 2;
 pub const GIBSON_EVENT_RESIZE: i32 = 3;
 
+/// Most undelivered events one headless context holds for [`gibson_push_event`]. A push beyond
+/// it is refused with [`GibsonStatus::ErrQueueFull`]; nothing queued is displaced.
+pub const GIBSON_EVENT_QUEUE_CAPACITY: usize = 1024;
+
 thread_local! {
     static LAST_ERROR: RefCell<String> = const { RefCell::new(String::new()) };
 }
@@ -125,6 +130,9 @@ pub enum GibsonStatus {
     ErrIo = -2,
     ErrPanic = -3,
     ErrNotInitialized = -4,
+    /// [`gibson_push_event`] refused an event: the context already holds
+    /// [`GIBSON_EVENT_QUEUE_CAPACITY`] undelivered events. Poll some, then push again.
+    ErrQueueFull = -5,
 }
 
 /// FFI-safe color descriptor. `color_type` is a raw `i32` validated on entry.
@@ -384,6 +392,19 @@ impl GibsonStats {
 pub struct GibsonContextOpaque {
     pub inner: Context,
     last_paste_cstring: Option<CString>,
+    /// Events pushed with [`gibson_push_event`], delivered by [`gibson_poll_event`] on a headless
+    /// context. Unused (always empty) on a terminal context, which reads its own input.
+    injected: InjectedQueue,
+}
+
+impl GibsonContextOpaque {
+    fn new(inner: Context) -> Self {
+        Self {
+            inner,
+            last_paste_cstring: None,
+            injected: InjectedQueue::with_capacity(GIBSON_EVENT_QUEUE_CAPACITY),
+        }
+    }
 }
 
 pub struct GibsonNodeOpaque {
@@ -498,10 +519,7 @@ pub unsafe extern "C" fn gibson_create_context(
 
         match Context::new(m) {
             Ok(ctx) => {
-                let boxed = Box::new(GibsonContextOpaque {
-                    inner: ctx,
-                    last_paste_cstring: None,
-                });
+                let boxed = Box::new(GibsonContextOpaque::new(ctx));
                 *out = Box::into_raw(boxed);
                 GibsonStatus::Ok
             }
@@ -545,10 +563,7 @@ pub unsafe extern "C" fn gibson_create_headless_context(
             ));
             return GibsonStatus::ErrInvalidParam;
         }
-        let boxed = Box::new(GibsonContextOpaque {
-            inner: Context::headless(m, cols, rows),
-            last_paste_cstring: None,
-        });
+        let boxed = Box::new(GibsonContextOpaque::new(Context::headless(m, cols, rows)));
         *out = Box::into_raw(boxed);
         GibsonStatus::Ok
     }));
@@ -901,10 +916,22 @@ pub unsafe extern "C" fn gibson_poll_event(
         (*out_event).rows = 0;
         (*out_event).paste_str = ptr::null();
 
-        match (*ctx)
-            .inner
-            .poll_event(Duration::from_millis(timeout_ms as u64))
-        {
+        let timeout = Duration::from_millis(timeout_ms as u64);
+        let c = &mut *ctx;
+        // A headless context delivers what was pushed (gibson_push_event), never the process
+        // terminal (#259); its queue never waits, so the timeout does not delay it.
+        let polled = if c.inner.session.is_headless() {
+            let ev = c.inner.poll_from(&mut c.injected, timeout);
+            if let Ok(Some(Event::Resize(cols, rows))) = &ev {
+                // A delivered resize takes effect as a terminal's does: the next render lays out
+                // at the new geometry.
+                c.inner.session.set_terminal_size(*cols, *rows);
+            }
+            ev
+        } else {
+            c.inner.poll_event(timeout)
+        };
+        match polled {
             Ok(Some(ev)) => {
                 match ev {
                     Event::Key(k) => {
@@ -952,6 +979,106 @@ pub unsafe extern "C" fn gibson_poll_event(
             Err(e) => {
                 set_last_error(e.to_string());
                 GibsonStatus::ErrIo
+            }
+        }
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Translates a C event into an engine event for [`gibson_push_event`]: the inverse of the
+/// encoding [`gibson_poll_event`] writes, so a pushed event polls back unchanged.
+///
+/// # Safety
+/// For a paste event, `ev.paste_str` must be null or point to a NUL-terminated string.
+unsafe fn event_from_c(ev: &GibsonEvent) -> Result<Event, String> {
+    match ev.event_type {
+        GIBSON_EVENT_KEY => {
+            let modifiers = KeyModifiers::from_bits(ev.modifiers)
+                .ok_or_else(|| format!("unknown modifier bits {:#04x}", ev.modifiers))?;
+            let code = match ev.key_code {
+                GIBSON_KEY_ENTER => KeyCode::Enter,
+                GIBSON_KEY_LEFT => KeyCode::Left,
+                GIBSON_KEY_RIGHT => KeyCode::Right,
+                GIBSON_KEY_UP => KeyCode::Up,
+                GIBSON_KEY_DOWN => KeyCode::Down,
+                GIBSON_KEY_HOME => KeyCode::Home,
+                GIBSON_KEY_END => KeyCode::End,
+                GIBSON_KEY_BACKSPACE => KeyCode::Backspace,
+                GIBSON_KEY_DELETE => KeyCode::Delete,
+                GIBSON_KEY_ESC => KeyCode::Esc,
+                GIBSON_KEY_TAB => KeyCode::Tab,
+                GIBSON_KEY_PAGE_UP => KeyCode::PageUp,
+                GIBSON_KEY_PAGE_DOWN => KeyCode::PageDown,
+                cp => KeyCode::Char(
+                    char::from_u32(cp)
+                        .ok_or_else(|| format!("key_code {cp:#x} is not a Unicode scalar value"))?,
+                ),
+            };
+            Ok(Event::Key(KeyEvent::new(code, modifiers)))
+        }
+        GIBSON_EVENT_PASTE => {
+            if ev.paste_str.is_null() {
+                return Err("paste event with a null paste_str".into());
+            }
+            let text = CStr::from_ptr(ev.paste_str)
+                .to_str()
+                .map_err(|_| "paste_str is not valid UTF-8".to_string())?;
+            Ok(Event::Paste(text.to_owned()))
+        }
+        GIBSON_EVENT_RESIZE => {
+            if ev.cols == 0 || ev.rows == 0 {
+                return Err(format!(
+                    "resize to {}x{}: both must be non-zero",
+                    ev.cols, ev.rows
+                ));
+            }
+            Ok(Event::Resize(ev.cols, ev.rows))
+        }
+        other => Err(format!("event_type {other} cannot be pushed")),
+    }
+}
+
+/// Queues an input event on a **headless** context; [`gibson_poll_event`] delivers queued events
+/// first-in, first-out, each exactly once, without waiting.
+///
+/// Returns `GIBSON_ERR_INVALID_PARAM` for a null argument, a terminal (non-headless) context, or
+/// an event that cannot be represented (see `include/gibson.h`), and `GIBSON_ERR_QUEUE_FULL` when
+/// [`GIBSON_EVENT_QUEUE_CAPACITY`] events are undelivered. A refused event is not queued and
+/// nothing already queued is displaced. The paste text is copied; the caller keeps ownership.
+///
+/// # Safety
+/// `ctx` must be null or a live context; `event` must be null or point to a readable
+/// `gibson_event_t` whose `paste_str` (for a paste) is null or NUL-terminated.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_push_event(
+    ctx: *mut GibsonContextOpaque,
+    event: *const GibsonEvent,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || event.is_null() {
+            set_last_error("gibson_push_event: Null pointer".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let c = &mut *ctx;
+        if !c.inner.session.is_headless() {
+            set_last_error(
+                "gibson_push_event: not a headless context (a terminal context reads its own input)"
+                    .into(),
+            );
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let ev = match event_from_c(&*event) {
+            Ok(ev) => ev,
+            Err(msg) => {
+                set_last_error(format!("gibson_push_event: {msg}"));
+                return GibsonStatus::ErrInvalidParam;
+            }
+        };
+        match c.injected.push(ev) {
+            Ok(()) => GibsonStatus::Ok,
+            Err(full) => {
+                set_last_error(format!("gibson_push_event: {full}"));
+                GibsonStatus::ErrQueueFull
             }
         }
     }));

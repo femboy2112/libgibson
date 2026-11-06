@@ -32,7 +32,8 @@ typedef enum {
     GIBSON_ERR_INVALID_PARAM = -1,
     GIBSON_ERR_IO = -2,
     GIBSON_ERR_PANIC = -3,
-    GIBSON_ERR_NOT_INITIALIZED = -4
+    GIBSON_ERR_NOT_INITIALIZED = -4,
+    GIBSON_ERR_QUEUE_FULL = -5     /* gibson_push_event only (ABI v1, additive) */
 } gibson_status_t;
 
 /* Render modes (pass as int32_t) */
@@ -252,7 +253,27 @@ gibson_status_t gibson_insert_rich_text_before_live(gibson_context_t *ctx, const
 gibson_status_t gibson_clear_live_region(gibson_context_t *ctx);
 
 /* Input */
+/* On a terminal context, reads the terminal (waiting up to timeout_ms). On a HEADLESS context,
+   delivers the events queued by gibson_push_event, oldest first, each exactly once, without
+   waiting; GIBSON_EVENT_NONE when the queue is empty. A delivered RESIZE also sets the headless
+   geometry, so the next render lays out at cols x rows. */
 gibson_status_t gibson_poll_event(gibson_context_t *ctx, uint32_t timeout_ms, gibson_event_t *out_event);
+
+/* Most undelivered events one headless context holds (see gibson_push_event). */
+#define GIBSON_EVENT_QUEUE_CAPACITY 1024
+
+/* Queues an input event on a HEADLESS context, for gibson_poll_event to deliver: the encoding is
+   exactly what gibson_poll_event writes, so a pushed event polls back unchanged.
+     KEY:    key_code is a GIBSON_KEY_* constant or a Unicode scalar value; modifiers uses only
+             GIBSON_MOD_* bits. Because GIBSON_KEY_* occupy 0x1001-0x100D, those codepoints are
+             always the special keys (gibson_poll_event encodes them the same way).
+     PASTE:  paste_str is a non-NULL, NUL-terminated UTF-8 string; it is copied.
+     RESIZE: cols and rows are both non-zero.
+   Fields the event type does not use are ignored. Returns GIBSON_ERR_INVALID_PARAM for a NULL
+   argument, a terminal (non-headless) context or an unrepresentable event, and
+   GIBSON_ERR_QUEUE_FULL when GIBSON_EVENT_QUEUE_CAPACITY events are undelivered. A refused event
+   is not queued, and nothing already queued is displaced. (ABI v1, additive) */
+gibson_status_t gibson_push_event(gibson_context_t *ctx, const gibson_event_t *event);
 
 /* Metrics & Diagnostics */
 gibson_status_t gibson_get_stats(gibson_context_t *ctx, gibson_stats_t *out_stats);

@@ -13,8 +13,9 @@
  * the WHOLE resolved cell grid out each frame via the BULK path — then self-checks invariants a
  * naive smoke never would:
  *
- *   1. input -> render -> readback closes: a marker driven by the frame index lands at the raster
- *      column the input demanded (the game-loop contract).
+ *   1. input -> render -> readback closes: a marker moved only by INJECTED input (one
+ *      GIBSON_KEY_RIGHT per frame, pushed with gibson_push_event and delivered by
+ *      gibson_poll_event) lands at the raster column the input demanded (the game-loop contract).
  *   2. the BULK readback equals the authoritative single-cell readback, byte for byte, over the
  *      whole frame (the fast path a raster needs must not diverge from gibson_get_frame_cell).
  *   3. gibson_set_color_depth on a LIVE context restyles the readback: the same styled cell resolves
@@ -23,12 +24,15 @@
  *   4. the long-glyph escape hatch returns a grapheme cluster longer than the inline cap in full
  *      (a 25-byte ZWJ emoji is one cell; gibson_get_frame_cell_glyph recovers all 25 bytes).
  *   5. the ANSI output path yields bytes at every depth.
+ *   6. injected input is bounded and exact: the queue accepts exactly GIBSON_EVENT_QUEUE_CAPACITY
+ *      events, refuses the next with GIBSON_ERR_QUEUE_FULL, delivers each once in order; a pushed
+ *      RESIZE, once polled, sets the headless frame geometry.
  *
  * Any violated invariant is a nonzero exit with a diagnostic on stderr; success prints a one-line
  * summary and exits 0. The ABI symbols exercised: gibson_create_headless_context, gibson_set_root_node,
  * gibson_node_box_col, gibson_node_text, gibson_node_add_child, gibson_render, gibson_get_frame_size,
  * gibson_get_frame_cell, gibson_get_frame_cells, gibson_get_frame_cell_glyph, gibson_set_color_depth,
- * gibson_get_rendered_output, gibson_destroy_context.
+ * gibson_get_rendered_output, gibson_push_event, gibson_poll_event, gibson_destroy_context.
  */
 #include <gibson.h>
 #include <stdint.h>
@@ -75,11 +79,32 @@ int main(void) {
 
     unsigned long long checksum = 0;
     size_t total_cells_read = 0;
+    size_t events_delivered = 0;
+    int marker = 0;
 
     /* ---- The Doom-shaped frame loop: input -> render -> full-frame bulk readback ---- */
     for (int f = 0; f < FRAMES; f++) {
-        /* Simulated input: a marker sweeps across the row, one column per frame. */
-        int marker = f % (COLS - 1);
+        /* Injected input: after the first frame, one RIGHT key per frame moves the marker one
+           column (wrapping before the last column). The marker moves only on a polled event. */
+        if (f > 0) {
+            gibson_event_t right;
+            memset(&right, 0, sizeof right);
+            right.event_type = GIBSON_EVENT_KEY;
+            right.key_code = GIBSON_KEY_RIGHT;
+            if (gibson_push_event(ctx, &right) != GIBSON_OK) { free(bulk); return fail("push RIGHT"); }
+        }
+        for (;;) {
+            gibson_event_t ev;
+            if (gibson_poll_event(ctx, 0, &ev) != GIBSON_OK) { free(bulk); return fail("poll"); }
+            if (ev.event_type == GIBSON_EVENT_NONE) break;
+            if (ev.event_type != GIBSON_EVENT_KEY || ev.key_code != GIBSON_KEY_RIGHT || ev.modifiers != 0) {
+                free(bulk);
+                return fail("polled event differs from the pushed RIGHT key");
+            }
+            marker = (marker + 1) % (COLS - 1);
+            events_delivered++;
+        }
+        if (events_delivered != (size_t)f) { free(bulk); return fail("each pushed event must be delivered exactly once"); }
         char line[COLS + 1];
         for (int i = 0; i < COLS; i++) line[i] = (i == marker) ? '#' : '.';
         line[COLS] = '\0';
@@ -101,7 +126,7 @@ int main(void) {
             const gibson_cell_t *c = &bulk[x];
             if (c->glyph_len == 1 && c->glyph[0] == '#') { found = x; break; }
         }
-        if (found != marker) { free(bulk); return fail("marker column did not track the simulated input"); }
+        if (found != marker) { free(bulk); return fail("marker column did not track the injected input"); }
 
         /* (2) bulk == single, byte for byte, on a stride sample across the frame. */
         for (size_t i = 0; i < grid; i += 7) {
@@ -170,10 +195,49 @@ int main(void) {
     if (gibson_get_rendered_output(ctx, ansi, sizeof ansi, &ansi_len) != GIBSON_OK) { free(bulk); return fail("ansi output"); }
     CHECK(ansi_len > 0, "rendered ANSI output was empty");
 
+    /* ---- (6) Injected input is bounded and exact ---- */
+    size_t accepted = 0;
+    for (;;) {
+        gibson_event_t k;
+        memset(&k, 0, sizeof k);
+        k.event_type = GIBSON_EVENT_KEY;
+        k.key_code = 0x4E00u + (uint32_t)(accepted % 1000u); /* CJK ideographs */
+        gibson_status_t st = gibson_push_event(ctx, &k);
+        if (st == GIBSON_ERR_QUEUE_FULL) break;
+        if (st != GIBSON_OK) { free(bulk); return fail("push into a non-full queue"); }
+        if (++accepted > GIBSON_EVENT_QUEUE_CAPACITY) { free(bulk); return fail("queue accepted more than its capacity"); }
+    }
+    CHECK(accepted == GIBSON_EVENT_QUEUE_CAPACITY, "queue refused before reaching its capacity");
+    for (size_t i = 0; i < accepted; i++) {
+        gibson_event_t ev;
+        if (gibson_poll_event(ctx, 0, &ev) != GIBSON_OK) { free(bulk); return fail("drain poll"); }
+        if (ev.event_type != GIBSON_EVENT_KEY || ev.key_code != 0x4E00u + (uint32_t)(i % 1000u)) {
+            free(bulk);
+            return fail("queued events were not delivered in push order");
+        }
+    }
+    gibson_event_t none;
+    OK(gibson_poll_event(ctx, 0, &none));
+    CHECK(none.event_type == GIBSON_EVENT_NONE, "an event was delivered twice or a refused one was queued");
+
+    gibson_event_t rs;
+    memset(&rs, 0, sizeof rs);
+    rs.event_type = GIBSON_EVENT_RESIZE;
+    rs.cols = 40;
+    rs.rows = 6;
+    OK(gibson_push_event(ctx, &rs));
+    gibson_event_t got;
+    OK(gibson_poll_event(ctx, 0, &got));
+    CHECK(got.event_type == GIBSON_EVENT_RESIZE && got.cols == 40 && got.rows == 6, "resize did not poll back");
+    if (stage_line(ctx, "resized", &plain) != GIBSON_OK) { free(bulk); return 1; }
+    uint16_t rc = 0, rr = 0;
+    OK(gibson_get_frame_size(ctx, &rc, &rr));
+    CHECK(rc == 40 && rr == 6, "a polled RESIZE did not set the headless frame geometry");
+
     gibson_destroy_context(ctx);
     free(bulk);
 
-    printf("doom_forcing_consumer: OK  frames=%d grid=%dx%d cells_read=%zu long_glyph=%zuB ansi=%zuB checksum=%llu\n",
-           FRAMES, COLS, ROWS, total_cells_read, full_len, ansi_len, checksum);
+    printf("doom_forcing_consumer: OK  frames=%d grid=%dx%d cells_read=%zu long_glyph=%zuB ansi=%zuB events=%zu queue=%zu checksum=%llu\n",
+           FRAMES, COLS, ROWS, total_cells_read, full_len, ansi_len, events_delivered, accepted, checksum);
     return 0;
 }
