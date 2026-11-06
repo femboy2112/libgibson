@@ -62,6 +62,14 @@ not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
   the same world digest at presentation cadences 1/2/3/7 and at 40×15 ASCII, and a painted view.
   Tests: `deep_signal_sim` (6) and a real-PTY playthrough `deep_signal_pty` (2: 80×24 colour,
   40×15 ASCII).
+- **Pacing under a slow terminal (v0.7 node F):** the loop keeps the simulation at wall-clock pace
+  and drops presentations — after a blocked frame write up to 70 owed tics (2 s) run before the
+  next frame, the rest deferred, never discarded. `tests/deep_signal_pacing_pty.rs` drives a real
+  PTY with a held turn: a full-speed reader presents ~165 of 175 tics in 5 s; a ~50 KB/s reader
+  still runs 172–175 tics (≥ 94% of those owed) while presenting ~15 frames. With the previous
+  4-tic catch-up cap the same slow reader dilated the simulation to 45 of 178 tics — the test is
+  red for that. A PTY and a throttled reader, not a physical terminal's display rate; a terminal
+  that stops reading entirely stalls the (synchronous) loop.
 
 ### Added — examples / tooling (v0.7 nodes A, B; not library API)
 - **`docs/V07_BASELINE.md`**: the merged v0.6 engine measured before any v0.7 library change — the

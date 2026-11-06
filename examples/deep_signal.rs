@@ -40,6 +40,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use world::{Happening, Intent, Phase, World, TIC_HZ};
 
+/// Most simulation tics run before one presentation when the terminal is slow (2 s at 35 Hz).
+const MAX_CATCHUP_TICS: u32 = 2 * TIC_HZ;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Action {
     Forward,
@@ -448,7 +451,11 @@ fn play(o: Opts) -> std::io::Result<()> {
         ctx.set_color_depth(ColorDepth::Mono);
     }
     let tic = Duration::from_secs(1) / TIC_HZ;
-    let mut clock = FixedTimestep::exact(tic, 4);
+    // Backpressure policy (node F): the simulation keeps wall-clock pace and presentation drops
+    // frames. A slow terminal stretches one loop iteration (the write is synchronous), so the next
+    // advance may owe many tics; up to MAX_CATCHUP_TICS (2 s) run before the next frame, the rest
+    // are deferred - never discarded. A terminal that stops reading entirely stalls the loop.
+    let mut clock = FixedTimestep::exact(tic, MAX_CATCHUP_TICS);
     let mut sim = Sim::new(o.seed, o.levels, o.hold);
     let mut cols = crossterm::terminal::size().map(|(c, _)| c).unwrap_or(80);
     let started = Instant::now();
@@ -520,10 +527,11 @@ fn play(o: Opts) -> std::io::Result<()> {
         std::fs::write(path, body)?;
     }
     eprintln!(
-        "deep_signal: tics={} presented={} frames_behind={} world={:016x} sector={}/{}",
+        "deep_signal: tics={} presented={} frames_behind={} wall_ms={} world={:016x} sector={}/{}",
         sim.world.tic,
         presented,
         behind_frames,
+        started.elapsed().as_millis(),
         sim.world.digest(),
         sim.world.level,
         sim.world.levels
