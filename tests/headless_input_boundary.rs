@@ -31,8 +31,32 @@ fn headless_poll_event_reports_no_input_at_once() {
 
 #[test]
 fn headless_run_once_takes_the_off_terminal_branch() {
+    // The off-terminal branch waits for the frame slice, then renders if due: a due frame is
+    // rendered (observable bytes), and a call with nothing due waits instead of returning at
+    // once - an implementation that merely returned Ok(None) fails both.
     let mut ctx = Context::headless(RenderMode::Fullscreen, 20, 4);
-    assert_eq!(ctx.run_once(Duration::from_millis(30)).unwrap(), None);
+    ctx.set_root(gibson::node::Node::text(
+        "run_once",
+        gibson::cell::Style::default(),
+    ));
+    let mut rendered = false;
+    for _ in 0..10 {
+        assert_eq!(ctx.run_once(Duration::from_millis(30)).unwrap(), None);
+        if ctx.take_output().contains("run_once") {
+            rendered = true;
+            break;
+        }
+    }
+    assert!(
+        rendered,
+        "a due frame is rendered by run_once on a headless context"
+    );
+    let t0 = Instant::now();
+    assert_eq!(ctx.run_once(Duration::from_millis(40)).unwrap(), None);
+    assert!(
+        t0.elapsed() >= Duration::from_millis(2),
+        "run_once waited for the frame slice"
+    );
 }
 
 #[test]

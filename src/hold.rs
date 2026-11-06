@@ -247,24 +247,44 @@ impl<K: Copy + Eq> HoldTracker<K> {
     /// Records an observation (a press or an autorepeat) of `key` at `tic`. First advances to
     /// `tic`, returning the holds that ended on the way; then starts a hold for `key`, or extends
     /// its current one.
+    ///
+    /// At `u64::MAX`, the last representable tic, a hold's interval `[MAX, MAX)` is empty: the
+    /// observation is reported at once as a hold that ended at `MAX`, and nothing stays held.
     pub fn observe(&mut self, tic: u64, key: K) -> Result<Vec<EndedHold<K>>, HoldError> {
-        let ended = self.advance(tic)?;
+        let mut ended = self.advance(tic)?;
         let config = self.config;
-        match self.holds.iter_mut().find(|(k, _)| *k == key) {
-            Some((_, hold)) => {
+        let index = self.holds.iter().position(|(k, _)| *k == key);
+        let hold = match index {
+            Some(i) => {
+                let mut hold = self.holds[i].1;
                 hold.last_seen = tic;
                 hold.observations = hold.observations.saturating_add(1);
                 hold.ends_at = tic.saturating_add(config.repeat_timeout);
+                hold
             }
-            None => self.holds.push((
+            None => Hold {
+                started: tic,
+                last_seen: tic,
+                observations: 1,
+                ends_at: tic.saturating_add(config.initial_grace),
+            },
+        };
+        if hold.ends_at > tic {
+            match index {
+                Some(i) => self.holds[i].1 = hold,
+                None => self.holds.push((key, hold)),
+            }
+        } else {
+            // Saturated at the end of time: keep the invariant `ends_at > now` by never storing it.
+            if let Some(i) = index {
+                self.holds.remove(i);
+            }
+            ended.push(EndedHold {
                 key,
-                Hold {
-                    started: tic,
-                    last_seen: tic,
-                    observations: 1,
-                    ends_at: tic.saturating_add(config.initial_grace),
-                },
-            )),
+                hold,
+                ended_at: tic,
+                end: HoldEnd::Timeout,
+            });
         }
         Ok(ended)
     }

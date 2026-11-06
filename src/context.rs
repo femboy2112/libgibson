@@ -627,9 +627,11 @@ impl Context {
     ///
     /// Returns `Ok(None)` at once, without touching the process terminal, when there is no
     /// terminal input source: on a redirected / non-TTY stdout, and on a **headless**
-    /// context ([`Context::headless`]), whose session is virtual. A headless context takes
-    /// input only from an injected source through [`poll_from`](Self::poll_from), which
-    /// keeps synthetic input distinct from real terminal observations (#259).
+    /// context ([`Context::headless`]), whose session is virtual (#259). A headless context's
+    /// input comes from whatever source the caller passes to [`poll_from`](Self::poll_from):
+    /// an injected source keeps it synthetic; passing
+    /// [`TerminalSource`](crate::event_source::TerminalSource) there explicitly reads the real
+    /// terminal, as that source always does.
     pub fn poll_event(&mut self, timeout: Duration) -> io::Result<Option<Event>> {
         if !self.session.is_tty || self.session.is_headless() {
             return Ok(None);

@@ -534,9 +534,10 @@ impl std::error::Error for QueueFull {}
 ///   at once and reports zero elapsed time. Interleaving input with simulation and rendering is
 ///   the caller's loop (for example: push a tic's events, drain them, then step the tic).
 /// * **Provenance.** Everything this source delivers was injected; it never reads the terminal.
-///   Polling it through [`Context::poll_from`](crate::context::Context::poll_from) keeps
-///   synthetic input apart from terminal observations, which only
-///   [`Context::poll_event`](crate::context::Context::poll_event) delivers.
+///   Polled through [`Context::poll_from`](crate::context::Context::poll_from), it keeps
+///   synthetic input apart from terminal observations, which arrive only from
+///   [`Context::poll_event`](crate::context::Context::poll_event) on a non-headless TTY or from
+///   a [`TerminalSource`] the caller passes explicitly.
 /// * **Receipts.** [`InjectionReceipts`] account for every push.
 ///
 /// ```
