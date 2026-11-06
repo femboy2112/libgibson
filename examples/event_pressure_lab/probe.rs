@@ -6,6 +6,7 @@ use std::{
     fs::{self, File},
     io::{self, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
 
@@ -76,7 +77,7 @@ impl Report {
     }
 }
 
-struct TempDir(PathBuf);
+pub struct TempDir(PathBuf);
 impl std::ops::Deref for TempDir {
     type Target = Path;
     fn deref(&self) -> &Path {
@@ -87,6 +88,41 @@ impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+/// Process-wide trial sequence (#255). Trials run on parallel test threads of one process,
+/// so `pid` + a CLOCK_MONOTONIC microsecond does not name a trial uniquely: two threads that
+/// read the same microsecond built the same path and the second `create_dir` failed with
+/// `EEXIST`. The sequence makes the name unique within the process without consulting a clock.
+static TRIAL_SEQ: AtomicU64 = AtomicU64::new(0);
+/// Bounded retries for a name that still exists, e.g. a directory left by a killed earlier
+/// process that had the same pid. Each retry draws a fresh sequence number.
+const TRIAL_DIR_ATTEMPTS: u32 = 64;
+
+/// The trial directory's name. `epoch` stays in the name for diagnosis only; uniqueness
+/// comes from `seq`.
+pub fn trial_dir_name(pid: u32, epoch: u64, seq: u64) -> String {
+    format!("gibson-pressure-{pid}-{epoch}-{seq}")
+}
+
+/// Create an exclusively owned trial directory under `root`. `create_dir` (never
+/// `create_dir_all`) keeps ownership exclusive: an existing path is not adopted, it is
+/// skipped for a fresh name. The returned guard removes the directory on drop.
+pub fn create_trial_dir(root: &Path, epoch: u64) -> io::Result<TempDir> {
+    let pid = std::process::id();
+    for _ in 0..TRIAL_DIR_ATTEMPTS {
+        let seq = TRIAL_SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = root.join(trial_dir_name(pid, epoch, seq));
+        match fs::create_dir(&dir) {
+            Ok(()) => return Ok(TempDir(dir)),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "no free trial directory name after bounded attempts",
+    ))
 }
 
 pub struct Trial {
@@ -114,10 +150,7 @@ impl Trial {
     pub fn start(exe: &Path, config: Config) -> io::Result<Self> {
         config.validate()?;
         let epoch = clock_us();
-        let dir =
-            std::env::temp_dir().join(format!("gibson-pressure-{}-{epoch}", std::process::id()));
-        fs::create_dir(&dir)?;
-        let dir = TempDir(dir);
+        let dir = create_trial_dir(&std::env::temp_dir(), epoch)?;
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: 32,
