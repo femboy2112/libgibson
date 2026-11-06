@@ -90,9 +90,15 @@ fn action_of(k: &KeyEvent) -> Option<Action> {
 /// Delivered termination signals, turned into an orderly stop of the game loop.
 #[cfg(unix)]
 mod stop_signal {
-    use std::sync::atomic::{AtomicI32, Ordering};
+    use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
+    use std::time::Duration;
 
     static PENDING: AtomicI32 = AtomicI32::new(0);
+    /// The signals whose handler this module installed (bit `n` = signal `n`).
+    static INSTALLED: AtomicU64 = AtomicU64::new(0);
+
+    /// How long the orderly stop may take before the signal's default action is applied anyway.
+    pub const GRACE: Duration = Duration::from_secs(3);
 
     extern "C" fn record(sig: libc::c_int) {
         // Async-signal-safe: one atomic store, nothing else.
@@ -116,7 +122,39 @@ mod stop_signal {
                 sa.sa_sigaction = record as extern "C" fn(libc::c_int) as libc::sighandler_t;
                 sa.sa_flags = libc::SA_RESTART;
                 libc::sigemptyset(&mut sa.sa_mask);
-                libc::sigaction(sig, &sa, std::ptr::null_mut());
+                if libc::sigaction(sig, &sa, std::ptr::null_mut()) == 0 {
+                    INSTALLED.fetch_or(1 << sig, Ordering::SeqCst);
+                }
+            }
+        }
+        // A caught signal must still end the process when the loop cannot reach its orderly
+        // stop - blocked in a write to a terminal that stopped reading, say. After GRACE the
+        // watchdog applies the default action itself (the terminal then stays as it is: every
+        // restore sequence would block on the same stalled write).
+        if INSTALLED.load(Ordering::SeqCst) != 0 {
+            let _ = std::thread::Builder::new()
+                .name("stop-watchdog".into())
+                .spawn(|| loop {
+                    std::thread::sleep(Duration::from_millis(20));
+                    if let Some(sig) = pending() {
+                        std::thread::sleep(GRACE);
+                        reraise(sig);
+                    }
+                });
+        }
+    }
+
+    /// Puts back the default action of every signal this module caught, so one that arrives
+    /// after the final [`pending`] check still ends the process instead of being recorded and
+    /// never acted on.
+    pub fn uninstall() {
+        let installed = INSTALLED.swap(0, Ordering::SeqCst);
+        for sig in [libc::SIGTERM, libc::SIGINT] {
+            if installed & (1 << sig) != 0 {
+                // SAFETY: restoring the default disposition of a signal we installed.
+                unsafe {
+                    libc::signal(sig, libc::SIG_DFL);
+                }
             }
         }
     }
@@ -142,6 +180,7 @@ mod stop_signal {
 #[cfg(not(unix))]
 mod stop_signal {
     pub fn install() {}
+    pub fn uninstall() {}
     pub fn pending() -> Option<i32> {
         None
     }
@@ -725,6 +764,10 @@ fn play(o: Opts) -> std::io::Result<()> {
         let wait = tic.saturating_sub(last.elapsed());
         let mut first = true;
         loop {
+            // Also here: a steady stream of input must not keep a stop request waiting.
+            if stop_signal::pending().is_some() {
+                break 'run;
+            }
             let polled = ctx.poll_event(if first { wait } else { Duration::ZERO });
             first = false;
             match polled {
@@ -803,6 +846,9 @@ fn play(o: Opts) -> std::io::Result<()> {
     ));
     // The first failure wins: the loop's, then the restore's, then the trace write's.
     let result = outcome.and(restored).and(recorded);
+    // From here on a stop signal takes its default action; one recorded before now is acted on
+    // just below.
+    stop_signal::uninstall();
     if let Some(sig) = stop_signal::pending() {
         // Terminal restored and trace written: now die by the signal that asked us to stop.
         if let Err(e) = result {
@@ -823,7 +869,7 @@ fn main() {
             }
         }
         Err(e) => {
-            eprintln!("deep_signal: {e}");
+            diag(format_args!("deep_signal: {e}"));
             std::process::exit(2);
         }
     }
