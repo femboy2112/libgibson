@@ -58,6 +58,9 @@ pub mod glitch;
 pub mod glyph;
 /// Layered spatial hit testing and pointer capture (issue #127).
 pub mod hit_test;
+/// Experimental: held-key inference for press-only terminals on a simulation timebase — an
+/// explicit model, never a synthetic key release (v0.7 node D).
+pub mod hold;
 pub mod input;
 pub mod instrument_telemetry;
 pub mod layout;
@@ -120,8 +123,8 @@ pub use edit::{
     UndoIntent, UndoKeymap, UndoLog,
 };
 pub use event_source::{
-    EventSource, EventTrace, RawEvent, Recorder, ScriptedInput, ScriptedSource, TerminalSource,
-    TraceEntry,
+    EventSource, EventTrace, InjectedQueue, InjectionReceipts, QueueFull, RawEvent, Recorder,
+    ScriptedInput, ScriptedSource, TerminalSource, TraceEntry,
 };
 pub use field::{
     bayer4_threshold, heat_rgb, plasma, render_field_braille, render_field_braille_dithered,

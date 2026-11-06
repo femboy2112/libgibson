@@ -423,11 +423,13 @@ impl Context {
     pub fn run_once(&mut self, max_wait: Duration) -> io::Result<Option<Event>> {
         let until_frame = self.scheduler.time_until_next_frame();
         let wait = max_wait.min(until_frame);
-        let event = if self.session.is_tty {
+        let event = if self.session.is_tty && !self.session.is_headless() {
             self.poll_event(wait)?
         } else {
-            // No input source off-TTY: sleep for the frame slice instead of
-            // busy-spinning, then render if due.
+            // No input source off-TTY or on a headless (virtual) session: sleep for the
+            // frame slice instead of busy-spinning, then render if due. A headless context
+            // takes input only through an injected source (`poll_from`), never from the
+            // process terminal (#259).
             if !wait.is_zero() {
                 std::thread::sleep(wait);
             }
@@ -621,10 +623,17 @@ impl Context {
         Ok(())
     }
 
-    /// Polls for structured input events.
+    /// Polls the controlling terminal for structured input events.
+    ///
+    /// Returns `Ok(None)` at once, without touching the process terminal, when there is no
+    /// terminal input source: on a redirected / non-TTY stdout, and on a **headless**
+    /// context ([`Context::headless`]), whose session is virtual (#259). A headless context's
+    /// input comes from whatever source the caller passes to [`poll_from`](Self::poll_from):
+    /// an injected source keeps it synthetic; passing
+    /// [`TerminalSource`](crate::event_source::TerminalSource) there explicitly reads the real
+    /// terminal, as that source always does.
     pub fn poll_event(&mut self, timeout: Duration) -> io::Result<Option<Event>> {
-        if !self.session.is_tty {
-            // No interactive input source on a redirected / non-TTY stdout.
+        if !self.session.is_tty || self.session.is_headless() {
             return Ok(None);
         }
         self.session.enter_interactive()?;
