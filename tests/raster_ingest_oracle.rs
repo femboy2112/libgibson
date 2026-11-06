@@ -257,11 +257,11 @@ fn every_timed_configuration_emits_exactly_the_lowered_cells() {
                     let got = screen.cell(y, x).expect("cell on screen");
                     let (g, e) = (got.contents(), want.glyph.grapheme.as_str());
                     assert!(
-                        g == e || (blank(&g) && blank(e)),
+                        g == e || (blank(g) && blank(e)),
                         "{tag} ({x},{y}): {g:?} != {e:?}"
                     );
                     assert!(
-                        in_repertoire(lowering, &g),
+                        in_repertoire(lowering, g),
                         "{tag} ({x},{y}): {g:?} is outside the family"
                     );
                     if depth == ColorDepth::TrueColor {
