@@ -107,8 +107,10 @@ mod stop_signal {
     static PENDING: AtomicI32 = AtomicI32::new(0);
     /// The signals whose handler this module installed (bit `n` = signal `n`).
     static INSTALLED: AtomicU64 = AtomicU64::new(0);
-    /// stdin's terminal settings before the game changed them, for the watchdog's last resort.
-    static SAVED_TERMIOS: Mutex<Option<libc::termios>> = Mutex::new(None);
+    /// The terminal the game puts in raw mode, and its settings before that, for the watchdog's
+    /// last resort. It is the one crossterm uses: stdin when stdin is a terminal, otherwise
+    /// `/dev/tty` (opened here and kept open for the watchdog).
+    static SAVED_TERMIOS: Mutex<Option<(libc::c_int, libc::termios)>> = Mutex::new(None);
 
     /// How long after the watchdog sees a stop signal the orderly stop may take.
     pub const GRACE: Duration = Duration::from_secs(3);
@@ -153,11 +155,24 @@ mod stop_signal {
         if wanted.is_empty() {
             return;
         }
-        // SAFETY: tcgetattr into a zeroed termios; it fails harmlessly when stdin is no terminal.
+        // SAFETY: isatty/open/tcgetattr/close on descriptors this function owns or stdin, with a
+        // zeroed termios; every failure just leaves nothing saved.
         unsafe {
-            let mut t: libc::termios = std::mem::zeroed();
-            if libc::tcgetattr(libc::STDIN_FILENO, &mut t) == 0 {
-                *SAVED_TERMIOS.lock().unwrap_or_else(|e| e.into_inner()) = Some(t);
+            let fd = if libc::isatty(libc::STDIN_FILENO) == 1 {
+                libc::STDIN_FILENO
+            } else {
+                libc::open(
+                    c"/dev/tty".as_ptr(),
+                    libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC,
+                )
+            };
+            if fd >= 0 {
+                let mut t: libc::termios = std::mem::zeroed();
+                if libc::tcgetattr(fd, &mut t) == 0 {
+                    *SAVED_TERMIOS.lock().unwrap_or_else(|e| e.into_inner()) = Some((fd, t));
+                } else if fd != libc::STDIN_FILENO {
+                    libc::close(fd);
+                }
             }
         }
         mask(libc::SIG_BLOCK, &wanted);
@@ -171,9 +186,9 @@ mod stop_signal {
                     // ioctl: unlike the escape sequences, it does not wait on a stalled output
                     // queue), then die by the signal.
                     let saved = *SAVED_TERMIOS.lock().unwrap_or_else(|e| e.into_inner());
-                    if let Some(t) = saved {
-                        // SAFETY: restoring a termios read from this same descriptor.
-                        unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &t) };
+                    if let Some((fd, t)) = saved {
+                        // SAFETY: restoring a termios read from this same, still-open descriptor.
+                        unsafe { libc::tcsetattr(fd, libc::TCSANOW, &t) };
                     }
                     reraise(sig);
                 }
@@ -923,6 +938,13 @@ fn main() {
         Ok(Some(o)) => {
             if let Err(e) = play(o) {
                 diag(format_args!("deep_signal: {e}"));
+                // play() returned early (startup failed, say) with the handlers still installed:
+                // a stop signal recorded before now is still the cause of death, and one arriving
+                // from here on takes its default action.
+                stop_signal::uninstall();
+                if let Some(sig) = stop_signal::pending() {
+                    stop_signal::reraise(sig);
+                }
                 std::process::exit(1);
             }
         }

@@ -34,13 +34,14 @@ fn trace_path(tag: &str) -> PathBuf {
     p
 }
 
-/// Starts a recorded session and waits for its first complete frame. `stderr_to` redirects the
-/// game's stderr (through `sh -c 'exec ...'`, so the game is still the direct child).
-fn launch(trace: &Path, extra: &[&str], stderr_to: Option<&str>) -> Capture {
+/// Starts a recorded session and waits for its first complete frame. `redirect` is a shell
+/// redirection applied to the game (through `sh -c 'exec ...'`, so the game is still the direct
+/// child), e.g. `2>/dev/full`.
+fn launch(trace: &Path, extra: &[&str], redirect: Option<&str>) -> Capture {
     let game = example_path("deep_signal");
-    let mut cmd = if let Some(target) = stderr_to {
+    let mut cmd = if let Some(redirect) = redirect {
         let mut c = CommandBuilder::new("/bin/sh");
-        c.args(["-c", &format!("exec \"$0\" \"$@\" 2>{target}")]);
+        c.args(["-c", &format!("exec \"$0\" \"$@\" {redirect}")]);
         c.arg(&game);
         c
     } else {
@@ -251,7 +252,7 @@ fn a_hangup_ends_the_session_within_a_bound() {
 fn diagnostics_that_cannot_be_written_do_not_panic() {
     // Every write to /dev/full fails (ENOSPC), as writes to a hung-up terminal fail (EIO).
     let trace = trace_path("full");
-    let mut cap = launch(&trace, &[], Some("/dev/full"));
+    let mut cap = launch(&trace, &[], Some("2>/dev/full"));
     cap.write(b"q").unwrap();
     let status = wait_exit(&mut cap, Duration::from_secs(10), true);
     assert_restored(&cap, "quit with stderr unwritable");
@@ -278,50 +279,149 @@ fn every_quit_key_restores_the_terminal() {
     }
 }
 
-#[test]
-fn a_signal_ends_the_session_even_when_the_terminal_stops_reading() {
-    let trace = trace_path("stalled");
-    let mut cap = launch(&trace, &[], None);
-    // Stop reading the terminal while the view keeps changing, until the game's output stops
-    // growing although input keeps arriving: its frame write is blocked on the full PTY, where
-    // the loop cannot notice a signal.
-    let mut last = usize::MAX;
-    let mut stalled = false;
-    for _ in 0..100 {
-        for _ in 0..5 {
+/// Whether the child's main thread is inside a `write`/`writev` system call right now
+/// (`/proc/<pid>/syscall`, readable by the parent).
+#[cfg(target_os = "linux")]
+fn in_write_syscall(pid: u32) -> bool {
+    let Ok(text) = std::fs::read_to_string(format!("/proc/{pid}/syscall")) else {
+        return false;
+    };
+    let nr = text
+        .split_whitespace()
+        .next()
+        .and_then(|n| n.parse::<i64>().ok());
+    nr == Some(libc::SYS_write) || nr == Some(libc::SYS_writev)
+}
+
+/// Stops reading the terminal while the view keeps changing, until the game's main thread sits
+/// in a `write` system call on two samples 200 ms apart (input still arriving in between): its
+/// frame write is blocked on the full PTY, where the loop cannot notice a signal. Then SIGTERM.
+#[cfg(target_os = "linux")]
+fn stall_then_sigterm(redirect: Option<&str>, tag: &str) {
+    let trace = trace_path(tag);
+    let mut cap = launch(&trace, &[], redirect);
+    let pid = cap.process_id();
+    let mut blocked = 0;
+    for _ in 0..200 {
+        for _ in 0..4 {
             cap.write(b"d").unwrap();
-            std::thread::sleep(Duration::from_millis(30));
+            std::thread::sleep(Duration::from_millis(50));
         }
-        let now = cap.unread_output().expect("FIONREAD");
-        if now > 0 && now == last {
-            stalled = true;
+        blocked = if in_write_syscall(pid) {
+            blocked + 1
+        } else {
+            0
+        };
+        if blocked == 2 {
             break;
         }
-        last = now;
     }
-    assert!(
-        stalled,
-        "the game's output never stopped growing ({last} bytes unread)"
+    assert_eq!(
+        blocked, 2,
+        "{tag}: the game never blocked in a terminal write"
     );
-    let pid = libc::pid_t::try_from(cap.process_id()).unwrap();
     // SAFETY: plain kill(2) to our own direct child, which is still running (not reaped).
-    assert_eq!(unsafe { libc::kill(pid, libc::SIGTERM) }, 0);
+    assert_eq!(
+        unsafe { libc::kill(libc::pid_t::try_from(pid).unwrap(), libc::SIGTERM) },
+        0
+    );
     let status = wait_exit(&mut cap, Duration::from_secs(8), false);
     assert_eq!(
         status.signal(),
         Some(signal_name(libc::SIGTERM).as_str()),
-        "{status:?}"
+        "{tag}: {status:?}"
     );
-    // The orderly stop could not run (it writes the trace after restoring; restoring writes to
-    // the stalled terminal) ...
-    assert!(
-        !trace.exists(),
-        "the orderly stop ran, so the terminal was not stalled"
-    );
-    // ... but the watchdog put the line settings back before dying.
+    // The orderly stop could not run (restoring writes to the stalled terminal before the trace
+    // is written) ...
+    assert!(!trace.exists(), "{tag}: the orderly stop ran");
+    // ... but the watchdog put the terminal's line settings back before dying.
     let lflag = cap.local_flags().expect("tcgetattr on the master");
-    assert_eq!(lflag & COOKED, COOKED, "left raw: c_lflag={lflag:#x}");
+    assert_eq!(
+        lflag & COOKED,
+        COOKED,
+        "{tag}: left raw: c_lflag={lflag:#x}"
+    );
     let _ = cap.finish();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_signal_ends_the_session_even_when_the_terminal_stops_reading() {
+    stall_then_sigterm(None, "stalled");
+    // With stdin redirected the terminal is reached through /dev/tty instead: the watchdog must
+    // restore that one.
+    stall_then_sigterm(Some("</dev/null"), "stalled-devtty");
+}
+
+/// A stop signal that arrives while the game is still starting up is still the cause of death
+/// when startup then fails. Here startup fails because stdout is a PTY whose output queue is
+/// already full and nonblocking; SIGTERM is blocked and pending across `exec`.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_signal_pending_through_a_failed_startup_still_ends_the_process() {
+    use std::os::fd::{FromRawFd, OwnedFd};
+    use std::os::unix::process::{CommandExt, ExitStatusExt};
+    let (mut master, mut slave) = (-1, -1);
+    // SAFETY: openpty with valid out-pointers and null name/termios/winsize.
+    let rc = unsafe {
+        libc::openpty(
+            &mut master,
+            &mut slave,
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
+    assert_eq!(rc, 0, "openpty");
+    // SAFETY: both descriptors were just returned by openpty and are owned here.
+    let (master, slave) = unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
+    use std::os::fd::AsRawFd;
+    // SAFETY: fcntl on a valid descriptor; write from a valid buffer.
+    unsafe {
+        let fl = libc::fcntl(slave.as_raw_fd(), libc::F_GETFL);
+        libc::fcntl(slave.as_raw_fd(), libc::F_SETFL, fl | libc::O_NONBLOCK);
+        let chunk = [b'x'; 4096];
+        while libc::write(slave.as_raw_fd(), chunk.as_ptr().cast(), chunk.len()) > 0 {}
+    }
+    let trace = trace_path("startup");
+    let io = || std::process::Stdio::from(slave.try_clone().unwrap());
+    let mut cmd = std::process::Command::new(example_path("deep_signal"));
+    cmd.args(["--seed", "7", "--max-seconds", "5", "--record"])
+        .arg(&trace)
+        .env("TERM", "xterm-256color")
+        .stdin(io())
+        .stdout(io())
+        .stderr(io());
+    // SAFETY: async-signal-safe calls only (sigprocmask, kill, getpid) between fork and exec.
+    unsafe {
+        cmd.pre_exec(|| {
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut set);
+            libc::sigaddset(&mut set, libc::SIGTERM);
+            libc::sigprocmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
+            libc::kill(libc::getpid(), libc::SIGTERM);
+            Ok(())
+        });
+    }
+    let mut child = cmd.spawn().expect("spawn deep_signal");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        if let Some(s) = child.try_wait().unwrap() {
+            break s;
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            panic!("deep_signal did not exit");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    drop(master);
+    let _ = std::fs::remove_file(&trace);
+    assert_eq!(
+        status.signal(),
+        Some(libc::SIGTERM),
+        "startup failed with SIGTERM pending: {status:?}"
+    );
 }
 
 #[test]
