@@ -25,7 +25,8 @@
 //! SIGINT, which stops the loop, restores, writes the `--record` trace, then re-raises the signal
 //! so the parent still sees it - within a 3 s grace, after which a watchdog restores cooked mode
 //! and applies the signal's default action anyway (a terminal that stopped reading would
-//! otherwise hold the game forever); a panic (the library's panic hook). SIGHUP keeps its default
+//! otherwise hold the game forever; the alternate screen, hidden cursor and focus reporting need
+//! writes, so they stay); a panic (the library's panic hook). SIGHUP keeps its default
 //! action: the terminal is gone, and handling it would route shutdown through `poll_event`, which
 //! can busy-spin on a terminal that hangs up mid-call (#269); the trace is lost instead.
 //! Diagnostics that cannot be written are dropped, never a panic. `--fault-panic-key` is a test
