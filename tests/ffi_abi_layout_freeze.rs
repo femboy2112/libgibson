@@ -12,8 +12,32 @@
 use std::mem::{align_of, offset_of, size_of};
 
 use gibson::ffi::{
-    GibsonCell, GibsonColor, GibsonStyle, GIBSON_ABI_VERSION, GIBSON_CELL_GLYPH_CAP,
+    GibsonCell, GibsonColor, GibsonEvent, GibsonStatus, GibsonStyle, GIBSON_ABI_VERSION,
+    GIBSON_CELL_GLYPH_CAP, GIBSON_EVENT_QUEUE_CAPACITY,
 };
+
+/// v0.7 adds `gibson_push_event` (59 -> 60 symbols, additive): `gibson_event_t`, until now only
+/// written by the engine, becomes a struct the C caller builds, so its layout is a compatibility
+/// commitment too. Frozen for 64-bit targets, where `paste_str` is 8 bytes.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn gibson_event_layout_is_frozen() {
+    assert_eq!(size_of::<GibsonEvent>(), 24);
+    assert_eq!(align_of::<GibsonEvent>(), 8);
+    assert_eq!(offset_of!(GibsonEvent, event_type), 0);
+    assert_eq!(offset_of!(GibsonEvent, key_code), 4);
+    assert_eq!(offset_of!(GibsonEvent, modifiers), 8);
+    assert_eq!(offset_of!(GibsonEvent, _pad), 9);
+    assert_eq!(offset_of!(GibsonEvent, cols), 12);
+    assert_eq!(offset_of!(GibsonEvent, rows), 14);
+    assert_eq!(offset_of!(GibsonEvent, paste_str), 16);
+}
+
+#[test]
+fn push_event_status_and_capacity_are_frozen() {
+    assert_eq!(GibsonStatus::ErrQueueFull as i32, -5);
+    assert_eq!(GIBSON_EVENT_QUEUE_CAPACITY, 1024);
+}
 
 #[test]
 fn abi_version_is_one_and_glyph_cap_is_frozen() {

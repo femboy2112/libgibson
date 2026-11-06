@@ -94,3 +94,9 @@ whole-frame bulk readback → per-cell style → long-glyph recovery → mid-ses
 blit) over 240 frames. The two boundaries — **no input into a headless context** and **no sub-cell
 pixel raster** — are named, evidenced, and deliberate. No ABI change is recommended for v0.6; this
 record exists so the freeze is taken with the Doom horizon mapped rather than assumed.
+
+> **v0.7 addendum (2026-11-06).** The first boundary is closed on the v0.7 line:
+> `gibson_push_event` queues key, paste and resize events on a headless context, and
+> `gibson_poll_event` delivers them (ABI v1, additive, 59 → 60 symbols). The installed-SDK forcing
+> consumer now moves its marker only by pushed-and-polled input, with identical frames. The record
+> above stays as written for v0.6.0.
