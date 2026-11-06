@@ -148,7 +148,7 @@ fn a_slow_reader_drops_frames_but_never_slows_the_simulation() {
             "{name}: simulation ran ahead of wall time: {s:?}"
         );
         assert!(
-            s.tics + 75 >= due * 3 / 4,
+            s.tics + 75 >= due,
             "{name}: simulation fell behind wall time: {} of {due} tics: {s:?}",
             s.tics
         );

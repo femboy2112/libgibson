@@ -189,6 +189,27 @@ impl Map {
     }
 }
 
+/// Tiles reachable from `from` without passing a wall or the (shut) exit; index `y * w + x`.
+pub fn reachable_while_shut(map: &Map, from: (i32, i32)) -> Vec<bool> {
+    let mut seen = vec![false; (map.w * map.h) as usize];
+    let mut queue = std::collections::VecDeque::from([from]);
+    seen[(from.1 * map.w + from.0) as usize] = true;
+    while let Some((x, y)) = queue.pop_front() {
+        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let (nx, ny) = (x + dx, y + dy);
+            if map.at(nx, ny).blocks(false) {
+                continue;
+            }
+            let i = (ny * map.w + nx) as usize;
+            if !seen[i] {
+                seen[i] = true;
+                queue.push_back((nx, ny));
+            }
+        }
+    }
+    seen
+}
+
 /// Player intent for one tic, derived from held actions.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Intent {
@@ -288,7 +309,14 @@ impl World {
         // Exit in the far corner cell; shards and hazards on distinct floor tiles.
         let (ex, ey) = (map.w - 2, map.h - 2);
         map.tiles[(ey * map.w + ex) as usize] = Tile::Exit;
-        let mut pool: Vec<(i32, i32)> = floor.into_iter().filter(|&p| p != (ex, ey)).collect();
+        // Shards may only go where the player can walk while the uplink is still SHUT: in a
+        // maze the exit cell can be the only link to part of the map, and a shard behind it
+        // would make the sector unwinnable (the exit opens only once every shard is taken).
+        let open = reachable_while_shut(&map, (1, 1));
+        let mut pool: Vec<(i32, i32)> = floor
+            .into_iter()
+            .filter(|&(x, y)| (x, y) != (ex, ey) && open[(y * map.w + x) as usize])
+            .collect();
         let take = |rng: &mut Rng, pool: &mut Vec<(i32, i32)>| {
             let i = rng.below(pool.len() as u64) as usize;
             pool.swap_remove(i)
@@ -311,7 +339,7 @@ impl World {
         self.integrity = MAX_INTEGRITY;
     }
 
-    /// Hazards pulse: live on even 2-second windows of the level's own clock.
+    /// Hazards pulse: live on even 2-second windows of the simulation clock (`tic`).
     pub fn hazard_live(&self) -> bool {
         (self.tic / (2 * u64::from(TIC_HZ))) % 2 == 0
     }
@@ -416,6 +444,8 @@ impl World {
         mix(self.y as u64);
         mix(self.angle as u64);
         mix(u64::from(self.integrity));
+        mix(u64::from(self.hits));
+        mix(self.last_hit.unwrap_or(u64::MAX));
         mix(self.shards.len() as u64);
         for &(x, y) in &self.shards {
             mix(((x as u64) << 32) | y as u64);

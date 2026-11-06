@@ -32,6 +32,8 @@ fn the_sine_table_is_a_sine_table() {
     }
 }
 
+/// Independent BFS (not the generator's helper): tiles reachable from `from` while the uplink is
+/// SHUT, i.e. treating `Tile::Exit` like a wall.
 fn reachable(map: &world::Map, from: (i32, i32)) -> Vec<bool> {
     let mut seen = vec![false; (map.w * map.h) as usize];
     let mut q = VecDeque::from([from]);
@@ -39,7 +41,8 @@ fn reachable(map: &world::Map, from: (i32, i32)) -> Vec<bool> {
     while let Some((x, y)) = q.pop_front() {
         for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
             let (nx, ny) = (x + dx, y + dy);
-            if !matches!(map.at(nx, ny), Tile::Wall(_)) && !seen[(ny * map.w + nx) as usize] {
+            let walkable = matches!(map.at(nx, ny), Tile::Floor | Tile::Hazard);
+            if walkable && !seen[(ny * map.w + nx) as usize] {
                 seen[(ny * map.w + nx) as usize] = true;
                 q.push_back((nx, ny));
             }
@@ -66,7 +69,7 @@ fn clear_level(w: &mut World) {
 
 #[test]
 fn every_level_is_solvable_from_the_start() {
-    for seed in 0..40u64 {
+    for seed in (0..400u64).chain([7, 2112]) {
         let mut w = World::new(seed, 3);
         for level in 1..=3 {
             assert_eq!((w.level, w.phase), (level, Phase::Playing), "seed {seed}");
@@ -80,10 +83,11 @@ fn every_level_is_solvable_from_the_start() {
             }
             let (ex, ey) = (w.map.w - 2, w.map.h - 2);
             assert_eq!(w.map.at(ex, ey), Tile::Exit);
-            assert!(
-                seen[(ey * w.map.w + ex) as usize],
-                "seed {seed} level {level}: exit unreachable"
-            );
+            // The (shut) exit must border a tile reachable while it is shut.
+            let beside = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                .iter()
+                .any(|&(dx, dy)| seen[((ey + dy) * w.map.w + ex + dx) as usize]);
+            assert!(beside, "seed {seed} level {level}: exit unreachable");
             if level < 3 {
                 clear_level(&mut w);
             }

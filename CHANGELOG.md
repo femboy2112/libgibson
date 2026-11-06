@@ -70,7 +70,19 @@ not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
   scripted trace through `InjectedQueue` into a headless context and requires identical replays,
   the same world digest at presentation cadences 1/2/3/7 and at 40×15 ASCII, and a painted view.
   Tests: `deep_signal_sim` (6) and a real-PTY playthrough `deep_signal_pty` (2: 80×24 colour,
-  40×15 ASCII).
+  40×15 ASCII); `deep_signal_selfcheck` runs the self-check in the suite.
+- **Every sector is winnable.** Shards are placed only on tiles reachable from the start while the
+  uplink is still shut (in a maze the exit cell can be the only link to part of the map; the first
+  version stranded shards behind it in roughly 1 sector in 6, found by an independent review that
+  ported the generator). The solvability test now uses its own BFS that treats the shut exit as a
+  wall, over 402 seeds × 3 sectors — red against the old generator (seed 5, sector 3).
+- **Record and replay.** `--record FILE` writes a versioned trace (header with seed, sectors and
+  hold timeouts; one line per simulation-relevant input stamped with its tic; the end tic) and
+  `--replay FILE` reproduces the run headlessly. `deep_signal_record_replay` plays a real-PTY
+  session, quits with Ctrl-C, replays the trace and requires the same tic count, world digest
+  **and trajectory hash** (every tic's position, angle and integrity) — a replay applying inputs
+  one tic late kept the final digest but is caught by the trajectory. Ctrl-C now quits and no
+  Ctrl- or Alt-chord moves the player.
 - **Pacing under a slow terminal (v0.7 node F):** the loop keeps the simulation at wall-clock pace
   and drops presentations — after a blocked frame write up to 70 owed tics (2 s) run before the
   next frame, the rest deferred, never discarded. `tests/deep_signal_pacing_pty.rs` drives a real

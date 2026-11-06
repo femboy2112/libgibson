@@ -54,6 +54,12 @@ enum Action {
 }
 
 fn action_of(k: &KeyEvent) -> Option<Action> {
+    // A Ctrl- or Alt-chord is never movement (Ctrl-C quits; Ctrl-Z must not strafe).
+    if k.modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+    {
+        return None;
+    }
     Some(match k.code {
         KeyCode::Up => Action::Forward,
         KeyCode::Down => Action::Back,
@@ -73,8 +79,113 @@ fn action_of(k: &KeyEvent) -> Option<Action> {
 }
 
 fn is_quit(e: &Event) -> bool {
-    matches!(e, Event::Key(k) if matches!(k.code, KeyCode::Esc)
-        || matches!(k.code, KeyCode::Char(c) if c.eq_ignore_ascii_case(&'q')))
+    let Event::Key(k) = e else { return false };
+    let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+    match k.code {
+        KeyCode::Esc => true,
+        KeyCode::Char(c) if ctrl => c.eq_ignore_ascii_case(&'c'),
+        KeyCode::Char(c) => c.eq_ignore_ascii_case(&'q'),
+        _ => false,
+    }
+}
+
+/// The replayable trace (`--record` / `--replay`), version 1: a header with everything the
+/// simulation depends on, one line per simulation-relevant input stamped with its tic, and the
+/// tic the session ended at. Inputs that cannot change the simulation (paste, mouse, resize)
+/// are not recorded.
+const TRACE_MAGIC: &str = "deep_signal-trace v1";
+
+fn encode_event(e: &Event) -> Option<String> {
+    match e {
+        Event::Key(k) => {
+            let ctrl = u8::from(k.modifiers.contains(KeyModifiers::CONTROL));
+            let alt = u8::from(k.modifiers.contains(KeyModifiers::ALT));
+            let code = match k.code {
+                KeyCode::Char(c) => format!("char:{}", u32::from(c)),
+                KeyCode::Up => "up".into(),
+                KeyCode::Down => "down".into(),
+                KeyCode::Left => "left".into(),
+                KeyCode::Right => "right".into(),
+                _ => return None, // no other key affects the simulation
+            };
+            Some(format!("key\t{code}\t{ctrl}{alt}"))
+        }
+        Event::Focus(gibson::input::FocusChange::Lost) => Some("focus\tlost".into()),
+        _ => None,
+    }
+}
+
+fn decode_event(fields: &[&str]) -> Result<Event, String> {
+    match fields {
+        ["key", code, mods] => {
+            let code = match *code {
+                "up" => KeyCode::Up,
+                "down" => KeyCode::Down,
+                "left" => KeyCode::Left,
+                "right" => KeyCode::Right,
+                c => {
+                    let n: u32 = c
+                        .strip_prefix("char:")
+                        .and_then(|v| v.parse().ok())
+                        .ok_or("bad key")?;
+                    KeyCode::Char(char::from_u32(n).ok_or("bad char")?)
+                }
+            };
+            let mut m = KeyModifiers::empty();
+            if mods.starts_with('1') {
+                m |= KeyModifiers::CONTROL;
+            }
+            if mods.ends_with('1') {
+                m |= KeyModifiers::ALT;
+            }
+            Ok(Event::Key(KeyEvent::new(code, m)))
+        }
+        ["focus", "lost"] => Ok(Event::Focus(gibson::input::FocusChange::Lost)),
+        other => Err(format!("unrecognised trace line {other:?}")),
+    }
+}
+
+/// Replays a recorded trace headlessly to its end tic and returns the final world.
+fn replay_trace(text: &str) -> Result<(World, u64), String> {
+    let mut lines = text.lines();
+    let header = lines.next().ok_or("empty trace")?;
+    let mut head = header.split('\t');
+    if head.next() != Some(TRACE_MAGIC) {
+        return Err(format!("not a {TRACE_MAGIC} file"));
+    }
+    let mut get = |key: &str| -> Result<u64, String> {
+        head.next()
+            .and_then(|f| f.strip_prefix(key))
+            .and_then(|v| v.parse().ok())
+            .ok_or(format!("header lacks {key}"))
+    };
+    let (seed, levels, grace, repeat) = (
+        get("seed=")?,
+        get("levels=")?,
+        get("grace=")?,
+        get("repeat=")?,
+    );
+    let mut sim = Sim::new(seed, levels as u32, HoldConfig::new(grace, repeat));
+    let mut events: Vec<(u64, Event)> = Vec::new();
+    let mut end = None;
+    for line in lines {
+        let fields: Vec<&str> = line.split('\t').collect();
+        match fields.as_slice() {
+            ["end", t] => end = Some(t.parse::<u64>().map_err(|_| "bad end tic")?),
+            [t, rest @ ..] => events.push((t.parse().map_err(|_| "bad tic")?, decode_event(rest)?)),
+            [] => {}
+        }
+    }
+    let end = end.ok_or("trace has no end line")?;
+    let mut i = 0;
+    while sim.world.tic < end {
+        while i < events.len() && events[i].0 == sim.world.tic {
+            sim.feed(&events[i].1.clone());
+            i += 1;
+        }
+        sim.tick();
+    }
+    Ok((sim.world, sim.path))
 }
 
 /// The authoritative simulation: world + held-key model + the trace that reproduces it.
@@ -83,6 +194,9 @@ struct Sim {
     holds: HoldTracker<Action>,
     trace: Vec<(u64, Event)>,
     last_message: (u64, &'static str),
+    /// Rolling hash of the trajectory (tic, position, angle, integrity after every tic): two
+    /// runs agree on it only if they agree at every tic, not merely at the end.
+    path: u64,
 }
 
 impl Sim {
@@ -92,6 +206,7 @@ impl Sim {
             holds: HoldTracker::new(hold),
             trace: Vec::new(),
             last_message: (0, ""),
+            path: 0xcbf2_9ce4_8422_2325,
         }
     }
 
@@ -116,7 +231,20 @@ impl Sim {
     /// Exactly one simulation tic.
     fn tick(&mut self) {
         let _ = self.holds.advance(self.world.tic);
-        for h in self.world.step(self.intent()) {
+        let happenings = self.world.step(self.intent());
+        let w = &self.world;
+        for v in [
+            w.tic,
+            w.x as u64,
+            w.y as u64,
+            w.angle as u64,
+            u64::from(w.integrity),
+        ] {
+            for b in v.to_le_bytes() {
+                self.path = (self.path ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+        for h in happenings {
             let msg = match h {
                 Happening::ShardTaken { left: 0 } => "UPLINK OPEN",
                 Happening::ShardTaken { .. } => "SHARD RECOVERED",
@@ -443,6 +571,19 @@ fn parse() -> Result<Option<Opts>, String> {
             "--hold-grace-ms" => grace_ms = Some(num()?),
             "--hold-repeat-ms" => repeat_ms = Some(num()?),
             "--record" => o.record = it.next(),
+            "--replay" => {
+                let path = it.next().ok_or("--replay needs a path")?;
+                let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+                let (w, path) = replay_trace(&text)?;
+                println!(
+                    "deep_signal replay: tics={} world={:016x} path={path:016x} sector={}/{}",
+                    w.tic,
+                    w.digest(),
+                    w.level,
+                    w.levels
+                );
+                return Ok(None);
+            }
             other => return Err(format!("unknown argument {other}")),
         }
     }
@@ -525,20 +666,29 @@ fn play(o: Opts) -> std::io::Result<()> {
     }
     let restored = ctx.restore();
     if let Some(path) = &o.record {
-        let body: String = sim
-            .trace
-            .iter()
-            .map(|(t, e)| format!("{t}\t{e:?}\n"))
-            .collect();
+        let mut body = format!(
+            "{TRACE_MAGIC}\tseed={}\tlevels={}\tgrace={}\trepeat={}\n",
+            o.seed,
+            o.levels,
+            o.hold.initial_grace(),
+            o.hold.repeat_timeout()
+        );
+        for (t, e) in &sim.trace {
+            if let Some(enc) = encode_event(e) {
+                body.push_str(&format!("{t}\t{enc}\n"));
+            }
+        }
+        body.push_str(&format!("end\t{}\n", sim.world.tic));
         std::fs::write(path, body)?;
     }
     eprintln!(
-        "deep_signal: tics={} presented={} frames_behind={} wall_ms={} world={:016x} sector={}/{}",
+        "deep_signal: tics={} presented={} frames_behind={} wall_ms={} world={:016x} path={:016x} sector={}/{}",
         sim.world.tic,
         presented,
         behind_frames,
         started.elapsed().as_millis(),
         sim.world.digest(),
+        sim.path,
         sim.world.level,
         sim.world.levels
     );
