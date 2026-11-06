@@ -300,6 +300,8 @@ fn only_the_fields_an_event_uses_need_to_be_initialised() {
         GibsonStatus::Ok
     );
     let polled = unsafe { polled.assume_init() };
+    // Checked before anything reads through it: a stale 0xAA pointer must fail, not be followed.
+    assert!(polled.paste_str.is_null(), "poll left paste_str unwritten");
     assert_eq!(polled._pad, [0; 3]);
     assert_eq!(
         (polled.event_type, polled.key_code, polled.modifiers),
@@ -362,7 +364,7 @@ fn a_delivered_resize_schedules_a_render_and_a_pushed_one_does_not() {
 
 #[test]
 fn an_inline_resize_sets_the_width_and_bounds_the_height() {
-    let inline_frame = |lines: usize| {
+    let inline_frame = |lines: usize, rows: u16| {
         let mut ctx = ptr::null_mut();
         assert_eq!(
             unsafe { gibson_create_headless_context(GIBSON_MODE_INLINE, 20, 5, &mut ctx) },
@@ -379,7 +381,7 @@ fn an_inline_resize_sets_the_width_and_bounds_the_height() {
             unsafe { gibson_set_root_node(ctx.0, root) },
             GibsonStatus::Ok
         );
-        assert_eq!(ctx.push(&resize(40, 6)), GibsonStatus::Ok);
+        assert_eq!(ctx.push(&resize(40, rows)), GibsonStatus::Ok);
         assert_eq!(ctx.poll().event_type, GIBSON_EVENT_RESIZE);
         assert_eq!(unsafe { gibson_render(ctx.0) }, GibsonStatus::Ok);
         let (mut w, mut h) = (0u16, 0u16);
@@ -389,7 +391,10 @@ fn an_inline_resize_sets_the_width_and_bounds_the_height() {
         );
         (w, h)
     };
-    // As tall as the content, at most rows - 1, and always the new width.
-    assert_eq!(inline_frame(1), (40, 1));
-    assert_eq!(inline_frame(20), (40, 5));
+    // Always the new width; as tall as the content, at least 1 and at most max(rows - 1, 1).
+    assert_eq!(inline_frame(1, 6), (40, 1));
+    assert_eq!(inline_frame(20, 6), (40, 5));
+    assert_eq!(inline_frame(20, 2), (40, 1));
+    assert_eq!(inline_frame(20, 1), (40, 1));
+    assert_eq!(inline_frame(1, 1), (40, 1));
 }

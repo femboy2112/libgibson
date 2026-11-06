@@ -257,8 +257,8 @@ gibson_status_t gibson_clear_live_region(gibson_context_t *ctx);
    delivers the events queued by gibson_push_event, oldest first, each exactly once, without
    waiting; GIBSON_EVENT_NONE when the queue is empty. A delivered RESIZE also sets the headless
    terminal size and schedules a render, as a real resize does: a FULLSCREEN frame is then
-   cols x rows; an INLINE frame is cols wide and, as on a terminal, as tall as its content (at most
-   rows - 1). Every field of out_event is written, so a polled event can be pushed back as is. */
+   cols x rows; an INLINE frame is cols wide and, as on a terminal, as tall as its content, at
+   least 1 and at most max(rows - 1, 1) rows. Every field of out_event is written, so a polled event can be pushed back as is. */
 gibson_status_t gibson_poll_event(gibson_context_t *ctx, uint32_t timeout_ms, gibson_event_t *out_event);
 
 /* Most undelivered events one headless context holds (see gibson_push_event). */
