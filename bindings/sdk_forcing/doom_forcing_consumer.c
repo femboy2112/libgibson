@@ -27,18 +27,26 @@
  *   6. injected input is bounded and exact: the queue accepts exactly GIBSON_EVENT_QUEUE_CAPACITY
  *      events, refuses the next with GIBSON_ERR_QUEUE_FULL, delivers each once in order; a pushed
  *      RESIZE, once polled, sets the headless frame geometry.
+ *   7. (v0.7 node I) a C-side RGB raster, moved only by injected keys, is lowered BY THE CONSUMER to
+ *      half-block cells through the styled-span ABI (one U+2580 span per cell: fg = top pixel,
+ *      bg = bottom pixel) and read back exactly: every cell, every frame, at TRUECOLOR. No raster
+ *      entry point is needed for this; the per-frame cost is reported.
  *
  * Any violated invariant is a nonzero exit with a diagnostic on stderr; success prints a one-line
  * summary and exits 0. The ABI symbols exercised: gibson_create_headless_context, gibson_set_root_node,
  * gibson_node_box_col, gibson_node_text, gibson_node_add_child, gibson_render, gibson_get_frame_size,
  * gibson_get_frame_cell, gibson_get_frame_cells, gibson_get_frame_cell_glyph, gibson_set_color_depth,
- * gibson_get_rendered_output, gibson_push_event, gibson_poll_event, gibson_destroy_context.
+ * gibson_get_rendered_output, gibson_push_event, gibson_poll_event, gibson_destroy_context,
+ * gibson_line_new, gibson_line_add_span, gibson_line_free, gibson_rich_text_new,
+ * gibson_rich_text_add_line, gibson_rich_text_free, gibson_node_rich_text.
  */
+#define _POSIX_C_SOURCE 199309L
 #include <gibson.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static int fail(const char *m) {
     fprintf(stderr, "doom_forcing_consumer: FAIL: %s\n", m);
@@ -59,6 +67,115 @@ static int stage_line(gibson_context_t *ctx, const char *line, const gibson_styl
     OK(gibson_set_root_node(ctx, root));
     OK(gibson_render(ctx));
     return GIBSON_OK;
+}
+
+/* ---- (7) Node I: a consumer-side raster through the existing ABI ---- */
+enum { RW = 48, RH = 16, RFRAMES = 60 }; /* pixels; RH/2 cell rows of half-blocks */
+
+static void paint(uint8_t px[RH][RW][3], int phase) {
+    for (int y = 0; y < RH; y++)
+        for (int x = 0; x < RW; x++) {
+            px[y][x][0] = (uint8_t)(x * 5 + phase * 7);
+            px[y][x][1] = (uint8_t)(y * 16 + phase * 3);
+            px[y][x][2] = (uint8_t)((x ^ y) * 9 + phase);
+        }
+}
+
+static gibson_color_t rgb(const uint8_t p[3]) {
+    gibson_color_t c;
+    memset(&c, 0, sizeof c);
+    c.color_type = GIBSON_COLOR_RGB;
+    c.r = p[0];
+    c.g = p[1];
+    c.b = p[2];
+    return c;
+}
+
+static int same_rgb(const gibson_color_t *c, const uint8_t p[3]) {
+    return c->color_type == GIBSON_COLOR_RGB && c->r == p[0] && c->g == p[1] && c->b == p[2];
+}
+
+/* Lowers the raster to one rich-text node of U+2580 cells and installs it as the root. */
+static int stage_raster(gibson_context_t *ctx, uint8_t px[RH][RW][3]) {
+    gibson_rich_text_t *rich = NULL;
+    OK(gibson_rich_text_new(&rich));
+    for (int cy = 0; cy < RH / 2; cy++) {
+        gibson_line_t *line = NULL;
+        if (gibson_line_new(&line) != GIBSON_OK) { gibson_rich_text_free(rich); return fail("line_new"); }
+        for (int cx = 0; cx < RW; cx++) {
+            gibson_style_t st;
+            memset(&st, 0, sizeof st);
+            st.fg = rgb(px[2 * cy][cx]);
+            st.bg = rgb(px[2 * cy + 1][cx]);
+            if (gibson_line_add_span(line, "\xe2\x96\x80", &st) != GIBSON_OK) {
+                gibson_line_free(line);
+                gibson_rich_text_free(rich);
+                return fail("line_add_span");
+            }
+        }
+        gibson_status_t st = gibson_rich_text_add_line(rich, line);
+        gibson_line_free(line);
+        if (st != GIBSON_OK) { gibson_rich_text_free(rich); return fail("rich_text_add_line"); }
+    }
+    gibson_node_t *node = NULL;
+    gibson_status_t st = gibson_node_rich_text(rich, GIBSON_WRAP_NONE, &node);
+    gibson_rich_text_free(rich);
+    if (st != GIBSON_OK) return fail("node_rich_text");
+    OK(gibson_set_root_node(ctx, node));
+    return GIBSON_OK;
+}
+
+/* Runs the raster leg; returns 0 on success, writing what it checked. */
+static int raster_leg(int *phase_out, size_t *cells_checked, double *us_per_frame) {
+    static uint8_t px[RH][RW][3];
+    gibson_context_t *ctx = NULL;
+    OK(gibson_create_headless_context(GIBSON_MODE_FULLSCREEN, RW, RH / 2, &ctx));
+    OK(gibson_set_color_depth(ctx, GIBSON_COLOR_DEPTH_TRUECOLOR));
+    gibson_cell_t *cells = calloc((size_t)RW * (RH / 2), sizeof *cells);
+    if (!cells) { gibson_destroy_context(ctx); return fail("allocate raster readback"); }
+    int phase = 0, expected = 0, rc = 0;
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    for (int f = 0; f < RFRAMES && rc == 0; f++) {
+        /* Input: 'a' every third frame, else 'd'. The phase moves only on a polled key. */
+        gibson_event_t k;
+        memset(&k, 0, sizeof k);
+        k.event_type = GIBSON_EVENT_KEY;
+        k.key_code = (f % 3 == 0) ? 'a' : 'd';
+        expected += (f % 3 == 0) ? -1 : 1;
+        if (gibson_push_event(ctx, &k) != GIBSON_OK) { rc = fail("raster: push"); break; }
+        for (;;) {
+            gibson_event_t ev;
+            if (gibson_poll_event(ctx, 0, &ev) != GIBSON_OK) { rc = fail("raster: poll"); break; }
+            if (ev.event_type == GIBSON_EVENT_NONE) break;
+            if (ev.event_type == GIBSON_EVENT_KEY && ev.key_code == 'd') phase++;
+            if (ev.event_type == GIBSON_EVENT_KEY && ev.key_code == 'a') phase--;
+        }
+        if (rc) break;
+        paint(px, phase);
+        if (stage_raster(ctx, px) != GIBSON_OK || gibson_render(ctx) != GIBSON_OK) { rc = fail("raster: render"); break; }
+        size_t written = 0;
+        if (gibson_get_frame_cells(ctx, 0, 0, cells, (size_t)RW * (RH / 2), &written) != GIBSON_OK ||
+            written != (size_t)RW * (RH / 2)) { rc = fail("raster: bulk readback"); break; }
+        for (int cy = 0; cy < RH / 2 && rc == 0; cy++)
+            for (int cx = 0; cx < RW; cx++) {
+                const gibson_cell_t *c = &cells[(size_t)cy * RW + cx];
+                if (c->glyph_len != 3 || memcmp(c->glyph, "\xe2\x96\x80", 3) != 0 ||
+                    !same_rgb(&c->style.fg, px[2 * cy][cx]) || !same_rgb(&c->style.bg, px[2 * cy + 1][cx])) {
+                    rc = fail("raster: a read-back cell differs from its two source pixels");
+                    break;
+                }
+                (*cells_checked)++;
+            }
+    }
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    *us_per_frame = ((double)(t1.tv_sec - t0.tv_sec) * 1e6 + (double)(t1.tv_nsec - t0.tv_nsec) / 1e3) / RFRAMES;
+    *phase_out = phase;
+    free(cells);
+    gibson_destroy_context(ctx);
+    if (rc) return rc;
+    CHECK(phase == expected && phase != 0, "raster: the phase did not follow the injected keys");
+    return 0;
 }
 
 int main(void) {
@@ -241,7 +358,13 @@ int main(void) {
     gibson_destroy_context(ctx);
     free(bulk);
 
-    printf("doom_forcing_consumer: OK  frames=%d grid=%dx%d cells_read=%zu long_glyph=%zuB ansi=%zuB events=%zu queue=%zu checksum=%llu\n",
-           FRAMES, COLS, ROWS, total_cells_read, full_len, ansi_len, events_delivered, accepted, checksum);
+    int raster_phase = 0;
+    size_t raster_cells = 0;
+    double raster_us = 0;
+    if (raster_leg(&raster_phase, &raster_cells, &raster_us) != 0) return 1;
+
+    printf("doom_forcing_consumer: OK  frames=%d grid=%dx%d cells_read=%zu long_glyph=%zuB ansi=%zuB events=%zu queue=%zu checksum=%llu raster=%dx%dpx frames=%d phase=%d cells_checked=%zu us_per_frame=%.0f\n",
+           FRAMES, COLS, ROWS, total_cells_read, full_len, ansi_len, events_delivered, accepted, checksum,
+           RW, RH, RFRAMES, raster_phase, raster_cells, raster_us);
     return 0;
 }
