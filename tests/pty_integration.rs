@@ -84,9 +84,7 @@ fn pty_capture_bounds_silent_and_partial_line_children_and_reaps() {
         cmd.args(["-c", script]);
         let start = std::time::Instant::now();
         let mut capture = pty_capture::Capture::spawn(cmd, 80, 24, Duration::from_millis(100));
-        capture
-            .collect_until(|_| false)
-            .expect("controlled capture");
+        capture.collect_all().expect("controlled capture");
         let raw = capture.finish(); // Asserts direct child was reaped, no reader exists.
         assert!(
             start.elapsed() < Duration::from_secs(3),
@@ -121,4 +119,56 @@ fn pty_capture_reaps_on_assertion_unwind() {
         std::io::Error::last_os_error().raw_os_error(),
         Some(libc::ECHILD)
     );
+}
+
+/// `collect_until` reports *why* it stopped when its predicate never held (#272): a child that
+/// exits first is `UnexpectedEof`, a child that never prints it is `TimedOut`. It used to return
+/// `Ok` in both cases, so `.expect("marker")` passed without the marker.
+#[test]
+fn collect_until_fails_when_its_predicate_never_holds() {
+    let never = |b: &[u8]| String::from_utf8_lossy(b).contains("NEVER-PRINTED");
+    let mut cmd = CommandBuilder::new("sh");
+    cmd.args(["-c", "printf early"]);
+    let mut capture = pty_capture::Capture::spawn(cmd, 80, 24, Duration::from_secs(10));
+    let err = capture
+        .collect_until(never)
+        .expect_err("exited before the marker");
+    assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof, "{err}");
+    assert!(
+        err.to_string().contains("early"),
+        "the error carries the tail: {err}"
+    );
+    let _ = capture.finish();
+
+    let mut cmd = CommandBuilder::new("sh");
+    cmd.args(["-c", "printf waiting; exec sleep 30"]);
+    let mut capture = pty_capture::Capture::spawn(cmd, 80, 24, Duration::from_millis(2500));
+    let err = capture
+        .collect_until(never)
+        .expect_err("deadline before the marker");
+    assert_eq!(err.kind(), std::io::ErrorKind::TimedOut, "{err}");
+    assert!(
+        err.to_string().contains("waiting"),
+        "the error carries the tail: {err}"
+    );
+    let _ = capture.finish();
+
+    // Control: a marker printed just before the child exits is still Ok (the final chunk is
+    // read and checked before EOF is reported).
+    let mut cmd = CommandBuilder::new("sh");
+    cmd.args(["-c", "printf READY"]);
+    let mut capture = pty_capture::Capture::spawn(cmd, 80, 24, Duration::from_secs(10));
+    capture
+        .collect_until(|b| String::from_utf8_lossy(b).contains("READY"))
+        .expect("the marker before exit");
+    let _ = capture.finish();
+
+    // Control: a marker that does appear is Ok.
+    let mut cmd = CommandBuilder::new("sh");
+    cmd.args(["-c", "printf READY; exec sleep 30"]);
+    let mut capture = pty_capture::Capture::spawn(cmd, 80, 24, Duration::from_secs(10));
+    capture
+        .collect_until(|b| String::from_utf8_lossy(b).contains("READY"))
+        .expect("the marker appears");
+    let _ = capture.finish();
 }

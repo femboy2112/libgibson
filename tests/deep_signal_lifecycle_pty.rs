@@ -440,7 +440,7 @@ fn without_a_watchdog_a_stop_signal_keeps_its_default_action() {
     let mut cap = Capture::spawn(cmd, 80, 24, Duration::from_secs(45));
     let framed = |o: &[u8]| String::from_utf8_lossy(o).contains("SHARDS");
     cap.collect_until(framed).expect("first frame");
-    // collect_until also returns on EOF (#272): require the frame, and a live game.
+    // The frame is required by collect_until (strict since #272); the game must also be alive.
     assert!(
         framed(cap.raw()),
         "no frame drawn: {:?}",
