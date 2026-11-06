@@ -46,10 +46,10 @@ including through `Node::text_input` and the C ABI), and one width contract gove
 total width, scrolling, painter and layout, verified on a vt100 model and a real PTY.
 
 ### R6.3 — Cross-language interaction contracts — **completed with documented limitation**
-C ABI v1 at **59** symbols (`abi/gibson-abi-v1.symbols`, `symbolic`-guarded), frozen
-`gibson_cell_t`, no version bump. An installed-SDK forcing consumer (staged prefix, pkg-config only)
+C ABI v1 at **59** symbols in v0.6.0 (**60** on the v0.7 line, which adds `gibson_push_event`;
+`abi/gibson-abi-v1.symbols`, `symbolic`-guarded), frozen `gibson_cell_t`, no version bump. An installed-SDK forcing consumer (staged prefix, pkg-config only)
 runs in the CI Bindings job and the release cleanroom; a real-TTY input→state→render loop runs
-entirely through the ABI. *Limits:* a headless context has no input source; there is no sub-cell
+entirely through the ABI. *Limits:* in v0.6.0 a headless context has no input source (v0.7 adds `gibson_push_event`); there is no sub-cell
 pixel raster; C++/Go/Python interactive parity is **not** claimed beyond the existing parity
 harnesses ([`docs/SDK_DOOM_HORIZON.md`](docs/SDK_DOOM_HORIZON.md)).
 
