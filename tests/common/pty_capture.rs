@@ -64,6 +64,15 @@ pub fn example_path(name: &str) -> PathBuf {
     profile.join("examples").join(name)
 }
 
+/// How a collection ended, when its predicate does not already explain it.
+enum Stop {
+    /// The child closed its side of the PTY.
+    Eof,
+    /// The capture deadline or the requested duration passed (also reported when the predicate
+    /// held, which `collect_until` checks first).
+    Deadline,
+}
+
 pub struct Capture {
     master: Box<dyn MasterPty + Send>,
     child: Box<dyn Child + Send + Sync>,
@@ -108,15 +117,40 @@ impl Capture {
         }
     }
 
+    /// Collects output until `done` holds. It is an error to stop before that: the child closed
+    /// the PTY (`UnexpectedEof`) or the capture deadline passed (`TimedOut`). Both errors carry
+    /// the tail of what was captured (#272).
     pub fn collect_until(&mut self, done: impl Fn(&[u8]) -> bool) -> io::Result<()> {
-        self.collect_before(self.deadline - CLEANUP, done)
+        let stop = self.collect_before(self.deadline - CLEANUP, &done)?;
+        if done(&self.output) {
+            return Ok(());
+        }
+        let tail = String::from_utf8_lossy(&self.output[self.output.len().saturating_sub(300)..])
+            .into_owned();
+        Err(match stop {
+            Stop::Eof => io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!("the child closed the PTY before the expected output; tail: {tail:?}"),
+            ),
+            Stop::Deadline => io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("capture deadline passed before the expected output; tail: {tail:?}"),
+            ),
+        })
+    }
+
+    /// Collects everything until the child closes the PTY or the capture deadline passes,
+    /// whichever comes first. Neither is an error: for callers that want all the output.
+    pub fn collect_all(&mut self) -> io::Result<()> {
+        self.collect_before(self.deadline - CLEANUP, |_| false)
+            .map(|_| ())
     }
 
     fn collect_before(
         &mut self,
         capture_end: Instant,
         done: impl Fn(&[u8]) -> bool,
-    ) -> io::Result<()> {
+    ) -> io::Result<Stop> {
         while Instant::now() < capture_end && !done(&self.output) {
             let fd = self.master.as_raw_fd().unwrap();
             let mut pollfd = libc::pollfd {
@@ -142,13 +176,13 @@ impl Capture {
             // SAFETY: chunk is writable for its full length; master still owns fd.
             let len = unsafe { libc::read(fd, chunk.as_mut_ptr().cast(), chunk.len()) };
             if len == 0 {
-                break;
+                return Ok(Stop::Eof);
             }
             if len < 0 {
                 let err = io::Error::last_os_error();
                 // Linux signals slave closure as EIO rather than EOF.
                 if err.raw_os_error() == Some(libc::EIO) {
-                    break;
+                    return Ok(Stop::Eof);
                 }
                 if matches!(
                     err.kind(),
@@ -166,7 +200,7 @@ impl Capture {
             }
             self.output.extend_from_slice(&chunk[..len]);
         }
-        Ok(())
+        Ok(Stop::Deadline)
     }
 
     pub fn collect_for(&mut self, duration: Duration) -> io::Result<()> {
@@ -178,6 +212,7 @@ impl Capture {
             ));
         }
         self.collect_before((Instant::now() + duration).min(end), |_| false)
+            .map(|_| ())
     }
 
     pub fn raw(&self) -> &[u8] {

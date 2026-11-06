@@ -449,9 +449,7 @@ fn capture_screen(case: &Case) -> String {
         case.rows,
         Duration::from_secs_f64(case.secs),
     );
-    capture
-        .collect_until(|_| false)
-        .expect("capture golden frame");
+    capture.collect_all().expect("capture golden frame");
     let raw = capture.finish();
 
     let mut parser = vt100::Parser::new(case.rows, case.cols, 0);
