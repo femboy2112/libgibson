@@ -177,6 +177,19 @@ fn replay_trace(text: &str) -> Result<(World, u64), String> {
         }
     }
     let end = end.ok_or("trace has no end line")?;
+    // A recorded trace is in tic order and ends at or after its last input; anything else was
+    // edited by hand and is refused rather than partly replayed.
+    if let Some(w) = events.windows(2).find(|w| w[1].0 < w[0].0) {
+        return Err(format!(
+            "trace tics out of order: {} after {}",
+            w[1].0, w[0].0
+        ));
+    }
+    if let Some(&(t, _)) = events.last() {
+        if t > end {
+            return Err(format!("input at tic {t} after the end tic {end}"));
+        }
+    }
     let mut i = 0;
     while sim.world.tic < end {
         while i < events.len() && events[i].0 == sim.world.tic {

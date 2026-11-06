@@ -44,7 +44,7 @@ fn a_recorded_live_session_replays_to_the_same_world() {
             cap.collect_for(Duration::from_millis(30)).unwrap();
         }
     }
-    // Ctrl-Z must not move the player; Ctrl-C quits.
+    // Ctrl-Z is recorded but must not move the player (checked below); Ctrl-C quits.
     cap.write(b"\x1a").unwrap();
     cap.collect_for(Duration::from_millis(200)).unwrap();
     cap.write(b"\x03").unwrap();
@@ -72,17 +72,60 @@ fn a_recorded_live_session_replays_to_the_same_world() {
         recorded.lines().count() > 20,
         "the trace holds the session's inputs"
     );
-    let out = std::process::Command::new(example_path("deep_signal"))
+    let run_replay = |path: &std::path::Path| -> String {
+        let out = std::process::Command::new(example_path("deep_signal"))
+            .arg("--replay")
+            .arg(path)
+            .output()
+            .expect("run --replay");
+        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+        assert!(
+            out.status.success(),
+            "{text}{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        text
+    };
+    let replay = run_replay(&trace);
+    // Ctrl-/Alt-chords are in the trace (the Ctrl-Z above) but must not change the simulation:
+    // the same trace without them replays to the same trajectory.
+    let chord = |l: &&str| l.contains("\tkey\t") && !l.ends_with("\t00");
+    assert!(
+        recorded.lines().any(|l| chord(&l)),
+        "the Ctrl-Z was recorded"
+    );
+    let unchorded: String = recorded
+        .lines()
+        .filter(|l| !chord(l))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let trace2 = trace.with_extension("nochords.tsv");
+    std::fs::write(&trace2, unchorded).unwrap();
+    let replay2 = run_replay(&trace2);
+    let _ = std::fs::remove_file(&trace2);
+    assert_eq!(
+        field(&replay2, "deep_signal replay:", "path"),
+        field(&replay, "deep_signal replay:", "path"),
+        "a Ctrl-/Alt-chord changed the simulation"
+    );
+    // A hand-edited trace with inputs out of tic order is refused, not partly replayed.
+    let mut lines: Vec<&str> = recorded.lines().collect();
+    let first = lines.iter().position(|l| l.contains("\tkey\t")).unwrap();
+    let last = lines.iter().rposition(|l| l.contains("\tkey\t")).unwrap();
+    lines.swap(first, last);
+    let trace3 = trace.with_extension("shuffled.tsv");
+    std::fs::write(&trace3, lines.join("\n") + "\n").unwrap();
+    let out3 = std::process::Command::new(example_path("deep_signal"))
         .arg("--replay")
-        .arg(&trace)
+        .arg(&trace3)
         .output()
         .expect("run --replay");
-    let replay = String::from_utf8_lossy(&out.stdout).into_owned();
+    let _ = std::fs::remove_file(&trace3);
     assert!(
-        out.status.success(),
-        "{replay}{}",
-        String::from_utf8_lossy(&out.stderr)
+        !out3.status.success(),
+        "an out-of-order trace must be refused"
     );
+    assert!(String::from_utf8_lossy(&out3.stderr).contains("out of order"));
     let _ = std::fs::remove_file(&trace);
     assert_eq!(
         field(&replay, "deep_signal replay:", "tics"),
