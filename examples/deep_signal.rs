@@ -139,10 +139,11 @@ enum Look {
 
 /// The full frame for one presentation: view (raycast into a raster sized to the laid-out rect)
 /// plus a two-line HUD. Built from an immutable world snapshot.
-/// HUD layout: `wide` when the terminal has at least 60 columns; `ascii` for pure-ASCII glyphs.
+/// HUD glyph set: `ascii` for pure-ASCII glyphs. The wide-or-compact choice is made at layout
+/// time from the HUD's actual width (>= 60 columns is wide), never from resize events, so it
+/// cannot lag the real geometry when a resize event arrives late.
 #[derive(Clone, Copy, Debug)]
 struct Hud {
-    wide: bool,
     ascii: bool,
 }
 
@@ -176,27 +177,29 @@ fn frame(world: Arc<World>, look: Look, message: &'static str, hud: Hud) -> Node
     .percent_width(100.0);
     let w = &*world;
     let pct = w.integrity * 100 / World::max_integrity();
-    let bar_len = if hud.wide { 10usize } else { 6 };
-    let filled = (pct as usize * bar_len).div_ceil(100).min(bar_len);
     let (full, empty, gem, dot) = if hud.ascii {
         ('#', '-', '*', '|')
     } else {
         ('█', '░', '◆', '·')
     };
-    let bar: String = std::iter::repeat_n(full, filled)
-        .chain(std::iter::repeat_n(empty, bar_len - filled))
-        .collect();
+    let bar = |len: usize| -> String {
+        let filled = (pct as usize * len).div_ceil(100).min(len);
+        std::iter::repeat_n(full, filled)
+            .chain(std::iter::repeat_n(empty, len - filled))
+            .collect()
+    };
     let secs = w.tic / u64::from(TIC_HZ);
     let got = w.shards_total - w.shards.len() as u32;
     let (total, level, levels) = (w.shards_total, w.level, w.levels);
     let (mm, ss) = (secs / 60, secs % 60);
-    let line1 = if hud.wide {
-        format!(
-            "{gem} SHARDS {got}/{total}  INTEGRITY [{bar}] {pct:>3}%  SECTOR {level}/{levels}  {mm:02}:{ss:02}"
-        )
-    } else {
-        format!("{gem}{got}/{total} [{bar}]{pct:>3}% S{level}/{levels} {mm:02}:{ss:02}")
-    };
+    let wide1 = format!(
+        "{gem} SHARDS {got}/{total}  INTEGRITY [{}] {pct:>3}%  SECTOR {level}/{levels}  {mm:02}:{ss:02}",
+        bar(10)
+    );
+    let compact1 = format!(
+        "{gem}{got}/{total} [{}]{pct:>3}% S{level}/{levels} {mm:02}:{ss:02}",
+        bar(6)
+    );
     // (wide, compact) texts; compact ones fit 40 columns.
     let phase_msg = match w.phase {
         Phase::Descending { .. } => ("DESCENDING TO THE NEXT SECTOR", "DESCENDING"),
@@ -207,11 +210,12 @@ fn frame(world: Arc<World>, look: Look, message: &'static str, hud: Hud) -> Node
         }
         Phase::Playing => (message, message),
     };
-    let line2 = match (phase_msg, hud.wide) {
-        (("", _), true) => format!("WASD/ARROWS MOVE {dot} Z/C STRAFE {dot} Q QUIT"),
-        (("", _), false) => format!("WASD MOVE {dot} Z/C STRAFE {dot} Q QUIT"),
-        ((long, _), true) => long.to_string(),
-        ((_, short), false) => short.to_string(),
+    let (wide2, compact2) = match phase_msg {
+        ("", _) => (
+            format!("WASD/ARROWS MOVE {dot} Z/C STRAFE {dot} Q QUIT"),
+            format!("WASD MOVE {dot} Z/C STRAFE {dot} Q QUIT"),
+        ),
+        (long, short) => (long.to_string(), short.to_string()),
     };
     let mono = look != Look::Color;
     let accent = if mono {
@@ -226,12 +230,24 @@ fn frame(world: Arc<World>, look: Look, message: &'static str, hud: Hud) -> Node
     } else {
         Style::default().fg(Color::Rgb(250, 220, 140))
     };
+    let hud_node = Node::canvas(move |rect: Rect| -> Surface {
+        let mut s = Surface::new(rect.width, rect.height);
+        let (l1, l2) = if rect.width >= 60 {
+            (&wide1, &wide2)
+        } else {
+            (&compact1, &compact2)
+        };
+        s.print_str(0, 0, l1, accent, Some(rect.width));
+        s.print_str(0, 1, l2, warn, Some(rect.width));
+        s
+    })
+    .height(2.0)
+    .percent_width(100.0);
     Node::col()
         .percent_width(100.0)
         .percent_height(100.0)
         .child(view)
-        .child(Node::text(line1, accent))
-        .child(Node::text(line2, warn))
+        .child(hud_node)
 }
 
 /// A scripted session for the self-check: hold keys with terminal-like autorepeat.
@@ -313,7 +329,6 @@ fn replay(
         if sim.world.tic % cadence == 0 {
             let msg = sim.last_message.1;
             let hud = Hud {
-                wide: cols >= 60,
                 ascii: look == Look::Mono(SubcellGlyphMode::Ascii),
             };
             ctx.set_root(frame(Arc::new(sim.world.clone()), look, msg, hud));
@@ -457,7 +472,6 @@ fn play(o: Opts) -> std::io::Result<()> {
     // are deferred - never discarded. A terminal that stops reading entirely stalls the loop.
     let mut clock = FixedTimestep::exact(tic, MAX_CATCHUP_TICS);
     let mut sim = Sim::new(o.seed, o.levels, o.hold);
-    let mut cols = crossterm::terminal::size().map(|(c, _)| c).unwrap_or(80);
     let started = Instant::now();
     let mut last = started;
     let (mut presented, mut behind_frames) = (0u64, 0u64);
@@ -475,12 +489,7 @@ fn play(o: Opts) -> std::io::Result<()> {
             first = false;
             match polled {
                 Ok(Some(e)) if is_quit(&e) => break 'run,
-                Ok(Some(e)) => {
-                    if let Event::Resize(c, _) = e {
-                        cols = c;
-                    }
-                    sim.feed(&e);
-                }
+                Ok(Some(e)) => sim.feed(&e),
                 Ok(None) => break,
                 Err(e) => {
                     // Input source gone (hangup): no further observation is possible.
@@ -505,10 +514,7 @@ fn play(o: Opts) -> std::io::Result<()> {
             } else {
                 ""
             };
-            let hud = Hud {
-                wide: cols >= 60,
-                ascii: o.ascii_hud,
-            };
+            let hud = Hud { ascii: o.ascii_hud };
             ctx.set_root(frame(Arc::new(sim.world.clone()), o.look, msg, hud));
             if let Err(e) = ctx.render() {
                 outcome = Err(e);

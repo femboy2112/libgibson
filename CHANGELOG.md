@@ -70,6 +70,13 @@ not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
   4-tic catch-up cap the same slow reader dilated the simulation to 45 of 178 tics — the test is
   red for that. A PTY and a throttled reader, not a physical terminal's display rate; a terminal
   that stops reading entirely stalls the (synchronous) loop.
+- **Resize during play (v0.7 node G, game level):** `tests/deep_signal_resize_pty.rs` resizes a real
+  PTY mid-play (80×24 → 120×40 → 40×15 → 100×30 → 80×24) with a turn held, feeding one terminal
+  model resized at the exact byte offset; after each resize every view row is painted, the HUD sits
+  on the last two rows in the right form, nothing exceeds the width, and quitting restores the
+  screen. It exposed a flaw: the HUD chose its wide/compact form from `Event::Resize`, which can
+  arrive late (here alongside held keys), so at 100×30 the compact HUD lingered; the HUD is now a
+  `Node::canvas` that chooses from its laid-out width, so it cannot lag the real geometry.
 
 ### Added — examples / tooling (v0.7 nodes A, B; not library API)
 - **`docs/V07_BASELINE.md`**: the merged v0.6 engine measured before any v0.7 library change — the
