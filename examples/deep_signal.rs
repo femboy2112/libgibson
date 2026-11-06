@@ -18,7 +18,15 @@
 //! cargo run --release --example deep_signal -- --ascii     # pure ASCII fallback
 //! cargo run --example deep_signal -- --selfcheck           # headless deterministic replay
 //! ```
-//! Keys: W/S or ↑/↓ move · A/D or ←/→ turn · Z/C strafe · Q or Esc quit.
+//! Keys: W/S or ↑/↓ move · A/D or ←/→ turn · Z/C strafe · Q, Esc or Ctrl-C quit.
+//!
+//! Every ending that leaves a terminal restores it (node H): quitting; a delivered SIGTERM or
+//! SIGINT, which stops the loop, restores, writes the `--record` trace, then re-raises the signal
+//! so the parent still sees it; a panic (the library's panic hook). SIGHUP keeps its default
+//! action: the terminal is gone, and handling it would route shutdown through `poll_event`, which
+//! can busy-spin on a terminal that hangs up mid-call (#269); the trace is lost instead.
+//! Diagnostics that cannot be written are dropped, never a panic. `--fault-panic-key` is a test
+//! hook: with it, `!` makes the next simulation tic panic.
 #[path = "deep_signal/render.rs"]
 mod render;
 #[path = "deep_signal/world.rs"]
@@ -36,6 +44,7 @@ use gibson::input::{Event, KeyCode, KeyEvent, KeyModifiers};
 use gibson::node::Node;
 use gibson::raster::RgbRaster;
 use gibson::surface::{Rect, Surface};
+use std::io::Write;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use world::{Happening, Intent, Phase, World, TIC_HZ};
@@ -76,6 +85,75 @@ fn action_of(k: &KeyEvent) -> Option<Action> {
         },
         _ => return None,
     })
+}
+
+/// Delivered termination signals, turned into an orderly stop of the game loop.
+#[cfg(unix)]
+mod stop_signal {
+    use std::sync::atomic::{AtomicI32, Ordering};
+
+    static PENDING: AtomicI32 = AtomicI32::new(0);
+
+    extern "C" fn record(sig: libc::c_int) {
+        // Async-signal-safe: one atomic store, nothing else.
+        PENDING.store(sig, Ordering::SeqCst);
+    }
+
+    /// Catches SIGTERM and SIGINT, except one the parent left ignored. SIGHUP is deliberately
+    /// left alone (see the module docs and #269).
+    pub fn install() {
+        for sig in [libc::SIGTERM, libc::SIGINT] {
+            // SAFETY: sigaction with valid, zero-initialised structs; the handler only stores
+            // to an atomic.
+            unsafe {
+                let mut old: libc::sigaction = std::mem::zeroed();
+                if libc::sigaction(sig, std::ptr::null(), &mut old) != 0
+                    || old.sa_sigaction == libc::SIG_IGN
+                {
+                    continue;
+                }
+                let mut sa: libc::sigaction = std::mem::zeroed();
+                sa.sa_sigaction = record as extern "C" fn(libc::c_int) as libc::sighandler_t;
+                sa.sa_flags = libc::SA_RESTART;
+                libc::sigemptyset(&mut sa.sa_mask);
+                libc::sigaction(sig, &sa, std::ptr::null_mut());
+            }
+        }
+    }
+
+    pub fn pending() -> Option<i32> {
+        match PENDING.load(Ordering::SeqCst) {
+            0 => None,
+            sig => Some(sig),
+        }
+    }
+
+    /// Dies by `sig` with its default action, so the parent sees the real cause of death.
+    pub fn reraise(sig: i32) -> ! {
+        // SAFETY: restoring the default disposition and raising a signal at ourselves.
+        unsafe {
+            libc::signal(sig, libc::SIG_DFL);
+            libc::raise(sig);
+        }
+        std::process::exit(128 + sig)
+    }
+}
+
+#[cfg(not(unix))]
+mod stop_signal {
+    pub fn install() {}
+    pub fn pending() -> Option<i32> {
+        None
+    }
+    pub fn reraise(sig: i32) -> ! {
+        std::process::exit(128 + sig)
+    }
+}
+
+/// Writes a diagnostic line to stderr. Unlike `eprintln!`, a terminal that has hung up (EIO)
+/// drops the line instead of panicking.
+fn diag(line: std::fmt::Arguments) {
+    let _ = writeln!(std::io::stderr(), "{line}");
 }
 
 fn is_quit(e: &Event) -> bool {
@@ -547,6 +625,7 @@ struct Opts {
     hold: HoldConfig,
     max_seconds: Option<u64>,
     record: Option<String>,
+    fault_panic_key: bool,
 }
 
 fn parse() -> Result<Option<Opts>, String> {
@@ -558,6 +637,7 @@ fn parse() -> Result<Option<Opts>, String> {
         hold: HoldConfig::new(9, 4),
         max_seconds: None,
         record: None,
+        fault_panic_key: false,
     };
     let (mut grace_ms, mut repeat_ms) = (None, None);
     let mut it = std::env::args().skip(1);
@@ -584,6 +664,7 @@ fn parse() -> Result<Option<Opts>, String> {
             "--hold-grace-ms" => grace_ms = Some(num()?),
             "--hold-repeat-ms" => repeat_ms = Some(num()?),
             "--record" => o.record = it.next(),
+            "--fault-panic-key" => o.fault_panic_key = true,
             "--replay" => {
                 let path = it.next().ok_or("--replay needs a path")?;
                 let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
@@ -615,6 +696,7 @@ fn parse() -> Result<Option<Opts>, String> {
 }
 
 fn play(o: Opts) -> std::io::Result<()> {
+    stop_signal::install();
     let mut ctx = Context::new(RenderMode::Fullscreen)?;
     if o.look != Look::Color {
         ctx.set_color_depth(ColorDepth::Mono);
@@ -630,7 +712,11 @@ fn play(o: Opts) -> std::io::Result<()> {
     let mut last = started;
     let (mut presented, mut behind_frames) = (0u64, 0u64);
     let mut outcome: std::io::Result<()> = Ok(());
+    let mut fault_armed = false;
     'run: loop {
+        if stop_signal::pending().is_some() {
+            break;
+        }
         if o.max_seconds
             .is_some_and(|s| started.elapsed() >= Duration::from_secs(s))
         {
@@ -643,6 +729,9 @@ fn play(o: Opts) -> std::io::Result<()> {
             first = false;
             match polled {
                 Ok(Some(e)) if is_quit(&e) => break 'run,
+                Ok(Some(Event::Key(k))) if o.fault_panic_key && k.code == KeyCode::Char('!') => {
+                    fault_armed = true;
+                }
                 Ok(Some(e)) => sim.feed(&e),
                 Ok(None) => break,
                 Err(e) => {
@@ -658,6 +747,12 @@ fn play(o: Opts) -> std::io::Result<()> {
         last = now;
         for _ in 0..demand.executed {
             sim.tick();
+            if fault_armed {
+                panic!(
+                    "deep_signal: injected fault at tic {} (--fault-panic-key)",
+                    sim.world.tic
+                );
+            }
         }
         if demand.executed > 0 {
             if demand.executed > 1 {
@@ -678,6 +773,7 @@ fn play(o: Opts) -> std::io::Result<()> {
         }
     }
     let restored = ctx.restore();
+    let mut recorded = Ok(());
     if let Some(path) = &o.record {
         let mut body = format!(
             "{TRACE_MAGIC}\tseed={}\tlevels={}\tgrace={}\trepeat={}\n",
@@ -692,9 +788,9 @@ fn play(o: Opts) -> std::io::Result<()> {
             }
         }
         body.push_str(&format!("end\t{}\n", sim.world.tic));
-        std::fs::write(path, body)?;
+        recorded = std::fs::write(path, body);
     }
-    eprintln!(
+    diag(format_args!(
         "deep_signal: tics={} presented={} frames_behind={} wall_ms={} world={:016x} path={:016x} sector={}/{}",
         sim.world.tic,
         presented,
@@ -704,8 +800,17 @@ fn play(o: Opts) -> std::io::Result<()> {
         sim.path,
         sim.world.level,
         sim.world.levels
-    );
-    outcome.and(restored)
+    ));
+    // The first failure wins: the loop's, then the restore's, then the trace write's.
+    let result = outcome.and(restored).and(recorded);
+    if let Some(sig) = stop_signal::pending() {
+        // Terminal restored and trace written: now die by the signal that asked us to stop.
+        if let Err(e) = result {
+            diag(format_args!("deep_signal: {e}"));
+        }
+        stop_signal::reraise(sig);
+    }
+    result
 }
 
 fn main() {
@@ -713,7 +818,7 @@ fn main() {
         Ok(None) => {}
         Ok(Some(o)) => {
             if let Err(e) = play(o) {
-                eprintln!("deep_signal: {e}");
+                diag(format_args!("deep_signal: {e}"));
                 std::process::exit(1);
             }
         }
