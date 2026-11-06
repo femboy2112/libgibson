@@ -58,6 +58,47 @@ not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
   across runs, across injection batching and against the `ScriptedSource` route; dropping,
   delaying or order-sensitively reordering one event changes them.
 
+### Added — examples (v0.7 node E; not library API)
+- **`examples/deep_signal` — DEEP SIGNAL**, an original playable first-person terminal maze built
+  only on the public API (no copyrighted assets or engine code): seeded sectors of growing size,
+  signal shards (depth-tested diamonds), hatched hazard floors that pulse live, an uplink that
+  opens when every shard is recovered. A fixed-point 35 Hz simulation (`FixedTimestep::exact`)
+  that presentation can fall behind but never changes; held keys via `HoldTracker`; inputs stamped
+  with their simulation tic (`--record`); DDA raycasting straight into an `RgbRaster` at the
+  canvas's sub-cell resolution; colour half-blocks or Braille / block / ASCII monochrome with a
+  width-aware HUD (40 columns); every transition effect reads world state. `--selfcheck` injects a
+  scripted trace through `InjectedQueue` into a headless context and requires identical replays,
+  the same world digest at presentation cadences 1/2/3/7 and at 40×15 ASCII, and a painted view.
+  Tests: `deep_signal_sim` (6) and a real-PTY playthrough `deep_signal_pty` (2: 80×24 colour,
+  40×15 ASCII); `deep_signal_selfcheck` runs the self-check in the suite.
+- **Every sector is winnable.** Shards are placed only on tiles reachable from the start while the
+  uplink is still shut (in a maze the exit cell can be the only link to part of the map; the first
+  version stranded shards behind it in roughly 1 sector in 6, found by an independent review that
+  ported the generator). The solvability test now uses its own BFS that treats the shut exit as a
+  wall, over 402 seeds × 3 sectors — red against the old generator (seed 5, sector 3).
+- **Record and replay.** `--record FILE` writes a versioned trace (header with seed, sectors and
+  hold timeouts; one line per simulation-relevant input stamped with its tic; the end tic) and
+  `--replay FILE` reproduces the run headlessly. `deep_signal_record_replay` plays a real-PTY
+  session, quits with Ctrl-C, replays the trace and requires the same tic count, world digest
+  **and trajectory hash** (every tic's position, angle and integrity) — a replay applying inputs
+  one tic late kept the final digest but is caught by the trajectory. Ctrl-C now quits and no
+  Ctrl- or Alt-chord moves the player.
+- **Pacing under a slow terminal (v0.7 node F):** the loop keeps the simulation at wall-clock pace
+  and drops presentations — after a blocked frame write up to 70 owed tics (2 s) run before the
+  next frame, the rest deferred, never discarded. `tests/deep_signal_pacing_pty.rs` drives a real
+  PTY with a held turn: a full-speed reader presents ~165 of 175 tics in 5 s; a ~50 KB/s reader
+  still runs 172–175 tics (≥ 94% of those owed) while presenting ~15 frames. With the previous
+  4-tic catch-up cap the same slow reader dilated the simulation to 45 of 178 tics — the test is
+  red for that. A PTY and a throttled reader, not a physical terminal's display rate; a terminal
+  that stops reading entirely stalls the (synchronous) loop.
+- **Resize during play (v0.7 node G, game level):** `tests/deep_signal_resize_pty.rs` resizes a real
+  PTY mid-play (80×24 → 120×40 → 40×15 → 100×30 → 80×24) with a turn held, feeding one terminal
+  model resized at the exact byte offset; after each resize every view row is painted, the HUD sits
+  on the last two rows in the right form, nothing exceeds the width, and quitting restores the
+  screen. It exposed a flaw: the HUD chose its wide/compact form from `Event::Resize`, which can
+  arrive late (here alongside held keys), so at 100×30 the compact HUD lingered; the HUD is now a
+  `Node::canvas` that chooses from its laid-out width, so it cannot lag the real geometry.
+
 ### Added — examples / tooling (v0.7 nodes A, B; not library API)
 - **`docs/V07_BASELINE.md`**: the merged v0.6 engine measured before any v0.7 library change — the
   installed-SDK forcing consumer at `f6cd8c7` and `7f57047` (identical output, checksum
