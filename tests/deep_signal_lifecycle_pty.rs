@@ -283,9 +283,11 @@ fn every_quit_key_restores_the_terminal() {
 /// (`/proc/<pid>/syscall`, readable by the parent).
 #[cfg(target_os = "linux")]
 fn in_write_syscall(pid: u32) -> bool {
-    let Ok(text) = std::fs::read_to_string(format!("/proc/{pid}/syscall")) else {
-        return false;
-    };
+    // A read error is not "not blocked": it means this test cannot observe the child at all
+    // (/proc/<pid>/syscall needs ptrace-read access to it), and must say so at once.
+    let text = std::fs::read_to_string(format!("/proc/{pid}/syscall")).unwrap_or_else(|e| {
+        panic!("cannot observe the game's system call via /proc/{pid}/syscall: {e}")
+    });
     let nr = text
         .split_whitespace()
         .next()
