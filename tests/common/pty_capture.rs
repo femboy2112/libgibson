@@ -196,6 +196,19 @@ impl Capture {
         self.master.get_termios().map(|t| format!("{t:?}"))
     }
 
+    /// The pty pair's `c_lflag`, read through the master. On Linux a pty master's `TCGETS`
+    /// reports the slave's termios, so this observes the child's raw/cooked mode from outside.
+    pub fn local_flags(&self) -> io::Result<u64> {
+        let fd = self.master.as_raw_fd().expect("Unix PTY descriptor");
+        // SAFETY: `fd` is a valid open descriptor owned by `self.master`; `t` is a valid
+        // out-pointer for one `termios`.
+        let mut t: libc::termios = unsafe { std::mem::zeroed() };
+        if unsafe { libc::tcgetattr(fd, &mut t) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(u64::from(t.c_lflag))
+    }
+
     pub fn resize(&self, cols: u16, rows: u16) {
         self.master
             .resize(PtySize {
