@@ -23,7 +23,9 @@
 //!
 //! Every ending that leaves a terminal restores it (node H): quitting; a delivered SIGTERM or
 //! SIGINT, which stops the loop, restores, writes the `--record` trace, then re-raises the signal
-//! so the parent still sees it; a panic (the library's panic hook). SIGHUP keeps its default
+//! so the parent still sees it - within a 3 s grace, after which a watchdog restores cooked mode
+//! and applies the signal's default action anyway (a terminal that stopped reading would
+//! otherwise hold the game forever); a panic (the library's panic hook). SIGHUP keeps its default
 //! action: the terminal is gone, and handling it would route shutdown through `poll_event`, which
 //! can busy-spin on a terminal that hangs up mid-call (#269); the trace is lost instead.
 //! Diagnostics that cannot be written are dropped, never a panic. `--fault-panic-key` is a test
@@ -89,16 +91,29 @@ fn action_of(k: &KeyEvent) -> Option<Action> {
 }
 
 /// Delivered termination signals, turned into an orderly stop of the game loop.
+///
+/// The orderly stop (restore the terminal, write the trace, re-raise) runs if it can finish within
+/// [`GRACE`](stop_signal::GRACE) of the signal being seen. If it cannot - the loop is blocked in a
+/// write to a terminal that stopped reading, or the shutdown is simply that slow - a watchdog puts
+/// the terminal's saved line settings back (an ioctl, which a stalled output queue does not block)
+/// and applies the signal's default action. Restore and trace are best effort past `GRACE`.
 #[cfg(unix)]
 mod stop_signal {
     use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
+    use std::sync::Mutex;
     use std::time::Duration;
+
+    const SIGNALS: [libc::c_int; 2] = [libc::SIGTERM, libc::SIGINT];
 
     static PENDING: AtomicI32 = AtomicI32::new(0);
     /// The signals whose handler this module installed (bit `n` = signal `n`).
     static INSTALLED: AtomicU64 = AtomicU64::new(0);
+    /// The terminal the game puts in raw mode, and its settings before that, for the watchdog's
+    /// last resort. It is the one crossterm uses: stdin when stdin is a terminal, otherwise
+    /// `/dev/tty` (opened here and kept open for the watchdog).
+    static SAVED_TERMIOS: Mutex<Option<(libc::c_int, libc::termios)>> = Mutex::new(None);
 
-    /// How long the orderly stop may take before the signal's default action is applied anyway.
+    /// How long after the watchdog sees a stop signal the orderly stop may take.
     pub const GRACE: Duration = Duration::from_secs(3);
 
     extern "C" fn record(sig: libc::c_int) {
@@ -106,43 +121,96 @@ mod stop_signal {
         PENDING.store(sig, Ordering::SeqCst);
     }
 
+    fn mask(how: libc::c_int, sigs: &[libc::c_int]) {
+        // SAFETY: a valid, initialised sigset; pthread_sigmask on the calling thread.
+        unsafe {
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut set);
+            for &sig in sigs {
+                libc::sigaddset(&mut set, sig);
+            }
+            libc::pthread_sigmask(how, &set, std::ptr::null_mut());
+        }
+    }
+
     /// Catches SIGTERM and SIGINT, except one the parent left ignored. SIGHUP is deliberately
-    /// left alone (see the module docs and #269).
+    /// left alone (see the module docs and #269). Call before the terminal leaves cooked mode.
+    ///
+    /// Order matters. Both signals are blocked on this thread while the watchdog is spawned, so
+    /// it inherits them blocked and every stop signal is handled on the main thread - where the
+    /// handler's store happens-before the final `pending()` check. Handlers are installed only
+    /// once the watchdog exists: without it, a caught signal could wait forever, so the default
+    /// action stays.
     pub fn install() {
-        for sig in [libc::SIGTERM, libc::SIGINT] {
-            // SAFETY: sigaction with valid, zero-initialised structs; the handler only stores
-            // to an atomic.
-            unsafe {
-                let mut old: libc::sigaction = std::mem::zeroed();
-                if libc::sigaction(sig, std::ptr::null(), &mut old) != 0
-                    || old.sa_sigaction == libc::SIG_IGN
-                {
-                    continue;
+        let wanted: Vec<libc::c_int> = SIGNALS
+            .into_iter()
+            .filter(|&sig| {
+                // SAFETY: querying a disposition into a zeroed struct.
+                unsafe {
+                    let mut old: libc::sigaction = std::mem::zeroed();
+                    libc::sigaction(sig, std::ptr::null(), &mut old) == 0
+                        && old.sa_sigaction != libc::SIG_IGN
                 }
-                let mut sa: libc::sigaction = std::mem::zeroed();
-                sa.sa_sigaction = record as extern "C" fn(libc::c_int) as libc::sighandler_t;
-                sa.sa_flags = libc::SA_RESTART;
-                libc::sigemptyset(&mut sa.sa_mask);
-                if libc::sigaction(sig, &sa, std::ptr::null_mut()) == 0 {
-                    INSTALLED.fetch_or(1 << sig, Ordering::SeqCst);
+            })
+            .collect();
+        if wanted.is_empty() {
+            return;
+        }
+        // SAFETY: isatty/open/tcgetattr/close on descriptors this function owns or stdin, with a
+        // zeroed termios; every failure just leaves nothing saved.
+        unsafe {
+            let fd = if libc::isatty(libc::STDIN_FILENO) == 1 {
+                libc::STDIN_FILENO
+            } else {
+                libc::open(
+                    c"/dev/tty".as_ptr(),
+                    libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC,
+                )
+            };
+            if fd >= 0 {
+                let mut t: libc::termios = std::mem::zeroed();
+                if libc::tcgetattr(fd, &mut t) == 0 {
+                    *SAVED_TERMIOS.lock().unwrap_or_else(|e| e.into_inner()) = Some((fd, t));
+                } else if fd != libc::STDIN_FILENO {
+                    libc::close(fd);
                 }
             }
         }
-        // A caught signal must still end the process when the loop cannot reach its orderly
-        // stop - blocked in a write to a terminal that stopped reading, say. After GRACE the
-        // watchdog applies the default action itself (the terminal then stays as it is: every
-        // restore sequence would block on the same stalled write).
-        if INSTALLED.load(Ordering::SeqCst) != 0 {
-            let _ = std::thread::Builder::new()
-                .name("stop-watchdog".into())
-                .spawn(|| loop {
-                    std::thread::sleep(Duration::from_millis(20));
-                    if let Some(sig) = pending() {
-                        std::thread::sleep(GRACE);
-                        reraise(sig);
+        mask(libc::SIG_BLOCK, &wanted);
+        let watchdog = std::thread::Builder::new()
+            .name("stop-watchdog".into())
+            .spawn(|| loop {
+                std::thread::sleep(Duration::from_millis(20));
+                if let Some(sig) = pending() {
+                    std::thread::sleep(GRACE);
+                    // The orderly stop did not finish in time. Put the line settings back (an
+                    // ioctl: unlike the escape sequences, it does not wait on a stalled output
+                    // queue), then die by the signal.
+                    let saved = *SAVED_TERMIOS.lock().unwrap_or_else(|e| e.into_inner());
+                    if let Some((fd, t)) = saved {
+                        // SAFETY: restoring a termios read from this same, still-open descriptor.
+                        unsafe { libc::tcsetattr(fd, libc::TCSANOW, &t) };
                     }
-                });
+                    reraise(sig);
+                }
+            });
+        if watchdog.is_ok() {
+            for &sig in &wanted {
+                // SAFETY: sigaction with a zeroed struct; the handler only stores to an atomic.
+                unsafe {
+                    let mut sa: libc::sigaction = std::mem::zeroed();
+                    sa.sa_sigaction = record as extern "C" fn(libc::c_int) as libc::sighandler_t;
+                    sa.sa_flags = libc::SA_RESTART;
+                    libc::sigemptyset(&mut sa.sa_mask);
+                    if libc::sigaction(sig, &sa, std::ptr::null_mut()) == 0 {
+                        INSTALLED.fetch_or(1 << sig, Ordering::SeqCst);
+                    }
+                }
+            }
         }
+        // A signal that arrived meanwhile was held pending; it is delivered now, to a handler if
+        // one was installed, otherwise by its default action.
+        mask(libc::SIG_UNBLOCK, &wanted);
     }
 
     /// Puts back the default action of every signal this module caught, so one that arrives
@@ -150,7 +218,7 @@ mod stop_signal {
     /// never acted on.
     pub fn uninstall() {
         let installed = INSTALLED.swap(0, Ordering::SeqCst);
-        for sig in [libc::SIGTERM, libc::SIGINT] {
+        for sig in SIGNALS {
             if installed & (1 << sig) != 0 {
                 // SAFETY: restoring the default disposition of a signal we installed.
                 unsafe {
@@ -167,11 +235,16 @@ mod stop_signal {
         }
     }
 
-    /// Dies by `sig` with its default action, so the parent sees the real cause of death.
+    /// Dies by `sig` with its default action, so the parent sees the real cause of death. Works
+    /// from either thread: the signal is unblocked on the calling thread before it is raised.
     pub fn reraise(sig: i32) -> ! {
         // SAFETY: restoring the default disposition and raising a signal at ourselves.
         unsafe {
             libc::signal(sig, libc::SIG_DFL);
+        }
+        mask(libc::SIG_UNBLOCK, &[sig]);
+        // SAFETY: raising a signal at the calling thread.
+        unsafe {
             libc::raise(sig);
         }
         std::process::exit(128 + sig)
@@ -872,6 +945,13 @@ fn main() {
         Ok(Some(o)) => {
             if let Err(e) = play(o) {
                 diag(format_args!("deep_signal: {e}"));
+                // play() returned early (startup failed, say) with the handlers still installed:
+                // a stop signal recorded before now is still the cause of death, and one arriving
+                // from here on takes its default action.
+                stop_signal::uninstall();
+                if let Some(sig) = stop_signal::pending() {
+                    stop_signal::reraise(sig);
+                }
                 std::process::exit(1);
             }
         }
