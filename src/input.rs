@@ -318,9 +318,10 @@ fn decode_mouse(m: CtMouseEvent) -> Option<Event> {
     }))
 }
 
-/// Hangup-aware poll for a Unix controlling terminal on stdin (issues #79, #269): the
-/// library-owned source in `tty_source`. It returns `Err(BrokenPipe)` once the terminal
-/// has hung up, wherever in the poll the hangup lands.
+/// Hangup-aware poll for a Unix controlling terminal (issues #79, #269): the library-owned
+/// source in `tty_source`, which reads stdin when stdin is a terminal and `/dev/tty`
+/// otherwise (as crossterm does). It returns `Err(BrokenPipe)` once that terminal has hung
+/// up, wherever in the poll the hangup lands.
 #[cfg(unix)]
 fn poll_event_unix_tty(timeout: Duration) -> io::Result<Option<Event>> {
     Ok(crate::tty_source::poll(timeout)?.and_then(decode_event))
@@ -358,6 +359,9 @@ pub(crate) fn note_tty_source_acquired() {
 #[cfg(unix)]
 pub(crate) fn clear_tty_source() {
     TTY_SOURCE_LATCHED.store(false, Ordering::Relaxed);
+    // The terminal source goes with the terminal: a later session reselects its descriptor
+    // and does not inherit stale events or a reported hangup.
+    crate::tty_source::reset();
 }
 
 /// No-op terminal-identity hooks off Unix, where the hangup-aware path and its latch
