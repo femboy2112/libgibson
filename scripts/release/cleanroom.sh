@@ -101,8 +101,9 @@ rm -f "$flog"
 
 echo "### C installed-SDK headless input boundary (#259, pkg-config) ###"
 # A headless handle is output-only: gibson_poll_event must return GIBSON_OK + GIBSON_EVENT_NONE at
-# once, without opening the process terminal. Run with stdin from /dev/null; before the fix the
-# poll tried to open a terminal and returned GIBSON_ERR_IO.
+# once, without opening the process terminal. Run with stdin from /dev/null. Where there is no
+# controlling terminal (CI), the unfixed poll tried to open one and returned GIBSON_ERR_IO; on a
+# terminal it waited for, and consumed, real keystrokes (exceeding the 250 ms bound).
 hdir="$WORK/headless_input"; mkdir -p "$hdir"
 cp bindings/sdk_forcing/headless_input_consumer.c "$hdir/main.c"
 hlog="$(mktemp)"

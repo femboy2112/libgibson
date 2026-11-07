@@ -53,9 +53,11 @@ first-parent history (Release Contract §1); until then it is a candidate, not a
   `gibson_create_headless_context` are output-only, as the release contract says, but
   `Context::poll_event`, `Context::run_once` and `gibson_poll_event` gated only on the session's
   TTY flag, which a headless session sets for rendering. With no terminal the poll failed
-  (`GIBSON_ERR_IO`); on a real terminal it consumed the user's keystrokes. A headless context now
-  reports no input at once, and its `run_once` takes the off-terminal branch. Only the two
-  `Context` guards are backported (from #265); none of 0.7's injected-input API comes with them.
+  (`GIBSON_ERR_IO`); on a real terminal it consumed the user's keystrokes. Through those three
+  entry points a headless context now reports no input at once, and its `run_once` takes the
+  off-terminal branch. (`Context::poll_from` still reads whatever source it is given: passing it
+  `TerminalSource` explicitly reads the terminal, as that source always does.) Only the two
+  `Context` guards are backported (from #265); no 0.7 API comes with them.
 - **Known limitations of 0.6.0, fixed or addressed only on the 0.7 line:**
   - #274: the C ABI's `GIBSON_KEY_*` codes collide with typed U+1001–U+100D; 0.7 adds
     `gibson_poll_event_kind`.

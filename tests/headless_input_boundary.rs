@@ -25,6 +25,10 @@ use std::time::{Duration, Instant};
 
 /// Selects the child role when this test binary re-runs itself (`pty:<leg>` or `notty`).
 const CHILD_ENV: &str = "GIBSON_259_CHILD";
+/// A file the parent creates only after it has typed on the PTY: the child's headless phase
+/// runs until it sees the file and then polls a further 500 ms, so the typed key is provably in
+/// the terminal's input queue while the headless context polls.
+const SYNC_ENV: &str = "GIBSON_259_SYNC";
 
 fn new_event() -> GibsonEvent {
     GibsonEvent {
@@ -94,16 +98,17 @@ fn a_headless_idle_run_once_waits_instead_of_spinning() {
         }
     }
     assert!(rendered, "the first frame renders");
+    // Exactly three idle calls of 200 ms each must take at least 450 ms between them. A
+    // spinning implementation returns from each at once (microseconds); descheduling can only
+    // lengthen the measurement, never make a spinning loop pass.
     let t0 = Instant::now();
-    let mut calls = 0u32;
-    while t0.elapsed() < Duration::from_millis(600) {
+    for _ in 0..3 {
         assert_eq!(ctx.run_once(Duration::from_millis(200)).unwrap(), None);
-        calls += 1;
     }
-    // About 3 calls of 200 ms each; a spinning loop makes thousands.
+    let took = t0.elapsed();
     assert!(
-        calls <= 6,
-        "{calls} idle run_once calls in 600 ms: it spins"
+        took >= Duration::from_millis(450),
+        "3 idle run_once(200 ms) calls took {took:?}: it spins"
     );
 }
 
@@ -183,6 +188,9 @@ fn run_pty_leg(leg: &str) {
         "--test-threads=1",
     ]);
     cmd.env(CHILD_ENV, format!("pty:{leg}"));
+    let sync = std::env::temp_dir().join(format!("gibson_259_sync_{}_{leg}", std::process::id()));
+    let _ = std::fs::remove_file(&sync);
+    cmd.env(SYNC_ENV, sync.to_str().expect("utf-8 temp path"));
     let mut child = pair.slave.spawn_command(cmd).expect("spawn PTY child");
     drop(pair.slave);
     let mut reader = pair.master.try_clone_reader().expect("reader");
@@ -213,7 +221,10 @@ fn run_pty_leg(leg: &str) {
     wait_for("PROBE_READY", &mut out);
     writer.write_all(b"x\r").expect("type on the PTY");
     writer.flush().expect("flush");
+    // Only now, with the key written, may the child's headless phase end.
+    std::fs::write(&sync, b"typed").expect("create the sync file");
     wait_for("PROBE_END", &mut out);
+    let _ = std::fs::remove_file(&sync);
     wait_for("POSITIVE_END", &mut out);
     let deadline = Instant::now() + Duration::from_secs(10);
     let status = loop {
@@ -328,17 +339,46 @@ fn notty_child() {
     std::io::stdout().flush().unwrap();
 }
 
+/// The headless phase's loop condition: true until the parent's sync file has been seen and a
+/// further 500 ms have passed. Gives up (and records it) after 20 s.
+struct Phase {
+    sync: std::path::PathBuf,
+    seen: Option<Instant>,
+    cap: Instant,
+}
+
+impl Phase {
+    fn new() -> Self {
+        Self {
+            sync: std::env::var_os(SYNC_ENV).expect("sync path").into(),
+            seen: None,
+            cap: Instant::now() + Duration::from_secs(20),
+        }
+    }
+    fn running(&mut self, got: &mut Vec<String>) -> bool {
+        if self.seen.is_none() && self.sync.exists() {
+            self.seen = Some(Instant::now());
+        }
+        if Instant::now() > self.cap {
+            got.push("SYNC_TIMEOUT".into());
+            return false;
+        }
+        self.seen
+            .is_none_or(|t| t.elapsed() < Duration::from_millis(500))
+    }
+}
+
 fn pty_child(leg: &str) {
-    // Phase 1: the headless context polls for 1.5 s through the selected entry point while the
-    // parent types `x` + Enter on the PTY.
+    // Phase 1: the headless context polls through the selected entry point while the parent
+    // types `x` + Enter on the PTY, and for 500 ms after the parent says it has typed.
     let mut got: Vec<String> = Vec::new();
-    let until = Instant::now() + Duration::from_millis(1500);
+    let mut phase = Phase::new();
     match leg {
         "rust_poll" | "run_once" => {
             let mut ctx = Context::headless(RenderMode::Fullscreen, 20, 4);
             println!("PROBE_READY");
             std::io::stdout().flush().unwrap();
-            while Instant::now() < until {
+            while phase.running(&mut got) {
                 let e = if leg == "rust_poll" {
                     ctx.poll_event(Duration::from_millis(100)).unwrap()
                 } else {
@@ -358,7 +398,7 @@ fn pty_child(leg: &str) {
             );
             println!("PROBE_READY");
             std::io::stdout().flush().unwrap();
-            while Instant::now() < until {
+            while phase.running(&mut got) {
                 let mut ev = new_event();
                 let st = gibson_poll_event(h, 100, &mut ev);
                 if st != GibsonStatus::Ok || ev.event_type != GIBSON_EVENT_NONE {
