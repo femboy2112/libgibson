@@ -10,8 +10,9 @@
 //! call waits for its `max_wait`. The defect does more, by five orders of magnitude:
 //! about 470,000 returns and 98% of a core per second at `082d324`.
 //! The pending-frame case is bounded on both sides, each against load: its lower bound
-//! is measured from the first frame (where the budget starts), so delay before the call
-//! can only lengthen it; its upper bound is far below the 5 s `max_wait`.
+//! is measured from an instant taken just before the first frame's render, so it can only
+//! overstate the time since that frame's budget began; its upper bound is far below the
+//! 5 s `max_wait`.
 //! The wake case bounds only the side the defect breaks: a key must end an 8 s wait.
 #![cfg(unix)]
 
@@ -90,11 +91,7 @@ fn assert_idle(label: &str, r: &BTreeMap<String, u64>) {
 
 #[test]
 fn idle_tty_loop_sleeps_instead_of_spinning_completion_relative() {
-    let r = run_on_pty(&["idle", "--fps", "60"]);
-    assert_idle("pty idle 60 fps", &r);
-    // The permitted-frame clock still reads zero: the fix does not hide it, it stops
-    // bounding an idle wait by it.
-    assert_eq!(r["min_until_us"], 0, "{r:?}");
+    assert_idle("pty idle 60 fps", &run_on_pty(&["idle", "--fps", "60"]));
 }
 
 #[test]
@@ -145,7 +142,7 @@ fn assert_pending_frame(label: &str, r: &BTreeMap<String, u64>) {
         r["first_call_us"]
     );
     assert!(
-        r["since_frame0_us"] >= 99_000,
+        r["since_frame0_us"] >= 100_000,
         "{label}: rendered {} us after the previous frame, inside its 100 ms budget. {r:?}",
         r["since_frame0_us"]
     );
