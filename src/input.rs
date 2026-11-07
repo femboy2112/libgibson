@@ -311,7 +311,7 @@ fn poll_until_deliverable(
 /// (#285), where only a kitty-keyboard-protocol terminal reports one.
 ///
 /// Windows keeps its earlier behaviour, every kind delivered (#285 review). crossterm 0.29 reports
-/// a release there for **every** key, which LibGibson has always delivered as a second press
+/// a release there for each ordinary key-up, which LibGibson has always delivered as a second press
 /// (#292), but it also delivers an Alt+numpad character code **only** as the release of Alt, and
 /// a decoded `KeyEvent` does not say which of the two a `Char` release is. Dropping releases there
 /// would lose those characters; fixing the doubling needs that distinction and a Windows test.
