@@ -57,6 +57,7 @@ struct fb_adapter {
     fb_key_event q[FB_KEYQ];
     unsigned qhead, qlen;
     int quit, gone, resized_flag;
+    sig_atomic_t sig_gen_at_open; /* g_signal_gen when this adapter opened */
 
     uint64_t t_open_ns;
     uint64_t last_lower_ns, last_render_ns;
@@ -109,17 +110,27 @@ static uint64_t ns_for_tics(uint64_t n, uint32_t hz) {
     return (n / hz) * 1000000000ull + (((n % hz) * 1000000000ull) + hz - 1) / hz;
 }
 
-static volatile sig_atomic_t g_signal;
+/* The handler stores two sig_atomic_t values and nothing else. It never nests (sa_mask blocks both
+   stop signals while it runs), so its read-then-write of g_signal_gen cannot interleave with
+   itself; ordinary code only reads both. An adapter is signalled when g_signal_gen moved past the
+   value it saw at open, so a signal that ended one adapter never ends a later one. */
+static volatile sig_atomic_t g_signal;     /* the last stop signal received */
+static volatile sig_atomic_t g_signal_gen; /* stop signals received so far */
 static int g_signals_owned;
 static struct sigaction g_old_int, g_old_term;
 
-static void on_stop_signal(int sig) { g_signal = sig; }
+static void on_stop_signal(int sig) {
+    g_signal = sig;
+    g_signal_gen = g_signal_gen + 1;
+}
 
 static void install_signals(void) {
     struct sigaction sa;
     memset(&sa, 0, sizeof sa);
     sa.sa_handler = on_stop_signal;
     sigemptyset(&sa.sa_mask);
+    sigaddset(&sa.sa_mask, SIGINT);
+    sigaddset(&sa.sa_mask, SIGTERM);
     sa.sa_flags = SA_RESTART;
     sigaction(SIGINT, &sa, &g_old_int);
     sigaction(SIGTERM, &sa, &g_old_term);
@@ -134,6 +145,11 @@ static void uninstall_signals(void) {
 }
 
 int fb_adapter_signal_received(void) { return (int)g_signal; }
+
+int fb_adapter_signal(const fb_adapter *ad) {
+    if (ad->faults & FB_FAULT_STICKY_SIGNAL) return (int)g_signal; /* mutant: the old global flag */
+    return g_signal_gen != ad->sig_gen_at_open ? (int)g_signal : 0;
+}
 
 /* ---------------------------------------------------------------- config */
 
@@ -281,6 +297,7 @@ static fb_adapter *alloc_adapter(const fb_adapter_config *cfg) {
         return NULL;
     }
     ad->t_open_ns = mono_ns();
+    ad->sig_gen_at_open = g_signal_gen;
     return ad;
 }
 
@@ -403,7 +420,7 @@ uint32_t fb_adapter_ticks_ms(const fb_adapter *ad) { return (uint32_t)((mono_ns(
 
 uint64_t fb_adapter_wall_tic(const fb_adapter *ad) { return tics_for_ns(mono_ns() - ad->t_open_ns, ad->cfg.tic_hz); }
 
-int fb_adapter_quit_requested(const fb_adapter *ad) { return ad->quit || g_signal != 0; }
+int fb_adapter_quit_requested(const fb_adapter *ad) { return ad->quit || fb_adapter_signal(ad) != 0; }
 
 /* ---------------------------------------------------------------- submission */
 
@@ -583,6 +600,10 @@ fb_status fb_adapter_present(fb_adapter *ad) {
     gibson_node_t *node = NULL;
     fs = lower(ad, &node);
     if (fs != FB_OK) return fs;
+    if ((ad->faults & FB_FAULT_SLOW_PRESENT) && ad->ctr.presents % 35 == 34) {
+        struct timespec slow = {0, 400000000L}; /* mutant: 400 ms inside the measured window */
+        nanosleep(&slow, NULL);
+    }
     gibson_status_t st = gibson_set_root_node(ad->ctx, node);
     if (st != GIBSON_OK) {
         gibson_node_free(node);
@@ -748,7 +769,7 @@ fb_status fb_adapter_run(fb_adapter *ad, const fb_producer *p, const fb_run_opti
 
     for (;;) {
         stats->iterations++;
-        if (g_signal) { stats->exit_reason = FB_EXIT_SIGNAL; break; }
+        if (fb_adapter_signal(ad)) { stats->exit_reason = FB_EXIT_SIGNAL; break; }
         if (ad->quit) { stats->exit_reason = FB_EXIT_QUIT; break; }
         const uint64_t now = stats->iterations == 1 ? t0 : clock(o.clock_user);
         uint64_t due;
@@ -777,7 +798,7 @@ fb_status fb_adapter_run(fb_adapter *ad, const fb_producer *p, const fb_run_opti
             fb_status fs = fb_adapter_pump(ad, tic, 0);
             if (fs == FB_TERMINAL_GONE) { stats->exit_reason = FB_EXIT_HANGUP; goto out; }
             if (fs != FB_OK) { stats->exit_reason = FB_EXIT_ERROR; rc = fs; goto out; }
-            if (ad->quit || g_signal) break;
+            if (ad->quit || fb_adapter_signal(ad)) break;
             for (; ad->fault_extra_tics; ad->fault_extra_tics--) p->tic(p->user); /* mutant only */
             fb_key_event ev;
             while (fb_adapter_next_key(ad, tic, &ev)) {
@@ -789,7 +810,7 @@ fb_status fb_adapter_run(fb_adapter *ad, const fb_producer *p, const fb_run_opti
             ran++;
         }
         if (ran > stats->max_tics_in_iteration) stats->max_tics_in_iteration = ran;
-        if (ad->quit || g_signal) continue; /* the top of the loop records why */
+        if (ad->quit || fb_adapter_signal(ad)) continue; /* the top of the loop records why */
 
         int present = 0;
         if (ad->faults & FB_FAULT_FRAME_LOCKED_SIM) {

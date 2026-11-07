@@ -178,9 +178,13 @@ fb_status fb_adapter_pump(fb_adapter *ad, uint64_t tic, uint32_t timeout_ms);
 /* Pops the next key event due at or before `tic`: synthesized releases of holds that ended at or
    before `tic` (in end order) are queued ahead of presses observed later. 1 = written, 0 = none. */
 int fb_adapter_next_key(fb_adapter *ad, uint64_t tic, fb_key_event *out);
-/* Quit requested by quit_char, Ctrl-C, SIGINT or SIGTERM. */
+/* Quit requested by quit_char, Ctrl-C, or a SIGINT/SIGTERM received since this adapter opened. */
 int fb_adapter_quit_requested(const fb_adapter *ad);
-/* The SIGINT/SIGTERM received (0 if none). */
+/* The SIGINT/SIGTERM received since `ad` was opened (0 if none). A signal that ended an earlier
+   adapter does not end a later one. */
+int fb_adapter_signal(const fb_adapter *ad);
+/* The last SIGINT/SIGTERM the process received while handlers were installed (0 if none): what a
+   program re-raises after restoring the terminal. */
 int fb_adapter_signal_received(void);
 /* Monotonic milliseconds since the adapter opened (for an engine's own clock, e.g. DG_GetTicksMs). */
 uint32_t fb_adapter_ticks_ms(const fb_adapter *ad);
@@ -245,6 +249,9 @@ void fb_adapter_counters_get(const fb_adapter *ad, fb_adapter_counters *out);
 #define FB_FAULT_FRAME_LOCKED_SIM      0x04u /* the loop runs exactly one tic per presented frame */
 #define FB_FAULT_LEAK_PER_FRAME        0x08u /* each present leaks 64 KiB */
 #define FB_FAULT_RETRY_ON_IO           0x10u /* GIBSON_ERR_IO from a poll is ignored (spins on hangup) */
+#define FB_FAULT_STICKY_SIGNAL         0x20u /* any signal ever received ends every later adapter too */
+#define FB_FAULT_SLOW_PRESENT          0x40u /* every 35th present stalls 400 ms (inside the timing; longer than
+                                                the 10-tic catch-up cap, so a real-clock loop drops tics) */
 void fb_adapter_set_faults(fb_adapter *ad, unsigned faults);
 
 #ifdef __cplusplus

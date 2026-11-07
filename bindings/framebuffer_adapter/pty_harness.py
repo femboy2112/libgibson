@@ -13,8 +13,9 @@ terminal with TIOCSWINSZ, and checks from the outside:
   P6  termios (tcgetattr on the slave, held by this harness) is identical before and after a
       normal quit, after SIGTERM; after a hangup (master closed, child ignoring SIGHUP) the
       program exits on its own, promptly and without spinning.
-  P7  present cost and memory on a real PTY (no headless capture): 2000 frames at several sizes,
-      and a real-clock 35 Hz run at each size.
+  P7  present cost and memory on a real PTY (no headless capture), GATED (P7_* below): 2000 frames
+      at several sizes (p99 within one 35 Hz tic, bounded second-half memory growth), and a
+      real-clock 35 Hz run at each size (>= 34.0 presented fps, no dropped tic).
 
 This is an independent route to fb_adapter_demo --selfcheck's P3/P5/P6/P7 (written separately, in
 another language, and observing only the terminal and the demo's report file).
@@ -36,14 +37,37 @@ import threading
 import time
 
 CONTROLS = {
-    "p2-wire-wrong-tic": ("P2", "the reference is the replay 5 tics before the live run's last frame"),
+    "p2-wire-shifted-cells": ("P2", "same tic and hash, but each wire cell is compared with its right-hand neighbour"),
     "p3-ignore-input": ("P3", "the producer ignores every key"),
     "p5-resize-steps": ("P5", "mutant adapter: a resize runs an extra producer tic"),
     "p5-stale-map": ("P5", "mutant adapter: the map is not rebuilt on resize"),
     "p6-no-restore": ("P6", "the program exits without gibson_destroy_context"),
     "p6-no-signals": ("P6", "no SIGTERM handler"),
     "p6-retry-io": ("P6", "mutant adapter: GIBSON_ERR_IO from a poll is ignored"),
+    "p6-sticky-signal": ("P6", "mutant adapter: a handled signal also ends every later adapter"),
+    "p7-slow-present": ("P7", "mutant adapter: every 35th present stalls 400 ms"),
 }
+
+# The P7 gate, exactly (README "Frame cost and memory"):
+#   bench (2000 frames, one tic and one present per loop iteration, no waiting): the p99 of
+#   lowering + gibson_render (including the pty write) over frames 200-1999 is at most one 35 Hz
+#   tic (28571 us), and the high-water RSS grows at most 1024 KiB over the second half (frames
+#   1100-2000; the first half's growth is allocator settling and is reported, not gated);
+#   real clock (the normal loop for 175 tics at 35 Hz): it ends by its tic limit after 175 tics,
+#   drops no tic, and presents at least 34.0 frames per wall-clock second.
+# Measured margins on the development box before the gate was set: p99 at most 13.9 ms, 34.9-35.0
+# fps, 0 dropped tics, second-half growth at most 100 KiB.
+P7_BUDGET_US = 1e6 / 35.0
+P7_MIN_FPS = 34.0
+P7_GROWTH_KB = 1024
+
+
+def child_env(**extra):
+    """The environment for every child: a known terminal type, and never a desktop."""
+    env = dict(os.environ, TERM="xterm-256color", COLORTERM="truecolor", **extra)
+    for k in ("DISPLAY", "WAYLAND_DISPLAY"):
+        env.pop(k, None)
+    return env
 
 
 class Pty:
@@ -67,8 +91,7 @@ class Pty:
                 signal.signal(signal.SIGHUP, signal.SIG_IGN if ignore_hup else signal.SIG_DFL)
                 signal.signal(signal.SIGTERM, signal.SIG_DFL)
                 signal.signal(signal.SIGINT, signal.SIG_DFL)
-                env = dict(os.environ, TERM="xterm-256color", COLORTERM="truecolor")
-                os.execve(argv[0], argv, env)
+                os.execve(argv[0], argv, child_env())
             finally:
                 os._exit(127)
         self.pid = pid
@@ -185,7 +208,8 @@ class Harness:
                                           "captured": p.captured}
 
     def replay(self, trace, tics):
-        r = subprocess.run([self.demo, "--replay", trace, "--tics", str(tics)], capture_output=True, text=True, timeout=120)
+        r = subprocess.run([self.demo, "--replay", trace, "--tics", str(tics)], capture_output=True, text=True,
+                           timeout=120, env=child_env())
         out = {}
         for tok in r.stdout.split():
             if "=" in tok:
@@ -210,9 +234,11 @@ class Harness:
             screen = pyte.Screen(cols, rows)
             pyte.ByteStream(screen).feed(data[:cut] if cut > 0 else data)
             dump = self.path("cells")
-            ref_tics = tics - 5 if self.control == "p2-wire-wrong-tic" else tics
-            rr = subprocess.run([self.demo, "--replay", trace, "--tics", str(ref_tics), "--grid", "%dx%d" % (cols, rows),
-                                 "--dump-cells", dump], capture_output=True, text=True, timeout=120)
+            # The control keeps the same tic and hash and shifts only the cell correspondence, so if
+            # it fails, it fails on cells alone.
+            shift = 1 if self.control == "p2-wire-shifted-cells" else 0
+            rr = subprocess.run([self.demo, "--replay", trace, "--tics", str(tics), "--grid", "%dx%d" % (cols, rows),
+                                 "--dump-cells", dump], capture_output=True, text=True, timeout=120, env=child_env())
             want = []
             try:
                 with open(dump) as f:
@@ -226,7 +252,7 @@ class Harness:
             else:
                 for y in range(rows - 1):  # the status row differs by design (live fps vs replay)
                     for x in range(cols):
-                        kind, fg, bg = want[y * cols + x]
+                        kind, fg, bg = want[y * cols + (x + shift) % cols]
                         c = screen.buffer[y][x]
                         if kind == "H":
                             good = c.data == "\u2580" and c.fg == fg and c.bg == bg
@@ -242,8 +268,8 @@ class Harness:
             same = rep.get("hash") is not None and ("hash=" + rep.get("hash", "")) in rr.stdout
             ok = ok and bad == 0 and same and info["raw"] and rep.get("tics") == str(tics)
             evs.append("%dx%d: %d image + %d bar cells of the last frame on the wire (%d bytes) vs headless readback of "
-                       "the replayed trace at tic %d: %s mismatches%s; hash %s" % (
-                           cols, rows, img, bars, len(data), ref_tics, bad, (" first " + first) if first else "",
+                       "the replayed trace at tic %d: mismatches=%d%s; hash=%s" % (
+                           cols, rows, img, bars, len(data), tics, bad, (" first " + first) if first else "",
                            "match" if same else "MISMATCH"))
         try:
             from importlib.metadata import version
@@ -309,6 +335,10 @@ class Harness:
             argv.append("--control-no-signals")
         if which == "hangup" and self.control == "p6-retry-io":
             argv += ["--fault", "retry-io"]
+        if which == "sigterm-reopen":
+            argv += ["--reopen-after-signal", "35"]
+            if self.control == "p6-sticky-signal":
+                argv += ["--fault", "sticky-signal"]
         p = Pty(argv, 80, 24, ignore_hup=(which == "hangup"))
         before = p.before
         raw = p.wait_raw()
@@ -316,11 +346,11 @@ class Harness:
         during = termios.tcgetattr(p.slave)
         if which == "quit":
             p.send(b"q")
-        elif which == "sigterm":
+        elif which in ("sigterm", "sigterm-reopen"):
             os.kill(p.pid, signal.SIGTERM)
         else:
             p.close_master()
-        status, ru, secs, killed = p.wait_exit(5.0)
+        status, ru, secs, killed = p.wait_exit(6.0)
         r = parse_report(rep)
         cpu = ru.ru_utime + ru.ru_stime
         if which == "hangup":
@@ -333,6 +363,16 @@ class Harness:
                   and os.WEXITSTATUS(status) == 0 and secs < 2.0 and cpu < 3.0)
             ev = "hangup: exit=%s (%s) %.2fs after the master closed, child cpu %.2fs, termios after %s" % (
                 r.get("exit", "(no report)"), describe(status), secs, cpu, after)
+        elif which == "sigterm-reopen":
+            after = termios.tcgetattr(p.slave)
+            restored = after == before
+            ok = (raw and during != before and not killed and restored and r.get("exit") == "signal"
+                  and r.get("second_exit") == "tic_limit" and r.get("second_tics") == "35" and r.get("second_signal") == "0"
+                  and os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0)
+            ev = ("sigterm then a second adapter: first exit=%s after %s tics, second adapter in the same process "
+                  "exit=%s after %s tics (want tic_limit after 35), termios after %s before, %s" % (
+                      r.get("exit", "(no report)"), r.get("tics", "?"), r.get("second_exit", "(none)"),
+                      r.get("second_tics", "?"), "==" if restored else "!=", describe(status)))
         else:
             after = termios.tcgetattr(p.slave)
             restored = after == before
@@ -348,8 +388,10 @@ class Harness:
         return ok, ev
 
     def p6(self):
-        cases = ["quit", "sigterm", "hangup"]
-        if self.control == "p6-no-restore":
+        cases = ["quit", "sigterm", "hangup", "sigterm-reopen"]
+        if self.control == "p6-sticky-signal":
+            cases = ["sigterm-reopen"]
+        elif self.control == "p6-no-restore":
             cases = ["quit"]
         elif self.control == "p6-no-signals":
             cases = ["sigterm"]
@@ -364,39 +406,52 @@ class Harness:
 
     # ------------------------------------------------------------------ P7
     def p7(self):
+        """Gated as P7_* above; each line says which gate passed."""
+        sizes = [(80, 24), (160, 50), (200, 60), (320, 100)]
+        extra = []
+        if self.control == "p7-slow-present":
+            sizes, extra = [(80, 24)], ["--fault", "slow-present"]
         ok, evs = True, []
-        for cols, rows in [(80, 24), (160, 50), (200, 60), (320, 100)]:
+        for cols, rows in sizes:
             rep = self.path("bench")
-            argv = [self.demo, "--play", "--bench-frames", "2000", "--report", rep]
+            argv = [self.demo, "--play", "--bench-frames", "2000", "--report", rep] + extra
             p = Pty(argv, cols, rows)
             status, ru, secs, killed = p.wait_exit(300.0)
             p.close()
             bench_bytes = p.bytes
             r = parse_report(rep)
             try:
-                growth = int(r["hwm_end_kb"]) - int(r["hwm_warm_kb"])
+                p99 = float(r["total_p99_us"])
+                settle = int(r["hwm_mid_kb"]) - int(r["hwm_warm_kb"])
+                growth = int(r["hwm_end_kb"]) - int(r["hwm_mid_kb"])
             except (KeyError, ValueError):
-                growth = None
-            size_ok = (not killed and r.get("bench_frames") == "2000" and r.get("frame") == "%dx%d" % (cols, rows)
-                       and growth is not None and growth <= 1024)
-            ok = ok and size_ok
-            # a real-clock run at the same size: does the loop hold 35 Hz?
-            live, _, info = self.session(175, cols=cols, rows=rows)
+                p99, settle, growth = float("inf"), None, None
+            budget_ok = p99 <= P7_BUDGET_US
+            mem_ok = growth is not None and growth <= P7_GROWTH_KB
+            bench_ok = (not killed and r.get("bench_frames") == "2000" and r.get("frame") == "%dx%d" % (cols, rows)
+                        and budget_ok and mem_ok)
+            live, _, info = self.session(175, extra, cols=cols, rows=rows)
             try:
                 fps = int(live["frames"]) / (float(live["wall_ms"]) / 1000.0)
             except (KeyError, ValueError, ZeroDivisionError):
                 fps = 0.0
-            ok = ok and live.get("exit") == "tic_limit" and not info["killed"]
-            evs.append("%dx%d: bench 2000 frames, %.0f KB/frame on the pty: lower mean %s p99 %s us, render (incl. pty write) mean %s p99 %s us, "
-                       "total mean %s p99 %s us (35 Hz budget 28571 us: %s); VmHWM %s->%s KiB (+%s); "
-                       "real clock 175 tics: %s frames in %s ms = %.1f fps, dropped %s tics, max %s tics/iteration" % (
-                           cols, rows, bench_bytes / 2000.0 / 1000.0, r.get("lower_mean_us"), r.get("lower_p99_us"), r.get("render_mean_us"),
-                           r.get("render_p99_us"), r.get("total_mean_us"), r.get("total_p99_us"),
-                           "fits" if float(r.get("total_p99_us", "1e9")) < 28571 else "MISSES",
-                           r.get("hwm_warm_kb"), r.get("hwm_end_kb"), growth, live.get("frames"), live.get("wall_ms"), fps,
-                           live.get("dropped"), live.get("max_tics_in_iteration")))
+            fps_ok = fps >= P7_MIN_FPS
+            drop_ok = live.get("dropped") == "0"
+            live_ok = (not info["killed"] and live.get("exit") == "tic_limit" and live.get("tics") == "175"
+                       and fps_ok and drop_ok)
+            ok = ok and bench_ok and live_ok
+            evs.append("%dx%d: bench 2000 frames, %.0f KB/frame on the pty: lower mean %s p99 %s us, render (incl. pty write) "
+                       "mean %s p99 %s us, total mean %s p99 %s us (gate p99 <= %.0f us: %s); VmHWM %s->%s->%s KiB at "
+                       "frames 200/1100/2000 (settling %s, not gated; second half %s, gate <= %d: %s); real clock 175 tics: "
+                       "%s frames in %s ms = %.1f fps (gate >= %.1f: %s), dropped %s tics (gate 0: %s), max %s tics/iteration" % (
+                           cols, rows, bench_bytes / 2000.0 / 1000.0, r.get("lower_mean_us"), r.get("lower_p99_us"),
+                           r.get("render_mean_us"), r.get("render_p99_us"), r.get("total_mean_us"), r.get("total_p99_us"),
+                           P7_BUDGET_US, "pass" if budget_ok else "FAIL", r.get("hwm_warm_kb"), r.get("hwm_mid_kb"),
+                           r.get("hwm_end_kb"), "?" if settle is None else "%+d" % settle,
+                           "?" if growth is None else "%+d" % growth, P7_GROWTH_KB, "pass" if mem_ok else "FAIL",
+                           live.get("frames"), live.get("wall_ms"), fps, P7_MIN_FPS, "pass" if fps_ok else "FAIL",
+                           live.get("dropped"), "pass" if drop_ok else "FAIL", live.get("max_tics_in_iteration")))
         return ok, "; ".join(evs) + " (pty drained by this harness as fast as it can read)"
-
 
 def main():
     ap = argparse.ArgumentParser()

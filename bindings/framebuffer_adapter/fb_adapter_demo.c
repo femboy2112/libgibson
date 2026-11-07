@@ -11,7 +11,8 @@
  *               --hold-grace TICS  --hold-repeat TICS  --tic-hz N  --color-depth mono|16|256|true
  *               --bench-frames N (one tic + one present per loop, as fast as the terminal takes it)
  *               negative controls: --control-ignore-input  --control-no-restore  --control-no-signals
- *               --fault stale-map|resize-steps|frame-locked|leak|retry-io
+ *               --fault stale-map|resize-steps|frame-locked|leak|retry-io|sticky-signal|slow-present
+ *               --reopen-after-signal TICS (after a handled SIGINT/SIGTERM, open a second adapter and run TICS)
  *
  * --selfcheck prints one line per property, `PROP <n> <name>: PASS|FAIL <evidence>`, then
  * `fb_adapter: OK` and exits 0 only if every property passed. --control runs one property with a
@@ -123,7 +124,7 @@ static uint64_t fclock_now(void *u) {
 /* ================================================================ play / bench / replay */
 
 typedef struct play_opts {
-    uint64_t exit_after_tics, bench_frames, seed;
+    uint64_t exit_after_tics, bench_frames, seed, reopen_tics;
     const char *report, *trace, *replay, *dump_cells;
     uint64_t replay_tics;
     uint16_t grid_cols, grid_rows;
@@ -142,8 +143,8 @@ typedef struct demo {
     FILE *trace;
     int bench;
     uint64_t *lower, *render;
-    size_t n, cap, warm_at;
-    long hwm_warm, maxrss_warm, rss_warm;
+    size_t n, cap, warm_at, mid_at;
+    long hwm_warm, maxrss_warm, rss_warm, hwm_mid;
 } demo;
 
 static fb_status demo_draw(void *u, fb_adapter *ad) {
@@ -193,6 +194,7 @@ static void demo_on_present(void *u, fb_adapter *ad, uint64_t tics) {
             d->maxrss_warm = maxrss_kb();
             d->rss_warm = proc_status_kb("VmRSS");
         }
+        if (d->n == d->mid_at) d->hwm_mid = proc_status_kb("VmHWM");
     }
 }
 
@@ -241,10 +243,10 @@ static void bench_summary(FILE *f, const demo *d) {
     stats_us(d->render, from, d->n, &rm, &rp);
     stats_us(tot, from, d->n, &tm, &tp);
     fprintf(f, "bench_frames=%zu warm=%zu lower_mean_us=%.1f lower_p99_us=%.1f render_mean_us=%.1f render_p99_us=%.1f "
-               "total_mean_us=%.1f total_p99_us=%.1f hwm_warm_kb=%ld hwm_end_kb=%ld maxrss_warm_kb=%ld maxrss_end_kb=%ld "
-               "rss_warm_kb=%ld rss_end_kb=%ld\n",
-            d->n, d->warm_at, lm, lp, rm, rp, tm, tp, d->hwm_warm, proc_status_kb("VmHWM"), d->maxrss_warm, maxrss_kb(),
-            d->rss_warm, proc_status_kb("VmRSS"));
+               "total_mean_us=%.1f total_p99_us=%.1f hwm_warm_kb=%ld hwm_mid_kb=%ld hwm_end_kb=%ld maxrss_warm_kb=%ld "
+               "maxrss_end_kb=%ld rss_warm_kb=%ld rss_end_kb=%ld\n",
+            d->n, d->warm_at, lm, lp, rm, rp, tm, tp, d->hwm_warm, d->hwm_mid, proc_status_kb("VmHWM"), d->maxrss_warm,
+            maxrss_kb(), d->rss_warm, proc_status_kb("VmRSS"));
     free(tot);
 }
 
@@ -291,6 +293,7 @@ static int run_play(const play_opts *o) {
         d.bench = 1;
         d.cap = (size_t)o->bench_frames;
         d.warm_at = d.cap >= 1000 ? 200 : d.cap / 5;
+        d.mid_at = d.warm_at + (d.cap - d.warm_at) / 2;
         d.lower = calloc(d.cap, sizeof *d.lower);
         d.render = calloc(d.cap, sizeof *d.render);
         if (!d.lower || !d.render) return 1;
@@ -332,6 +335,40 @@ static int run_play(const play_opts *o) {
     if (o->no_restore) _exit(0); /* negative control: leave the terminal as it is */
     fb_adapter_close(ad);
     if (d.trace) fclose(d.trace);
+    if (o->reopen_tics && rs.exit_reason == FB_EXIT_SIGNAL) {
+        /* --reopen-after-signal: the signal was handled and the terminal restored; a second adapter
+           opened in this same process must run normally, not inherit the old signal. */
+        fb_adapter *ad2 = NULL;
+        fb_run_stats rs2;
+        memset(&rs2, 0, sizeof rs2);
+        fb_status st2 = fb_adapter_open_terminal(&cfg, &ad2);
+        if (st2 == FB_OK) {
+            fb_adapter_set_faults(ad2, o->faults);
+            d.stats = &rs2;
+            fb_run_options ro2;
+            fb_run_options_defaults(&ro2);
+            ro2.max_tics = o->reopen_tics;
+            ro2.on_present = demo_on_present;
+            ro2.hook_user = &d;
+            st2 = fb_adapter_run(ad2, &p, &ro2, &rs2);
+            const int sig2 = fb_adapter_signal(ad2);
+            fb_adapter_close(ad2);
+            if (o->report) {
+                FILE *f = fopen(o->report, "a");
+                if (f) {
+                    fprintf(f, "second_exit=%s second_tics=%llu second_frames=%llu second_signal=%d\n",
+                            exit_name(rs2.exit_reason), (unsigned long long)rs2.tics,
+                            (unsigned long long)rs2.frames_presented, sig2);
+                    fclose(f);
+                }
+            }
+        }
+        fprintf(stderr, "fb_adapter_demo: second adapter: %s after %llu tics\n", exit_name(rs2.exit_reason),
+                (unsigned long long)rs2.tics);
+        synth_free(prod);
+        free(prod);
+        return (st2 == FB_OK && rs2.exit_reason == FB_EXIT_TIC_LIMIT) ? 0 : 1;
+    }
     fprintf(stderr, "fb_adapter_demo: %s after %llu tics, %llu frames, %llu dropped\n", exit_name(rs.exit_reason),
             (unsigned long long)rs.tics, (unsigned long long)rs.frames_presented, (unsigned long long)rs.tics_dropped);
     if (rs.exit_reason == FB_EXIT_SIGNAL) {
@@ -483,8 +520,10 @@ enum {
     C_P6_NO_RESTORE,
     C_P6_NO_SIGNALS,
     C_P6_RETRY_IO,
+    C_P6_STICKY_SIGNAL,
     C_P7_LEAK,
     C_P7_NO_ROTATION,
+    C_P7_SLOW_PRESENT,
     C_COUNT
 };
 
@@ -504,8 +543,10 @@ static const struct {
     {"p6-no-restore", 6, "the program exits without gibson_destroy_context"},
     {"p6-no-signals", 6, "no SIGTERM handler: the default action kills it"},
     {"p6-retry-io", 6, "mutant adapter: GIBSON_ERR_IO from a poll is ignored"},
+    {"p6-sticky-signal", 6, "mutant adapter: a handled signal also ends every later adapter"},
     {"p7-leak", 7, "mutant adapter: each present leaks 64 KiB"},
     {"p7-no-rotation", 7, "headless capture never rotated (the library's capture grows: finding F1)"},
+    {"p7-slow-present", 7, "mutant adapter: every 35th present stalls 400 ms"},
 };
 
 static int g_control = C_NONE;
@@ -762,7 +803,7 @@ static int prop2(char *ev) {
                     if (bad) {
                         bad_cases++;
                         bad_cells += bad;
-                        if (!first[0]) snprintf(first, sizeof first, "grid %ux%u par %d:%d status %d %s: %ld bad, %s", C, R,
+                        if (!first[0]) snprintf(first, sizeof first, "grid %ux%u par %d:%d status %d %s: %ld bad, %.150s", C, R,
                                                 pars[pi][0], pars[pi][1], status_rows, fmt == 1 ? "idx" : "argb", bad, f1);
                     }
                     /* the adapter's reported geometry agrees with the reference's */
@@ -1102,6 +1143,7 @@ typedef struct ptyc {
     int master, slave;
     pid_t pid;
     long bytes;
+    struct termios before; /* the slave's termios before the child existed */
 } ptyc;
 
 static int pty_spawn(ptyc *pc, char *const argv[], int ignore_hup) {
@@ -1115,6 +1157,9 @@ static int pty_spawn(ptyc *pc, char *const argv[], int ignore_hup) {
     if (s < 0) return 0;
     struct winsize ws = {24, 80, 0, 0};
     ioctl(m, TIOCSWINSZ, &ws);
+    /* The baseline is taken before the child exists, so a child that enters raw mode at once
+       cannot contaminate it. */
+    if (tcgetattr(s, &pc->before) != 0) return 0;
     pid_t pid = fork();
     if (pid < 0) return 0;
     if (pid == 0) {
@@ -1130,6 +1175,8 @@ static int pty_spawn(ptyc *pc, char *const argv[], int ignore_hup) {
         signal(SIGINT, SIG_DFL);
         setenv("TERM", "xterm-256color", 1);
         setenv("COLORTERM", "truecolor", 1);
+        unsetenv("DISPLAY"); /* never reach a desktop from a test child */
+        unsetenv("WAYLAND_DISPLAY");
         execv(g_exe, argv);
         _exit(127);
     }
@@ -1185,21 +1232,29 @@ static int pty_wait_exit(ptyc *pc, int timeout_ms, int *status, struct rusage *r
     return 0;
 }
 
+/* The whole report, its lines joined by spaces. */
 static void read_report(const char *path, char *out, size_t cap) {
     out[0] = '\0';
     FILE *f = fopen(path, "r");
     if (!f) return;
-    if (!fgets(out, (int)cap, f)) out[0] = '\0';
+    size_t n = fread(out, 1, cap - 1, f);
     fclose(f);
-    out[strcspn(out, "\n")] = '\0';
+    out[n] = '\0';
+    for (size_t i = 0; i < n; i++)
+        if (out[i] == '\n') out[i] = ' ';
 }
 
 static const char *report_field(const char *rep, const char *key, char *val, size_t cap) {
     char k[64];
     snprintf(k, sizeof k, "%s=", key);
-    const char *p = strstr(rep, k);
+    const char *p = rep;
     val[0] = '\0';
-    if (!p) return val;
+    for (;;) { /* a whole token: at the start or after a space */
+        p = strstr(p, k);
+        if (!p) return val;
+        if (p == rep || p[-1] == ' ') break;
+        p++;
+    }
     p += strlen(k);
     size_t i = 0;
     while (p[i] && p[i] != ' ' && i + 1 < cap) {
@@ -1219,7 +1274,7 @@ static int p6_case(int which, const char *dir, char *ev) {
     char report[512];
     snprintf(report, sizeof report, "%s/p6_%d.report", dir, which);
     unlink(report);
-    char *argv[12];
+    char *argv[16];
     int a = 0;
     argv[a++] = g_exe;
     argv[a++] = "--play";
@@ -1233,15 +1288,23 @@ static int p6_case(int which, const char *dir, char *ev) {
         argv[a++] = "--fault";
         argv[a++] = "retry-io";
     }
+    if (which == 3) {
+        argv[a++] = "--reopen-after-signal";
+        argv[a++] = "35";
+        if (ctl(C_P6_STICKY_SIGNAL)) {
+            argv[a++] = "--fault";
+            argv[a++] = "sticky-signal";
+        }
+    }
     argv[a] = NULL;
-    static const char *names[] = {"quit 'q'", "SIGTERM", "hangup"};
+    static const char *names[] = {"quit 'q'", "SIGTERM", "hangup", "SIGTERM then a second adapter"};
     ptyc pc;
     if (!pty_spawn(&pc, argv, which == 2)) {
         ev_append(ev, "%s: cannot open a pty (%s); ", names[which], strerror(errno));
         return 0;
     }
-    struct termios before, during, after;
-    tcgetattr(pc.slave, &before);
+    struct termios during, after;
+    const struct termios before = pc.before; /* taken before fork */
     const int raw = pty_wait_raw(&pc, 8000);
     /* let the loop run in steady state (~35 tics) before acting, so the exit is from a live loop */
     for (const uint64_t settle = now_ns() + 1000000000ull; now_ns() < settle;) pty_drain(&pc, 20);
@@ -1249,7 +1312,7 @@ static int p6_case(int which, const char *dir, char *ev) {
     const int changed = !termios_same(&before, &during);
     if (which == 0) {
         if (write(pc.master, "q", 1) != 1) ev_append(ev, "(write q failed) ");
-    } else if (which == 1) {
+    } else if (which == 1 || which == 3) {
         kill(pc.pid, SIGTERM);
     } else {
         close(pc.master);
@@ -1260,12 +1323,26 @@ static int p6_case(int which, const char *dir, char *ev) {
     memset(&ru, 0, sizeof ru);
     double secs = 0;
     const int exited = pty_wait_exit(&pc, 5000, &status, &ru, &secs);
-    char rep[1024], ex[32], tics[32];
+    char rep[2048], ex[32], tics[32];
     read_report(report, rep, sizeof rep);
     report_field(rep, "exit", ex, sizeof ex);
     report_field(rep, "tics", tics, sizeof tics);
     int ok = raw && changed && exited;
-    if (which == 2) {
+    if (which == 3) {
+        char ex2[32], t2[32], s2[16];
+        report_field(rep, "second_exit", ex2, sizeof ex2);
+        report_field(rep, "second_tics", t2, sizeof t2);
+        report_field(rep, "second_signal", s2, sizeof s2);
+        const int r = tcgetattr(pc.slave, &after);
+        const int restored = r == 0 && termios_same(&before, &after);
+        ok = ok && restored && strcmp(ex, "signal") == 0 && strcmp(ex2, "tic_limit") == 0 && strcmp(t2, "35") == 0 &&
+             strcmp(s2, "0") == 0 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+        ev_append(ev, "%s: first adapter exit=%s after %s tics, second adapter (same process, after the handled "
+                      "signal) exit=%s after %s tics (want tic_limit after 35), termios after %s before, status %s %d; ",
+                  names[which], ex[0] ? ex : "(no report)", tics[0] ? tics : "?", ex2[0] ? ex2 : "(none)", t2[0] ? t2 : "?",
+                  restored ? "==" : "!=", WIFSIGNALED(status) ? "signal" : "code",
+                  WIFSIGNALED(status) ? WTERMSIG(status) : WEXITSTATUS(status));
+    } else if (which == 2) {
         errno = 0;
         const int r = tcgetattr(pc.slave, &after);
         const int eio = r != 0 && errno == EIO;
@@ -1297,14 +1374,25 @@ static int prop6(char *ev, const char *dir) {
     if (g_control == C_NONE || ctl(C_P6_NO_RESTORE)) pass = p6_case(0, dir, ev) && pass;
     if (g_control == C_NONE || ctl(C_P6_NO_SIGNALS)) pass = p6_case(1, dir, ev) && pass;
     if (g_control == C_NONE || ctl(C_P6_RETRY_IO)) pass = p6_case(2, dir, ev) && pass;
-    ev_append(ev, "(pty 80x24, termios via tcgetattr on the slave)");
+    if (g_control == C_NONE || ctl(C_P6_STICKY_SIGNAL)) pass = p6_case(3, dir, ev) && pass;
+    ev_append(ev, "(pty 80x24, termios via tcgetattr on the slave, baseline taken before fork)");
     if (g_control != C_NONE) ev_append(ev, " [control: %s]", CONTROLS[g_control].what);
     return pass;
 }
 
 /* ---------------------------------------------------------------- P7 */
 /* Child: a fresh process image per size, so VmHWM is this run's own high-water mark. */
+#define P7_WARM 200
+#define P7_WINDOW 500
+#define P7_MIN_FRAMES (P7_WARM + 2 * P7_WINDOW) /* warm-up, then an early and a late window */
+
 static int run_p7_child(uint16_t cols, uint16_t rows, uint64_t frames, const char *control) {
+    if (cols == 0 || rows == 0 || frames < P7_MIN_FRAMES || frames > 1000000) {
+        fprintf(stderr, "fb_adapter_demo: --p7-child needs a non-zero grid and %d..1000000 frames "
+                        "(%d warm-up + two %d-frame windows), got %ux%u and %llu\n",
+                P7_MIN_FRAMES, P7_WARM, P7_WINDOW, cols, rows, (unsigned long long)frames);
+        return 2;
+    }
     fb_adapter_config cfg;
     fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
     cfg.par_num = 5;
@@ -1316,13 +1404,15 @@ static int run_p7_child(uint16_t cols, uint16_t rows, uint64_t frames, const cha
     fb_adapter *ad = NULL;
     if (fb_adapter_open_headless(&cfg, cols, rows, &ad) != FB_OK) return 1;
     if (strcmp(control, "leak") == 0) fb_adapter_set_faults(ad, FB_FAULT_LEAK_PER_FRAME);
+    if (strcmp(control, "slow-present") == 0) fb_adapter_set_faults(ad, FB_FAULT_SLOW_PRESENT);
     demo d;
     memset(&d, 0, sizeof d);
     d.prod = prod;
     d.inner = synth_producer_iface(prod);
     d.bench = 1;
     d.cap = (size_t)frames;
-    d.warm_at = 200;
+    d.warm_at = P7_WARM;
+    d.mid_at = P7_WARM + (d.cap - P7_WARM) / 2; /* the leak gate compares the second half only */
     d.lower = calloc(d.cap, sizeof *d.lower);
     d.render = calloc(d.cap, sizeof *d.render);
     if (!d.lower || !d.render) return 1;
@@ -1344,18 +1434,20 @@ static int run_p7_child(uint16_t cols, uint16_t rows, uint64_t frames, const cha
     if (!tot) return 1;
     for (size_t i = 0; i < d.n; i++) tot[i] = d.lower[i] + d.render[i];
     double lm, lp, rm, rp, tm, tp, early, late, dummy;
-    stats_us(d.lower, 200, d.n, &lm, &lp);
-    stats_us(d.render, 200, d.n, &rm, &rp);
-    stats_us(tot, 200, d.n, &tm, &tp);
-    stats_us(tot, 200, 700, &early, &dummy);
-    stats_us(tot, d.n - 500, d.n, &late, &dummy);
+    /* d.n == frames >= P7_MIN_FRAMES (checked above, and the run presented every frame), so every
+       window below lies inside the d.n samples. */
+    stats_us(d.lower, P7_WARM, d.n, &lm, &lp);
+    stats_us(d.render, P7_WARM, d.n, &rm, &rp);
+    stats_us(tot, P7_WARM, d.n, &tm, &tp);
+    stats_us(tot, P7_WARM, P7_WARM + P7_WINDOW, &early, &dummy);
+    stats_us(tot, d.n - P7_WINDOW, d.n, &late, &dummy);
     fb_adapter_counters c;
     fb_adapter_counters_get(ad, &c);
     size_t cap_len = 0;
     gibson_get_rendered_output(fb_adapter_context(ad), NULL, 0, &cap_len);
-    printf("P7CHILD %u %u %zu %.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f %ld %ld %ld %ld %ld %ld %llu %zu\n", cols, rows, d.n, lm,
-           lp, rm, rp, tm, tp, early, late, d.hwm_warm, proc_status_kb("VmHWM"), d.maxrss_warm, maxrss_kb(), d.rss_warm,
-           proc_status_kb("VmRSS"), (unsigned long long)c.capture_rotations, cap_len);
+    printf("P7CHILD %u %u %zu %.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f %ld %ld %ld %ld %ld %ld %llu %zu %ld\n", cols, rows, d.n,
+           lm, lp, rm, rp, tm, tp, early, late, d.hwm_warm, proc_status_kb("VmHWM"), d.maxrss_warm, maxrss_kb(), d.rss_warm,
+           proc_status_kb("VmRSS"), (unsigned long long)c.capture_rotations, cap_len, d.hwm_mid);
     free(tot);
     fb_adapter_close(ad);
     return 0;
@@ -1363,8 +1455,10 @@ static int run_p7_child(uint16_t cols, uint16_t rows, uint64_t frames, const cha
 
 static int prop7(char *ev) {
     static const uint16_t sizes[][2] = {{80, 24}, {160, 50}, {320, 100}};
-    const char *control = ctl(C_P7_LEAK) ? "leak" : ctl(C_P7_NO_ROTATION) ? "no-rotation" : "none";
+    const char *control = ctl(C_P7_LEAK) ? "leak" : ctl(C_P7_NO_ROTATION) ? "no-rotation"
+                        : ctl(C_P7_SLOW_PRESENT) ? "slow-present" : "none";
     const long tol_kb = 1024;
+    const double budget_us = 1e6 / 35.0; /* one 35 Hz tic: 28571 us */
     /* A control needs one size to show the check failing (and no-rotation at 320x100 would grow a
        child to ~700 MB on a shared box). */
     const int nsizes = g_control == C_NONE ? 3 : 1;
@@ -1377,6 +1471,8 @@ static int prop7(char *ev) {
             dup2(pfd[1], 1);
             close(pfd[0]);
             close(pfd[1]);
+            unsetenv("DISPLAY");
+            unsetenv("WAYLAND_DISPLAY");
             char c[16], r[16];
             snprintf(c, sizeof c, "%u", sizes[i][0]);
             snprintf(r, sizeof r, "%u", sizes[i][1]);
@@ -1395,24 +1491,30 @@ static int prop7(char *ev) {
         unsigned cc, rr;
         size_t n, caplen;
         double lm, lp, rm, rp, tm, tp, early, late;
-        long hw0, hw1, mr0, mr1, rs0, rs1;
+        long hw0, hw1, mr0, mr1, rs0, rs1, hwm;
         unsigned long long rot;
-        if (sscanf(line, "P7CHILD %u %u %zu %lf %lf %lf %lf %lf %lf %lf %lf %ld %ld %ld %ld %ld %ld %llu %zu", &cc, &rr, &n, &lm,
-                   &lp, &rm, &rp, &tm, &tp, &early, &late, &hw0, &hw1, &mr0, &mr1, &rs0, &rs1, &rot, &caplen) != 19 ||
+        if (sscanf(line, "P7CHILD %u %u %zu %lf %lf %lf %lf %lf %lf %lf %lf %ld %ld %ld %ld %ld %ld %llu %zu %ld", &cc, &rr, &n,
+                   &lm, &lp, &rm, &rp, &tm, &tp, &early, &late, &hw0, &hw1, &mr0, &mr1, &rs0, &rs1, &rot, &caplen, &hwm) != 20 ||
             !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
             ev_append(ev, "%ux%u: child failed; ", sizes[i][0], sizes[i][1]);
             pass = 0;
             continue;
         }
-        const long growth = hw1 - hw0;
+        /* A leak grows in proportion to frames; the allocator settles once (measured: 0 to 2.8 MiB
+           at 320x100 between frames 200 and ~1000, then flat to frame 6000). So the gate is the
+           second half's growth; the first half's is reported as settling. */
+        const long settle = hwm - hw0, growth = hw1 - hwm;
         const int mem_ok = growth <= tol_kb;
         const int creep_ok = late <= 1.5 * early;
-        if (!mem_ok || !creep_ok) pass = 0;
-        ev_append(ev, "%ux%u: %zu frames, VmHWM %ld->%ld KiB (+%ld, tol %ld) ru_maxrss %ld->%ld KiB, lower mean %.0f p99 %.0f us, "
-                      "render mean %.0f p99 %.0f us, total mean %.0f p99 %.0f us (35 Hz budget 28571 us: %s), "
-                      "late/early mean %.2f, capture rotations %llu, capture now %zu B; ",
-                  cc, rr, n, hw0, hw1, growth, tol_kb, mr0, mr1, lm, lp, rm, rp, tm, tp, tp < 28571.0 ? "fits" : "MISSES",
-                  early > 0 ? late / early : 0, rot, caplen);
+        const int budget_ok = tp <= budget_us;
+        if (!mem_ok || !creep_ok || !budget_ok) pass = 0;
+        ev_append(ev, "%ux%u: %zu frames, VmHWM %ld->%ld->%ld KiB at frames 200/%zu/%zu (settling %+ld, not gated; "
+                      "second half %+ld, gate <= %ld: %s) ru_maxrss %ld->%ld KiB, lower mean %.0f p99 %.0f us, "
+                      "render mean %.0f p99 %.0f us, total mean %.0f p99 %.0f us (gate p99 <= %.0f us: %s), "
+                      "late/early mean %.2f (gate <= 1.50: %s), capture rotations %llu, capture now %zu B; ",
+                  cc, rr, n, hw0, hwm, hw1, (size_t)(P7_WARM + (n - P7_WARM) / 2), n, settle, growth, tol_kb,
+                  mem_ok ? "pass" : "FAIL", mr0, mr1, lm, lp, rm, rp, tm, tp, budget_us, budget_ok ? "pass" : "FAIL",
+                  early > 0 ? late / early : 0, creep_ok ? "pass" : "FAIL", rot, caplen);
     }
     ev_append(ev, "(headless, frames after a 200-frame warm-up, fresh process per size)");
     if (g_control != C_NONE) ev_append(ev, " [control: %s]", CONTROLS[g_control].what);
@@ -1513,6 +1615,7 @@ int main(int argc, char **argv) {
             o.grid_cols = (uint16_t)c;
             o.grid_rows = (uint16_t)r;
         } else if (!strcmp(a, "--dump-cells")) { NEEDV(); o.dump_cells = v; }
+        else if (!strcmp(a, "--reopen-after-signal")) { NEEDV(); o.reopen_tics = strtoull(v, NULL, 10); }
         else if (!strcmp(a, "--exit-after-tics")) { NEEDV(); o.exit_after_tics = strtoull(v, NULL, 10); }
         else if (!strcmp(a, "--bench-frames")) { NEEDV(); o.bench_frames = strtoull(v, NULL, 10); }
         else if (!strcmp(a, "--seed")) { NEEDV(); o.seed = strtoull(v, NULL, 10); }
@@ -1536,6 +1639,8 @@ int main(int argc, char **argv) {
             else if (!strcmp(v, "frame-locked")) o.faults |= FB_FAULT_FRAME_LOCKED_SIM;
             else if (!strcmp(v, "leak")) o.faults |= FB_FAULT_LEAK_PER_FRAME;
             else if (!strcmp(v, "retry-io")) o.faults |= FB_FAULT_RETRY_ON_IO;
+            else if (!strcmp(v, "sticky-signal")) o.faults |= FB_FAULT_STICKY_SIGNAL;
+            else if (!strcmp(v, "slow-present")) o.faults |= FB_FAULT_SLOW_PRESENT;
             else { usage(); return 2; }
         } else if (!strcmp(a, "-h") || !strcmp(a, "--help")) { usage(); return 0; }
         else { usage(); return 2; }

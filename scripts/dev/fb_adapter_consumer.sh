@@ -13,6 +13,8 @@
 #       scripts/release/stage-sdk.sh --prefix <tmp> --force      (runs a release cargo build)
 #   env FB_ADAPTER_SKIP_CONTROLS=1 skips the negative controls (they take ~2 minutes).
 set -euo pipefail
+# No child of this check may reach a desktop (an engine or tool that pops a GUI would block).
+unset DISPLAY WAYLAND_DISPLAY
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SRC="$REPO_ROOT/bindings/framebuffer_adapter"
@@ -59,6 +61,16 @@ case "$LINKED" in
     *) echo "the demo did not link the SDK's libgibson" >&2; exit 1 ;;
 esac
 
+echo "== 4a. the P7 bench child rejects runs too short for its windows (no out-of-bounds read) =="
+if "$WORK/fb_adapter_demo" --p7-child 80 24 1 none > "$WORK/guard.log" 2>&1; then
+    echo "--p7-child accepted a 1-frame run" >&2; cat "$WORK/guard.log" >&2; exit 1
+else
+    rc=$?
+    [[ $rc -eq 2 ]] || { echo "--p7-child 1 frame: exit $rc, want 2" >&2; exit 1; }
+    grep -q "needs a non-zero grid and 1200" "$WORK/guard.log" || { cat "$WORK/guard.log" >&2; exit 1; }
+    echo "   --p7-child 80 24 1 none -> exit 2: $(cat "$WORK/guard.log")"
+fi
+
 echo "== 4. property self-check (P1-P7) =="
 "$WORK/fb_adapter_demo" --selfcheck | tee "$WORK/selfcheck.log"
 grep -qx "fb_adapter: OK" "$WORK/selfcheck.log"
@@ -81,8 +93,8 @@ if [[ "${FB_ADAPTER_SKIP_CONTROLS:-0}" != 1 ]]; then
         echo "   selfcheck control $name -> $prop FAIL (as required)"
         failed_ok=$((failed_ok + 1))
     done < <("$WORK/fb_adapter_demo" --selfcheck --list-controls)
-    pty_controls="p3-ignore-input p5-resize-steps p5-stale-map p6-no-restore p6-no-signals p6-retry-io"
-    if python3 -c "import pyte" 2>/dev/null; then pty_controls="p2-wire-wrong-tic $pty_controls"; fi
+    pty_controls="p3-ignore-input p5-resize-steps p5-stale-map p6-no-restore p6-no-signals p6-retry-io p6-sticky-signal p7-slow-present"
+    if python3 -c "import pyte" 2>/dev/null; then pty_controls="p2-wire-shifted-cells $pty_controls"; fi
     for name in $pty_controls; do
         if python3 "$WORK/pty_harness.py" --demo "$WORK/fb_adapter_demo" --control "$name" > "$WORK/c.log" 2>&1; then
             echo "PTY CONTROL $name did NOT fail" >&2
@@ -90,6 +102,12 @@ if [[ "${FB_ADAPTER_SKIP_CONTROLS:-0}" != 1 ]]; then
             exit 1
         fi
         grep -q "^PTY P.* FAIL" "$WORK/c.log" || { echo "PTY CONTROL $name: no FAIL line" >&2; cat "$WORK/c.log" >&2; exit 1; }
+        if [[ "$name" == p2-wire-shifted-cells ]]; then
+            # it must fail on cells alone: the state hash matched, and cells mismatched
+            if grep -q "hash=MISMATCH" "$WORK/c.log" || ! grep -qE "mismatches=[1-9][0-9]*" "$WORK/c.log"; then
+                echo "PTY CONTROL $name did not fail on cells alone" >&2; cat "$WORK/c.log" >&2; exit 1
+            fi
+        fi
         echo "   pty control $name -> FAIL (as required)"
         failed_ok=$((failed_ok + 1))
     done
