@@ -21,6 +21,26 @@ line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 remains **prepar
 `9a899e1`** (release state 1 — not tagged, not released); a future `v0.6.0` tag names that commit,
 not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
 
+### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
+- The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an
+  event type with each key (`CSI 97u` press, `CSI 97;1:2u` repeat, `CSI 97;1:3u` release), and
+  every **release** reached the application as a second press: through `gibson::input::poll_event`,
+  `Context::poll_event` / `run_once`, `gibson_poll_event` and `gibson_poll_event_kind`. A press and
+  a repeat are still delivered as `Event::Key`; a release is not delivered. LibGibson never enables
+  the protocol itself, so this matters when something else left it enabled (for example a
+  kitty-protocol program that exited without popping its flags).
+- **A dropped event no longer ends a poll early.** An event that is not delivered (a release, or a
+  key code LibGibson does not model, such as F5) used to make the poll return "no event" at once,
+  before its timeout; the poll now carries on for the rest of its timeout, and the events queued
+  behind the dropped one are delivered in order. "No event" now always means the timeout passed.
+  (The legacy C poll still reports focus changes and other events it does not model as
+  `GIBSON_EVENT_NONE` at once, as before.)
+- `tests/key_release_kind_pty.rs` injects the sequences through a real PTY: press, repeat and
+  release; a release followed by a legacy press; repeated cycles; fragmented sequences; U+1001
+  (the #274 range) through both C polls; focus changes and a resize between releases; a release
+  queued before a hangup; and DEEP SIGNAL recording one `w` per press/release pair (it recorded
+  two). All six failed on the unfixed code.
+
 ### Fixed — Rust library (`gibson::input`, `gibson::Context`) and C ABI input on a Unix terminal ([#269](https://github.com/femboy2112/libgibson/issues/269), [#15](https://github.com/femboy2112/libgibson/issues/15))
 - **A terminal hangup during a poll no longer spins forever.** When stdin is the controlling
   terminal, input is now read by a library-owned source (`src/tty_source.rs`) instead of
