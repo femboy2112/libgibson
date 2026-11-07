@@ -21,10 +21,10 @@ state 1) at `9a899e1`: not tagged, not released, not on any registry; `main` has
 prerelease). *(Until this bump the section described the integration as an unmerged candidate.)*
 
 *Update 2026-11-07:* v0.6.0 is still not tagged or released. A release candidate,
-`release/v0.6.0-rc` @ `1b90b48` (`9a899e1` + the #264 and #269 fixes), passed exact-head CI
-(run 42335104064) and Release Preflight (run 42335106128) and is on **HOLD** for an owner decision
-on the release line ([#287](https://github.com/femboy2112/libgibson/issues/287)); a #259 backport
-to it is in review (#288, not merged). Record:
+`release/v0.6.0-rc` @ `572e551` (`9a899e1` + the #264, #269, #259 and #285 fixes), passed
+exact-head CI (run 42421627573) and Release Preflight (run 42421629285) and is on **HOLD** for an
+owner decision on the release line ([#287](https://github.com/femboy2112/libgibson/issues/287);
+proposed policy in draft #291). Record:
 [`V06_QUALIFICATION_LEDGER.md`](docs/V06_QUALIFICATION_LEDGER.md), Renaissance XVIII.
 
 > **State legend.** *Released* = in v0.5.0. *Merged* = on `main` (v0.6.0, prepared in source, not

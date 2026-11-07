@@ -131,5 +131,11 @@ record exists so the freeze is taken with the Doom horizon mapped rather than as
 > `gibson_poll_event` still reports a typed U+1001–U+100D and the `GIBSON_KEY_*` of equal value
 > identically (a documented compatibility property; #274 is addressed by the `_kind` pair, not
 > removed). #275's 25 tics is a compromise measured on xterm under Xvfb/XTEST, not key-release
-> knowledge. A kitty-protocol key release is delivered as a press (#285, open; fix in review,
-> #289). Node J is not started in this repository as of `5790f1a`.
+> knowledge. A kitty-protocol key release is no longer delivered on Unix (#285, fixed by #289,
+> `f365239`; Windows still delivers each key-up as a press, #292). Node J's in-repo part, a
+> clean-room framebuffer adapter over the installed SDK (`bindings/framebuffer_adapter/`), is in
+> review (#299). The doomgeneric port on top of it is a local, unpublished prototype, measured at
+> 35 Hz throughput or better at 80×24 to 320×100 under a PTY (timedemo, every gametic presented;
+> no terminal emulator's drawing speed is included). It needs no game-specific LibGibson API. Gaps
+> it found: #297 (headless ANSI capture grows without bound in C) and #298 (no C terminal-size
+> query, no C focus events).

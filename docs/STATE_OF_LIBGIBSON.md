@@ -25,9 +25,9 @@ additive C ABI functions (52 → 59: headless contexts, rendered-output and cell
 readback, color-depth selection; `GIBSON_ABI_VERSION` stays 1; MSRV 1.85). Per-gate
 evidence and remaining limits: [`V06_QUALIFICATION_LEDGER.md`](V06_QUALIFICATION_LEDGER.md).
 *Update 2026-11-07:* still not tagged or released. A qualified candidate,
-`release/v0.6.0-rc` @ `1b90b48` (`9a899e1` + the #264 and #269 fixes; still 59 symbols), is on
-HOLD for owner decision [#287](https://github.com/femboy2112/libgibson/issues/287); a #259
-backport to it is in review (#288, not merged). `main` (0.7.0-dev) exports 62 C ABI symbols
+`release/v0.6.0-rc` @ `572e551` (`9a899e1` + the #264, #269, #259 and #285 fixes; still 59 symbols), is on
+HOLD for owner decision [#287](https://github.com/femboy2112/libgibson/issues/287), requalified at
+that exact head (CI 42421627573, Release Preflight 42421629285). `main` (0.7.0-dev) exports 62 C ABI symbols
 (#273, #283), `GIBSON_ABI_VERSION` still 1.
 
 **v0.5.0 released (2026-10-24):** **v0.5.0 — Interactive instruments** is released on

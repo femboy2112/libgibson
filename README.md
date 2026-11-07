@@ -31,7 +31,7 @@ procedural audio.
 > released**; `main` has since opened `0.7.0-dev`. The install commands stay on v0.5.0 until a
 > v0.6.0 release exists ([release states](docs/RELEASE_CONTRACT.md#1-versioning-model)).
 > *Update 2026-11-07:* still not tagged or released. A qualified candidate
-> (`release/v0.6.0-rc` @ `1b90b48`) is on hold pending an owner decision
+> (`release/v0.6.0-rc` @ `572e551`) is on hold pending an owner decision
 > ([#287](https://github.com/femboy2112/libgibson/issues/287)).
 
 > **Engineering alpha.** Linux x86_64 is the best-tested environment. The core
