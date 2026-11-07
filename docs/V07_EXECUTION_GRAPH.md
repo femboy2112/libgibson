@@ -23,8 +23,8 @@ that contains it — never from the integration branch itself.
 - Terminal key input is **press-only** (no key-release events are decoded), and #15 (a key withheld
   behind a coincident resize on stock crossterm 0.29.0) stays open upstream. *Update 2026-11-07:*
   on v0.7 `main`, #15 is fixed for LibGibson's own Unix terminal source only (#282, `04c0ad2`);
-  crossterm#1126 / crossterm#1128 are still open. A kitty-protocol key release is delivered as a
-  press (#285, open).
+  crossterm#1126 / crossterm#1128 are still open. A kitty-protocol key release was delivered as a
+  press; on Unix it no longer is (#285, fixed by #289, `f365239`; Windows key doubling is #292).
 
 ## Principles
 
@@ -65,8 +65,9 @@ Order: **A → {B, C} → D; B → F → G; {B, C, D} → E → H; {B, C} → I 
 States: **merged** (on `main`), **partial** (some of the node's oracle met), **not started**. Each
 node closes only on its own oracle, not because this table looks complete.
 
-**Renaissance XIX (2026-11-07): status reconciliation.** Checked against `main` `5790f1a` and
-GitHub on 2026-11-07. Where RXVIII's wording below differs, this governs.
+**Renaissance XIX (2026-11-07): status reconciliation.** First checked against `main` `5790f1a`
+and GitHub, then updated with the round's later merges through `main` `ccbac09`. Where RXVIII's
+wording below differs, this governs.
 
 - **#269 fixed** by #282 (`04c0ad2`) for LibGibson's owned Unix input path (`src/tty_source.rs`):
   a poll on a hung-up terminal returns `BrokenPipe`, also with SIGHUP ignored or handled

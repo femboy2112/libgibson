@@ -24,7 +24,9 @@ prerelease). *(Until this bump the section described the integration as an unmer
 `release/v0.6.0-rc` @ `572e551` (`9a899e1` + the #264, #269, #259 and #285 fixes), passed
 exact-head CI (run 42421627573) and Release Preflight (run 42421629285) and is on **HOLD** for an
 owner decision on the release line ([#287](https://github.com/femboy2112/libgibson/issues/287);
-proposed policy in draft #291). Record:
+proposed policy in draft #291). Record of this candidate's qualification:
+[#287, RXIX comment](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6714185831);
+the earlier `1b90b48` qualification stays in
 [`V06_QUALIFICATION_LEDGER.md`](docs/V06_QUALIFICATION_LEDGER.md), Renaissance XVIII.
 
 > **State legend.** *Released* = in v0.5.0. *Merged* = on `main` (v0.6.0, prepared in source, not
@@ -94,7 +96,7 @@ the first crossterm release containing #1128, then un-ignore
 controlling terminal through its own source (#282, `04c0ad2`), which takes a ready key and resize
 in the same pass; that acceptance is enabled there. This fixes #15 on that path only:
 crossterm#1128 is unmerged and crates.io is still 0.29.0, so `9a899e1`, releases through v0.5.0,
-input read through crossterm (off Unix, or with no latched controlling terminal) and applications
+input read through crossterm's Unix reader (no latched controlling terminal; Windows is untested) and applications
 that call crossterm's reader directly keep the stall.
 
 ### Constraints (unchanged)

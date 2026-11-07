@@ -328,8 +328,9 @@ and still fails when run.
 through its own source ([#282](https://github.com/femboy2112/libgibson/pull/282), merge
 `04c0ad2`), which takes the key and the resize together; there the acceptance test is enabled.
 The limitation above still holds for v0.5.0 and the 0.6.0 source at `9a899e1`, for input read
-through crossterm (off Unix, or with no latched controlling terminal), and for applications
-that call crossterm's reader directly. crossterm#1128 is unmerged; crates.io is still at 0.29.0.
+through crossterm's Unix reader (on Unix with no latched controlling terminal), and for
+applications that call that reader directly. Windows reads input through a different crossterm
+backend and is untested for this defect. crossterm#1128 is unmerged; crates.io is still at 0.29.0.
 
 ## Documentation
 
