@@ -105,10 +105,12 @@ fn main() -> std::io::Result<()> {
         }
         "dirty" => {
             ctx.set_root(Node::text("frame-0", Style::new()));
-            ctx.render()?;
-            // The frame budget runs from the end of that render; this instant is at or
-            // after it, so time measured from here never overstates the budget.
+            // Sampled BEFORE the render: the budget runs from when the scheduler records
+            // that frame, which is later, so time measured from here can only overstate
+            // the elapsed budget, never understate it. A correct next frame therefore
+            // always shows `since_frame0` >= one budget, however the child is scheduled.
             let frame0 = Instant::now();
+            ctx.render()?;
             let _ = ctx.poll_event(Duration::ZERO)?;
             say("READY");
             let frames_before = ctx.stats().frames;
