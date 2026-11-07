@@ -229,20 +229,22 @@ impl TtySource {
                     ReadOutcome::NotNow => {
                         // Readable but refused (not in the foreground): wait out a slice
                         // rather than spin on a level-set POLLIN, until the deadline.
-                        if left.is_zero() {
+                        let now_left = remaining(deadline);
+                        if now_left.is_zero() {
                             return Ok(None);
                         }
-                        std::thread::sleep(left.min(Duration::from_millis(25)));
+                        std::thread::sleep(now_left.min(Duration::from_millis(25)));
                     }
                     ReadOutcome::Nothing => {
                         // Readiness without data. With no time left, report the timeout;
                         // otherwise pace the retry so a level-set POLLIN that keeps
                         // yielding nothing cannot spin until the deadline.
                         if self.pending.is_empty() {
-                            if left.is_zero() {
+                            let now_left = remaining(deadline);
+                            if now_left.is_zero() {
                                 return Ok(None);
                             }
-                            std::thread::sleep(left.min(Duration::from_millis(1)));
+                            std::thread::sleep(now_left.min(Duration::from_millis(1)));
                         }
                     }
                 }
@@ -325,7 +327,7 @@ impl TtySource {
 }
 
 /// How a failed `read` is classified. `EIO` is a hangup only when the descriptor also reports
-/// one: a background process reading its terminal with `SIGTTIN` ignored gets `EIO` too, and
+/// one (`POLLHUP`, `POLLERR` or `POLLNVAL`): a background process reading its terminal with `SIGTTIN` ignored gets `EIO` too, and
 /// that is recoverable (it reads normally once it is in the foreground again), so it is
 /// "nothing yet", never a sticky hangup.
 fn read_error_outcome(e: io::Error, fd_hung_up: bool) -> io::Result<ReadOutcome> {
@@ -337,6 +339,13 @@ fn read_error_outcome(e: io::Error, fd_hung_up: bool) -> io::Result<ReadOutcome>
         Some(libc::EWOULDBLOCK) => Ok(ReadOutcome::Nothing),
         _ => Err(e),
     }
+}
+
+/// Time left until `deadline` right now (`Duration::MAX` without one).
+fn remaining(deadline: Option<Instant>) -> Duration {
+    deadline.map_or(Duration::MAX, |d| {
+        d.saturating_duration_since(Instant::now())
+    })
 }
 
 /// `now + timeout`, or a deadline so far ahead it is never reached (about 136 years) if that
@@ -398,16 +407,21 @@ static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::
 /// no `/proc`, an exclusive-mode terminal that refuses a second open, a multiplexer alias),
 /// stdin itself is read, blocking: the pre-#269 exposure to that lost-readiness race.
 fn terminal_input_fd(stdin_is_terminal: bool) -> io::Result<(RawFd, Option<std::os::fd::OwnedFd>)> {
+    select_input_fd(libc::STDIN_FILENO, stdin_is_terminal)
+}
+
+/// [`terminal_input_fd`] for a given stdin descriptor (testable without the process's own).
+fn select_input_fd(
+    stdin: RawFd,
+    stdin_is_terminal: bool,
+) -> io::Result<(RawFd, Option<std::os::fd::OwnedFd>)> {
+    use std::os::fd::AsRawFd;
     if stdin_is_terminal {
-        return Ok(match reopen_same_terminal(libc::STDIN_FILENO) {
-            Some(own) => {
-                use std::os::fd::AsRawFd;
-                (own.as_raw_fd(), Some(own))
-            }
-            None => (libc::STDIN_FILENO, None),
+        return Ok(match reopen_same_terminal(stdin) {
+            Some(own) => (own.as_raw_fd(), Some(own)),
+            None => (stdin, None),
         });
     }
-    use std::os::fd::AsRawFd;
     use std::os::unix::fs::OpenOptionsExt;
     let own = std::fs::OpenOptions::new()
         .read(true)
@@ -423,7 +437,14 @@ fn terminal_input_fd(stdin_is_terminal: bool) -> io::Result<(RawFd, Option<std::
 }
 
 /// A new non-blocking open file description of the terminal `fd` refers to, if it provably is
-/// the same terminal (`TIOCGDEV` equal); `None` otherwise.
+/// the same terminal; `None` otherwise. Proof, all three:
+///
+/// 1. `fd`'s file **is** its terminal, not an alias: its inode's device number equals
+///    `TIOCGDEV` (the real tty behind the descriptor). `/dev/tty`, `/dev/console` and
+///    `/dev/ptmx` fail this, since reopening them resolves afresh (to the current controlling
+///    terminal, or to a new pty), and terminals of different devpts mounts can share numbers.
+/// 2. The reopened file is the **same inode** (`st_dev` and `st_ino`).
+/// 3. The reopened descriptor reports the same `TIOCGDEV`.
 #[cfg(target_os = "linux")]
 pub(crate) fn reopen_same_terminal(fd: RawFd) -> Option<std::os::fd::OwnedFd> {
     use std::os::fd::AsRawFd;
@@ -433,14 +454,30 @@ pub(crate) fn reopen_same_terminal(fd: RawFd) -> Option<std::os::fd::OwnedFd> {
         // SAFETY: TIOCGDEV writes one unsigned int; `fd` is a descriptor we hold.
         (unsafe { libc::ioctl(fd, libc::TIOCGDEV, &mut d) } == 0).then_some(d)
     };
-    let mine = dev(fd)?;
+    let stat = |fd: RawFd| {
+        // SAFETY: fstat writes into a zeroed, correctly sized struct.
+        let mut st: libc::stat = unsafe { std::mem::zeroed() };
+        (unsafe { libc::fstat(fd, &mut st) } == 0).then_some(st)
+    };
+    // The kernel's encoding of a dev_t into TIOCGDEV's unsigned int (new_encode_dev).
+    let encode = |rdev: libc::dev_t| {
+        let (major, minor) = (libc::major(rdev), libc::minor(rdev));
+        (minor & 0xff) | (major << 8) | ((minor & !0xff) << 12)
+    };
+    let real = dev(fd)?;
+    let st = stat(fd)?;
+    if encode(st.st_rdev) != real {
+        return None; // an alias (/dev/tty, /dev/console, /dev/ptmx, ...): never reopened
+    }
     let own: std::os::fd::OwnedFd = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
         .open(format!("/proc/self/fd/{fd}"))
         .ok()?
         .into();
-    (dev(own.as_raw_fd()) == Some(mine)).then_some(own)
+    let st2 = stat(own.as_raw_fd())?;
+    (st2.st_dev == st.st_dev && st2.st_ino == st.st_ino && dev(own.as_raw_fd()) == Some(real))
+        .then_some(own)
 }
 
 /// See the Linux version: elsewhere the identity cannot be proven, so the caller reads `fd`.
@@ -491,7 +528,8 @@ pub(crate) fn poll(timeout: Duration, stdin_is_terminal: bool) -> io::Result<Opt
 
 /// Retires the terminal source: called when the session gives the terminal up, so a later
 /// session chooses its descriptor afresh with no stale events or hangup. Never blocks: a
-/// source busy in another thread's poll is dropped by the next poll after that one.
+/// source busy in another thread's poll is dropped by the next poll after that one. It retires,
+/// it does not cancel: a poll already running keeps reading that source until it returns.
 pub(crate) fn reset() {
     use std::sync::atomic::Ordering;
     GENERATION.fetch_add(1, Ordering::AcqRel);
@@ -1068,6 +1106,7 @@ mod tests {
         drop((master, slave));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn reopening_proves_the_same_terminal_and_refuses_aliases() {
         // Codex re-review of #282: an equal st_rdev does not prove identity (a /dev/tty or
@@ -1105,6 +1144,34 @@ mod tests {
         let (r, _w) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
         assert!(reopen_same_terminal(r.as_raw_fd()).is_none());
         drop(slave);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_selector_reads_its_own_nonblocking_description_of_a_stdin_terminal() {
+        // Codex review of #282: the lost-readiness fix depends on the SELECTOR returning a
+        // non-blocking description, not on any helper. A selector that returned stdin itself
+        // (blocking) fails here.
+        let (master, slave) = pty();
+        let (fd, owned) = select_input_fd(slave.as_raw_fd(), true).expect("select");
+        assert!(
+            owned.is_some(),
+            "a reopened description, kept open by the source"
+        );
+        assert_ne!(
+            fd,
+            slave.as_raw_fd(),
+            "not stdin's own (shared, blocking) description"
+        );
+        // SAFETY: fcntl F_GETFL on a valid descriptor.
+        assert_ne!(
+            unsafe { libc::fcntl(fd, libc::F_GETFL) } & libc::O_NONBLOCK,
+            0
+        );
+        // And an alias of a terminal is never reopened: the multiplexer master falls back.
+        let (fd2, owned2) = select_input_fd(master.as_raw_fd(), true).expect("select");
+        assert!(owned2.is_none() && fd2 == master.as_raw_fd());
+        drop((owned, slave));
     }
 
     #[test]
