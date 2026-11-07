@@ -407,3 +407,90 @@ fn row4b_with_stdin_redirected_input_and_hangup_follow_the_controlling_terminal(
     assert_eq!(code, Some(3), "{log:?}");
     assert!(log.ends_with("BROKEN_PIPE"), "{log:?}");
 }
+
+#[test]
+fn row4c_stdin_that_hangs_up_before_the_first_poll_is_reported_not_swapped_for_the_ctty() {
+    // stdin is pty A, the controlling terminal is pty B. The child acquires the terminal
+    // (latching stdin as its identity), then A hangs up and a key is typed on B, all before
+    // the first poll. The poll must report A's hangup; reading B instead would silently
+    // switch input to another terminal (an early version of the #269 fix chose the
+    // descriptor lazily: isatty(0) was false by then, so it opened /dev/tty = B).
+    use std::os::fd::AsRawFd;
+    use std::os::unix::process::CommandExt;
+    use std::process::Stdio;
+    let (master_a, slave_a) = openpty();
+    let (master_b, slave_b) = openpty();
+    let result = result_path("acquire");
+    let go = result_path("acquire-go");
+    let slave_b_fd = slave_b.as_raw_fd();
+    let mut cmd = std::process::Command::new(pty_capture::example_path(PROBE));
+    cmd.arg("acquire-then-poll")
+        .arg(&result)
+        .arg("--go")
+        .arg(&go);
+    cmd.env("TERM", "xterm-256color");
+    cmd.stdin(Stdio::from(slave_a));
+    cmd.stdout(Stdio::from(slave_b.try_clone().unwrap()));
+    cmd.stderr(Stdio::from(slave_b.try_clone().unwrap()));
+    // SAFETY: setsid and TIOCSCTTY are async-signal-safe calls made between fork and exec.
+    unsafe {
+        cmd.pre_exec(move || {
+            if libc::setsid() < 0 || libc::ioctl(slave_b_fd, libc::TIOCSCTTY, 0) < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = cmd.spawn().expect("spawn child");
+    drop(slave_b);
+    drop(cmd);
+    // READY on B, read here only.
+    let mut seen = Vec::new();
+    let t = Instant::now();
+    while !String::from_utf8_lossy(&seen).contains("READY") {
+        assert!(t.elapsed() < Duration::from_secs(10), "no READY: {seen:?}");
+        let mut p = libc::pollfd {
+            fd: master_b.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: one valid pollfd.
+        if unsafe { libc::poll(&mut p, 1, 50) } > 0 {
+            let mut buf = [0u8; 4096];
+            // SAFETY: valid fd and buffer.
+            let n = unsafe { libc::read(master_b.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
+            if n > 0 {
+                seen.extend_from_slice(&buf[..n as usize]);
+            }
+        }
+    }
+    drop(master_a); // stdin's terminal hangs up before the first poll
+                    // SAFETY: valid fd and buffer.
+    assert_eq!(
+        unsafe { libc::write(master_b.as_raw_fd(), b"b".as_ptr().cast(), 1) },
+        1
+    );
+    std::thread::sleep(Duration::from_millis(100));
+    std::fs::write(&go, b"go").unwrap();
+    let t = Instant::now();
+    let status = loop {
+        if let Some(s) = child.try_wait().unwrap() {
+            break Some(s);
+        }
+        if t.elapsed() > Duration::from_secs(10) {
+            let _ = child.kill();
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    let _ = std::fs::remove_file(&go);
+    let log = std::fs::read_to_string(&result).unwrap_or_default();
+    let _ = std::fs::remove_file(&result);
+    drop(master_b);
+    assert!(
+        !log.contains("KEY b"),
+        "input was read from the controlling terminal: {log:?}"
+    );
+    assert_eq!(status.and_then(|s| s.code()), Some(3), "{log:?}");
+    assert_eq!(log.trim_end(), "BROKEN_PIPE");
+}
