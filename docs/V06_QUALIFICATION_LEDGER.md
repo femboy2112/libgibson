@@ -183,6 +183,25 @@ promised it. Documentation-contract defect; no runtime counterexample was involv
 | Source version | `0.6.0-dev` → `0.6.0` in `Cargo.toml`, `Cargo.lock` (the crate's entry only), `pyproject.toml` and the regenerated notices. `cargo package --list` (183 files) and the resolved dependency tree are unchanged apart from the crate's own version. **v0.6.0 is release state 1 only: not tagged, not released, not published**; tagging and release need separate authorization. |
 | Limits | The #255 tests exercise `create_trial_dir`; re-inlining the legacy name in `Trial::start` would be caught only probabilistically by the parallel PTY suite. The merge proves integration on `main`, not new runtime capability. |
 
+## Renaissance XVIII — the v0.6.0 release candidate (#264, #269, #15) · branch `release/v0.6.0-rc`
+
+`9a899e1` (0.6.0 prepared in source) was held back from tagging because two defects were found after
+it: #269, a terminal hangup during a poll spins forever, and #264, an idle `run_once` busy-spins.
+The release candidate is `9a899e1` plus those two fixes and their tests, backported from `main`.
+Nothing else from 0.7 is included.
+
+| | |
+|---|---|
+| Candidate | Branch `release/v0.6.0-rc`, head `1b90b48`: `9a899e1` + #281's three commits (#264) + #282's five code commits (#269/#15, through Codex review round 4) + an RC-only test adaptation and a CHANGELOG entry |
+| What it is not | No 0.7 API, ABI, example or game. `git diff 9a899e1..1b90b48 -- src/ffi.rs include/ abi/ src/audio tests/audio_pocket_voice.rs` is **empty**, so the C ABI is still the 59 symbols and the PCM golden is untouched by construction. MSRV is 1.85. |
+| RC-only adaptation | On 0.6 a `Context::headless` session still polls the process terminal (#259 is fixed only in 0.7, by #265, and is not backported). The backported #264 off-TTY tests therefore run through a context whose stdout is a pipe. |
+| Exact-head evidence (`b3d65d7`, before the round-3 commit) | CI run 42331343740 8/8; preflight run 42331345999 **PASS**: fmt, clippy, `cargo test`, the hangup gate (`pty_hangup`, `pty_hangup_restore`, `pty_hangup_matrix`; serial, single attempt), rustdoc, MSRV locked and fresh, `cargo package`, ABI baseline, cleanroom C/C++/Python/Go/Rust consumers, notices, licenses. Bundle `libgibson-0.6.0-linux-x86_64.tar.gz` built (sha256 `f149e496…`; not uploaded). |
+| Exact-head evidence (`38287b1`, round-3 code) | Preflight run 42334418036 **PASS**. |
+| Exact-head evidence (`1b90b48`, final code) | **CI run 42335104064: success (8/8). Preflight run 42335106128: PASS.** Local, rustc 1.98.1: `tty_source` 57/57, `input` 34/34; at `38287b1`: `tty_source` 55/55; hangup matrix 10/10; `pty_hangup` 3/3; restore 1/1; `event_pressure_pty` 9/9 (#15 acceptance enabled); `run_once_idle_pty` 9/9; `ffi_realtty_pty` 6/6; `pty_demos` 26/26; `terminal_ownership` 7/7 |
+| Independent review | #264 (#281): Codex, three passes, all resolved. #269 (#282): Codex rounds 1–4, each fixed (r1: 6 P2 + 2 P3; r2: 4 new P2; r3: 1 new P2 + 2 narrowed P2; r4: 1 new P2 + 2 P3); **round 5 on the final code: all resolved, no new P0–P2** (#282 merged to `main` as `04c0ad2`). |
+| **Verdict** | **HOLD.** Release Contract §1 says a release tag "names a `main` commit", and in practice `v0.5.0` (`d8c7b99`) and `9a899e1` are both on `main`'s first-parent history. The candidate is on a release branch. Tagging it, or merging that branch back so the commit becomes reachable from `main`, is a release-policy decision for the owner, not a gate this round may waive. Artifacts and checksums are rebuilt from the exact tagged commit at publication; the preflight bundle above is evidence, not the release asset. |
+| Disclosed 0.6.0 limitations | #259 (a headless context polls the terminal); #274 (`GIBSON_KEY_*` collides with typed U+1001–U+100D; 0.7 adds `gibson_poll_event_kind`); #285 (a kitty-protocol key release is read as a press); off Unix, input still goes through crossterm. |
+
 ## R6.1–R6.6 verdicts
 
 | Workstream | Verdict |

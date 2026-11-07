@@ -100,3 +100,28 @@ record exists so the freeze is taken with the Doom horizon mapped rather than as
 > `gibson_poll_event` delivers them (ABI v1, additive, 59 → 60 symbols). The installed-SDK forcing
 > consumer now moves its marker only by pushed-and-polled input, with identical frames. The record
 > above stays as written for v0.6.0.
+
+> **Node J design note (2026-11-06, RXVIII). Investigation only: nothing is built, and no
+> repository is created.** v0.7 node J is a Doom-compatible adapter. It **cannot live in this
+> repository**: the engines are GPL-2.0 and LibGibson is MIT OR Apache-2.0. It must be a separate
+> GPL-2.0 repository that consumes only the **installed** SDK through `pkg-config libgibson`, the
+> way the node I forcing consumer does. Creating and publishing that repository needs the owner's
+> authorization, so it is not started.
+>
+> The architecture the shipped ABI already supports:
+>
+> | Engine hook (doomgeneric-style) | LibGibson ABI | Status |
+> |---|---|---|
+> | Draw a 320×200 frame | Lower the frame to half-block cells and set them as styled spans on a headless or terminal context, as node I does for a 48×16 raster (`gibson_set_root_node`, `gibson_render`) | Proven shape (node I, 23,040 cells at ~225 µs/frame). A full 320×200 frame at the terminal's cell resolution has not been measured. |
+> | Read keys | `gibson_poll_event_kind` (#274, after #283 merges) on a terminal context; the adapter maps `GIBSON_KEY_*` and typed characters to engine key codes | ABI exists. A press-only terminal sends no key-up, so the adapter must synthesize releases with a hold grace, the trade-off measured in #275 (25 tics bridged both measured autorepeat delays). |
+> | Ticks / sleep | the engine's own clock (libc) | No LibGibson surface needed |
+> | Resize | `GIBSON_EVENT_RESIZE` | ABI exists |
+> | Terminal hangup | `gibson_poll_event*` returns `GIBSON_ERR_IO` once the terminal is gone (#269, after #282 merges) | The adapter must exit on it rather than retry |
+>
+> **Data:** game data is never vendored. The adapter must refuse to start without a user-supplied
+> IWAD (Freedoom is a free choice). **Licensing:** the adapter repository carries GPL-2.0 and the
+> engine's notices. Linking LibGibson (MIT OR Apache-2.0) into a GPL-2.0 program is compatible in
+> that direction; LibGibson's own license is unaffected.
+>
+> **The first open question** is whether a 320×200 frame lowered to half-blocks fits a 35 Hz frame
+> budget at common terminal sizes. That measurement belongs to the adapter's own CI.
