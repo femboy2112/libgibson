@@ -26,6 +26,36 @@ Instrumental Renaissance": the v0.6 integration merged through #253 (merge `f6cd
 audit approval of exactly `eaa0d1c`). `GIBSON_ABI_VERSION` stays 1 — the C ABI grew only by
 **additive** functions (52 → 59, compatible, no version bump); MSRV stays 1.85.
 
+
+### Release candidate — `release/v0.6.0-rc` (RXVIII): two backported corrections, not yet tagged
+
+The `9a899e1` source was held back from tagging because of two defects found after it. This branch
+is `9a899e1` plus their fixes and tests, backported from `main` and nothing else (no 0.7 API, ABI
+or example). The C ABI stays at the 59 symbols of `9a899e1`, MSRV stays 1.85, and the PCM golden is
+unchanged. Tagging it needs the owner's decision on releasing from a branch that is not `main`'s
+first-parent history (Release Contract §1); until then it is a candidate, not a release.
+
+- **Fixed — a terminal hangup during a poll no longer spins forever**
+  ([#269](https://github.com/femboy2112/libgibson/issues/269)). On Unix, when the terminal is the
+  controlling terminal, input is read by a library-owned source (`src/tty_source.rs`, crossterm
+  0.29.0's decoder ported under MIT) instead of crossterm's event reader. That reader's loop retried
+  a hung-up terminal forever, so a hangup landing after LibGibson's check spun the thread at 100%
+  CPU. Now the hangup is detected from the read itself and reported as `BrokenPipe` wherever it
+  lands. Events decoded before it are delivered first.
+- **Fixed — a key coinciding with a resize is no longer stranded**
+  ([#15](https://github.com/femboy2112/libgibson/issues/15)), on the same new source; the Event
+  Pressure Lab's delivery acceptance passes.
+- **Fixed — `run_once` no longer busy-spins when idle**
+  ([#264](https://github.com/femboy2112/libgibson/issues/264)). It waits up to `max_wait` unless a
+  frame is pending; additive `time_until_frame_needed` / `input_wait`.
+- **Known limitations of 0.6.0, fixed or addressed only on the 0.7 line:**
+  - #259: on a terminal, a `Context::headless` session still polls the process terminal.
+  - #274: the C ABI's `GIBSON_KEY_*` codes collide with typed U+1001–U+100D; 0.7 adds
+    `gibson_poll_event_kind`.
+  - #285: a kitty-protocol key release, if a terminal sends one, is read as a press.
+  - Off Unix, or with stdin not a terminal and no controlling terminal, input still goes through
+    crossterm.
+
 ### Release engineering — source version 0.6.0, RXVII
 - **Version prepared in source:** `Cargo.toml`, `Cargo.lock` (the `libgibson` entry only),
   `bindings/python/pyproject.toml` and `THIRD-PARTY-NOTICES.md` move from `0.6.0-dev` to `0.6.0`.
