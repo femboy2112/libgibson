@@ -398,8 +398,10 @@ impl Context {
     ///   however long ago the last frame was, so an idle loop sleeps instead of spinning
     ///   (issue #264);
     /// * a frame pending (`set_root`, `mark_dirty`, `request_render`, or a resize): the
-    ///   wait ends when that frame becomes eligible under the FPS budget, and the frame
-    ///   renders before the call returns.
+    ///   wait ends no later than when that frame becomes eligible under the FPS budget
+    ///   (or at `max_wait`, if sooner). The frame renders before the call returns if it is
+    ///   eligible by then; when input or a shorter `max_wait` ends the wait first, the
+    ///   call returns without it and a later call renders it.
     ///
     /// So `run_once` never wakes on its own to animate. An animated view marks itself
     /// pending each step (rebuild with `set_root`, or `mark_dirty`) and passes a

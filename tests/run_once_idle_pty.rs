@@ -5,12 +5,14 @@
 //! headless) and reads the child's own measurements: how many times `run_once` returned
 //! and how much CPU time the process used across the timed loop.
 //!
-//! The thresholds are wide and one-sided against load. A loaded machine can only make
-//! the child do *less*: fewer returns and less CPU in a fixed wall-clock window, since
-//! every idle call waits for its `max_wait`. The defect does more, by five orders of
-//! magnitude: about 470,000 returns and 98% of a core per second at `082d324`.
-//! The latency cases bound only the side the defect breaks: a pending frame must not
-//! wait out a 5 s `max_wait`, and a key must end an 8 s wait early.
+//! The idle thresholds are upper bounds only. A loaded machine can only make the child
+//! do *less*: fewer returns and less CPU in a fixed wall-clock window, since every idle
+//! call waits for its `max_wait`. The defect does more, by five orders of magnitude:
+//! about 470,000 returns and 98% of a core per second at `082d324`.
+//! The pending-frame case is bounded on both sides, each against load: its lower bound
+//! is measured from the first frame (where the budget starts), so delay before the call
+//! can only lengthen it; its upper bound is far below the 5 s `max_wait`.
+//! The wake case bounds only the side the defect breaks: a key must end an 8 s wait.
 #![cfg(unix)]
 
 use portable_pty::CommandBuilder;
@@ -73,8 +75,8 @@ fn assert_idle(label: &str, r: &BTreeMap<String, u64>) {
          and nothing pending; an idle call must wait out max_wait (#264). Result: {r:?}"
     );
     assert!(
-        calls >= 3,
-        "{label}: only {calls} returns in {wall_ms} ms: the loop did not run. {r:?}"
+        calls >= 1,
+        "{label}: no run_once returned in {wall_ms} ms. {r:?}"
     );
     assert!(
         cpu_ms * 4 < wall_ms,
@@ -128,42 +130,47 @@ fn idle_headless_loop_sleeps_off_tty() {
     );
 }
 
+/// The pending-frame law: with a 100 ms budget, `max_wait` 5 s and no input, the one
+/// `run_once` call renders the frame, and it does so no earlier than the budget allows
+/// (measured from the first frame, where the budget starts) and far before `max_wait`.
+fn assert_pending_frame(label: &str, r: &BTreeMap<String, u64>) {
+    assert_eq!(
+        r["first_call_frames"], 1,
+        "{label}: with no input, the call must wait for the pending frame and render it. {r:?}"
+    );
+    assert!(
+        r["first_call_us"] < 2_000_000,
+        "{label}: the call took {} us; the pending frame must render near its 100 ms \
+         budget, far below max_wait = 5 s. {r:?}",
+        r["first_call_us"]
+    );
+    assert!(
+        r["since_frame0_us"] >= 99_000,
+        "{label}: rendered {} us after the previous frame, inside its 100 ms budget. {r:?}",
+        r["since_frame0_us"]
+    );
+}
+
 #[test]
 fn a_pending_frame_renders_at_its_budget_not_at_max_wait() {
     // 10 fps: a 100 ms budget. A change lands right after a frame, and run_once is
-    // called with max_wait = 5 s. The frame must render once its budget allows: not
-    // after max_wait (the over-correction), and not before the budget (pacing).
+    // called once with max_wait = 5 s: the over-correction would wait out max_wait.
     for (label, extra) in [
         ("completion-relative", None),
         ("phase-locked", Some("--phase-locked")),
     ] {
         let mut args = vec!["dirty", "--fps", "10", "--wait-ms", "5000"];
         args.extend(extra);
-        let r = run_on_pty(&args);
-        assert_eq!(
-            r["frames"], 1,
-            "{label}: the pending frame must render. {r:?}"
-        );
-        assert!(
-            r["rendered_after_us"] < 2_000_000,
-            "{label}: the pending frame waited {} us; it must render near its 100 ms \
-             budget, far below max_wait = 5 s. {r:?}",
-            r["rendered_after_us"]
-        );
-        assert!(
-            r["rendered_after_us"] >= 50_000,
-            "{label}: rendered after {} us, before the 100 ms budget allowed. {r:?}",
-            r["rendered_after_us"]
-        );
+        assert_pending_frame(label, &run_on_pty(&args));
     }
 }
 
 #[test]
 fn a_pending_frame_renders_on_time_headless() {
-    let r = run_headless(&["dirty", "--fps", "10", "--wait-ms", "5000"]);
-    assert_eq!(r["frames"], 1, "{r:?}");
-    assert!(r["rendered_after_us"] < 2_000_000, "{r:?}");
-    assert!(r["rendered_after_us"] >= 50_000, "{r:?}");
+    assert_pending_frame(
+        "headless",
+        &run_headless(&["dirty", "--fps", "10", "--wait-ms", "5000"]),
+    );
 }
 
 #[test]
