@@ -21,6 +21,23 @@ line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 remains **prepar
 `9a899e1`** (release state 1 — not tagged, not released); a future `v0.6.0` tag names that commit,
 not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
 
+### Added — C ABI v1 (additive, 60 → 62 symbols): key kinds ([#274](https://github.com/femboy2112/libgibson/issues/274))
+- **`gibson_poll_event_kind(ctx, timeout_ms, out_event, out_key_kind)`** polls like
+  `gibson_poll_event` and also reports `GIBSON_KEY_KIND_CHAR` or `GIBSON_KEY_KIND_SPECIAL` for a key
+  (`GIBSON_KEY_KIND_NONE` otherwise). `GIBSON_KEY_*` occupy 0x1001–0x100D, which are also Unicode
+  scalar values (Myanmar letters U+1001–U+100D), so `key_code` alone cannot tell a typed `ခ` from
+  Enter; the kind can. `*out_event` is written exactly as `gibson_poll_event` writes it.
+- **`gibson_push_event_kind(ctx, event, key_kind)`** pushes a key with its kind, so a headless
+  context can be given a typed U+1001–U+100D. `GIBSON_KEY_KIND_SPECIAL` with a non-`GIBSON_KEY_*`
+  code, and any other kind, are `GIBSON_ERR_INVALID_PARAM`.
+- **The legacy functions are unchanged**, ambiguity included: `gibson_push_event` reads
+  0x1001–0x100D as the special keys, and `gibson_poll_event` reports both with the same code. No
+  constant changed value and `gibson_event_t`'s layout is untouched; the kind is a separate
+  out-parameter, not the reserved `_pad` bytes. `gibson_push_event` lets callers leave `_pad`
+  uninitialised, and v1 libraries before #273 do not write it, so a flag there could not be trusted
+  in either direction. A client that uses the new pair gets a link error, never a misread key, on an
+  older `libgibson.so.1`. Python and Go bindings expose neither event function.
+
 ### Added — C ABI v1 (additive, 59 → 60 symbols): injected input for a headless context
 - **`gibson_push_event(ctx, const gibson_event_t *event)`** queues a key, paste or resize event on
   a headless context; `gibson_poll_event` delivers queued events oldest first, each exactly once,

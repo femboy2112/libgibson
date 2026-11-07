@@ -237,6 +237,41 @@ fn abi_poll_event_surfaces_keys_and_paste_on_a_real_tty() {
     );
 }
 
+/// Issue #274 on a real terminal: every Myanmar letter U+1001–U+100D typed as UTF-8, and every
+/// special key typed as the terminal sends it, through `gibson_poll_event_kind`. The letters
+/// come back CHAR and the keys SPECIAL, each with its `GIBSON_KEY_*` / scalar code, in order;
+/// no letter reads as a key. (`gibson_poll_event` reports both with the same code.)
+#[test]
+fn abi_poll_event_kind_tells_typed_myanmar_letters_from_special_keys_on_a_real_tty() {
+    // The terminal byte sequence of each GIBSON_KEY_* (0x1001..=0x100D, in order).
+    let specials: [&[u8]; 13] = [
+        b"\r", b"\x1b[D", b"\x1b[C", b"\x1b[A", b"\x1b[B", b"\x1b[H", b"\x1b[F", b"\x7f",
+        b"\x1b[3~", b"\x1b", b"\t", b"\x1b[5~", b"\x1b[6~",
+    ];
+    let receipt = drive("abi-input-kind", |cap| {
+        for (i, seq) in specials.iter().enumerate() {
+            let letter = char::from_u32(0x1001 + i as u32).unwrap().to_string();
+            cap.write(letter.as_bytes()).expect("write letter");
+            let _ = cap.collect_for(Duration::from_millis(40));
+            cap.write(seq).expect("write key");
+            // A lone ESC is only an Esc once no more bytes follow it in the same read.
+            let _ = cap.collect_for(Duration::from_millis(40));
+        }
+        cap.write(b"q").expect("write sentinel");
+    });
+    let lines: Vec<&str> = receipt
+        .split(['\r', '\n'])
+        .filter_map(|l| l.find("EVKEY ").map(|i| &l[i..]))
+        .collect();
+    let mut want = Vec::new();
+    for i in 0..13u32 {
+        want.push(format!("EVKEY code={:#x} kind=1 mod=0", 0x1001 + i));
+        want.push(format!("EVKEY code={:#x} kind=2 mod=0", 0x1001 + i));
+    }
+    want.push(format!("EVKEY code={:#x} kind=1 mod=0", u32::from('q')));
+    assert_eq!(lines, want, "\n{receipt}");
+}
+
 /// A real SIGWINCH on the PTY master surfaces through the ABI as one
 /// `GIBSON_EVENT_RESIZE` carrying the new geometry, and a render afterward still
 /// succeeds at the new size.
