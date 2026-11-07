@@ -55,14 +55,16 @@ fn run_on_pty(args: &[&str]) -> BTreeMap<String, u64> {
     result_fields(&cap.finish())
 }
 
+/// v0.6 release line: the off-TTY branch of `run_once`, reached through a context whose
+/// stdout is a pipe (not a terminal). (On 0.7 this is a `Context::headless` session; on 0.6 a
+/// headless session still polls the process terminal, #259, so it cannot be used here.)
 fn run_headless(args: &[&str]) -> BTreeMap<String, u64> {
     let out = std::process::Command::new(pty_capture::example_path(PROBE))
         .args(args)
-        .arg("--headless")
         .stdin(std::process::Stdio::null())
         .output()
-        .expect("run headless probe");
-    assert!(out.status.success(), "headless probe failed: {out:?}");
+        .expect("run off-TTY probe");
+    assert!(out.status.success(), "off-TTY probe failed: {out:?}");
     result_fields(&out.stdout)
 }
 
@@ -194,27 +196,11 @@ fn arriving_input_ends_an_idle_wait_promptly() {
 
 #[test]
 fn a_rootless_context_marked_dirty_goes_idle_after_one_attempt() {
-    // A resize (or `mark_dirty`) on a context with no root leaves a pending frame that
-    // can never be presented. The rootless render attempt clears it; left pending, the
-    // wait would stay zero and the loop would spin (in-process, headless).
-    let mut ctx = gibson::Context::headless(gibson::RenderMode::Inline, 40, 8);
-    ctx.mark_dirty();
-    assert_eq!(ctx.time_until_frame_needed(), Some(Duration::ZERO));
-    let t0 = Instant::now();
-    let mut calls = 0u32;
-    while t0.elapsed() < Duration::from_millis(300) {
-        ctx.run_once(Duration::from_millis(50)).expect("run_once");
-        calls += 1;
-    }
-    assert!(
-        calls <= 12,
-        "{calls} returns in 300 ms with max_wait 50 ms: a rootless pending frame kept the \
-         wait at zero (#264)"
+    // A resize (or `mark_dirty`) on a context with no root leaves a pending frame that can
+    // never be presented. The rootless render attempt clears it; left pending, the wait would
+    // stay zero and the loop would spin. (Off-TTY here; see `run_headless`.)
+    assert_idle(
+        "off-TTY rootless dirty",
+        &run_headless(&["no-root", "--dirty"]),
     );
-    assert_eq!(
-        ctx.empty_root_renders(),
-        1,
-        "one rootless attempt, then idle"
-    );
-    assert_eq!(ctx.time_until_frame_needed(), None);
 }

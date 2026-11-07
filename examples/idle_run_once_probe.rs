@@ -16,7 +16,10 @@
 //!   moment `run_once` returns it, then exits. The parent measures the wake latency.
 //!
 //! `--headless` runs `idle` / `no-root` / `dirty` on a [`gibson::Context::headless`] session
-//! instead of the controlling terminal (the off-TTY sleep branch of `run_once`).
+//! instead of the controlling terminal. `--dirty` marks a `no-root` context dirty first.
+//! (v0.6 release line: a headless context still polls the process terminal there — #259 is
+//! fixed in 0.7 — so this line's tests reach `run_once`'s off-TTY sleep branch through a
+//! context whose stdout is not a terminal instead.)
 //!
 //! CPU is `getrusage(RUSAGE_SELF)` user+system time, measured across the timed loop only.
 
@@ -81,6 +84,10 @@ fn main() -> std::io::Result<()> {
             if scenario == "idle" {
                 ctx.set_root(Node::text("idle", Style::new()));
                 ctx.render()?;
+            } else if args.iter().any(|a| a == "--dirty") {
+                // A rootless context marked dirty (as a resize does): a pending frame that can
+                // never be presented.
+                ctx.mark_dirty();
             }
             // Arm raw mode and the input source before the measurement starts.
             let _ = ctx.poll_event(Duration::ZERO)?;
