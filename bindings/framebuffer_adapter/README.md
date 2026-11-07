@@ -12,8 +12,8 @@ repository and links this adapter in (see "The engine-port contract").
 |---|---|
 | `fb_adapter.h` / `fb_adapter.c` | the adapter: scaling + half-block lowering, input + hold grace, fixed-tic loop, resize, lifecycle |
 | `synthetic_producer.h` / `.c` | own procedural art: a steerable tunnel, star dust and a ship marker, 320x200 indexed, deterministic state + FNV-1a 64 hash |
-| `fb_adapter_demo.c` | interactive demo, headless replay, and `--selfcheck` (7 properties, 12 negative controls) |
-| `pty_harness.py` | an independent real-PTY harness: P2 on the wire (needs pyte), P3, P5, P6, P7 through a pty; 7 negative controls |
+| `fb_adapter_demo.c` | interactive demo, headless replay, and `--selfcheck` (7 properties, 14 negative controls) |
+| `pty_harness.py` | an independent real-PTY harness: P2 on the wire (needs pyte), P3, P5, P6, P7 through a pty; 9 negative controls |
 | `../../scripts/dev/fb_adapter_consumer.sh` | builds all of it from a temp dir against a staged SDK and runs everything |
 
 ## Build and run
@@ -135,54 +135,73 @@ and the demo's report file) for P3, P5, P6 and P7, and adds a wire check for P2.
 | P3 | input flows terminal -> simulation | headless: keys pushed with `gibson_push_event_kind`, polled by the adapter; the producer's key log against an independent model of the hold rule. PTY: keys typed into the master | headless keyed `0f49011c9bbbb009` != unkeyed `9280b905d57cd933`; key log = model (press@10 release@36, press@60 release@85, press@90 release@115, press@100 release@105). PTY (3x Right, w, space, 2x a typed): keyed `a73b0e133b1da5fd` != unkeyed `f2042341bb257298` at 140 tics; each run's recorded trace, replayed headless, reproduces its hash |
 | P4 | tics are independent of presentation | the same 22-event tic-stamped script for the same simulated wall time, presenting every tic / every 4th / never; plus a jittery clock (0-10 tics per iteration) and a 2.0 s stall | all five runs `611f8add2a08ead1` at 420 tics (420 / 105 / 0 frames); jitter max 10 tics/iteration, 0 dropped; the stall ran 10 tics and dropped 60 (cap 10) |
 | P5 | resize changes geometry, not state | headless: RESIZE pushed at tics 150 (120x40) and 220 (40x15); every post-resize frame against the reference. PTY: `TIOCSWINSZ` mid-run | headless `5be5245583eb9b2f` = no-resize hash; frame size 80x24 -> 120x40 -> 40x15; 3 map builds; 150 post-resize frames, 0 bad cells. PTY (80x24 -> 120x40 -> 40x15, no keys): `fe9e9dd14b3590a5` = the no-input headless hash at 175 tics; final frame 40x15, 3 map builds |
-| P6 | the terminal is restored | real PTY at 80x24, termios read with `tcgetattr` on the slave the harness holds; ~1 s of steady play (36 tics) before each action | `q`: termios after = before, exit 0 in 0.01 s. SIGTERM: termios after = before, died by signal 15 (re-raised after restore) in 0.02 s. Hangup (master closed, SIGHUP ignored): the poll returned `GIBSON_ERR_IO`, report `exit=hangup`, exit 0 in 0.01 s, child CPU 0.07 s in total (no spin). Same on the PTY harness route |
-| P7 | memory and frame cost stay bounded | 2000 frames per size, fresh process per size, numbers after a 200-frame warm-up; VmHWM growth must stay within 1024 KiB and the last 500 frames' mean within 1.5x of frames 200-699 | see the tables below; headless growth +456 / +0 / +4 KiB |
+| P6 | the terminal is restored; a handled signal ends only its own adapter | real PTY at 80x24, termios read with `tcgetattr` on the slave the check holds, the baseline taken before fork; ~1 s of steady play (36 tics) before each action | `q`: termios after = before, exit 0 in 0.01 s. SIGTERM: termios after = before, died by signal 15 (re-raised after restore) in 0.04 s. Hangup (master closed, SIGHUP ignored): the poll returned `GIBSON_ERR_IO`, report `exit=hangup`, exit 0 in 0.01 s, child CPU 0.09 s in total (no spin). SIGTERM, then a second adapter in the same process (`--reopen-after-signal 35`): the first ended `signal` after 36 tics, the second ran its 35 tics to `tic_limit`, termios after = before, exit 0. Same on the PTY harness route |
+| P7 | memory and frame cost stay bounded; a frame fits a 35 Hz tic | 2000 frames per size, fresh process per size, after a 200-frame warm-up. Gates: present p99 <= 28,571 us (one 35 Hz tic); VmHWM growth over the second half (frames 1100-2000) <= 1024 KiB; mean of the last 500 frames <= 1.5x that of frames 200-699. The PTY route adds a real-clock gate (below) | every gate passes at 80x24 / 160x50 / 320x100: p99 1,185 / 2,559 / 8,840 us; second-half growth +156 / +0 / +28 KiB; late/early 0.74 / 1.03 / 1.05 |
 
-### Negative controls (each must FAIL; `fb_adapter_demo --selfcheck --list-controls`)
+### Negative controls (each must FAIL)
+
+`fb_adapter_demo --selfcheck --list-controls` lists the 14 selfcheck controls; `pty_harness.py
+--control NAME` runs the 9 PTY ones. The consumer script runs all 23 and requires each to fail.
 
 | Control | Property | Defect injected | Observed |
 |---|---|---|---|
 | `p1-shifted-ref` | P1 | expected pattern shifted one pixel | 0/32,000 cells match, both formats |
 | `p2-edge-sampling` | P2 | reference samples pixel edges, not centres | 384,294 mismatching cells in 64 of 72 cases |
 | `p2-no-letterbox` | P2 | reference stretches to the whole grid | 728,776 mismatching cells in 58 cases |
+| `p2-wire-shifted-cells` (PTY) | P2 wire | same tic and state hash; each wire cell compared with its right-hand neighbour | `mismatches=1294` (80x24) and `507` (40x15) with `hash=match`: it fails on cells alone (the script checks both) |
 | `p3-ignore-input` | P3 | producer ignores keys | keyed hash = unkeyed hash (headless and PTY) |
 | `p4-frame-locked` | P4 | mutant adapter: one tic per presented frame | 421 / 105 / 0 tics, three different hashes |
 | `p5-stale-map` | P5 | mutant adapter: map not rebuilt on resize | map builds 1; 360,342 bad cells after the resize (PTY: map grid stays 80x24) |
 | `p5-resize-steps` | P5 | mutant adapter: a resize runs an extra producer tic | hash differs from the no-resize run (headless and PTY) |
-| `p6-no-restore` | P6 | exit without `gibson_destroy_context` | termios after != before |
+| `p6-no-restore` | P6 | exit without `gibson_destroy_context` | termios after != before (headless check and PTY) |
 | `p6-no-signals` | P6 | no SIGTERM handler | killed by signal 15 with no report; termios after != before |
-| `p6-retry-io` | P6 | mutant adapter: `GIBSON_ERR_IO` from a poll ignored | kept looping 1.45 s after the hangup (1.51 s CPU), then exited `error` through the loop's render-error limit, never `hangup` |
-| `p7-leak` | P7 | mutant adapter: 64 KiB leaked per present | VmHWM +129,216 KiB at 80x24 |
-| `p7-no-rotation` | P7 | headless capture never rotated (finding F1) | VmHWM +69,152 KiB at 80x24, capture 78,683,261 B |
-| `p2-wire-wrong-tic` (PTY) | P2 wire | reference is the replay 5 tics early | 1,366 mismatching cells at 80x24 |
+| `p6-retry-io` | P6 | mutant adapter: `GIBSON_ERR_IO` from a poll ignored | kept looping 1.44 s after the hangup (1.51 s CPU), then exited `error` through the loop's render-error limit, never `hangup` |
+| `p6-sticky-signal` | P6 | mutant adapter: a handled signal also ends every later adapter (the old global flag) | the second adapter exits `signal` after 0 tics, exit code 1 (headless check and PTY) |
+| `p7-leak` | P7 | mutant adapter: 64 KiB leaked per present | second-half VmHWM +67,384 KiB at 80x24 |
+| `p7-no-rotation` | P7 | headless capture never rotated (finding F1) | second-half VmHWM +34,572 KiB at 80x24 |
+| `p7-slow-present` | P7 | mutant adapter: every 35th present stalls 400 ms | headless p99 401,700 us; PTY bench p99 401,991 us, and real clock 141 frames in 5,519 ms = 25.5 fps with 16 dropped tics: every timing gate fails (the memory gates pass) |
 
 ### Frame cost and memory (P7)
 
 Per presented frame: *lower* = building the styled spans, the rich-text node and `set_root_node`;
 *render* = `gibson_render` (headless: into the capture; PTY: including the write to the pty). Mean
-and p99 in microseconds over frames 200-1999. The 35 Hz budget is 28,571 us.
+and p99 in microseconds over frames 200-1999.
+
+**The gate, exactly** (both routes unless marked):
+- the p99 of lower + render over frames 200-1999 is at most one 35 Hz tic, 28,571 us;
+- VmHWM grows at most 1024 KiB from frame 1100 to frame 2000. Growth from frame 200 to 1100 is
+  allocator settling and is reported, not gated: at 320x100 it measured 0 to 2.8 MiB across runs,
+  and a 6000-frame run stayed flat from frame 200 on, so it does not scale with frames as a leak
+  would;
+- headless: the mean of the last 500 frames is at most 1.5x that of frames 200-699 (no creep);
+- PTY only: a real-clock run of the normal 35 Hz loop for 175 tics ends by its tic limit after 175
+  tics, drops no tic, and presents at least 34.0 frames per wall-clock second.
+
+The thresholds were set from margins measured before the gate existed: p99 at most 13.9 ms,
+34.9-35.0 fps, 0 dropped tics, second-half growth at most 100 KiB.
 
 Headless (`--selfcheck`, fresh process per size, capture rotated at 4 MiB):
 
-| Grid | lower mean / p99 | render mean / p99 | total mean / p99 | VmHWM after warm-up -> end | capture rotations |
+| Grid | lower mean / p99 | render mean / p99 | total mean / p99 | VmHWM at frames 200 / 1100 / 2000 (second half) | capture rotations |
 |---|---|---|---|---|---|
-| 80x24 | 69 / 112 | 616 / 852 | 685 / 966 | 8,864 -> 9,320 KiB (+456) | 18 |
-| 160x50 | 242 / 413 | 2,174 / 3,070 | 2,416 / 3,440 | 15,560 -> 15,560 KiB (+0) | 60 |
-| 320x100 | 874 / 1,510 | 7,453 / 11,397 | 8,327 / 12,986 | 19,240 -> 19,244 KiB (+4) | 166 |
+| 80x24 | 72 / 124 | 624 / 1,063 | 695 / 1,185 | 8,712 / 9,216 / 9,372 KiB (+156) | 18 |
+| 160x50 | 234 / 320 | 2,032 / 2,281 | 2,266 / 2,559 | 15,340 / 15,340 / 15,340 KiB (+0) | 60 |
+| 320x100 | 831 / 1,053 | 6,920 / 7,944 | 7,751 / 8,840 | 17,056 / 17,192 / 17,220 KiB (+28) | 166 |
 
 Real PTY (`pty_harness.py`; `--bench-frames 2000` presents one frame per tic with no waiting; the
 real-clock run is the normal 35 Hz loop for 175 tics):
 
-| Grid | bytes / frame | lower mean / p99 | render + pty write mean / p99 | total mean / p99 | VmHWM growth | real clock, 175 tics |
+| Grid | bytes / frame | lower mean / p99 | render + pty write mean / p99 | total mean / p99 | VmHWM second half | real clock, 175 tics |
 |---|---|---|---|---|---|---|
-| 80x24 | 39 KB | 68.6 / 111.9 | 799.0 / 1,045.2 | 867.6 / 1,135.8 | +40 KiB | 175 frames in 5,002 ms (35.0 fps), 0 dropped |
-| 160x50 | 128 KB | 264.4 / 447.7 | 3,088.2 / 3,926.7 | 3,352.6 / 4,290.7 | +100 KiB | 175 in 5,004 ms (35.0 fps), 0 dropped |
-| 200x60 | 169 KB | 369.8 / 604.0 | 4,197.4 / 5,762.7 | 4,567.2 / 6,295.1 | +0 KiB | 175 in 5,006 ms (35.0 fps), 0 dropped |
-| 320x100 | 355 KB | 886.5 / 1,439.8 | 9,239.5 / 12,488.3 | 10,126.0 / 13,910.4 | +16 KiB | 175 in 5,012 ms (34.9 fps), 0 dropped |
+| 80x24 | 39 KB | 74.3 / 128.9 | 829.6 / 1,431.5 | 903.9 / 1,545.8 | +4 KiB | 175 frames in 5,003 ms (35.0 fps), 0 dropped |
+| 160x50 | 128 KB | 242.8 / 389.1 | 2,823.3 / 3,260.9 | 3,066.1 / 3,528.9 | +8 KiB | 175 in 5,008 ms (34.9 fps), 0 dropped |
+| 200x60 | 169 KB | 328.2 / 539.9 | 3,821.4 / 4,515.0 | 4,149.6 / 4,998.9 | +0 KiB | 175 in 5,009 ms (34.9 fps), 0 dropped |
+| 320x100 | 355 KB | 820.6 / 1,237.0 | 9,267.5 / 11,579.0 | 10,088.1 / 12,754.5 | +0 KiB | 175 in 5,016 ms (34.9 fps), 0 dropped |
 
-So with this producer, a 320x200 frame lowered to half-blocks fits the 35 Hz budget at every size
-measured, the worst p99 (13.9 ms at 320x100 on the PTY) at under half of it. The cost is in
-`gibson_render` (about 90%), not in the adapter's lowering.
+So with this producer every gate passes at every size measured; the worst p99 (12.8 ms at 320x100
+on the PTY) is under half a tic. The cost is in `gibson_render` (about 90%), not in the adapter's
+lowering. The `p7-slow-present` control (every 35th present stalls 400 ms) fails every timing gate:
+see the controls table.
 
 ### Findings about LibGibson
 
@@ -190,7 +209,8 @@ measured, the worst p99 (13.9 ms at 320x100 on the PTY) at under half of it. The
 context appends every rendered frame's ANSI to an in-memory capture, and the C ABI has no call
 that drains it: `gibson_get_rendered_output` only copies (Rust has `Context::take_output`; C has
 no equivalent). Memory therefore grows by every frame's bytes, without bound. Measured with this
-adapter's rotation turned off (`p7-no-rotation`), 2000 frames: 80x24 +69 MB VmHWM (capture 79 MB);
+adapter's rotation turned off (`p7-no-rotation`), 2000 frames: 80x24 +69 MB VmHWM from frame 200 to 2000
+(capture 79 MB);
 in an earlier run of the same check over all three sizes, 160x50 +227 MB and 320x100 +636 MB
 (capture 724 MB). The adapter works around it by replacing the headless
 context once its capture passes 4 MiB (`headless_capture_limit`), carrying undelivered injected
@@ -251,15 +271,21 @@ there ends only by its grace timeout. The kitty release events (#285) are not us
 
 ### Boundary
 
-**Proven** (on this box, at this SHA, with the synthetic producer): the seven properties above,
-each with a control that fails; that a 320x200 frame lowered to half-blocks fits a 35 Hz budget
-headless at 80x24, 160x50 and 320x100, and under a PTY at 80x24, 160x50, 200x60 and 320x100,
-including a real-clock 35 Hz loop with no dropped tics at each of those sizes; and that the bytes
-on the wire carry the same cells as the readback (pyte, 80x24 and 40x15).
+**Proven, by gates that fail when what they check is broken** (on this box; branch head with an
+SDK staged from `main` 5790f1a; with the synthetic producer): the seven properties above, each
+with at least one control that fails it. For the 35 Hz question that means exactly what P7 gates,
+and no more: (a) the p99 of one present (lowering + `gibson_render`; on the PTY including the
+write to it) over 1,800 frames is within one 35 Hz tic, headless at 80x24, 160x50 and 320x100 and
+on a PTY at 80x24, 160x50, 200x60 and 320x100; (b) on that PTY, at each of those four sizes, a
+175-tic (5 s) real-clock run of the 35 Hz loop presented at least 34.0 frames per second and
+dropped no tic; (c) high-water memory grew at most 1024 KiB over the second 900 frames at each
+size. Separately, the bytes on the wire carry the same cells as the readback (pyte, 80x24 and
+40x15).
 
-**Not proven:** no real Doom engine is measured in this repository (it cannot be: GPL); the PTY
-reader here is a Python thread that discards bytes, so a real terminal emulator's parse and paint
-throughput (355 KB per frame at 320x100 truecolor, about 12 MB/s at 35 Hz) is not measured;
-lower colour depths are not measured; a terminal that stops reading stalls the loop inside
-`gibson_render` (the loop is synchronous; node F's observation still applies); Linux only; a
-single key press moves for the 25-tic grace (#275's trade-off).
+**Not proven, or not measured:** a real terminal emulator's parse and paint cost (the PTY reader
+here is a Python thread that discards bytes; 355 KB per frame at 320x100 truecolor is about
+12 MB/s at 35 Hz); a real Doom engine (it cannot be in this repository: GPL); sizes other than
+those listed; sessions longer than 5 s of real clock or 2000 frames; colour depths below
+truecolor; a terminal that stops reading (the loop is synchronous and stalls in `gibson_render`;
+node F's observation still applies); other machines or load levels; non-Linux; and the 25-tic
+grace means a single key press moves for 0.71 s (#275's trade-off).
