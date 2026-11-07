@@ -408,3 +408,27 @@ matrix stays an explicit local command rather than multiplying normal CI time.
 syscalls and a narrow intervention. Production repair **NOT IMPLEMENTED**.
 Issue #15 remains **OPEN**. Core code/dependencies/bindings/cinematic content are
 unchanged. No merge is performed by this investigation.
+
+## Update — 2026-11-06: delivered on LibGibson's own terminal source (#269)
+
+The fix for [#269](https://github.com/femboy2112/libgibson/issues/269) (a poll that spins
+forever when the terminal hangs up inside it) moved LibGibson's Unix controlling-terminal
+input off crossterm's event reader onto a library-owned source (`src/tty_source.rs`). That
+source reads stdin after a level-triggered `poll(2)` on stdin and the `SIGWINCH` pipe
+together, queues everything one read decodes (with crossterm 0.29.0's own decoder, ported),
+and takes a ready resize and ready bytes in the same pass. The readiness-batch loss
+described above cannot happen there.
+
+`tests/event_pressure_pty.rs` on that change:
+
+- `context_coincident_lone_key_delivery_acceptance` is **enabled and passes** (it was
+  `#[ignore]`d as the known upstream failure).
+- `controlled_collision_strands_the_key_only_in_the_crossterm_backend` runs the same
+  coincident collision on all three paths: raw and `context` deliver the key, and
+  `crossterm` (its reader called directly, unpatched) still strands it. The crossterm arm is
+  the control that proves each trial really produced the collision.
+- In the graphical slow-drain matrix, only the `crossterm` path may still fail, with the
+  known-stall signature.
+
+crossterm itself is unchanged: an application that reads its event reader directly still
+has the stall, and crossterm#1128 is still unmerged.

@@ -21,6 +21,27 @@ line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 remains **prepar
 `9a899e1`** (release state 1 — not tagged, not released); a future `v0.6.0` tag names that commit,
 not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
 
+### Fixed — Rust library (`gibson::input`, `gibson::Context`) and C ABI input on a Unix terminal ([#269](https://github.com/femboy2112/libgibson/issues/269), [#15](https://github.com/femboy2112/libgibson/issues/15))
+- **A terminal hangup during a poll no longer spins forever.** When stdin is the controlling
+  terminal, input is now read by a library-owned source (`src/tty_source.rs`) instead of
+  crossterm's event reader, whose read loop retries a hung-up terminal forever (#269). The hangup
+  is detected from the read itself (`EIO`, or `0` bytes with `POLLHUP`), so it is reported as
+  `ErrorKind::BrokenPipe` wherever it lands, not only when a check before the read catches it.
+  This affected applications that ignore or handle SIGHUP; under the default disposition the
+  signal ends the process first.
+- **Events decoded before a hangup are delivered** before the `BrokenPipe`. They used to be
+  stranded behind the hangup check.
+- **A key that coincides with a resize is delivered** without waiting for further input (#15).
+  The Event Pressure Lab's delivery acceptance for the `Context` path is enabled and passes.
+- **A canonical-mode EOF character (^D) no longer blocks a poll past its timeout**. It also is not
+  mistaken for a hangup.
+- **A key arriving during a wait now ends it at once.** The old hangup-aware loop slept a 25 ms
+  slice whenever input became readable during a wait.
+- The decoder is crossterm 0.29.0's (MIT), ported with mechanical edits only; see
+  `THIRD-PARTY-NOTICES.md`. `signal-hook` (already a dependency through crossterm, same version)
+  is now a direct Unix dependency for `SIGWINCH`. Off Unix, and when stdin is not a terminal,
+  input still goes through crossterm.
+
 ### Added — C ABI v1 (additive, 59 → 60 symbols): injected input for a headless context
 - **`gibson_push_event(ctx, const gibson_event_t *event)`** queues a key, paste or resize event on
   a headless context; `gibson_poll_event` delivers queued events oldest first, each exactly once,

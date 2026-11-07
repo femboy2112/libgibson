@@ -1,5 +1,8 @@
-//! Bounded runtime diagnosis. A test that detects the known upstream stall is
-//! not a claim that delivery works; the delivery acceptance stays ignored/red.
+//! Bounded runtime diagnosis of issue #15 (a key that coincides with a resize is
+//! stranded until more input arrives). The stall is crossterm 0.29's Unix mio source;
+//! LibGibson's `Context` no longer reads through it (its own terminal source, #269), so
+//! the `context` path must deliver while the `crossterm` path, kept as the control that
+//! proves each collision really happened, still stalls.
 #![cfg(unix)]
 
 #[path = "../examples/event_pressure_lab/probe.rs"]
@@ -130,14 +133,13 @@ fn settled_resize_then_lone_key_never_needs_a_second_key() {
 }
 
 #[test]
-fn controlled_collision_distinguishes_raw_delivery_from_known_backend_stall() {
+fn controlled_collision_strands_the_key_only_in_the_crossterm_backend() {
+    // The same coincident resize + lone key on each path. Raw reads and the Context
+    // (LibGibson's own terminal source) deliver it; crossterm's event reader, called
+    // directly, still strands it: the control that proves the collision occurred.
     assert_delivered(&trial(config("raw", "coincident", false)), "r");
-    for mode in ["crossterm", "context"] {
-        // This pins the present diagnostic signature, not acceptable behavior.
-        // When the supported dependency is repaired, replace this expectation
-        // and enable the separate delivery acceptance below.
-        assert_known_stall(&trial(config(mode, "coincident", false)));
-    }
+    assert_known_stall(&trial(config("crossterm", "coincident", false)));
+    assert_delivered(&trial(config("context", "coincident", false)), "r");
 }
 
 #[test]
@@ -158,7 +160,9 @@ fn graphical_drain_pauses_are_bounded_and_failures_are_classified_honestly() {
             if report.passed() {
                 assert_delivered(&report, "r");
             } else {
-                assert_ne!(mode, "raw", "raw control failed: {}", receipts(&report));
+                // Only crossterm's own reader may still strand the key (#15); raw reads
+                // and the Context (LibGibson's terminal source) must deliver it.
+                assert_eq!(mode, "crossterm", "{mode} failed: {}", receipts(&report));
                 assert_known_stall(&report);
             }
         }
@@ -166,7 +170,6 @@ fn graphical_drain_pauses_are_bounded_and_failures_are_classified_honestly() {
 }
 
 #[test]
-#[ignore = "Known upstream failure: issue #15; run explicitly to test real delivery acceptance"]
 fn context_coincident_lone_key_delivery_acceptance() {
     assert_delivered(&trial(config("context", "coincident", false)), "r");
 }
