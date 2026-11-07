@@ -1,0 +1,346 @@
+{
+ "format": 1,
+ "comment": "Committed expectation for scripts/dev/parity_v08.sh. differs_* list the record ids that are KNOWN to differ (documented gaps, docs/V08_PARITY_SLICE.md); any other difference is a regression. Labels: SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIED, each with a one-line evidence pointer.",
+ "reference": "c",
+ "differs_from_c": {
+  "c": [],
+  "cpp": [],
+  "py": [],
+  "go": [],
+  "rust": [
+   "s27",
+   "s28",
+   "p01",
+   "p02",
+   "p03",
+   "p04",
+   "p05",
+   "p06",
+   "p07",
+   "p08",
+   "p09",
+   "p10",
+   "p11",
+   "p12",
+   "p13",
+   "p14",
+   "p15",
+   "p16",
+   "p17",
+   "p18",
+   "p19",
+   "p20",
+   "p21",
+   "p22",
+   "l02",
+   "x01",
+   "x03",
+   "x04"
+  ]
+ },
+ "differs_from_rust": {
+  "c": [
+   "s27",
+   "s28",
+   "p01",
+   "p02",
+   "p03",
+   "p04",
+   "p05",
+   "p06",
+   "p07",
+   "p08",
+   "p09",
+   "p10",
+   "p11",
+   "p12",
+   "p13",
+   "p14",
+   "p15",
+   "p16",
+   "p17",
+   "p18",
+   "p19",
+   "p20",
+   "p21",
+   "p22",
+   "l02",
+   "x01",
+   "x03",
+   "x04"
+  ],
+  "cpp": [
+   "s27",
+   "s28",
+   "p01",
+   "p02",
+   "p03",
+   "p04",
+   "p05",
+   "p06",
+   "p07",
+   "p08",
+   "p09",
+   "p10",
+   "p11",
+   "p12",
+   "p13",
+   "p14",
+   "p15",
+   "p16",
+   "p17",
+   "p18",
+   "p19",
+   "p20",
+   "p21",
+   "p22",
+   "l02",
+   "x01",
+   "x03",
+   "x04"
+  ],
+  "py": [
+   "s27",
+   "s28",
+   "p01",
+   "p02",
+   "p03",
+   "p04",
+   "p05",
+   "p06",
+   "p07",
+   "p08",
+   "p09",
+   "p10",
+   "p11",
+   "p12",
+   "p13",
+   "p14",
+   "p15",
+   "p16",
+   "p17",
+   "p18",
+   "p19",
+   "p20",
+   "p21",
+   "p22",
+   "l02",
+   "x01",
+   "x03",
+   "x04"
+  ],
+  "go": [
+   "s27",
+   "s28",
+   "p01",
+   "p02",
+   "p03",
+   "p04",
+   "p05",
+   "p06",
+   "p07",
+   "p08",
+   "p09",
+   "p10",
+   "p11",
+   "p12",
+   "p13",
+   "p14",
+   "p15",
+   "p16",
+   "p17",
+   "p18",
+   "p19",
+   "p20",
+   "p21",
+   "p22",
+   "l02",
+   "x01",
+   "x03",
+   "x04"
+  ],
+  "rust": []
+ },
+ "resource": {
+  "max_rss_second_half_growth_kb": 4096,
+  "comment": "gated: peak-RSS growth between rep ceil(N/2) and rep N. At N=500 this flags a per-rep leak of >= ~16 KB; the planted C context leak (PARITY_V08_PERTURB=leak) measured 18304 KB. Rep-1-to-midpoint growth is runtime warm-up (Go GC pacing: ~5.7 MB) and is reported only; Go second-half jitter observed 116 and 512 KB."
+ },
+ "labels": {
+  "EVT": {
+   "c": [
+    "SUPPORTED",
+    "e01-e09/x01-x04 are the reference; poll_event_kind separates e09.2 (U+1001 CHAR) from e09.3 (ENTER), kind-less poll_event conflates x03/x04"
+   ],
+   "cpp": [
+    "PARTIAL",
+    "byte-identical, but gibson.hpp has no headless Context, push_event*, or poll_event_kind: the consumer calls the C ABI directly"
+   ],
+   "py": [
+    "PARTIAL",
+    "byte-identical, but gibson.py has no event struct, poll or push (wrapper obs ctx_has_poll_event=0): raw ctypes"
+   ],
+   "go": [
+    "PARTIAL",
+    "byte-identical via the consumer's own cgo; bindings/go exposes no headless context, push or poll"
+   ],
+   "rust": [
+    "PARTIAL",
+    "e01-e09 byte-identical via InjectedQueue + Context::poll_from; x01/x03/x04 UNSUPPORTED (Rust has no kind-less key path)"
+   ]
+  },
+  "GEO": {
+   "c": [
+    "SUPPORTED",
+    "s15 40x12, r02 60x16: a polled RESIZE resizes the headless context (the only resize path; no direct resize call)"
+   ],
+   "cpp": [
+    "PARTIAL",
+    "s15/r02 byte-identical; gibson.hpp has no frame_size: raw C"
+   ],
+   "py": [
+    "PARTIAL",
+    "s15/r02 byte-identical via Context.frame_size; the resize itself needs raw ctypes push/poll"
+   ],
+   "go": [
+    "PARTIAL",
+    "byte-identical via own cgo; bindings/go has no geometry readback"
+   ],
+   "rust": [
+    "PARTIAL",
+    "r02 matches only with an explicit ctx.session.set_terminal_size after poll_from; witness: poll_from alone leaves r02 at 40x12"
+   ]
+  },
+  "CELL": {
+   "c": [
+    "SUPPORTED",
+    "s16/r03 digests over gibson_get_frame_cells + rendered output; s18 RGB+bold+underline, s19 ANSI256+named+italic"
+   ],
+   "cpp": [
+    "PARTIAL",
+    "scene built with gibson::Node RAII, but frame_cells/rendered_output only via raw C"
+   ],
+   "py": [
+    "SUPPORTED",
+    "every CELL record via the wrapper (Context.headless, Node.text+GibsonStyle, frame_cells, frame_cell, rendered_output)"
+   ],
+   "go": [
+    "PARTIAL",
+    "byte-identical via own cgo; bindings/go has no styled text node and no readback"
+   ],
+   "rust": [
+    "SUPPORTED",
+    "s16/r03 digests and s18/s19/s25/r04 byte-identical via Context::frame_cell + rendered_bytes"
+   ]
+  },
+  "TXT": {
+   "c": [
+    "SUPPORTED",
+    "s20/s21 CJK + continuation, s22 combining, s23/s26 25-byte ZWJ via get_frame_cell_glyph, s24/r05 U+1001; s27 inline cap 14 bytes, trunc=1"
+   ],
+   "cpp": [
+    "PARTIAL",
+    "gibson::Node::text carries the UTF-8; glyph readback only via raw C"
+   ],
+   "py": [
+    "SUPPORTED",
+    "via the wrapper: Node.text(str), frame_cell_glyph, GibsonCell.glyph_truncated"
+   ],
+   "go": [
+    "PARTIAL",
+    "byte-identical via own cgo; bindings/go has no readback"
+   ],
+   "rust": [
+    "PARTIAL",
+    "s17-s26/r05 byte-identical; s27/s28 (C's 16-byte inline glyph cap) UNSUPPORTED: Rust always has the full grapheme"
+   ]
+  },
+  "ERR": {
+   "c": [
+    "SUPPORTED",
+    "p01-p22: 21 INVALID_PARAM + 1 QUEUE_FULL; last-error text recorded for 6 probes"
+   ],
+   "cpp": [
+    "PARTIAL",
+    "p01-p22 byte-identical via raw C; gibson.hpp drops statuses (Node::text(invalid UTF-8) -> raw()==nullptr, wrapper obs)"
+   ],
+   "py": [
+    "PARTIAL",
+    "p01-p22 byte-identical via raw ctypes; wrapper cannot pass NULL or invalid UTF-8, Node.* ignore the status"
+   ],
+   "go": [
+    "PARTIAL",
+    "p01-p22 byte-identical via own cgo with LockOSThread (last error is per thread); bindings/go discards most statuses"
+   ],
+   "rust": [
+    "PARTIAL",
+    "no status codes: 13 probes unrepresentable, 7 rejected natively (RUST_NONE/RUST_ERR), 2 ACCEPTED where C rejects (p02, p15)"
+   ]
+  },
+  "LIFE": {
+   "c": [
+    "SUPPORTED",
+    "s01 create, l01 free unattached node, l02 destroy(NULL) (null-checked in source, not promised by gibson.h), d01 destroy; no double-destroy (UB)"
+   ],
+   "cpp": [
+    "PARTIAL",
+    "l01 freed by gibson::Node RAII; no headless gibson::Context, so create/destroy are raw C"
+   ],
+   "py": [
+    "PARTIAL",
+    "create/close/Node.__del__ via the wrapper; l02 destroy(NULL) only via raw ctypes; close() twice is a wrapper no-op"
+   ],
+   "go": [
+    "PARTIAL",
+    "byte-identical via own cgo; bindings/go Close() cannot reach a headless context"
+   ],
+   "rust": [
+    "PARTIAL",
+    "create/drop byte-identical; l02 UNSUPPORTED (no null Context); ownership by move"
+   ]
+  },
+  "RES": {
+   "c": [
+    "SUPPORTED",
+    "REPS in-process repetitions of the whole script; peak-RSS growth over the second half within max_rss_second_half_growth_kb"
+   ],
+   "cpp": [
+    "SUPPORTED",
+    "REPS in-process repetitions of the whole script; peak-RSS growth over the second half within max_rss_second_half_growth_kb"
+   ],
+   "py": [
+    "SUPPORTED",
+    "REPS in-process repetitions of the whole script; peak-RSS growth over the second half within max_rss_second_half_growth_kb"
+   ],
+   "go": [
+    "SUPPORTED",
+    "REPS in-process repetitions of the whole script; peak-RSS growth over the second half within max_rss_second_half_growth_kb"
+   ],
+   "rust": [
+    "SUPPORTED",
+    "REPS in-process repetitions of the whole script; peak-RSS growth over the second half within max_rss_second_half_growth_kb"
+   ]
+  },
+  "DET": {
+   "c": [
+    "SUPPORTED",
+    "run A == run B == rep 1, and every in-process repetition identical"
+   ],
+   "cpp": [
+    "SUPPORTED",
+    "run A == run B == rep 1, and every in-process repetition identical"
+   ],
+   "py": [
+    "SUPPORTED",
+    "run A == run B == rep 1, and every in-process repetition identical"
+   ],
+   "go": [
+    "SUPPORTED",
+    "run A == run B == rep 1, and every in-process repetition identical"
+   ],
+   "rust": [
+    "SUPPORTED",
+    "run A == run B == rep 1, and every in-process repetition identical"
+   ]
+  }
+ }
+}

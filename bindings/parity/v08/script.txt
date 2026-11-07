@@ -1,0 +1,106 @@
+# LibGibson v0.8 parity slice -- the ONE fixed script (format v1).
+#
+# Every consumer (C, C++, Python, Go, Rust) reads THIS file and executes it top to bottom.
+# The format and the transcript it produces are specified in docs/V08_PARITY_SLICE.md.
+#
+#   <id> <dim> <op> [arg ...]
+#
+#   id    unique step id; every transcript record carries it (polls append ".<n>")
+#   dim   matrix dimension the step's records count toward:
+#         EVT event identity & ordering  GEO geometry  CELL rendered cells & styles
+#         TXT text & Unicode semantics   ERR failure codes  LIFE lifecycle/ownership
+#   op    see the op table in docs/V08_PARITY_SLICE.md
+#
+# Tokens are separated by single spaces. Strings are lowercase hex of their UTF-8 bytes (so no
+# token ever contains a space). Code points are U+XXXX. '#' starts a comment line.
+
+# ---- context + scene --------------------------------------------------------------------------
+s01 LIFE create FULLSCREEN 40 12
+s02 CELL style plain reset reset 00000
+s03 CELL style hot rgb:255,128,0 rgb:16,32,64 10010
+s04 CELL style ansi ansi:201 named:5 00100
+s05 CELL col
+# "ASCII: Hello, parity!"
+s06 TXT text plain NONE 41534349493a2048656c6c6f2c2070617269747921
+# "Styled+Bold+Under"
+s07 CELL text hot NONE 5374796c65642b426f6c642b556e646572
+# "Ansi201 on blue, italic"
+s08 CELL text ansi NONE 416e7369323031206f6e20626c75652c206974616c6963
+# "CJK: <U+6F22><U+5B57>!"  (two wide CJK ideographs)
+s09 TXT text plain NONE 434a4b3a20e6bca2e5ad9721
+# "Comb: e<U+0301> a<U+0308>!"  (two combining sequences)
+s10 TXT text plain NONE 436f6d623a2065cc812061cc8821
+# "ZWJ: <man ZWJ woman ZWJ girl ZWJ boy>!"  (25-byte ZWJ family: exceeds GIBSON_CELL_GLYPH_CAP)
+s11 TXT text plain NONE 5a574a3a20f09f91a8e2808df09f91a9e2808df09f91a7e2808df09f91a621
+# "Myanmar: <U+1001>!"  (U+1001 shares its value with GIBSON_KEY_ENTER)
+s12 TXT text plain NONE 4d79616e6d61723a20e1808121
+s13 CELL mount
+s14 CELL render
+s15 GEO geom
+s16 CELL frame
+s17 TXT cell 0 0
+s18 CELL cell 0 1
+s19 CELL cell 0 2
+s20 TXT cell 5 3
+s21 TXT cell 6 3
+s22 TXT cell 6 4
+s23 TXT cell 5 5
+s24 TXT cell 9 6
+s25 CELL cell 39 11
+s26 TXT glyph 5 5
+s27 TXT glyphcap 5 5
+s28 TXT glyphcap 6 4
+
+# ---- ordered injected events, then poll them all back --------------------------------------------
+e01 EVT push_char U+0061 0
+e02 EVT push_char U+1001 0
+e03 EVT push_special ENTER 0
+e04 EVT push_char U+0078 2
+e05 EVT push_special LEFT 1
+# paste "paste:<U+6F22><U+5B57><U+1001>\ttab"
+e06 EVT push_paste 70617374653ae6bca2e5ad97e1808109746162
+e07 EVT push_resize 60 16
+e08 EVT push_char U+00E9 4
+e09 EVT poll 9
+
+# ---- after the delivered resize: re-render at the new geometry ------------------------------------
+r01 CELL render
+r02 GEO geom
+r03 CELL frame
+r04 CELL cell 59 15
+r05 TXT cell 9 6
+
+# ---- failure codes ------------------------------------------------------------------------------
+p01 ERR probe create_bad_mode
+p02 ERR probe create_zero_cols
+p03 ERR probe create_null_out
+p04 ERR probe render_null_ctx
+p05 ERR probe cell_oob_x
+p06 ERR probe cell_oob_y
+p07 ERR probe cells_oob
+p08 ERR probe cell_null_out
+p09 ERR probe text_bad_utf8
+p10 ERR probe push_null_event
+p11 ERR probe push_surrogate
+p12 ERR probe push_special_not_key
+p13 ERR probe push_bad_kind
+p14 ERR probe push_bad_mods
+p15 ERR probe push_resize_zero
+p16 ERR probe paste_bad_utf8
+p17 ERR probe paste_null
+p18 ERR probe poll_null_out
+p19 ERR probe poll_kind_null
+p20 ERR probe color_depth_bad
+p21 ERR probe queue_full
+p22 ERR probe frame_before_render
+
+# ---- lifecycle (documented-safe calls only; no double-destroy) ----------------------------------
+l01 LIFE lifecycle node_free_unattached
+l02 LIFE lifecycle destroy_null
+
+# ---- legacy key-code ambiguity (kept last: it leaves the queue in a language-dependent state) ----
+x01 EVT push_legacy U+1001 0
+x02 EVT push_char U+1001 0
+x03 EVT poll_legacy
+x04 EVT poll_legacy
+d01 LIFE destroy
