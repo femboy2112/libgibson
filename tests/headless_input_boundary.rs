@@ -98,18 +98,18 @@ fn a_headless_idle_run_once_waits_instead_of_spinning() {
         }
     }
     assert!(rendered, "the first frame renders");
-    // Exactly three idle calls of 200 ms each must take at least 450 ms between them. A
-    // spinning implementation returns from each at once (microseconds); descheduling can only
-    // lengthen the measurement, never make a spinning loop pass.
-    let t0 = Instant::now();
-    for _ in 0..3 {
+    // Each of three idle run_once(200 ms) calls, timed on its own, must last at least 150 ms. A
+    // spinning implementation returns from each at once (microseconds); to pass, it would need
+    // three separate stalls landing inside the three calls themselves.
+    for i in 0..3 {
+        let t0 = Instant::now();
         assert_eq!(ctx.run_once(Duration::from_millis(200)).unwrap(), None);
+        let took = t0.elapsed();
+        assert!(
+            took >= Duration::from_millis(150),
+            "idle run_once(200 ms) call {i} returned after {took:?}: it spins"
+        );
     }
-    let took = t0.elapsed();
-    assert!(
-        took >= Duration::from_millis(450),
-        "3 idle run_once(200 ms) calls took {took:?}: it spins"
-    );
 }
 
 #[test]
@@ -191,6 +191,14 @@ fn run_pty_leg(leg: &str) {
     let sync = std::env::temp_dir().join(format!("gibson_259_sync_{}_{leg}", std::process::id()));
     let _ = std::fs::remove_file(&sync);
     cmd.env(SYNC_ENV, sync.to_str().expect("utf-8 temp path"));
+    // Removes the sync file however this test ends, including by a failed assertion.
+    struct Unlink(std::path::PathBuf);
+    impl Drop for Unlink {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let _unlink = Unlink(sync.clone());
     let mut child = pair.slave.spawn_command(cmd).expect("spawn PTY child");
     drop(pair.slave);
     let mut reader = pair.master.try_clone_reader().expect("reader");
@@ -224,7 +232,6 @@ fn run_pty_leg(leg: &str) {
     // Only now, with the key written, may the child's headless phase end.
     std::fs::write(&sync, b"typed").expect("create the sync file");
     wait_for("PROBE_END", &mut out);
-    let _ = std::fs::remove_file(&sync);
     wait_for("POSITIVE_END", &mut out);
     let deadline = Instant::now() + Duration::from_secs(10);
     let status = loop {
@@ -339,11 +346,14 @@ fn notty_child() {
     std::io::stdout().flush().unwrap();
 }
 
-/// The headless phase's loop condition: true until the parent's sync file has been seen and a
-/// further 500 ms have passed. Gives up (and records it) after 20 s.
+/// The headless phase's loop condition: true until the parent's sync file has been seen, a
+/// further 500 ms have passed, **and** at least three polls have completed after it was seen (so
+/// a stall cannot end the phase without a single poll over the queued key). Gives up (and
+/// records it) after 20 s.
 struct Phase {
     sync: std::path::PathBuf,
     seen: Option<Instant>,
+    polls_after: u32,
     cap: Instant,
 }
 
@@ -352,19 +362,29 @@ impl Phase {
         Self {
             sync: std::env::var_os(SYNC_ENV).expect("sync path").into(),
             seen: None,
+            polls_after: 0,
             cap: Instant::now() + Duration::from_secs(20),
         }
     }
+    /// Called before each poll; a `true` result means one more poll runs.
     fn running(&mut self, got: &mut Vec<String>) -> bool {
-        if self.seen.is_none() && self.sync.exists() {
-            self.seen = Some(Instant::now());
-        }
         if Instant::now() > self.cap {
             got.push("SYNC_TIMEOUT".into());
             return false;
         }
-        self.seen
-            .is_none_or(|t| t.elapsed() < Duration::from_millis(500))
+        match self.seen {
+            None => {
+                if self.sync.exists() {
+                    self.seen = Some(Instant::now());
+                }
+                true
+            }
+            Some(t) => {
+                // Every earlier `true` since `seen` was set started a poll that has now finished.
+                self.polls_after += 1;
+                t.elapsed() < Duration::from_millis(500) || self.polls_after <= 3
+            }
+        }
     }
 }
 
