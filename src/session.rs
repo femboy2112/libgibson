@@ -288,12 +288,16 @@ impl TerminalSession {
         // spin-on-a-hung-fd backend (issue #79). Sampled BEFORE raw mode is entered, so a
         // hangup during the acquisition itself cannot recast a hung-up stdin as "reach the
         // terminal through /dev/tty" (#269 review); a no-op once latched.
-        crate::input::note_tty_source_acquired();
+        let latched_now = crate::input::note_tty_source_acquired();
 
         if !self.raw_mode_enabled {
             if let Err(e) = enable_raw_mode() {
-                // Not acquired after all: forget the identity just latched.
-                crate::input::clear_tty_source();
+                // Not acquired after all: withdraw the identity this call latched, if it
+                // latched one. A latch (and source, with its queued events) established
+                // earlier, by a public poll for instance, is not this call's to undo.
+                if let Some(identity) = latched_now {
+                    crate::input::forget_tty_source_acquisition(identity);
+                }
                 return Err(e);
             }
             self.raw_mode_enabled = true;

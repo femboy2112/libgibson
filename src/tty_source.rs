@@ -1060,6 +1060,7 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")] // reopens through /proc/self/fd
     #[test]
     fn a_read_on_the_nonblocking_description_never_blocks_when_readiness_is_lost() {
         // Codex review of #282: in canonical mode Ctrl-C (or tcflush) can discard a line
@@ -1172,6 +1173,64 @@ mod tests {
         let (fd2, owned2) = select_input_fd(master.as_raw_fd(), true).expect("select");
         assert!(owned2.is_none() && fd2 == master.as_raw_fd());
         drop((owned, slave));
+    }
+
+    /// Child half of [`a_dev_tty_alias_is_never_reopened`]: runs only in the child process
+    /// that test spawns, whose controlling terminal it sets in `pre_exec`.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn dev_tty_alias_child() {
+        if std::env::var_os("GIBSON_ALIAS_CHILD").is_none() {
+            return;
+        }
+        let tty: OwnedFd = std::fs::OpenOptions::new()
+            .read(true)
+            .open("/dev/tty")
+            .expect("the child has a controlling terminal")
+            .into();
+        assert!(
+            reopen_same_terminal(tty.as_raw_fd()).is_none(),
+            "a /dev/tty alias must never be reopened (reopening re-resolves the controlling \
+             terminal, which across devpts mounts can be another terminal with the same number)"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_dev_tty_alias_is_never_reopened() {
+        // Codex round 4 of #282: an fd opened through /dev/tty, with the controlling terminal
+        // unchanged, passes the TIOCGDEV and same-inode checks (both name /dev/tty and its
+        // terminal); only the alias guard refuses it. The child test runs in a fresh process
+        // whose controlling terminal is a pty slave (setsid + TIOCSCTTY before exec).
+        use std::os::unix::process::CommandExt;
+        let (_master, slave) = pty();
+        let fd = slave.as_raw_fd();
+        let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+        cmd.args([
+            "--exact",
+            "tty_source::tests::dev_tty_alias_child",
+            "--nocapture",
+        ])
+        .env("GIBSON_ALIAS_CHILD", "1")
+        .stdin(std::process::Stdio::null());
+        // SAFETY: setsid and ioctl are async-signal-safe; nothing else runs between fork and
+        // exec. The slave fd is close-on-exec but still open here.
+        unsafe {
+            cmd.pre_exec(move || {
+                if libc::setsid() < 0 || libc::ioctl(fd, libc::TIOCSCTTY, 0) < 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let out = cmd.output().expect("spawn the child test");
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success() && text.contains("1 passed"),
+            "child: {:?}\n{text}\n{}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 
     #[test]
