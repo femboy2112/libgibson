@@ -162,6 +162,11 @@ jobs:
           gcc -Iinclude bindings/c/example.c -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/example_c
           /tmp/example_c
 
+      - name: C key kinds (issue 274)
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Iinclude bindings/c/key_kind.c -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/key_kind_c
+          /tmp/key_kind_c
+
       - name: Installed-SDK forcing consumer (staged prefix, pkg-config only)
         # RXIV Gate G1: stage the SDK into a prefix OUTSIDE the checkout and build the Doom-shaped
         # forcing consumer from a temp dir with ONLY pkg-config (no repo include/lib paths); it
