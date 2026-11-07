@@ -29,17 +29,22 @@ not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
   a repeat are still delivered as `Event::Key`; a release is not delivered. LibGibson never enables
   the protocol itself, so this matters when something else left it enabled (for example a
   kitty-protocol program that exited without popping its flags).
-- **A dropped event no longer ends a poll early.** An event that is not delivered (a release, or a
-  key code LibGibson does not model, such as F5) used to make the poll return "no event" at once,
-  before its timeout; the poll now carries on for the rest of its timeout, and the events queued
-  behind the dropped one are delivered in order. "No event" now always means the timeout passed.
-  (The legacy C poll still reports focus changes and other events it does not model as
-  `GIBSON_EVENT_NONE` at once, as before.)
+- **A dropped event no longer ends a terminal poll early.** On a terminal context, an event that
+  is not delivered (a release, or a key code LibGibson does not model, such as F5) used to make
+  the poll return "no event" at once, before its timeout; the poll now carries on for the rest of
+  the same deadline, and the events queued behind the dropped one are delivered in order. Once the
+  deadline has passed, at most 64 more already-available undelivered events are consumed before
+  the poll returns, so a stream of them cannot hold a poll past its timeout. (Headless and non-TTY
+  contexts still return "no event" at once, and the legacy C poll still reports focus changes and
+  other events it does not model as `GIBSON_EVENT_NONE` at once, as before.)
+- **Windows is unchanged:** crossterm reports a key release there only for the Alt key that commits
+  an Alt+numpad character, and that release is the only event carrying the character, so it is
+  still delivered.
 - `tests/key_release_kind_pty.rs` injects the sequences through a real PTY: press, repeat and
   release; a release followed by a legacy press; repeated cycles; fragmented sequences; U+1001
   (the #274 range) through both C polls; focus changes and a resize between releases; a release
   queued before a hangup; and DEEP SIGNAL recording one `w` per press/release pair (it recorded
-  two). All six failed on the unfixed code.
+  two). All six failed on `5790f1a`.
 
 ### Fixed — Rust library (`gibson::input`, `gibson::Context`) and C ABI input on a Unix terminal ([#269](https://github.com/femboy2112/libgibson/issues/269), [#15](https://github.com/femboy2112/libgibson/issues/15))
 - **A terminal hangup during a poll no longer spins forever.** When stdin is the controlling

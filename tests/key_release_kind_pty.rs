@@ -30,6 +30,9 @@ use std::time::{Duration, Instant};
 
 const CHILD_ENV: &str = "GIBSON_285_CHILD";
 const OUT_ENV: &str = "GIBSON_285_OUT";
+/// Base path of the sync files the parent creates after writing, so a child measures a poll only
+/// once the bytes are known to be queued on the terminal.
+const SYNC_ENV: &str = "GIBSON_285_SYNC";
 
 fn child(role: &str) -> CommandBuilder {
     let mut cmd = CommandBuilder::new(std::env::current_exe().expect("test binary"));
@@ -56,6 +59,18 @@ fn wait_marker(cap: &mut Capture, marker: &str) {
 fn send(cap: &mut Capture, bytes: &[u8]) {
     cap.write(bytes).expect("write to the PTY");
     cap.collect_for(Duration::from_millis(60)).unwrap();
+}
+
+/// Waits until the child has printed an `EV …` line ending in `suffix`: an acknowledgement that
+/// everything written before it has been consumed.
+fn wait_ev(cap: &mut Capture, suffix: &str) {
+    let want = suffix.to_string();
+    cap.collect_until(move |o| {
+        String::from_utf8_lossy(o)
+            .split(['\r', '\n'])
+            .any(|l| l.trim().starts_with("EV ") && l.trim().ends_with(want.as_str()))
+    })
+    .unwrap_or_else(|e| panic!("child never acknowledged {suffix:?}: {e}"));
 }
 
 /// The `EV …` lines the child printed, in order.
@@ -89,10 +104,13 @@ fn run_sequence(role: &str) -> Vec<String> {
     send(&mut cap, b"\x1b[I");
     send(&mut cap, b"\x1b[97;1:3u");
     send(&mut cap, b"\x1b[O");
-    // A resize around releases.
-    send(&mut cap, b"\x1b[98;1:3u");
+    // A resize between releases. The child first acknowledges everything written so far (the
+    // press of `r` comes back as an EV line); otherwise a SIGWINCH could be decoded ahead of
+    // bytes still queued, and the order would depend on scheduling.
+    send(&mut cap, b"\x1b[98;1:3ur");
+    wait_ev(&mut cap, ":114");
     cap.resize(100, 30);
-    cap.collect_for(Duration::from_millis(300)).unwrap();
+    wait_ev(&mut cap, "resize:100x30");
     send(&mut cap, b"\x1b[98;1:3u");
     send(&mut cap, b"q");
     wait_marker(&mut cap, "DONE");
@@ -123,6 +141,7 @@ fn rust_poll_delivers_presses_and_repeats_but_never_a_release() {
         "key:4097",
         "focus:Gained",
         "focus:Lost",
+        "key:114",
         "resize:100x30",
         "key:113",
     ];
@@ -143,6 +162,7 @@ fn c_abi_poll_delivers_presses_and_repeats_but_never_a_release() {
         "key:99",
         "key:100",
         "key:4097",
+        "key:114",
         "resize:100x30",
         "key:113",
     ];
@@ -161,6 +181,7 @@ fn c_abi_kind_poll_delivers_presses_and_repeats_but_never_a_release() {
         "key:1:99",
         "key:1:100",
         "key:1:4097",
+        "key:1:114",
         "resize:100x30",
         "key:1:113",
     ];
@@ -175,14 +196,24 @@ fn c_abi_kind_poll_delivers_presses_and_repeats_but_never_a_release() {
 /// nothing left over.
 #[test]
 fn a_dropped_release_neither_times_out_early_nor_strands_the_next_key() {
-    let mut cap = Capture::spawn(child("timeout"), 80, 24, Duration::from_secs(30));
+    let sync = std::env::temp_dir().join(format!("gibson_285_sync_{}", std::process::id()));
+    let flag = |n: u8| sync.with_extension(n.to_string());
+    let _ = std::fs::remove_file(flag(1));
+    let _ = std::fs::remove_file(flag(2));
+    let mut cmd = child("timeout");
+    cmd.env(SYNC_ENV, sync.to_str().unwrap());
+    let mut cap = Capture::spawn(cmd, 80, 24, Duration::from_secs(40));
     wait_marker(&mut cap, "READY");
     // A release, then F5 (a key code LibGibson does not model): neither is delivered.
     send(&mut cap, b"\x1b[97;1:3u\x1b[15~");
+    std::fs::write(flag(1), b"").unwrap();
     wait_marker(&mut cap, "PHASE2");
     // One write: the release and the press arrive in the same read.
     send(&mut cap, b"\x1b[97;1:3ub");
+    std::fs::write(flag(2), b"").unwrap();
     wait_marker(&mut cap, "DONE");
+    let _ = std::fs::remove_file(flag(1));
+    let _ = std::fs::remove_file(flag(2));
     let out = text(&cap);
     let line = |tag: &str| -> (String, u64) {
         let l = out
@@ -204,9 +235,15 @@ fn a_dropped_release_neither_times_out_early_nor_strands_the_next_key() {
         t1_ms >= 700,
         "poll(800 ms) returned after {t1_ms} ms on a dropped release: a false timeout"
     );
+    assert!(
+        t1_ms < 1500,
+        "poll(800 ms) took {t1_ms} ms: the dropped events restarted its timeout"
+    );
     let (t2, t2_ms) = line("T2");
     assert_eq!(t2, "key:98", "the press queued behind a release: {out:?}");
-    assert!(t2_ms < 400, "the queued press took {t2_ms} ms");
+    // The bytes were queued before the poll began (sync file), so the press comes out at once;
+    // waiting for the timeout would take 800 ms.
+    assert!(t2_ms < 700, "the queued press took {t2_ms} ms");
     let (t3, _) = line("T3");
     assert_eq!(
         t3, "none",
@@ -237,7 +274,15 @@ fn a_release_queued_before_a_hangup_is_not_a_press() {
         assert!(Instant::now() < deadline, "hangup child did not exit");
     }
     let got = std::fs::read_to_string(&out_path).expect("child result");
+    let inq_path = format!("{}.inq", out_path.to_str().unwrap());
+    let inq = std::fs::read_to_string(&inq_path).expect("child precondition");
     let _ = std::fs::remove_file(&out_path);
+    let _ = std::fs::remove_file(&inq_path);
+    assert_eq!(
+        inq.trim(),
+        "0 0",
+        "precondition: the release bytes were still unread at the hangup (ioctl rc, unread)"
+    );
     assert_eq!(got.trim(), "key:120 err:BrokenPipe");
 }
 
@@ -391,14 +436,23 @@ fn timeout_child() {
         let took = t0.elapsed().as_millis();
         (e.map(|e| desc(&e)).unwrap_or_else(|| "none".into()), took)
     };
+    let sync = std::path::PathBuf::from(std::env::var(SYNC_ENV).expect("sync path"));
+    let wait_flag = |n: u8| {
+        let f = sync.with_extension(n.to_string());
+        let cap = Instant::now() + Duration::from_secs(20);
+        while !f.exists() {
+            assert!(Instant::now() < cap, "parent never wrote sync flag {n}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
     say("READY");
-    // The parent writes a lone release in this window.
-    std::thread::sleep(Duration::from_millis(400));
+    // The parent writes a release and F5, then raises flag 1.
+    wait_flag(1);
     let (e, ms) = timed(&mut ctx, 800);
     say(&format!("T1 {e} {ms}"));
     say("PHASE2");
-    // The parent writes release + `b` in one write in this window.
-    std::thread::sleep(Duration::from_millis(400));
+    // The parent writes release + `b` in one write, then raises flag 2.
+    wait_flag(2);
     let (e, ms) = timed(&mut ctx, 800);
     say(&format!("T2 {e} {ms}"));
     let (e, ms) = timed(&mut ctx, 300);
@@ -423,6 +477,13 @@ fn hangup_child() {
             Ok(Some(e)) => {
                 got.push(desc(&e));
                 if got.len() == 1 {
+                    // Precondition: the release's bytes have been read off the terminal (into the
+                    // source's decoder) before the hangup, which would otherwise discard them
+                    // unread and let a release-as-press bug go unseen.
+                    let mut unread: libc::c_int = 0;
+                    // SAFETY: FIONREAD writes one c_int for a valid descriptor.
+                    let rc = unsafe { libc::ioctl(0, libc::FIONREAD, &mut unread) };
+                    std::fs::write(format!("{out}.inq"), format!("{rc} {unread}")).unwrap();
                     say("GOT1");
                     // The parent hangs up the terminal in this window.
                     std::thread::sleep(Duration::from_millis(400));
