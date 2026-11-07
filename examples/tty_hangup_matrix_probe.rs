@@ -204,6 +204,17 @@ fn main() {
                 match ctx.poll_event(timeout) {
                     Ok(_) => {}
                     Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+                        // The read can see the hangup before the kernel has run the SIGHUP
+                        // handler (signal delivery is asynchronous to the descriptor's state),
+                        // so give a handled SIGHUP up to 1 s to land before recording it.
+                        if signal == "handle" {
+                            let t = Instant::now();
+                            while SIGHUPS.load(Ordering::Relaxed) == 0
+                                && t.elapsed() < Duration::from_secs(1)
+                            {
+                                std::thread::sleep(Duration::from_millis(1));
+                            }
+                        }
                         record(
                             &path,
                             &format!(

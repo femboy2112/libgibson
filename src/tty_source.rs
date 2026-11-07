@@ -33,10 +33,13 @@
 //!
 //! # Identity
 //!
-//! It reads `STDIN_FILENO`, the same descriptor crossterm's default source reads when
-//! stdin is a terminal (`terminal::sys::file_descriptor::tty_fd`), and the one
-//! LibGibson's hangup handling has always watched. It never opens `/dev/tty`, so input
-//! cannot silently switch to another terminal.
+//! It reads the descriptor crossterm's own sources read (`tty_fd` in crossterm 0.29's
+//! `terminal/sys/file_descriptor.rs`): **stdin when stdin is a terminal, otherwise
+//! `/dev/tty`**, chosen once when the source is created. The same descriptor is both
+//! read and watched for the hangup. A session can be interactive with stdin redirected
+//! (`app </dev/null` on a terminal): its keys then come from `/dev/tty`, as they did
+//! through crossterm, and a hangup of that terminal is reported. (Before #269 the
+//! hangup check watched stdin in that case, which never hangs up.)
 //!
 //! # Resize
 //!
@@ -74,6 +77,8 @@ type SizeFn = fn() -> io::Result<(u16, u16)>;
 /// The decoding state for one terminal descriptor.
 pub(crate) struct TtySource {
     fd: RawFd,
+    /// Keeps an opened `/dev/tty` open for the source's lifetime (`None` for stdin).
+    _owned: Option<std::os::fd::OwnedFd>,
     parser: Parser,
     /// Decoded events not yet handed out, oldest first.
     pending: VecDeque<CtEvent>,
@@ -82,6 +87,19 @@ pub(crate) struct TtySource {
     size: SizeFn,
     /// Bytes of unfinished sequences discarded because a hangup ended them.
     dropped_partial_bytes: usize,
+    /// Set once a hangup has been reported: from then on every poll reports it, and nothing
+    /// observed afterwards (a later resize, say) is delivered as if the terminal were alive.
+    hung_up: bool,
+    /// The `SIGWINCH` registration feeding `winch`, removed when the source is dropped.
+    winch_id: Option<signal_hook::SigId>,
+}
+
+impl Drop for TtySource {
+    fn drop(&mut self) {
+        if let Some(id) = self.winch_id.take() {
+            signal_hook::low_level::unregister(id);
+        }
+    }
 }
 
 /// What one read of the terminal produced.
@@ -104,11 +122,14 @@ impl TtySource {
         }
         Ok(Self {
             fd,
+            _owned: None,
             parser: Parser::default(),
             pending: VecDeque::new(),
             winch,
             size,
             dropped_partial_bytes: 0,
+            hung_up: false,
+            winch_id: None,
         })
     }
 
@@ -127,6 +148,9 @@ impl TtySource {
     /// See the module documentation for the contract.
     pub(crate) fn poll(&mut self, timeout: Duration) -> io::Result<Option<CtEvent>> {
         let deadline = Instant::now().checked_add(timeout);
+        if self.hung_up {
+            return Err(hung_up());
+        }
         loop {
             if let Some(event) = self.pending.pop_front() {
                 return Ok(Some(event));
@@ -135,6 +159,7 @@ impl TtySource {
                 Some(d) => d.saturating_duration_since(Instant::now()),
                 None => Duration::MAX,
             };
+            let forever = deadline.is_none();
 
             let mut fds = [
                 libc::pollfd {
@@ -152,7 +177,7 @@ impl TtySource {
                 },
             ];
             // SAFETY: `fds` is a valid array of two pollfds; a negative fd is ignored.
-            let rc = unsafe { libc::poll(fds.as_mut_ptr(), 2, poll_timeout_ms(left)) };
+            let rc = unsafe { libc::poll(fds.as_mut_ptr(), 2, poll_timeout_ms(left, forever)) };
             if rc < 0 {
                 let e = io::Error::last_os_error();
                 if e.kind() == io::ErrorKind::Interrupted {
@@ -166,7 +191,12 @@ impl TtySource {
                 return Err(e);
             }
             if rc == 0 {
-                return Ok(None);
+                // Timed out, unless this was one chunk of a wait longer than poll(2) can
+                // express (or a forever wait): then wait again.
+                if !forever && deadline.is_some_and(|d| Instant::now() >= d) {
+                    return Ok(None);
+                }
+                continue;
             }
 
             if fds[1].revents & libc::POLLIN != 0 {
@@ -184,6 +214,12 @@ impl TtySource {
                 match self.read_once()? {
                     ReadOutcome::Bytes => {
                         self.decode();
+                        // Input that keeps arriving must not stretch the call past its
+                        // deadline (an unterminated paste decodes nothing until it ends).
+                        if self.pending.is_empty() && deadline.is_some_and(|d| Instant::now() >= d)
+                        {
+                            return Ok(None);
+                        }
                         continue;
                     }
                     ReadOutcome::HungUp => return self.report_hangup(),
@@ -207,11 +243,13 @@ impl TtySource {
         }
     }
 
-    /// Reports the hangup, after any event decoded before it was seen.
+    /// Reports the hangup, after any event decoded before it was seen. Once reported it is
+    /// sticky: see `hung_up`.
     fn report_hangup(&mut self) -> io::Result<Option<CtEvent>> {
         if let Some(event) = self.pending.pop_front() {
             return Ok(Some(event));
         }
+        self.hung_up = true;
         let cut_off = self.parser.pending_bytes();
         if cut_off > 0 {
             // An unfinished sequence can never complete now. Feed nothing more; just
@@ -294,34 +332,98 @@ fn fd_reports_hangup(fd: RawFd) -> bool {
 }
 
 /// `poll(2)` milliseconds for `left`: rounded **up**, so a short positive wait does not
-/// become a zero-timeout spin; `-1` (forever) when `left` does not fit.
-fn poll_timeout_ms(left: Duration) -> libc::c_int {
+/// become a zero-timeout spin. `-1` (wait indefinitely) only for a `forever` wait; a finite
+/// wait longer than `c_int::MAX` ms is cut to that, and the caller re-checks its deadline.
+fn poll_timeout_ms(left: Duration, forever: bool) -> libc::c_int {
+    if forever {
+        return -1;
+    }
     if left.is_zero() {
         return 0;
     }
     let ms = left.as_nanos().div_ceil(1_000_000);
-    libc::c_int::try_from(ms).unwrap_or(-1)
+    libc::c_int::try_from(ms).unwrap_or(libc::c_int::MAX)
 }
 
-/// The process-wide source for the controlling terminal on stdin, created on first use.
-/// One per process, like crossterm's global reader: there is one stdin and one
-/// `SIGWINCH`.
-static STDIN_SOURCE: Mutex<Option<TtySource>> = Mutex::new(None);
+/// The process-wide source for the controlling terminal, created on first use and dropped
+/// when the session gives the terminal up ([`reset`]). One per process, like crossterm's
+/// global reader: there is one controlling terminal and one `SIGWINCH`.
+static TERMINAL_SOURCE: Mutex<Option<TtySource>> = Mutex::new(None);
 
-/// Polls the controlling terminal on stdin. See the module documentation.
+/// The terminal input descriptor, chosen as crossterm's `tty_fd` chooses the terminal:
+/// stdin when it is a terminal, otherwise `/dev/tty`. It is our own open file description,
+/// **non-blocking**, so a read can never block (readiness can be lost between `poll(2)` and
+/// `read`, for example when Ctrl-C flushes a canonical line) and stdin's shared description
+/// keeps its flags. Stdin is reopened through `/proc/self/fd/0` and kept only if it is the
+/// same terminal device; if it cannot be, stdin itself is read (blocking: the pre-#269
+/// exposure to that lost-readiness race).
+fn terminal_input_fd() -> io::Result<(RawFd, Option<std::os::fd::OwnedFd>)> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    let reopen = |path: &str| {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
+            .open(path)
+            .map(std::os::fd::OwnedFd::from)
+    };
+    // SAFETY: isatty is safe on any descriptor number.
+    if unsafe { libc::isatty(libc::STDIN_FILENO) } == 1 {
+        let stdin_dev = std::fs::metadata("/proc/self/fd/0").map(|m| m.rdev()).ok();
+        if let Ok(own) = reopen("/proc/self/fd/0") {
+            let own_dev = std::fs::File::from(own.try_clone()?)
+                .metadata()
+                .map(|m| m.rdev())
+                .ok();
+            if own_dev.is_some() && own_dev == stdin_dev {
+                return Ok((own.as_raw_fd(), Some(own)));
+            }
+        }
+        return Ok((libc::STDIN_FILENO, None));
+    }
+    let own = reopen("/dev/tty")?;
+    Ok((own.as_raw_fd(), Some(own)))
+}
+
+/// Polls the controlling terminal. See the module documentation.
+///
+/// Waiting for another thread's poll counts against `timeout`: with the source busy past the
+/// deadline this returns `Ok(None)` rather than queueing behind it.
 pub(crate) fn poll(timeout: Duration) -> io::Result<Option<CtEvent>> {
-    let mut guard = STDIN_SOURCE.lock().unwrap_or_else(|p| p.into_inner());
+    let deadline = Instant::now().checked_add(timeout);
+    let mut guard = loop {
+        match TERMINAL_SOURCE.try_lock() {
+            Ok(g) => break g,
+            Err(std::sync::TryLockError::Poisoned(p)) => break p.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                if deadline.is_some_and(|d| Instant::now() >= d) {
+                    return Ok(None);
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+    };
     if guard.is_none() {
+        let (fd, owned) = terminal_input_fd()?;
         let (receiver, sender) = UnixStream::pair()?;
         sender.set_nonblocking(true)?;
-        signal_hook::low_level::pipe::register(libc::SIGWINCH, sender)?;
-        *guard = Some(TtySource::new(
-            libc::STDIN_FILENO,
-            Some(receiver),
-            crossterm::terminal::size,
-        )?);
+        let id = signal_hook::low_level::pipe::register(libc::SIGWINCH, sender)?;
+        let mut source = TtySource::new(fd, Some(receiver), crossterm::terminal::size)?;
+        source._owned = owned;
+        source.winch_id = Some(id);
+        *guard = Some(source);
     }
-    guard.as_mut().expect("initialised above").poll(timeout)
+    let left = deadline.map_or(Duration::MAX, |d| {
+        d.saturating_duration_since(Instant::now())
+    });
+    guard.as_mut().expect("initialised above").poll(left)
+}
+
+/// Drops the terminal source. Called when a session gives the terminal up, so a later
+/// session chooses its descriptor afresh and starts with no stale events or hangup.
+pub(crate) fn reset() {
+    let mut guard = TERMINAL_SOURCE.lock().unwrap_or_else(|p| p.into_inner());
+    *guard = None;
 }
 
 #[cfg(test)]
@@ -779,13 +881,133 @@ mod tests {
     }
 
     #[test]
+    fn a_reported_hangup_is_sticky_even_if_a_resize_follows() {
+        // Codex review of #282: once BrokenPipe has been returned, a later SIGWINCH must not
+        // make the source deliver a Resize as if the terminal were alive.
+        let (master, slave) = pty();
+        let (winch_rx, mut winch_tx) = UnixStream::pair().unwrap();
+        drop(master);
+        let (tx, rx) = mpsc::channel();
+        let (go_tx, go_rx) = mpsc::channel::<()>();
+        thread::spawn(move || {
+            let mut src = TtySource::new(slave.as_raw_fd(), Some(winch_rx), FIXED_SIZE).unwrap();
+            let first = src.poll(Duration::from_millis(100));
+            let _ = tx.send(first);
+            go_rx.recv().unwrap(); // the resize signal arrives now
+            let later = src.poll(Duration::from_millis(100));
+            let _ = tx.send(later);
+            drop(slave);
+        });
+        assert!(is_hangup(&rx.recv_timeout(WATCHDOG).unwrap()));
+        use std::io::Write;
+        winch_tx.write_all(&[1]).unwrap();
+        go_tx.send(()).unwrap();
+        let later = rx.recv_timeout(WATCHDOG).unwrap();
+        assert!(is_hangup(&later), "after the hangup: {later:?}");
+    }
+
+    #[test]
+    fn input_that_keeps_arriving_does_not_stretch_a_poll_past_its_deadline() {
+        // Codex review of #282: an unterminated bracketed paste decodes nothing, and a writer
+        // that keeps it coming must not keep a 100 ms poll reading for its whole duration. A
+        // pipe written at memory speed outpaces the decoder, so input is always ready: without
+        // the deadline check after each read, the poll would run until the writer stops.
+        let mut fds = [0; 2];
+        // SAFETY: pipe writes two fds.
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        // SAFETY: both fds are fresh and owned here.
+        let (r, w) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop_w = stop.clone();
+        let writer = thread::spawn(move || {
+            write_all(&w, b"\x1b[200~");
+            let chunk = [b'x'; 16 * 1024];
+            let t = Instant::now();
+            while !stop_w.load(std::sync::atomic::Ordering::Relaxed)
+                && t.elapsed() < Duration::from_millis(1500)
+            {
+                // SAFETY: valid fd and buffer. Blocking: it waits while the pipe is full, and
+                // fails (EPIPE) once the reader is gone, which ends the loop.
+                let n = unsafe { libc::write(w.as_raw_fd(), chunk.as_ptr().cast(), chunk.len()) };
+                if n < 0 {
+                    break;
+                }
+            }
+        });
+        let (res, elapsed) = on_worker(r, None, |s| {
+            thread::sleep(Duration::from_millis(50)); // the pipe is full and flowing
+            let t = Instant::now();
+            (s.poll(Duration::from_millis(100)), t.elapsed())
+        });
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        writer.join().unwrap();
+        assert_eq!(res.unwrap(), None, "an unfinished paste is not an event");
+        assert!(
+            elapsed < Duration::from_millis(600),
+            "the 100 ms poll ran {elapsed:?} while input kept arriving"
+        );
+    }
+
+    #[test]
+    fn a_read_on_the_nonblocking_description_never_blocks_when_readiness_is_lost() {
+        // Codex review of #282: in canonical mode Ctrl-C (or tcflush) can discard a line
+        // between poll(2) reporting it and the read. On a blocking descriptor that read waits
+        // for the next input. The source reads its own O_NONBLOCK description of the terminal,
+        // where the same read reports nothing and returns.
+        let (master, slave) = pty();
+        // SAFETY: tcgetattr/tcsetattr/tcflush on a valid tty fd.
+        unsafe {
+            let mut t: libc::termios = std::mem::zeroed();
+            assert_eq!(libc::tcgetattr(slave.as_raw_fd(), &mut t), 0);
+            t.c_lflag |= libc::ICANON;
+            assert_eq!(libc::tcsetattr(slave.as_raw_fd(), libc::TCSANOW, &t), 0);
+        }
+        write_all(&master, b"line\n");
+        // Our own non-blocking description of the same terminal, as `terminal_input_fd` opens.
+        use std::os::unix::fs::OpenOptionsExt;
+        let own: OwnedFd = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
+            .open(format!("/proc/self/fd/{}", slave.as_raw_fd()))
+            .unwrap()
+            .into();
+        let mut p = libc::pollfd {
+            fd: own.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: one valid pollfd.
+        assert_eq!(
+            unsafe { libc::poll(&mut p, 1, 1000) },
+            1,
+            "the line is ready"
+        );
+        // SAFETY: valid tty fd.
+        assert_eq!(
+            unsafe { libc::tcflush(slave.as_raw_fd(), libc::TCIFLUSH) },
+            0
+        );
+        let outcome = on_worker(own, None, |s| {
+            matches!(s.read_once(), Ok(ReadOutcome::Nothing))
+        });
+        assert!(outcome, "the read must report nothing, not block or fail");
+        drop((master, slave));
+    }
+
+    #[test]
     fn poll_timeout_rounds_up_and_saturates() {
-        assert_eq!(poll_timeout_ms(Duration::ZERO), 0);
-        assert_eq!(poll_timeout_ms(Duration::from_nanos(1)), 1);
-        assert_eq!(poll_timeout_ms(Duration::from_millis(1)), 1);
-        assert_eq!(poll_timeout_ms(Duration::from_micros(1500)), 2);
-        assert_eq!(poll_timeout_ms(Duration::from_secs(3)), 3000);
-        assert_eq!(poll_timeout_ms(Duration::MAX), -1);
+        assert_eq!(poll_timeout_ms(Duration::ZERO, false), 0);
+        assert_eq!(poll_timeout_ms(Duration::from_nanos(1), false), 1);
+        assert_eq!(poll_timeout_ms(Duration::from_millis(1), false), 1);
+        assert_eq!(poll_timeout_ms(Duration::from_micros(1500), false), 2);
+        assert_eq!(poll_timeout_ms(Duration::from_secs(3), false), 3000);
+        // A long finite wait is chunked, never turned into an infinite one.
+        assert_eq!(
+            poll_timeout_ms(Duration::from_secs(30 * 86_400), false),
+            libc::c_int::MAX
+        );
+        assert_eq!(poll_timeout_ms(Duration::MAX, false), libc::c_int::MAX);
+        assert_eq!(poll_timeout_ms(Duration::ZERO, true), -1);
     }
 
     fn thread_cpu() -> Duration {

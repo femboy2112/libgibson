@@ -297,13 +297,6 @@ fn row4_input_and_hangup_follow_stdin_not_the_controlling_terminal() {
         let n = unsafe { libc::write(fd.as_raw_fd(), b.as_ptr().cast(), b.len()) };
         assert_eq!(n, b.len() as isize);
     };
-    // Drain B (the child's stdout) in the background so its writes never block.
-    let b_reader = master_b.try_clone().unwrap();
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        // SAFETY: valid fd and buffer; the loop ends at EOF/EIO.
-        while unsafe { libc::read(b_reader.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) } > 0 {}
-    });
     let wait_for = |want: &str| {
         let t = Instant::now();
         while keys_seen(&result) != want && t.elapsed() < Duration::from_secs(10) {
@@ -311,8 +304,29 @@ fn row4_input_and_hangup_follow_stdin_not_the_controlling_terminal() {
         }
         keys_seen(&result)
     };
+    // Wait for READY on B (the child's stdout), read here and nowhere else: no other
+    // descriptor of B's master may stay open, or dropping `master_b` below would not hang
+    // B up. After READY the child writes nothing more to B.
+    let mut seen = Vec::new();
+    let t = Instant::now();
+    while !String::from_utf8_lossy(&seen).contains("READY") {
+        assert!(t.elapsed() < Duration::from_secs(10), "no READY: {seen:?}");
+        let mut p = libc::pollfd {
+            fd: master_b.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: one valid pollfd.
+        if unsafe { libc::poll(&mut p, 1, 50) } > 0 {
+            let mut buf = [0u8; 4096];
+            // SAFETY: valid fd and buffer.
+            let n = unsafe { libc::read(master_b.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
+            if n > 0 {
+                seen.extend_from_slice(&buf[..n as usize]);
+            }
+        }
+    }
 
-    std::thread::sleep(Duration::from_millis(300)); // the child arms its input
     write(&master_a, b"a");
     assert_eq!(wait_for("a"), "a", "a key on stdin's terminal arrives");
     write(&master_b, b"b");
@@ -352,4 +366,44 @@ fn row4_input_and_hangup_follow_stdin_not_the_controlling_terminal() {
     let _ = std::fs::remove_file(&result);
     assert_eq!(status.and_then(|s| s.code()), Some(3), "{log:?}");
     assert!(log.trim_end().ends_with("BROKEN_PIPE"), "{log:?}");
+}
+
+// ---- row 4b: stdin redirected, the terminal reached through /dev/tty ---------------
+
+#[test]
+fn row4b_with_stdin_redirected_input_and_hangup_follow_the_controlling_terminal() {
+    // `app </dev/null` on a terminal: the session is interactive through /dev/tty. Keys typed
+    // there must arrive (crossterm read /dev/tty here, and so must LibGibson's own source),
+    // and that terminal hanging up must end the poll. Before #269 was fixed the hangup check
+    // watched stdin (/dev/null, which never hangs up) while crossterm read the dead /dev/tty:
+    // a spin. An early version of the fix read stdin instead: no keys at all.
+    let result = result_path("devtty");
+    let mut cmd = CommandBuilder::new("/bin/sh");
+    cmd.args(["-c", "exec \"$0\" \"$@\" </dev/null"]);
+    cmd.arg(pty_capture::example_path(PROBE));
+    cmd.arg("keys");
+    cmd.arg(&result);
+    let mut cap = pty_capture::Capture::spawn(cmd, 80, 24, Duration::from_secs(30));
+    ready(&mut cap);
+    cap.write(b"t").expect("type on the terminal");
+    let t = Instant::now();
+    while !std::fs::read_to_string(&result)
+        .unwrap_or_default()
+        .contains("KEY t")
+        && t.elapsed() < Duration::from_secs(10)
+    {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        std::fs::read_to_string(&result)
+            .unwrap_or_default()
+            .contains("KEY t"),
+        "a key typed on the controlling terminal must arrive with stdin redirected"
+    );
+    cap.hang_up();
+    let code = wait_exit(&mut cap, Duration::from_secs(10)).map(|s| s.exit_code());
+    drop(cap);
+    let log = read_result(&result);
+    assert_eq!(code, Some(3), "{log:?}");
+    assert!(log.ends_with("BROKEN_PIPE"), "{log:?}");
 }
