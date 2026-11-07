@@ -402,36 +402,13 @@ jobs:
       - name: PTY tests
         run: cargo test --test pty_integration --test pty_resize_torture --test event_pressure_pty -- --test-threads=1
 
-      # The hangup tests are #[ignore]'d so they do NOT run in the main `rust` job's parallel
-      # `cargo test`, where a loaded runner starves their liveness deadlines (a false failure
-      # that is pure CPU contention, not a defect). Here they run SERIALLY in the dedicated PTY
-      # environment, with --include-ignored to actually execute them. --include-ignored is scoped
-      # to just these two binaries, so event_pressure_pty's own intentional #[ignore] is untouched.
-      #
-      # Serial isolation reduces but does not fully eliminate the starvation flake: a slow shared
-      # runner VM can still blow the tests' own single-threaded 10s/15s liveness bounds. We therefore
-      # allow a bounded retry (up to 3 attempts). Each attempt is self-bounded by the tests' own
-      # wait_exit_code deadlines, so a genuine hang or regression fails ALL attempts and the step
-      # fails — the retry tolerates transient CPU contention without masking a real defect.
-      - name: PTY hangup tests (timing-sensitive; serial, bounded retry)
-        run: |
-          set +e
-          attempts=3
-          n=0
-          until [ "$n" -ge "$attempts" ]; do
-            n=$((n + 1))
-            echo "::group::PTY hangup tests — attempt $n/$attempts"
-            cargo test --test pty_hangup --test pty_hangup_restore -- --test-threads=1 --include-ignored
-            rc=$?
-            echo "::endgroup::"
-            if [ "$rc" -eq 0 ]; then
-              echo "PTY hangup tests passed on attempt $n/$attempts"
-              exit 0
-            fi
-            echo "::warning::PTY hangup tests failed on attempt $n/$attempts (rc=$rc); retrying if attempts remain (timing-sensitive; transient CPU contention expected under load)"
-          done
-          echo "::error::PTY hangup tests failed on all $attempts attempts — not a transient flake; investigate a real hang or regression"
-          exit 1
+      # Terminal-hangup liveness tests (#79, #269), run serially and once. A failure here is a
+      # real defect: until #269 was fixed, LibGibson read input through crossterm 0.29's mio
+      # source, which spins forever if the terminal hangs up inside a poll. That spin is what
+      # earlier attempt-1 failures were, though a bounded retry here used to call them
+      # "transient CPU contention" and turn them green. There is deliberately no retry.
+      - name: PTY hangup tests (serial, single attempt)
+        run: cargo test --test pty_hangup --test pty_hangup_restore --test pty_hangup_matrix -- --test-threads=1
 
   msrv:
     name: MSRV (Rust 1.85, library)

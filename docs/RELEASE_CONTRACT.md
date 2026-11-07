@@ -450,15 +450,16 @@ path is as stated in `SECURITY.md`.
 - No cross-platform binary wheels or non-Linux artifacts yet.
 - No byte-for-byte build reproducibility (deterministic manifest + checksums instead).
 - No package-manager ecosystem distribution (Homebrew/AUR/deb/rpm) yet.
-- **Input is not lossless under a simultaneous resize/input collision**
-  ([issue #15](https://github.com/femboy2112/libgibson/issues/15)). On the pinned
-  `crossterm` 0.29.0, a key delivered in the same readiness batch as a resize can be
-  withheld until a later key arrives. The root cause is an upstream starvation,
-  isolated and filed as
-  [crossterm#1128](https://github.com/crossterm-rs/crossterm/pull/1128) (not yet
-  merged; LibGibson stays on stock 0.29.0 and does **not** vendor the fork). The
-  [Event Pressure Lab](EVENT_PRESSURE_LAB.md) reproduces it. This is an accepted
-  Engineering Alpha limitation for 0.1.0; a merged upstream fix would let it close.
+- **Input delivery under a simultaneous resize/input collision depends on the reader**
+  ([issue #15](https://github.com/femboy2112/libgibson/issues/15)). crossterm 0.29.0's Unix
+  event reader can withhold a key that arrives in the same readiness batch as a resize until
+  a later key arrives (upstream
+  [crossterm#1128](https://github.com/crossterm-rs/crossterm/pull/1128), not merged). Since
+  0.7.0-dev, LibGibson no longer reads a Unix controlling terminal through that reader: its
+  own terminal source (`src/tty_source.rs`, issue #269) takes the key and the resize in the
+  same pass, and the [Event Pressure Lab](EVENT_PRESSURE_LAB.md)'s delivery acceptance for
+  the `Context` path is enabled and passing. Released versions up to 0.5.0, the 0.6.0 source,
+  and an application that reads crossterm's event reader directly still have the stall.
   RXIV (2026-11-05) re-measured it on a real PTY isolated from LibGibson: stock 0.29.0
   delivered 0/30 resize-then-key collisions, the #1128 fork 30/30
   ([`research/issue15_crossterm_ab`](research/issue15_crossterm_ab/README.md)); it remains
@@ -504,4 +505,4 @@ The v0.6 integration — merged to `main` through #253 as `f6cd8c7`, and v0.6.0 
   cells codepoint by codepoint; elsewhere (`Node::text`) such a grapheme is still capped at two
   cells and can drift by the excess on per-codepoint terminals. There is no runtime width probing
   (e.g. mode 2027).
-- **Issue #15** (above) stays open.
+- **Issue #15** (above): fixed for LibGibson's own input path; crossterm's reader still has it.

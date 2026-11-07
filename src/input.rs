@@ -5,7 +5,7 @@ use crossterm::event::{
 use std::borrow::Cow;
 use std::io;
 #[cfg(unix)]
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -183,12 +183,14 @@ pub enum Event {
 
 /// Polls for an event with a timeout.
 ///
-/// On a Unix controlling terminal this is **hangup-aware**: if the terminal hangs
+/// On a Unix controlling terminal this is **hangup-aware**: once the terminal hangs
 /// up (SIGHUP, master closed) it returns `Err(ErrorKind::BrokenPipe)` instead of
-/// spinning forever (issue #79). crossterm's backend busy-loops at ~66% CPU on a
-/// hung-up tty because its internal read loop never honours the timeout once the fd
-/// reports `POLLHUP`; we therefore do the waiting ourselves on stdin and never hand
-/// a possibly-hung fd to crossterm with a blocking timeout.
+/// spinning forever (issues #79, #269). There LibGibson reads and decodes stdin itself
+/// (`tty_source`, with crossterm 0.29.0's decoder) rather than through crossterm's
+/// event reader, whose read loop retries a hung-up terminal forever. The hangup is
+/// detected from the read itself (`0` bytes or `EIO`), so it is reported whenever it
+/// lands, including in the middle of a poll. Events decoded before the hangup are
+/// delivered first; every poll after that returns `BrokenPipe`.
 ///
 /// The dispatch keys off input-source **identity**, not a fresh liveness probe. Once
 /// stdin has been seen as a controlling terminal we keep the hangup-aware path even
@@ -197,12 +199,12 @@ pub enum Event {
 /// very next poll to crossterm's spin-on-a-hung-fd path, the exact #79 failure it is
 /// meant to prevent. A source that was never a terminal (redirected input, a pipe)
 /// never latches and keeps the portable path, so a closed pipe is not misread as a
-/// hung terminal. See `input_source_is_tty`.
+/// hung terminal. See `latched_terminal_source`.
 pub fn poll_event(timeout: Duration) -> io::Result<Option<Event>> {
     #[cfg(unix)]
     {
-        if input_source_is_tty() {
-            return poll_event_unix_tty(timeout);
+        if let Some(stdin_is_terminal) = latched_terminal_source() {
+            return poll_event_unix_tty(timeout, stdin_is_terminal);
         }
     }
     poll_event_crossterm(timeout)
@@ -248,6 +250,10 @@ pub fn set_focus_reporting(enable: bool) -> io::Result<()> {
 /// The portable crossterm wait+decode. Used off-Unix, or when stdin is not a tty
 /// (crossterm then reads `/dev/tty`, a fd we do not observe for hangup).
 fn poll_event_crossterm(timeout: Duration) -> io::Result<Option<Event>> {
+    // crossterm 0.29's Windows poll converts the timeout with `as_millis() as u32`; a
+    // timeout of 2^32 ms or more would wrap, and 0xFFFF_FFFF means INFINITE there. Cap
+    // it at the largest finite value (about 49.7 days).
+    let timeout = timeout.min(Duration::from_millis(u64::from(u32::MAX - 1)));
     if event::poll(timeout)? {
         Ok(decode_event(event::read()?))
     } else {
@@ -312,76 +318,74 @@ fn decode_mouse(m: CtMouseEvent) -> Option<Event> {
     }))
 }
 
-/// Hangup-aware poll loop for a Unix controlling terminal (issue #79).
-///
-/// We never block inside crossterm on a possibly-hung fd. We wait on stdin
-/// ourselves in short slices, checking `POLLHUP`/`POLLERR` each slice, and only ask
-/// crossterm to decode with a zero timeout once stdin is readable. A hangup is
-/// surfaced within one slice; a readable-but-undecodable fd (the upstream crossterm
-/// "stranded input" stall, issue #15) is paced rather than busy-looped, preserving
-/// the stock stall behaviour without burning CPU.
+/// Hangup-aware poll for a Unix controlling terminal (issues #79, #269): the library-owned
+/// source in `tty_source`, which reads stdin when stdin is a terminal and `/dev/tty`
+/// otherwise (as crossterm does). It returns `Err(BrokenPipe)` once that terminal has hung
+/// up, wherever in the poll the hangup lands.
 #[cfg(unix)]
-fn poll_event_unix_tty(timeout: Duration) -> io::Result<Option<Event>> {
-    use std::time::Instant;
-
-    const SLICE: Duration = Duration::from_millis(25);
-    let hung_up = || io::Error::new(io::ErrorKind::BrokenPipe, "terminal hung up (SIGHUP)");
-    let deadline = Instant::now().checked_add(timeout);
-
-    loop {
-        if tty_hung_up(libc::STDIN_FILENO)? {
-            return Err(hung_up());
-        }
-        // Decode anything crossterm already holds, without letting it block on the fd.
-        if event::poll(Duration::ZERO)? {
-            return Ok(decode_event(event::read()?));
-        }
-        let remaining = match deadline {
-            Some(d) => d.saturating_duration_since(Instant::now()),
-            None => Duration::MAX,
-        };
-        if remaining.is_zero() {
-            return Ok(None);
-        }
-        let slice = remaining.min(SLICE);
-        match wait_stdin_readable(slice)? {
-            StdinWait::HungUp => return Err(hung_up()),
-            StdinWait::TimedOut | StdinWait::Interrupted => continue,
-            StdinWait::Readable => {
-                // Readable yet crossterm decoded nothing above: the edge was already
-                // consumed (issue #15, an upstream crossterm bug). POLLIN stays level-
-                // set, so looping straight back would busy-spin; sleep one slice so we
-                // still re-check for a hangup and pick the byte up on the next edge.
-                std::thread::sleep(slice);
-            }
-        }
-    }
+fn poll_event_unix_tty(timeout: Duration, stdin_is_terminal: bool) -> io::Result<Option<Event>> {
+    Ok(crate::tty_source::poll(timeout, stdin_is_terminal)?.and_then(decode_event))
 }
 
 /// Whether stdin is a real terminal *right now* — the liveness probe. After a
 /// hangup this reports false even though the session's terminal identity is
 /// unchanged, which is why [`poll_event`] dispatches on the latched identity
-/// ([`input_source_is_tty`]) rather than on this probe directly.
+/// ([`latched_terminal_source`]) rather than on this probe directly.
 #[cfg(unix)]
 fn stdin_is_tty() -> bool {
     // SAFETY: `isatty` is always safe to call on any fd.
     unsafe { libc::isatty(libc::STDIN_FILENO) == 1 }
 }
 
-/// Latched input-source identity: `true` once stdin has been observed as a live
-/// controlling terminal. Terminal *identity* is stable across a *liveness*
-/// transition — a tty that hangs up is still the terminal we acquired, not a newly
-/// discovered non-tty backend — so once latched we never demote off the hangup-aware
-/// path. See [`poll_event`] and [`resolve_input_source`].
+/// Latched input-source identity, one atomic value so it is never observed half-written by
+/// a concurrent poll (#269 review): [`UNLATCHED`], or latched as [`LATCHED_STDIN`] (stdin itself
+/// is the terminal) or [`LATCHED_DEV_TTY`] (the session reached the terminal through
+/// `/dev/tty`, stdin being redirected). Terminal *identity* is stable across a *liveness*
+/// transition — a tty that hangs up is still the terminal we acquired, not a newly discovered
+/// non-tty backend, and never a reason to read another terminal — so once latched we never
+/// demote off the hangup-aware path or switch descriptors. See [`poll_event`] and
+/// [`resolve_input_source`].
 #[cfg(unix)]
-static TTY_SOURCE_LATCHED: AtomicBool = AtomicBool::new(false);
+static TTY_SOURCE: AtomicU8 = AtomicU8::new(UNLATCHED);
+#[cfg(unix)]
+const UNLATCHED: u8 = 0;
+#[cfg(unix)]
+const LATCHED_STDIN: u8 = 1;
+#[cfg(unix)]
+const LATCHED_DEV_TTY: u8 = 2;
 
 /// Records that a live controlling terminal was acquired for input (raw mode entered
 /// on a tty). Idempotent; called from the terminal-session boundary so identity is
 /// established at acquisition, not merely on the first poll.
+///
+/// Returns the identity this call latched, or `None` if one was already latched (by an
+/// earlier acquisition or a public poll), so a failed acquisition can undo exactly its own
+/// latch ([`forget_tty_source_acquisition`]) and nothing else.
 #[cfg(unix)]
-pub(crate) fn note_tty_source_acquired() {
-    TTY_SOURCE_LATCHED.store(true, Ordering::Relaxed);
+pub(crate) fn note_tty_source_acquired() -> Option<u8> {
+    // Called on every `enter_interactive` (each `Context::poll_event`), so the identity is
+    // sampled only on the transition to acquired: after a hangup `isatty(0)` is false, and
+    // re-sampling then would recast a hung-up stdin as "not the terminal" (#269 review).
+    if TTY_SOURCE.load(Ordering::Acquire) != UNLATCHED {
+        return None;
+    }
+    let identity = if stdin_is_tty() {
+        LATCHED_STDIN
+    } else {
+        LATCHED_DEV_TTY
+    };
+    TTY_SOURCE
+        .compare_exchange(UNLATCHED, identity, Ordering::AcqRel, Ordering::Acquire)
+        .ok()
+        .map(|_| identity)
+}
+
+/// Undoes a latch that [`note_tty_source_acquired`] just made, after the acquisition it was
+/// for failed. Only that identity is withdrawn: no source or queued event is touched, and a
+/// latch someone else has made since is left alone.
+#[cfg(unix)]
+pub(crate) fn forget_tty_source_acquisition(identity: u8) {
+    let _ = TTY_SOURCE.compare_exchange(identity, UNLATCHED, Ordering::AcqRel, Ordering::Acquire);
 }
 
 /// Forgets any latched terminal identity, so a later acquisition re-establishes it.
@@ -389,13 +393,21 @@ pub(crate) fn note_tty_source_acquired() {
 /// scoped to an interactive lifetime rather than the whole process.
 #[cfg(unix)]
 pub(crate) fn clear_tty_source() {
-    TTY_SOURCE_LATCHED.store(false, Ordering::Relaxed);
+    TTY_SOURCE.store(UNLATCHED, Ordering::Release);
+    // The terminal source goes with the terminal: a later session reselects its descriptor
+    // and does not inherit stale events or a reported hangup.
+    crate::tty_source::reset();
 }
 
 /// No-op terminal-identity hooks off Unix, where the hangup-aware path and its latch
 /// do not exist; the terminal session calls these unconditionally.
 #[cfg(not(unix))]
-pub(crate) fn note_tty_source_acquired() {}
+pub(crate) fn note_tty_source_acquired() -> Option<u8> {
+    None
+}
+/// See [`note_tty_source_acquired`].
+#[cfg(not(unix))]
+pub(crate) fn forget_tty_source_acquisition(_identity: u8) {}
 /// See [`note_tty_source_acquired`].
 #[cfg(not(unix))]
 pub(crate) fn clear_tty_source() {}
@@ -417,22 +429,62 @@ fn resolve_input_source(latched: bool, probe_is_tty: impl FnOnce() -> bool) -> (
     }
 }
 
-/// Whether [`poll_event`] should use the hangup-aware Unix path, latching tty
-/// identity on first sight so a later between-polls hangup cannot demote it.
+/// The hangup-aware Unix path's input identity, read with one atomic load: `Some(true)` to
+/// read stdin, `Some(false)` to read `/dev/tty`, `None` for the portable crossterm path. An
+/// unlatched source is probed once and latches as stdin iff stdin is a terminal right now, so
+/// a later between-polls hangup cannot demote it.
 #[cfg(unix)]
-fn input_source_is_tty() -> bool {
-    let latched = TTY_SOURCE_LATCHED.load(Ordering::Relaxed);
-    let (use_unix, new_latch) = resolve_input_source(latched, stdin_is_tty);
-    if new_latch != latched {
-        TTY_SOURCE_LATCHED.store(new_latch, Ordering::Relaxed);
+fn latched_terminal_source() -> Option<bool> {
+    let state = TTY_SOURCE.load(Ordering::Acquire);
+    let (use_unix, latched_after) = resolve_input_source(state != UNLATCHED, stdin_is_tty);
+    if state == UNLATCHED {
+        if !latched_after {
+            return None;
+        }
+        // Latched here only by observing stdin itself as a terminal. A concurrent acquisition
+        // may have latched first; whichever identity won is the one used.
+        return match TTY_SOURCE.compare_exchange(
+            UNLATCHED,
+            LATCHED_STDIN,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => Some(true),
+            Err(won) => Some(won != LATCHED_DEV_TTY),
+        };
     }
-    use_unix
+    debug_assert!(use_unix);
+    Some(state == LATCHED_STDIN)
 }
 
 #[cfg(all(test, unix))]
 mod identity_tests {
     use super::resolve_input_source;
     use std::cell::Cell;
+
+    #[test]
+    fn a_failed_acquisition_undoes_only_its_own_latch() {
+        // Codex round 4 of #282: a raw-mode failure must not erase a latch (and the source and
+        // queued events behind it) that something else established earlier.
+        use super::{
+            forget_tty_source_acquisition, note_tty_source_acquired, LATCHED_DEV_TTY,
+            LATCHED_STDIN, TTY_SOURCE, UNLATCHED,
+        };
+        use std::sync::atomic::Ordering;
+        let saved = TTY_SOURCE.load(Ordering::SeqCst);
+        // Pre-existing latch: this acquisition latches nothing, so it has nothing to undo.
+        TTY_SOURCE.store(LATCHED_STDIN, Ordering::SeqCst);
+        assert_eq!(note_tty_source_acquired(), None);
+        forget_tty_source_acquisition(LATCHED_DEV_TTY); // a different identity: no effect
+        assert_eq!(TTY_SOURCE.load(Ordering::SeqCst), LATCHED_STDIN);
+        // Fresh: the acquisition latches, and undoing it restores unlatched.
+        TTY_SOURCE.store(UNLATCHED, Ordering::SeqCst);
+        let mine = note_tty_source_acquired().expect("this call latched");
+        assert_eq!(TTY_SOURCE.load(Ordering::SeqCst), mine);
+        forget_tty_source_acquisition(mine);
+        assert_eq!(TTY_SOURCE.load(Ordering::SeqCst), UNLATCHED);
+        TTY_SOURCE.store(saved, Ordering::SeqCst);
+    }
 
     #[test]
     fn latched_tty_stays_on_hangup_path_when_liveness_probe_is_now_false() {
@@ -472,67 +524,6 @@ mod identity_tests {
         assert!(!use_unix);
         assert!(!latched, "a non-tty source must never latch tty identity");
     }
-}
-
-/// `true` if `fd` reports a hangup/error condition right now (non-blocking).
-#[cfg(unix)]
-fn tty_hung_up(fd: i32) -> io::Result<bool> {
-    // `events: 0` still has the kernel report POLLHUP/POLLERR/POLLNVAL in `revents`.
-    let mut pfd = libc::pollfd {
-        fd,
-        events: 0,
-        revents: 0,
-    };
-    // SAFETY: one valid pollfd; timeout 0 is non-blocking.
-    let rc = unsafe { libc::poll(&mut pfd as *mut libc::pollfd, 1, 0) };
-    if rc < 0 {
-        let e = io::Error::last_os_error();
-        return if e.kind() == io::ErrorKind::Interrupted {
-            Ok(false)
-        } else {
-            Err(e)
-        };
-    }
-    Ok(pfd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0)
-}
-
-#[cfg(unix)]
-enum StdinWait {
-    Readable,
-    TimedOut,
-    HungUp,
-    Interrupted,
-}
-
-/// Waits up to `slice` for stdin to become readable, reporting a hangup distinctly.
-#[cfg(unix)]
-fn wait_stdin_readable(slice: Duration) -> io::Result<StdinWait> {
-    let ms = slice.as_millis().min(i32::MAX as u128) as i32;
-    let mut pfd = libc::pollfd {
-        fd: libc::STDIN_FILENO,
-        events: libc::POLLIN,
-        revents: 0,
-    };
-    // SAFETY: one valid pollfd.
-    let rc = unsafe { libc::poll(&mut pfd as *mut libc::pollfd, 1, ms) };
-    if rc < 0 {
-        let e = io::Error::last_os_error();
-        return if e.kind() == io::ErrorKind::Interrupted {
-            Ok(StdinWait::Interrupted)
-        } else {
-            Err(e)
-        };
-    }
-    if rc == 0 {
-        return Ok(StdinWait::TimedOut);
-    }
-    if pfd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
-        return Ok(StdinWait::HungUp);
-    }
-    if pfd.revents & libc::POLLIN != 0 {
-        return Ok(StdinWait::Readable);
-    }
-    Ok(StdinWait::TimedOut)
 }
 
 /// Stateful grapheme-aware single-line text input buffer.

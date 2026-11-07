@@ -54,6 +54,15 @@ $CARGO tree -e normal -f "{p}@@@{l}@@@{r}" --prefix none --no-dedupe 2>/dev/null
     echo "| Package | License | Repository |"
     echo "|---------|---------|------------|"
     awk -F'@@@' '{printf "| %s | %s | %s |\n", $1, $2, $3}' "$tmp"
+    echo
+    echo "## Source ported into LibGibson"
+    echo
+    echo "Besides linking the crates above, LibGibson's own source includes code ported"
+    echo "from one of them:"
+    echo
+    echo "| File | Ported from | License |"
+    echo "|------|-------------|---------|"
+    echo "| \`src/tty_source/parse.rs\` | crossterm 0.29.0 \`src/event/sys/unix/parse.rs\` and the \`Parser\` of \`src/event/source/unix/mio.rs\` (issue #269) | MIT, Copyright (c) 2019 Timon; the full notice is reproduced at the top of the file |"
 } > "$OUT"
 
 echo "gen-third-party-notices: wrote $OUT ($(grep -c '^| .* v' "$OUT") crates)"

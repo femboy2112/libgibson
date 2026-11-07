@@ -33,7 +33,6 @@ fn wait_exit_code(cap: &mut pty_capture::Capture, bound: Duration) -> Option<u32
 }
 
 #[test]
-#[ignore = "timing-sensitive PTY test; run serially in the dedicated PTY CI job via --include-ignored (parallel `cargo test` starves its liveness deadline under load)"]
 fn run_once_returns_brokenpipe_on_hangup_instead_of_spinning() {
     let mut cap = spawn(/* ignore_sighup = */ true);
     cap.collect_until(|b| String::from_utf8_lossy(b).contains("READY"))
@@ -43,10 +42,10 @@ fn run_once_returns_brokenpipe_on_hangup_instead_of_spinning() {
 
     cap.hang_up();
 
-    // Liveness bound, deliberately generous: the #79 defect is an *infinite*
-    // busy-spin, so any finite bound catches it; the number only needs to clear a
-    // healthy-but-starved exit on a loaded CI runner. 10s is ~6x the slowest exit
-    // seen under load. Polls try_wait(), independent of the capture budget — see
+    // Liveness bound: the defect (#79, #269) is an *infinite* busy-spin, so any finite
+    // bound catches it. A correct exit takes milliseconds (about 5 ms measured), so 10 s
+    // is margin, not a tuned deadline. The failures once blamed on a "starved" runner
+    // were that spin (#269). Polls try_wait(), independent of the capture budget — see
     // common/pty_capture.rs.
     let code = wait_exit_code(&mut cap, Duration::from_millis(10_000));
     assert_eq!(
@@ -59,7 +58,6 @@ fn run_once_returns_brokenpipe_on_hangup_instead_of_spinning() {
 }
 
 #[test]
-#[ignore = "timing-sensitive PTY test; run serially in the dedicated PTY CI job via --include-ignored (parallel `cargo test` starves its liveness deadline under load)"]
 fn control_a_real_hangup_is_delivered_and_differs_from_the_brokenpipe_path() {
     // Without ignoring SIGHUP, the hangup's default action terminates the child.
     // This proves hang_up() delivers a genuine hangup (so the test above cannot be
@@ -86,7 +84,6 @@ fn control_a_real_hangup_is_delivered_and_differs_from_the_brokenpipe_path() {
 }
 
 #[test]
-#[ignore = "timing-sensitive PTY test; run serially in the dedicated PTY CI job via --include-ignored (parallel `cargo test` starves its liveness deadline under load)"]
 fn between_poll_hangup_still_returns_brokenpipe_when_isatty_now_false() {
     // The deterministic sibling of the mid-poll test above: the hangup lands *between*
     // two polls, after which `isatty` reports non-tty. A dispatcher that re-probes

@@ -63,6 +63,13 @@ libc = "0.2"
 cpal = { version = "=0.18.2", optional = true }
 rtrb = { version = "0.3", optional = true }
 
+# The library-owned Unix terminal input source (src/tty_source.rs, issue #269) takes
+# SIGWINCH through signal-hook's self-pipe, as crossterm's own sources do. signal-hook is
+# already in the dependency graph through crossterm, at the same version, so this adds
+# no new crate to the build.
+[target.'cfg(unix)'.dependencies]
+signal-hook = "0.3"
+
 [dev-dependencies]
 portable-pty = "0.9"
 vt100 = "0.16"

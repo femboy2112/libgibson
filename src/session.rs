@@ -282,16 +282,26 @@ impl TerminalSession {
             return Ok(());
         }
 
-        if !self.raw_mode_enabled {
-            enable_raw_mode()?;
-            self.raw_mode_enabled = true;
-        }
-
         // Identity, not liveness: record that input is now a live controlling
         // terminal, so a later hangup (after which `isatty` reports false) still
         // routes through the hangup-aware poll path instead of demoting to the
-        // spin-on-a-hung-fd backend (issue #79).
-        crate::input::note_tty_source_acquired();
+        // spin-on-a-hung-fd backend (issue #79). Sampled BEFORE raw mode is entered, so a
+        // hangup during the acquisition itself cannot recast a hung-up stdin as "reach the
+        // terminal through /dev/tty" (#269 review); a no-op once latched.
+        let latched_now = crate::input::note_tty_source_acquired();
+
+        if !self.raw_mode_enabled {
+            if let Err(e) = enable_raw_mode() {
+                // Not acquired after all: withdraw the identity this call latched, if it
+                // latched one. A latch (and source, with its queued events) established
+                // earlier, by a public poll for instance, is not this call's to undo.
+                if let Some(identity) = latched_now {
+                    crate::input::forget_tty_source_acquisition(identity);
+                }
+                return Err(e);
+            }
+            self.raw_mode_enabled = true;
+        }
 
         if !self.bracketed_paste_enabled {
             let mut out = stdout();
