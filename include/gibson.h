@@ -33,7 +33,7 @@ typedef enum {
     GIBSON_ERR_IO = -2,
     GIBSON_ERR_PANIC = -3,
     GIBSON_ERR_NOT_INITIALIZED = -4,
-    GIBSON_ERR_QUEUE_FULL = -5     /* gibson_push_event only (ABI v1, additive) */
+    GIBSON_ERR_QUEUE_FULL = -5     /* gibson_push_event / gibson_push_event_kind only (ABI v1, additive) */
 } gibson_status_t;
 
 /* Render modes (pass as int32_t) */
@@ -153,6 +153,13 @@ typedef enum {
 #define GIBSON_KEY_PAGE_UP   0x100C
 #define GIBSON_KEY_PAGE_DOWN 0x100D
 
+/* Key kinds (gibson_poll_event_kind / gibson_push_event_kind; ABI v1, additive). GIBSON_KEY_*
+   occupy 0x1001-0x100D, which are also Unicode scalar values (U+1001-U+100D, Myanmar letters);
+   key_code alone cannot tell them apart, the kind can. */
+#define GIBSON_KEY_KIND_NONE    0u /* not a key event */
+#define GIBSON_KEY_KIND_CHAR    1u /* key_code is a typed Unicode scalar value */
+#define GIBSON_KEY_KIND_SPECIAL 2u /* key_code is a GIBSON_KEY_* constant */
+
 /* Key Modifiers */
 #define GIBSON_MOD_SHIFT   0x01
 #define GIBSON_MOD_CONTROL 0x02
@@ -261,6 +268,14 @@ gibson_status_t gibson_clear_live_region(gibson_context_t *ctx);
    least 1 and at most max(rows - 1, 1) rows. Every field of out_event is written, so a polled event can be pushed back as is. */
 gibson_status_t gibson_poll_event(gibson_context_t *ctx, uint32_t timeout_ms, gibson_event_t *out_event);
 
+/* Like gibson_poll_event, and also writes *out_key_kind (non-NULL): GIBSON_KEY_KIND_CHAR or
+   GIBSON_KEY_KIND_SPECIAL for a KEY event, GIBSON_KEY_KIND_NONE otherwise. *out_event is written
+   exactly as gibson_poll_event writes it. Use this to tell a typed U+1001-U+100D from the
+   GIBSON_KEY_* constant with the same value, which gibson_poll_event reports identically.
+   (ABI v1, additive) */
+gibson_status_t gibson_poll_event_kind(gibson_context_t *ctx, uint32_t timeout_ms,
+                                       gibson_event_t *out_event, uint32_t *out_key_kind);
+
 /* Most undelivered events one headless context holds (see gibson_push_event). */
 #define GIBSON_EVENT_QUEUE_CAPACITY 1024
 
@@ -268,7 +283,7 @@ gibson_status_t gibson_poll_event(gibson_context_t *ctx, uint32_t timeout_ms, gi
    exactly what gibson_poll_event writes, so a pushed event polls back unchanged.
      KEY:    key_code is a GIBSON_KEY_* constant or a Unicode scalar value; modifiers uses only
              GIBSON_MOD_* bits. Because GIBSON_KEY_* occupy 0x1001-0x100D, those codepoints are
-             always the special keys (gibson_poll_event encodes them the same way).
+             always the special keys here; gibson_push_event_kind can push them as characters.
      PASTE:  paste_str is a non-NULL, NUL-terminated UTF-8 string; it is copied.
      RESIZE: cols and rows are both non-zero.
    Fields the event type does not use are ignored and may be left uninitialized. Returns GIBSON_ERR_INVALID_PARAM for a NULL
@@ -276,6 +291,15 @@ gibson_status_t gibson_poll_event(gibson_context_t *ctx, uint32_t timeout_ms, gi
    GIBSON_ERR_QUEUE_FULL when GIBSON_EVENT_QUEUE_CAPACITY events are undelivered. A refused event
    is not queued, and nothing already queued is displaced. (ABI v1, additive) */
 gibson_status_t gibson_push_event(gibson_context_t *ctx, const gibson_event_t *event);
+
+/* Like gibson_push_event, with key_kind saying how to read a KEY event's key_code:
+   GIBSON_KEY_KIND_CHAR - any Unicode scalar value, typed (U+1001-U+100D included);
+   GIBSON_KEY_KIND_SPECIAL - must be a GIBSON_KEY_* constant.
+   Any other key_kind, or a key_code that does not fit it, is GIBSON_ERR_INVALID_PARAM. key_kind is
+   ignored for other event types. gibson_poll_event_kind reports the same kind back.
+   (ABI v1, additive) */
+gibson_status_t gibson_push_event_kind(gibson_context_t *ctx, const gibson_event_t *event,
+                                       uint32_t key_kind);
 
 /* Metrics & Diagnostics */
 gibson_status_t gibson_get_stats(gibson_context_t *ctx, gibson_stats_t *out_stats);

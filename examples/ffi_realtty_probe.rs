@@ -194,6 +194,43 @@ fn abi_input() {
     }
 }
 
+/// Issue #274: the kind-aware poll on a real terminal. Like `abi-input`, but through
+/// `gibson_poll_event_kind`, so each key is marked with its kind: a typed U+1001–U+100D comes
+/// back CHAR and a special key with the same code comes back SPECIAL.
+fn abi_input_kind() {
+    unsafe {
+        let mut ctx: *mut GibsonContextOpaque = ptr::null_mut();
+        assert_eq!(
+            gibson_create_context(GIBSON_MODE_FULLSCREEN, &mut ctx),
+            GibsonStatus::Ok
+        );
+        set_minimal_root(ctx, "274-kind");
+        let mut ev: GibsonEvent = std::mem::zeroed();
+        let mut kind = 0u32;
+        let _ = gibson_poll_event_kind(ctx, 50, &mut ev, &mut kind); // arm raw mode
+        mark("READY");
+        loop {
+            let mut ev: GibsonEvent = std::mem::zeroed();
+            if gibson_poll_event_kind(ctx, 2000, &mut ev, &mut kind) != GibsonStatus::Ok {
+                mark("POLL_ERR");
+                continue;
+            }
+            if ev.event_type == GIBSON_EVENT_KEY {
+                mark(&format!(
+                    "EVKEY code={:#x} kind={kind} mod={}",
+                    ev.key_code, ev.modifiers
+                ));
+                if ev.key_code == u32::from('q') && kind == GIBSON_KEY_KIND_CHAR {
+                    break;
+                }
+            }
+        }
+        mark("DONE");
+        gibson_destroy_context(ctx);
+        std::process::exit(0);
+    }
+}
+
 /// Surface a real SIGWINCH resize through the ABI: after READY the parent resizes
 /// the PTY; the ABI must yield one `GIBSON_EVENT_RESIZE` carrying the new
 /// geometry, and a subsequent `gibson_render` must still succeed at the new size.
@@ -280,6 +317,7 @@ fn main() {
         Some("abi") => abi(),
         Some("native") => native(),
         Some("abi-input") => abi_input(),
+        Some("abi-input-kind") => abi_input_kind(),
         Some("abi-resize") => abi_resize(),
         other => {
             eprintln!("unknown ffi-realtty scenario: {other:?}");
