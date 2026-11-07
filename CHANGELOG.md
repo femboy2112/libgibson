@@ -25,8 +25,12 @@ not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
 - **A terminal hangup during a poll no longer spins forever.** When stdin is the controlling
   terminal, input is now read by a library-owned source (`src/tty_source.rs`) instead of
   crossterm's event reader, whose read loop retries a hung-up terminal forever (#269). The hangup
-  is detected from the read itself (`EIO`, or `0` bytes with `POLLHUP`), so it is reported as
-  `ErrorKind::BrokenPipe` wherever it lands, not only when a check before the read catches it.
+  is detected from the read itself (`EIO` or `0` bytes while the descriptor reports a hangup), so
+  it is reported as `ErrorKind::BrokenPipe` wherever it lands, not only when a check before the read
+  catches it. The terminal read is the one crossterm chooses (stdin when it is a terminal, else
+  `/dev/tty`), latched when the session acquires the terminal and read through LibGibson's own
+  non-blocking description where its identity can be proven. A background read refused with
+  `EIO` (job control) is retried, not reported as a hangup.
   This affected applications that ignore or handle SIGHUP; under the default disposition the
   signal ends the process first.
 - **Events decoded before a hangup are delivered** before the `BrokenPipe`. They used to be
@@ -41,6 +45,22 @@ not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
   `THIRD-PARTY-NOTICES.md`. `signal-hook` (already a dependency through crossterm, same version)
   is now a direct Unix dependency for `SIGWINCH`. Off Unix, and when stdin is not a terminal,
   input still goes through crossterm.
+### Added — C ABI v1 (additive, 60 → 62 symbols): key kinds ([#274](https://github.com/femboy2112/libgibson/issues/274))
+- **`gibson_poll_event_kind(ctx, timeout_ms, out_event, out_key_kind)`** polls like
+  `gibson_poll_event` and also reports `GIBSON_KEY_KIND_CHAR` or `GIBSON_KEY_KIND_SPECIAL` for a key
+  (`GIBSON_KEY_KIND_NONE` otherwise). `GIBSON_KEY_*` occupy 0x1001–0x100D, which are also Unicode
+  scalar values (Myanmar letters U+1001–U+100D), so `key_code` alone cannot tell a typed `ခ` from
+  Enter; the kind can. `*out_event` is written exactly as `gibson_poll_event` writes it.
+- **`gibson_push_event_kind(ctx, event, key_kind)`** pushes a key with its kind, so a headless
+  context can be given a typed U+1001–U+100D. `GIBSON_KEY_KIND_SPECIAL` with a non-`GIBSON_KEY_*`
+  code, and any other kind, are `GIBSON_ERR_INVALID_PARAM`.
+- **The legacy functions are unchanged**, ambiguity included: `gibson_push_event` reads
+  0x1001–0x100D as the special keys, and `gibson_poll_event` reports both with the same code. No
+  constant changed value and `gibson_event_t`'s layout is untouched; the kind is a separate
+  out-parameter, not the reserved `_pad` bytes. `gibson_push_event` lets callers leave `_pad`
+  uninitialised, and v1 libraries before #273 do not write it, so a flag there could not be trusted
+  in either direction. A client that uses the new pair gets a link error, never a misread key, on an
+  older `libgibson.so.1`. Python and Go bindings expose neither event function.
 
 ### Added — C ABI v1 (additive, 59 → 60 symbols): injected input for a headless context
 - **`gibson_push_event(ctx, const gibson_event_t *event)`** queues a key, paste or resize event on
@@ -92,6 +112,16 @@ not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
   `accepted == delivered + len`. `tests/input_injection.rs` (10): identical headless frame digests
   across runs, across injection batching and against the `ScriptedSource` route; dropping,
   delaying or order-sensitively reordering one event changes them.
+
+### Changed — examples: DEEP SIGNAL's held-key grace, measured ([#275](https://github.com/femboy2112/libgibson/issues/275))
+- The default initial hold grace is now **25 tics (714 ms)**, up from 9 (257 ms). Key timelines
+  recorded by the game itself in xterm, with keys driven through X/XTEST, put the first autorepeat
+  18 tics after the press at 500 ms / 30 Hz and 23 tics at X's default 660 ms / 25 Hz. The old
+  grace stalled every hold for 9 or 14 tics; the new one holds both without interruption
+  (`tests/deep_signal_hold_timeline.rs`, which also binds the game's recorded trace header to the
+  checked configuration). A press-only terminal cannot tell a tap from the start of a hold, so a
+  tap now moves for 25 tics; `--hold-grace-ms` sets another value. Recorded traces replay with the
+  grace in their header, so older traces are unaffected.
 
 ### Added — examples (v0.7 node E; not library API)
 - **`examples/deep_signal` — DEEP SIGNAL**, an original playable first-person terminal maze built

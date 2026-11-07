@@ -338,6 +338,14 @@ pub const GIBSON_KEY_TAB: u32 = 0x100B;
 pub const GIBSON_KEY_PAGE_UP: u32 = 0x100C;
 pub const GIBSON_KEY_PAGE_DOWN: u32 = 0x100D;
 
+/// `*out_key_kind` for an event that is not a key (issue #274).
+pub const GIBSON_KEY_KIND_NONE: u32 = 0;
+/// The key event's `key_code` is a Unicode scalar value that was typed, including
+/// U+1001–U+100D, which [`gibson_poll_event`] cannot tell apart from `GIBSON_KEY_*`.
+pub const GIBSON_KEY_KIND_CHAR: u32 = 1;
+/// The key event's `key_code` is a `GIBSON_KEY_*` constant.
+pub const GIBSON_KEY_KIND_SPECIAL: u32 = 2;
+
 /// FFI-safe, versioned statistics snapshot.
 ///
 /// Callers must initialize `struct_size` to `sizeof(gibson_stats_t)` and
@@ -904,6 +912,48 @@ pub unsafe extern "C" fn gibson_poll_event(
     timeout_ms: u32,
     out_event: *mut GibsonEvent,
 ) -> GibsonStatus {
+    poll_event_impl(ctx, timeout_ms, out_event, ptr::null_mut())
+}
+
+/// Like [`gibson_poll_event`], and also writes `*out_key_kind`: [`GIBSON_KEY_KIND_CHAR`] or
+/// [`GIBSON_KEY_KIND_SPECIAL`] for a key event, [`GIBSON_KEY_KIND_NONE`] otherwise (issue #274).
+/// `*out_event` is written exactly as `gibson_poll_event` writes it; the kind is what tells a
+/// typed U+1001–U+100D from the `GIBSON_KEY_*` constant with the same value.
+///
+/// # Safety
+/// As [`gibson_poll_event`]; `out_key_kind` must be a valid, writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_poll_event_kind(
+    ctx: *mut GibsonContextOpaque,
+    timeout_ms: u32,
+    out_event: *mut GibsonEvent,
+    out_key_kind: *mut u32,
+) -> GibsonStatus {
+    // The NULL check records a diagnostic, which touches thread-local state: keep it inside the
+    // panic guard like every other path (a panic must not unwind across the C boundary).
+    let checked = catch_unwind(AssertUnwindSafe(|| {
+        if out_key_kind.is_null() {
+            set_last_error("gibson_poll_event_kind: Null pointer".into());
+            return false;
+        }
+        out_key_kind.write(GIBSON_KEY_KIND_NONE);
+        true
+    }));
+    match checked {
+        Ok(true) => poll_event_impl(ctx, timeout_ms, out_event, out_key_kind),
+        Ok(false) => GibsonStatus::ErrInvalidParam,
+        Err(_) => GibsonStatus::ErrPanic,
+    }
+}
+
+/// The body of [`gibson_poll_event`] and [`gibson_poll_event_kind`]; `out_key_kind` is null
+/// for the former.
+unsafe fn poll_event_impl(
+    ctx: *mut GibsonContextOpaque,
+    timeout_ms: u32,
+    out_event: *mut GibsonEvent,
+    out_key_kind: *mut u32,
+) -> GibsonStatus {
     let res = catch_unwind(AssertUnwindSafe(|| {
         if ctx.is_null() || out_event.is_null() {
             return GibsonStatus::ErrInvalidParam;
@@ -939,6 +989,13 @@ pub unsafe extern "C" fn gibson_poll_event(
                     Event::Key(k) => {
                         (*out_event).event_type = GIBSON_EVENT_KEY;
                         (*out_event).modifiers = k.modifiers.bits();
+                        if !out_key_kind.is_null() {
+                            out_key_kind.write(if matches!(k.code, KeyCode::Char(_)) {
+                                GIBSON_KEY_KIND_CHAR
+                            } else {
+                                GIBSON_KEY_KIND_SPECIAL
+                            });
+                        }
                         (*out_event).key_code = match k.code {
                             KeyCode::Char(c) => c as u32,
                             KeyCode::Enter => GIBSON_KEY_ENTER,
@@ -987,6 +1044,26 @@ pub unsafe extern "C" fn gibson_poll_event(
     res.unwrap_or(GibsonStatus::ErrPanic)
 }
 
+/// The engine key a `GIBSON_KEY_*` constant names; `None` for any other value.
+fn special_key(cp: u32) -> Option<KeyCode> {
+    Some(match cp {
+        GIBSON_KEY_ENTER => KeyCode::Enter,
+        GIBSON_KEY_LEFT => KeyCode::Left,
+        GIBSON_KEY_RIGHT => KeyCode::Right,
+        GIBSON_KEY_UP => KeyCode::Up,
+        GIBSON_KEY_DOWN => KeyCode::Down,
+        GIBSON_KEY_HOME => KeyCode::Home,
+        GIBSON_KEY_END => KeyCode::End,
+        GIBSON_KEY_BACKSPACE => KeyCode::Backspace,
+        GIBSON_KEY_DELETE => KeyCode::Delete,
+        GIBSON_KEY_ESC => KeyCode::Esc,
+        GIBSON_KEY_TAB => KeyCode::Tab,
+        GIBSON_KEY_PAGE_UP => KeyCode::PageUp,
+        GIBSON_KEY_PAGE_DOWN => KeyCode::PageDown,
+        _ => return None,
+    })
+}
+
 /// Translates a C event into an engine event for [`gibson_push_event`]: the inverse of the
 /// encoding [`gibson_poll_event`] writes, so a pushed event polls back unchanged.
 ///
@@ -996,30 +1073,29 @@ pub unsafe extern "C" fn gibson_poll_event(
 /// # Safety
 /// `ev` must point to a properly aligned `gibson_event_t` whose `event_type` and the fields its
 /// type uses are initialised; for a paste, `paste_str` is null or NUL-terminated.
-unsafe fn event_from_c(ev: *const GibsonEvent) -> Result<Event, String> {
+unsafe fn event_from_c(ev: *const GibsonEvent, key_kind: Option<u32>) -> Result<Event, String> {
     match ptr::addr_of!((*ev).event_type).read() {
         GIBSON_EVENT_KEY => {
             let bits = ptr::addr_of!((*ev).modifiers).read();
             let modifiers = KeyModifiers::from_bits(bits)
                 .ok_or_else(|| format!("unknown modifier bits {bits:#04x}"))?;
-            let code = match ptr::addr_of!((*ev).key_code).read() {
-                GIBSON_KEY_ENTER => KeyCode::Enter,
-                GIBSON_KEY_LEFT => KeyCode::Left,
-                GIBSON_KEY_RIGHT => KeyCode::Right,
-                GIBSON_KEY_UP => KeyCode::Up,
-                GIBSON_KEY_DOWN => KeyCode::Down,
-                GIBSON_KEY_HOME => KeyCode::Home,
-                GIBSON_KEY_END => KeyCode::End,
-                GIBSON_KEY_BACKSPACE => KeyCode::Backspace,
-                GIBSON_KEY_DELETE => KeyCode::Delete,
-                GIBSON_KEY_ESC => KeyCode::Esc,
-                GIBSON_KEY_TAB => KeyCode::Tab,
-                GIBSON_KEY_PAGE_UP => KeyCode::PageUp,
-                GIBSON_KEY_PAGE_DOWN => KeyCode::PageDown,
-                cp => KeyCode::Char(
-                    char::from_u32(cp)
-                        .ok_or_else(|| format!("key_code {cp:#x} is not a Unicode scalar value"))?,
-                ),
+            let cp = ptr::addr_of!((*ev).key_code).read();
+            let typed = |cp: u32| {
+                char::from_u32(cp)
+                    .map(KeyCode::Char)
+                    .ok_or_else(|| format!("key_code {cp:#x} is not a Unicode scalar value"))
+            };
+            let code = match key_kind {
+                // The caller says it is a typed character: U+1001–U+100D included (#274).
+                Some(GIBSON_KEY_KIND_CHAR) => typed(cp)?,
+                Some(GIBSON_KEY_KIND_SPECIAL) => special_key(cp)
+                    .ok_or_else(|| format!("key_code {cp:#x} is not a GIBSON_KEY_* constant"))?,
+                Some(other) => return Err(format!("key kind {other} is not CHAR or SPECIAL")),
+                // gibson_push_event: GIBSON_KEY_* values are always the special keys.
+                None => match special_key(cp) {
+                    Some(code) => code,
+                    None => typed(cp)?,
+                },
             };
             Ok(Event::Key(KeyEvent::new(code, modifiers)))
         }
@@ -1063,6 +1139,33 @@ pub unsafe extern "C" fn gibson_push_event(
     ctx: *mut GibsonContextOpaque,
     event: *const GibsonEvent,
 ) -> GibsonStatus {
+    push_event_impl(ctx, event, None)
+}
+
+/// Like [`gibson_push_event`], with `key_kind` saying how to read a key event's `key_code`
+/// (issue #274): [`GIBSON_KEY_KIND_CHAR`] — a typed Unicode scalar value, U+1001–U+100D
+/// included; [`GIBSON_KEY_KIND_SPECIAL`] — a `GIBSON_KEY_*` constant (anything else is
+/// refused). Ignored for other event types. [`gibson_poll_event_kind`] reports the same kind
+/// back, so a pushed key polls back with its kind.
+///
+/// # Safety
+/// As [`gibson_push_event`].
+#[no_mangle]
+pub unsafe extern "C" fn gibson_push_event_kind(
+    ctx: *mut GibsonContextOpaque,
+    event: *const GibsonEvent,
+    key_kind: u32,
+) -> GibsonStatus {
+    push_event_impl(ctx, event, Some(key_kind))
+}
+
+/// The body of [`gibson_push_event`] (`key_kind` `None`: the legacy reading of `key_code`) and
+/// [`gibson_push_event_kind`].
+unsafe fn push_event_impl(
+    ctx: *mut GibsonContextOpaque,
+    event: *const GibsonEvent,
+    key_kind: Option<u32>,
+) -> GibsonStatus {
     let res = catch_unwind(AssertUnwindSafe(|| {
         if ctx.is_null() || event.is_null() {
             set_last_error("gibson_push_event: Null pointer".into());
@@ -1076,7 +1179,7 @@ pub unsafe extern "C" fn gibson_push_event(
             );
             return GibsonStatus::ErrInvalidParam;
         }
-        let ev = match event_from_c(event) {
+        let ev = match event_from_c(event, key_kind) {
             Ok(ev) => ev,
             Err(msg) => {
                 set_last_error(format!("gibson_push_event: {msg}"));

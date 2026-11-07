@@ -748,7 +748,12 @@ fn parse() -> Result<Option<Opts>, String> {
         levels: 3,
         look: Look::Color,
         ascii_hud: false,
-        hold: HoldConfig::new(9, 4),
+        // 25 tics (714 ms) of initial grace bridges the autorepeat delays measured through a
+        // real terminal (#275): first repeat 18 tics after the press at X/MATE 500 ms / 30 Hz,
+        // 23 tics at X's default 660 ms / 25 Hz. The cost: a single tap moves for 25 tics,
+        // because a press-only terminal cannot tell a tap from the start of a hold. 4 tics
+        // (114 ms) between repeats covers the measured 1-2 tic gaps. `--hold-grace-ms` chooses.
+        hold: HoldConfig::new(25, 4),
         max_seconds: None,
         record: None,
         fault_panic_key: false,
@@ -802,7 +807,7 @@ fn parse() -> Result<Option<Opts>, String> {
         let tic = Duration::from_secs(1) / TIC_HZ;
         o.hold = HoldConfig::from_durations(
             tic,
-            Duration::from_millis(grace_ms.unwrap_or(257)),
+            Duration::from_millis(grace_ms.unwrap_or(714)),
             Duration::from_millis(repeat_ms.unwrap_or(114)),
         );
     }
