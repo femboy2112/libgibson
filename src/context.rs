@@ -263,9 +263,18 @@ impl Context {
         self.scheduler.should_render()
     }
 
-    /// Time until the next frame is allowed under the FPS budget.
+    /// Time until the next frame is *allowed* under the FPS budget, whether or not one
+    /// is pending. Once a budget has elapsed this stays zero, so do not use it to bound
+    /// an idle input wait; use [`time_until_frame_needed`](Self::time_until_frame_needed).
     pub fn time_until_next_frame(&self) -> Duration {
         self.scheduler.time_until_next_frame()
+    }
+
+    /// Time until a frame is *needed*: `None` when nothing is pending, otherwise the
+    /// time until the pending frame may render (zero when it may render now). This is
+    /// the deadline [`run_once`](Self::run_once) bounds its input wait by (issue #264).
+    pub fn time_until_frame_needed(&self) -> Option<Duration> {
+        self.scheduler.time_until_frame_needed()
     }
 
     pub fn frame_budget(&self) -> Duration {
@@ -378,10 +387,26 @@ impl Context {
     /// Minimal, non-async runtime step — the core of the **canonical interactive
     /// loop** (issue #48 E-07).
     ///
-    /// Waits for at most `max_wait` (bounded by the next frame deadline), polls
-    /// for input, then renders if the scheduler permits. Input wakeups have
-    /// priority over decorative animation: an arriving event shortens the wait
-    /// immediately. Returns the input event, if any.
+    /// Waits for input for at most `max_wait`, then renders if a frame is pending and
+    /// the FPS budget permits. Input wakeups have priority over decorative animation:
+    /// an arriving event shortens the wait immediately. Returns the input event, if any.
+    ///
+    /// The wait is bounded by the next frame that is *needed*, not by the next one that
+    /// would be *allowed* ([`time_until_frame_needed`](Self::time_until_frame_needed)):
+    ///
+    /// * nothing pending (the scheduler is clean): the call waits the full `max_wait`,
+    ///   however long ago the last frame was, so an idle loop sleeps instead of spinning
+    ///   (issue #264);
+    /// * a frame pending (`set_root`, `mark_dirty`, `request_render`, or a resize): the
+    ///   wait ends no later than when that frame becomes eligible under the FPS budget
+    ///   (or at `max_wait`, if sooner). The frame renders before the call returns if it is
+    ///   eligible by then; when input or a shorter `max_wait` ends the wait first, the
+    ///   call returns without it and a later call renders it.
+    ///
+    /// So `run_once` never wakes on its own to animate. An animated view marks itself
+    /// pending each step (rebuild with `set_root`, or `mark_dirty`) and passes a
+    /// `max_wait` no longer than its step interval, for example
+    /// [`animation_interval`](Self::animation_interval).
     ///
     /// The canonical loop a new consumer should copy — rebuild the tree on
     /// change, then let `run_once` drive both input and frame pacing:
@@ -421,8 +446,7 @@ impl Context {
     /// `render_if_due`). For a batteries-included loop that also delivers
     /// per-iteration ticks (`AppEvent::Tick`), use `gibson::ui::App`.
     pub fn run_once(&mut self, max_wait: Duration) -> io::Result<Option<Event>> {
-        let until_frame = self.scheduler.time_until_next_frame();
-        let wait = max_wait.min(until_frame);
+        let wait = self.scheduler.input_wait(max_wait);
         let event = if self.session.is_tty && !self.session.is_headless() {
             self.poll_event(wait)?
         } else {
@@ -450,6 +474,11 @@ impl Context {
                 // it observable rather than silent — without panicking a valid
                 // production flow or changing the ABI-1 stats struct.
                 self.empty_root_renders += 1;
+                // Nothing can be presented, so nothing is pending any more. Left dirty,
+                // a rootless context that was marked dirty (a resize, `mark_dirty`) would
+                // keep `run_once`'s wait at zero forever (issue #264). `set_root` marks it
+                // dirty again.
+                self.scheduler.is_dirty = false;
                 self.sync_renderer_metrics();
                 return Ok(crate::painter::PaintContext::default());
             }
