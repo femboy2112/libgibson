@@ -357,20 +357,35 @@ const LATCHED_DEV_TTY: u8 = 2;
 /// Records that a live controlling terminal was acquired for input (raw mode entered
 /// on a tty). Idempotent; called from the terminal-session boundary so identity is
 /// established at acquisition, not merely on the first poll.
+///
+/// Returns the identity this call latched, or `None` if one was already latched (by an
+/// earlier acquisition or a public poll), so a failed acquisition can undo exactly its own
+/// latch ([`forget_tty_source_acquisition`]) and nothing else.
 #[cfg(unix)]
-pub(crate) fn note_tty_source_acquired() {
+pub(crate) fn note_tty_source_acquired() -> Option<u8> {
     // Called on every `enter_interactive` (each `Context::poll_event`), so the identity is
     // sampled only on the transition to acquired: after a hangup `isatty(0)` is false, and
     // re-sampling then would recast a hung-up stdin as "not the terminal" (#269 review).
-    if TTY_SOURCE.load(Ordering::Acquire) == UNLATCHED {
-        let identity = if stdin_is_tty() {
-            LATCHED_STDIN
-        } else {
-            LATCHED_DEV_TTY
-        };
-        let _ =
-            TTY_SOURCE.compare_exchange(UNLATCHED, identity, Ordering::AcqRel, Ordering::Acquire);
+    if TTY_SOURCE.load(Ordering::Acquire) != UNLATCHED {
+        return None;
     }
+    let identity = if stdin_is_tty() {
+        LATCHED_STDIN
+    } else {
+        LATCHED_DEV_TTY
+    };
+    TTY_SOURCE
+        .compare_exchange(UNLATCHED, identity, Ordering::AcqRel, Ordering::Acquire)
+        .ok()
+        .map(|_| identity)
+}
+
+/// Undoes a latch that [`note_tty_source_acquired`] just made, after the acquisition it was
+/// for failed. Only that identity is withdrawn: no source or queued event is touched, and a
+/// latch someone else has made since is left alone.
+#[cfg(unix)]
+pub(crate) fn forget_tty_source_acquisition(identity: u8) {
+    let _ = TTY_SOURCE.compare_exchange(identity, UNLATCHED, Ordering::AcqRel, Ordering::Acquire);
 }
 
 /// Forgets any latched terminal identity, so a later acquisition re-establishes it.
@@ -387,7 +402,12 @@ pub(crate) fn clear_tty_source() {
 /// No-op terminal-identity hooks off Unix, where the hangup-aware path and its latch
 /// do not exist; the terminal session calls these unconditionally.
 #[cfg(not(unix))]
-pub(crate) fn note_tty_source_acquired() {}
+pub(crate) fn note_tty_source_acquired() -> Option<u8> {
+    None
+}
+/// See [`note_tty_source_acquired`].
+#[cfg(not(unix))]
+pub(crate) fn forget_tty_source_acquisition(_identity: u8) {}
 /// See [`note_tty_source_acquired`].
 #[cfg(not(unix))]
 pub(crate) fn clear_tty_source() {}
@@ -441,6 +461,30 @@ fn latched_terminal_source() -> Option<bool> {
 mod identity_tests {
     use super::resolve_input_source;
     use std::cell::Cell;
+
+    #[test]
+    fn a_failed_acquisition_undoes_only_its_own_latch() {
+        // Codex round 4 of #282: a raw-mode failure must not erase a latch (and the source and
+        // queued events behind it) that something else established earlier.
+        use super::{
+            forget_tty_source_acquisition, note_tty_source_acquired, LATCHED_DEV_TTY,
+            LATCHED_STDIN, TTY_SOURCE, UNLATCHED,
+        };
+        use std::sync::atomic::Ordering;
+        let saved = TTY_SOURCE.load(Ordering::SeqCst);
+        // Pre-existing latch: this acquisition latches nothing, so it has nothing to undo.
+        TTY_SOURCE.store(LATCHED_STDIN, Ordering::SeqCst);
+        assert_eq!(note_tty_source_acquired(), None);
+        forget_tty_source_acquisition(LATCHED_DEV_TTY); // a different identity: no effect
+        assert_eq!(TTY_SOURCE.load(Ordering::SeqCst), LATCHED_STDIN);
+        // Fresh: the acquisition latches, and undoing it restores unlatched.
+        TTY_SOURCE.store(UNLATCHED, Ordering::SeqCst);
+        let mine = note_tty_source_acquired().expect("this call latched");
+        assert_eq!(TTY_SOURCE.load(Ordering::SeqCst), mine);
+        forget_tty_source_acquisition(mine);
+        assert_eq!(TTY_SOURCE.load(Ordering::SeqCst), UNLATCHED);
+        TTY_SOURCE.store(saved, Ordering::SeqCst);
+    }
 
     #[test]
     fn latched_tty_stays_on_hangup_path_when_liveness_probe_is_now_false() {
