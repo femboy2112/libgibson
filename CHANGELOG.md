@@ -18,8 +18,10 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0** — a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)). This is the working development
 line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 remains **prepared in source at
-`9a899e1`** (release state 1 — not tagged, not released); a future `v0.6.0` tag names that commit,
-not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
+`9a899e1`** (release state 1 — not tagged, not released). It is never tagged on a later `main`;
+whether a `v0.6.0` tag names the corrected candidate `release/v0.6.0-rc` @ `572e551` is the owner's
+decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed policy in #291).
+`GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
 
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
 - The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an
