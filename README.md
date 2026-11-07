@@ -30,6 +30,9 @@ procedural audio.
 > **v0.6.0 is prepared in source at `9a899e1`** — merged and version-bumped, but **not tagged or
 > released**; `main` has since opened `0.7.0-dev`. The install commands stay on v0.5.0 until a
 > v0.6.0 release exists ([release states](docs/RELEASE_CONTRACT.md#1-versioning-model)).
+> *Update 2026-11-07:* still not tagged or released. A qualified candidate
+> (`release/v0.6.0-rc` @ `1b90b48`) is on hold pending an owner decision
+> ([#287](https://github.com/femboy2112/libgibson/issues/287)).
 
 > **Engineering alpha.** Linux x86_64 is the best-tested environment. The core
 > engine is implemented and tested; Scene, Story, software graphics, and audio /
@@ -320,6 +323,13 @@ The upstream fix is filed as [crossterm#1128](https://github.com/crossterm-rs/cr
 and is **not** vendored. This is documented, not a claim of lossless delivery under that
 collision; the event-pressure acceptance test that targets it is intentionally ignored
 and still fails when run.
+
+*Update 2026-11-07:* on `main` (0.7.0-dev), LibGibson reads a Unix controlling terminal
+through its own source ([#282](https://github.com/femboy2112/libgibson/pull/282), merge
+`04c0ad2`), which takes the key and the resize together; there the acceptance test is enabled.
+The limitation above still holds for v0.5.0 and the 0.6.0 source at `9a899e1`, for input read
+through crossterm (off Unix, or with no latched controlling terminal), and for applications
+that call crossterm's reader directly. crossterm#1128 is unmerged; crates.io is still at 0.29.0.
 
 ## Documentation
 

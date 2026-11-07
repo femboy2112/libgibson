@@ -20,6 +20,13 @@ state 1) at `9a899e1`: not tagged, not released, not on any registry; `main` has
 `0.7.0-dev` for the v0.7 work below ("Longer-term horizon"). The current published release is **v0.5.0** (`d8c7b99`, GitHub
 prerelease). *(Until this bump the section described the integration as an unmerged candidate.)*
 
+*Update 2026-11-07:* v0.6.0 is still not tagged or released. A release candidate,
+`release/v0.6.0-rc` @ `1b90b48` (`9a899e1` + the #264 and #269 fixes), passed exact-head CI
+(run 42335104064) and Release Preflight (run 42335106128) and is on **HOLD** for an owner decision
+on the release line ([#287](https://github.com/femboy2112/libgibson/issues/287)); a #259 backport
+to it is in review (#288, not merged). Record:
+[`V06_QUALIFICATION_LEDGER.md`](docs/V06_QUALIFICATION_LEDGER.md), Renaissance XVIII.
+
 > **State legend.** *Released* = in v0.5.0. *Merged* = on `main` (v0.6.0, prepared in source, not
 > released). *Deferred* / *Blocked* as stated.
 
@@ -52,6 +59,10 @@ runs in the CI Bindings job and the release cleanroom; a real-TTY input→state�
 entirely through the ABI. *Limits:* in v0.6.0 a headless context has no input source (v0.7 adds `gibson_push_event`); there is no sub-cell
 pixel raster; C++/Go/Python interactive parity is **not** claimed beyond the existing parity
 harnesses ([`docs/SDK_DOOM_HORIZON.md`](docs/SDK_DOOM_HORIZON.md)).
+*Update 2026-11-07:* **62** symbols on the v0.7 line: #283 (`da2be76`) adds
+`gibson_poll_event_kind` / `gibson_push_event_kind`, which tell a typed U+1001–U+100D from a
+`GIBSON_KEY_*` (#274 addressed; legacy `gibson_poll_event` keeps the ambiguity, documented in
+`gibson.h`). v0.6.0 stays at 59; `GIBSON_ABI_VERSION` stays 1.
 
 ### R6.4 — Extended graphics / media — **explicitly deferred by design**
 `gibson::media` (#186) and `media-deflate` (#188) stay open drafts, promoted only for a concrete
@@ -79,6 +90,12 @@ upstream fix #1128 delivers it (30/30). #1128 is unmerged and crates.io is still
 stays open and is **not** claimed fixed; the fork is not adopted. Next probe: re-run the A/B against
 the first crossterm release containing #1128, then un-ignore
 `event_pressure_pty::context_coincident_lone_key_delivery_acceptance`.
+*Update 2026-11-07:* on `main` (0.7.0-dev) and the held candidate, LibGibson reads a Unix
+controlling terminal through its own source (#282, `04c0ad2`), which takes a ready key and resize
+in the same pass; that acceptance is enabled there. This fixes #15 on that path only:
+crossterm#1128 is unmerged and crates.io is still 0.29.0, so `9a899e1`, releases through v0.5.0,
+input read through crossterm (off Unix, or with no latched controlling terminal) and applications
+that call crossterm's reader directly keep the stall.
 
 ### Constraints (unchanged)
 GitHub-first prereleases; C ABI v1; Rust MSRV 1.85; `main` merge-commit convention; the PCM audio
