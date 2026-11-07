@@ -201,7 +201,9 @@ and all 500 in-process repetitions produced the identical transcript (`iter_iden
 | Go | 3036 | 6073 | 61672 / 68008 / 68008 | 0 |
 | Rust | 453 | 906 | 2740 / 2740 / 2740 | 0 |
 
-The gate is peak-RSS growth over the **second half** (rep 250 to rep 500) at most 4096 KB, which flags
+The script refuses fewer than 500 repetitions: the bound is fixed in KB, so its sensitivity is about
+4096 / (reps / 2) KB per repetition, and an independent run at 100 repetitions let the planted leak
+slip under it (3712 KB). The gate is peak-RSS growth over the **second half** (rep 250 to rep 500) at most 4096 KB, which flags
 a per-rep leak of about 16 KB or more at N=500. The first run used rep-1-to-rep-N growth and failed Go
 (+6128 KB). A probe showed this was Go GC pacing, not a leak. Go grew +5.5 MB at 100 reps and +6.2 MB at
 2000 reps (flat in N), and the growth tracked `GOGC` (25: +3.7 MB, 400: +20.3 MB). Warm-up growth is now

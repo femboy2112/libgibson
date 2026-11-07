@@ -32,6 +32,14 @@ SDK=${1:-${LIBGIBSON_SDK:-}}
 SDK=$(cd "$SDK" && pwd)
 [ -f "$SDK/lib/pkgconfig/libgibson.pc" ] || die "$SDK has no lib/pkgconfig/libgibson.pc"
 REPS=${PARITY_V08_REPS:-500}
+# The resource gate's bound is a fixed number of KB over the second half of the run, so its
+# sensitivity depends on the repetition count: it detects a leak of about 4096 / (REPS / 2) KB per
+# repetition (16 KB at 500). Below 500 the planted-leak control can slip under the bound (it did at
+# 100: 3712 KB), so a shorter run is refused rather than reported with a weaker gate.
+if [ "$REPS" -lt 500 ]; then
+    echo "parity_v08: PARITY_V08_REPS=$REPS is below 500, the minimum at which the resource gate has its stated sensitivity" >&2
+    exit 2
+fi
 WORK=${PARITY_V08_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/parity_v08.XXXXXX")}
 mkdir -p "$WORK/bin" "$WORK/out" "$WORK/pysite" "$WORK/ctl"
 V08=$REPO/bindings/parity/v08
