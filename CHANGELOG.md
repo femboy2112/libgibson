@@ -72,6 +72,16 @@ not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
   across runs, across injection batching and against the `ScriptedSource` route; dropping,
   delaying or order-sensitively reordering one event changes them.
 
+### Changed — examples: DEEP SIGNAL's held-key grace, measured ([#275](https://github.com/femboy2112/libgibson/issues/275))
+- The default initial hold grace is now **25 tics (714 ms)**, up from 9 (257 ms). Key timelines
+  recorded by the game itself in xterm, with keys driven through X/XTEST, put the first autorepeat
+  18 tics after the press at 500 ms / 30 Hz and 23 tics at X's default 660 ms / 25 Hz. The old
+  grace stalled every hold for 9 or 14 tics; the new one holds both without interruption
+  (`tests/deep_signal_hold_timeline.rs`, which also binds the game's recorded trace header to the
+  checked configuration). A press-only terminal cannot tell a tap from the start of a hold, so a
+  tap now moves for 25 tics; `--hold-grace-ms` sets another value. Recorded traces replay with the
+  grace in their header, so older traces are unaffected.
+
 ### Added — examples (v0.7 node E; not library API)
 - **`examples/deep_signal` — DEEP SIGNAL**, an original playable first-person terminal maze built
   only on the public API (no copyrighted assets or engine code): seeded sectors of growing size,
