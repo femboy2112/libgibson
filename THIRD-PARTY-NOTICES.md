@@ -52,3 +52,12 @@ are included here for completeness.
 | unicode-segmentation v1.13.3 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-segmentation |
 | unicode-width v0.2.2 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-width |
 | zmij v1.0.23 | MIT | https://github.com/dtolnay/zmij |
+
+## Source ported into LibGibson
+
+Besides linking the crates above, LibGibson's own source includes code ported
+from one of them:
+
+| File | Ported from | License |
+|------|-------------|---------|
+| `src/tty_source/parse.rs` | crossterm 0.29.0 `src/event/sys/unix/parse.rs` and the `Parser` of `src/event/source/unix/mio.rs` (issue #269) | MIT, Copyright (c) 2019 Timon; the full notice is reproduced at the top of the file |

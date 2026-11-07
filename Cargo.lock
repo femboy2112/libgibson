@@ -417,6 +417,7 @@ dependencies = [
  "libc",
  "portable-pty",
  "rtrb",
+ "signal-hook",
  "taffy",
  "unicode-segmentation",
  "unicode-width",

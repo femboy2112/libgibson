@@ -48,7 +48,6 @@ fn parse_hex(v: &str) -> Option<u64> {
 }
 
 #[test]
-#[ignore = "timing-sensitive PTY test; run serially in the dedicated PTY CI job via --include-ignored (parallel `cargo test` starves its liveness deadline under load)"]
 fn graceful_hangup_restore_runs_to_completion_and_raw_mode_took_effect() {
     // Unique evidence file on a regular filesystem: it outlives the PTY, which
     // the hangup severs (post-hangup child stdout goes to /dev/null).
@@ -70,11 +69,11 @@ fn graceful_hangup_restore_runs_to_completion_and_raw_mode_took_effect() {
 
     cap.hang_up();
 
-    // Liveness bound, deliberately generous: the defect this guards against is a
-    // restore() that hangs *forever* on a dead terminal, so any finite bound
-    // catches it — the number's only job is to clear a healthy-but-starved exit on
-    // a loaded CI runner without a false failure. 15s is ~5x the slowest exit seen
-    // under load; `None` still means it hung (or the hangup never surfaced). This
+    // Liveness bound: the defects this guards against (a restore() that hangs forever
+    // on a dead terminal; a poll that spins after the hangup, #269) never end, so any
+    // finite bound catches them. A correct exit takes milliseconds, so 15 s is margin.
+    // The attempt-1 failures once blamed on a "starved" CI runner were the #269 spin.
+    // `None` still means it hung (or the hangup never surfaced). This
     // loop polls try_wait() and is independent of the capture budget — see
     // common/pty_capture.rs (the deadline governs only collect_*, not try_wait).
     let code = wait_exit_code(&mut cap, Duration::from_millis(15_000));

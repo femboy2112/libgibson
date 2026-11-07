@@ -183,12 +183,14 @@ pub enum Event {
 
 /// Polls for an event with a timeout.
 ///
-/// On a Unix controlling terminal this is **hangup-aware**: if the terminal hangs
+/// On a Unix controlling terminal this is **hangup-aware**: once the terminal hangs
 /// up (SIGHUP, master closed) it returns `Err(ErrorKind::BrokenPipe)` instead of
-/// spinning forever (issue #79). crossterm's backend busy-loops at ~66% CPU on a
-/// hung-up tty because its internal read loop never honours the timeout once the fd
-/// reports `POLLHUP`; we therefore do the waiting ourselves on stdin and never hand
-/// a possibly-hung fd to crossterm with a blocking timeout.
+/// spinning forever (issues #79, #269). There LibGibson reads and decodes stdin itself
+/// (`tty_source`, with crossterm 0.29.0's decoder) rather than through crossterm's
+/// event reader, whose read loop retries a hung-up terminal forever. The hangup is
+/// detected from the read itself (`0` bytes or `EIO`), so it is reported whenever it
+/// lands, including in the middle of a poll. Events decoded before the hangup are
+/// delivered first; every poll after that returns `BrokenPipe`.
 ///
 /// The dispatch keys off input-source **identity**, not a fresh liveness probe. Once
 /// stdin has been seen as a controlling terminal we keep the hangup-aware path even
@@ -248,6 +250,10 @@ pub fn set_focus_reporting(enable: bool) -> io::Result<()> {
 /// The portable crossterm wait+decode. Used off-Unix, or when stdin is not a tty
 /// (crossterm then reads `/dev/tty`, a fd we do not observe for hangup).
 fn poll_event_crossterm(timeout: Duration) -> io::Result<Option<Event>> {
+    // crossterm 0.29's Windows poll converts the timeout with `as_millis() as u32`; a
+    // timeout of 2^32 ms or more would wrap, and 0xFFFF_FFFF means INFINITE there. Cap
+    // it at the largest finite value (about 49.7 days).
+    let timeout = timeout.min(Duration::from_millis(u64::from(u32::MAX - 1)));
     if event::poll(timeout)? {
         Ok(decode_event(event::read()?))
     } else {
@@ -312,50 +318,12 @@ fn decode_mouse(m: CtMouseEvent) -> Option<Event> {
     }))
 }
 
-/// Hangup-aware poll loop for a Unix controlling terminal (issue #79).
-///
-/// We never block inside crossterm on a possibly-hung fd. We wait on stdin
-/// ourselves in short slices, checking `POLLHUP`/`POLLERR` each slice, and only ask
-/// crossterm to decode with a zero timeout once stdin is readable. A hangup is
-/// surfaced within one slice; a readable-but-undecodable fd (the upstream crossterm
-/// "stranded input" stall, issue #15) is paced rather than busy-looped, preserving
-/// the stock stall behaviour without burning CPU.
+/// Hangup-aware poll for a Unix controlling terminal on stdin (issues #79, #269): the
+/// library-owned source in `tty_source`. It returns `Err(BrokenPipe)` once the terminal
+/// has hung up, wherever in the poll the hangup lands.
 #[cfg(unix)]
 fn poll_event_unix_tty(timeout: Duration) -> io::Result<Option<Event>> {
-    use std::time::Instant;
-
-    const SLICE: Duration = Duration::from_millis(25);
-    let hung_up = || io::Error::new(io::ErrorKind::BrokenPipe, "terminal hung up (SIGHUP)");
-    let deadline = Instant::now().checked_add(timeout);
-
-    loop {
-        if tty_hung_up(libc::STDIN_FILENO)? {
-            return Err(hung_up());
-        }
-        // Decode anything crossterm already holds, without letting it block on the fd.
-        if event::poll(Duration::ZERO)? {
-            return Ok(decode_event(event::read()?));
-        }
-        let remaining = match deadline {
-            Some(d) => d.saturating_duration_since(Instant::now()),
-            None => Duration::MAX,
-        };
-        if remaining.is_zero() {
-            return Ok(None);
-        }
-        let slice = remaining.min(SLICE);
-        match wait_stdin_readable(slice)? {
-            StdinWait::HungUp => return Err(hung_up()),
-            StdinWait::TimedOut | StdinWait::Interrupted => continue,
-            StdinWait::Readable => {
-                // Readable yet crossterm decoded nothing above: the edge was already
-                // consumed (issue #15, an upstream crossterm bug). POLLIN stays level-
-                // set, so looping straight back would busy-spin; sleep one slice so we
-                // still re-check for a hangup and pick the byte up on the next edge.
-                std::thread::sleep(slice);
-            }
-        }
-    }
+    Ok(crate::tty_source::poll(timeout)?.and_then(decode_event))
 }
 
 /// Whether stdin is a real terminal *right now* — the liveness probe. After a
@@ -472,67 +440,6 @@ mod identity_tests {
         assert!(!use_unix);
         assert!(!latched, "a non-tty source must never latch tty identity");
     }
-}
-
-/// `true` if `fd` reports a hangup/error condition right now (non-blocking).
-#[cfg(unix)]
-fn tty_hung_up(fd: i32) -> io::Result<bool> {
-    // `events: 0` still has the kernel report POLLHUP/POLLERR/POLLNVAL in `revents`.
-    let mut pfd = libc::pollfd {
-        fd,
-        events: 0,
-        revents: 0,
-    };
-    // SAFETY: one valid pollfd; timeout 0 is non-blocking.
-    let rc = unsafe { libc::poll(&mut pfd as *mut libc::pollfd, 1, 0) };
-    if rc < 0 {
-        let e = io::Error::last_os_error();
-        return if e.kind() == io::ErrorKind::Interrupted {
-            Ok(false)
-        } else {
-            Err(e)
-        };
-    }
-    Ok(pfd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0)
-}
-
-#[cfg(unix)]
-enum StdinWait {
-    Readable,
-    TimedOut,
-    HungUp,
-    Interrupted,
-}
-
-/// Waits up to `slice` for stdin to become readable, reporting a hangup distinctly.
-#[cfg(unix)]
-fn wait_stdin_readable(slice: Duration) -> io::Result<StdinWait> {
-    let ms = slice.as_millis().min(i32::MAX as u128) as i32;
-    let mut pfd = libc::pollfd {
-        fd: libc::STDIN_FILENO,
-        events: libc::POLLIN,
-        revents: 0,
-    };
-    // SAFETY: one valid pollfd.
-    let rc = unsafe { libc::poll(&mut pfd as *mut libc::pollfd, 1, ms) };
-    if rc < 0 {
-        let e = io::Error::last_os_error();
-        return if e.kind() == io::ErrorKind::Interrupted {
-            Ok(StdinWait::Interrupted)
-        } else {
-            Err(e)
-        };
-    }
-    if rc == 0 {
-        return Ok(StdinWait::TimedOut);
-    }
-    if pfd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
-        return Ok(StdinWait::HungUp);
-    }
-    if pfd.revents & libc::POLLIN != 0 {
-        return Ok(StdinWait::Readable);
-    }
-    Ok(StdinWait::TimedOut)
 }
 
 /// Stateful grapheme-aware single-line text input buffer.

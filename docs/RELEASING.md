@@ -9,8 +9,10 @@ steps on its own. What a release promises is defined in
 ## 0. Preconditions
 
 - `main` is up to date and green.
-- The crossterm / dependency status is understood (see the issue tracker; #15 tracks
-  the crossterm readiness-batch fix filed upstream as crossterm#1128).
+- The crossterm / dependency status is understood (see the issue tracker). LibGibson reads a
+  Unix controlling terminal with its own source (`src/tty_source.rs`, #269), which avoids
+  crossterm 0.29's hung-terminal spin and its readiness-batch stall (#15, upstream
+  crossterm#1128); crossterm still writes output and handles every other input path.
 - You are **not** publishing until a human explicitly approves the final step for a
   specific version.
 - You have enough free disk. A full patch cycle builds several trees; run

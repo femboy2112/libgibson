@@ -91,6 +91,8 @@ pub mod story;
 pub mod surface;
 pub mod surface_fx;
 pub mod temporal;
+#[cfg(unix)]
+mod tty_source;
 // Internal renderer plumbing (the batched wire transaction — not atomic I/O, see
 // `transaction.rs` and docs/RELEASE_CONTRACT.md §9). Crate-private: it has
 // no external consumers, is not re-exported, and its stability is the renderer's,
