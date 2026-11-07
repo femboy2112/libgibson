@@ -163,16 +163,12 @@ fn legacy_poll_still_reports_a_typed_collision_letter_by_its_code_alone() {
     assert_eq!(fields(&legacy), fields(&key(GIBSON_KEY_ENTER, 0)));
 }
 
+/// The fields a poll wrote, with the paste text copied out.
+type Written = (i32, u32, u8, [u8; 3], u16, u16, Option<String>);
+
 /// Everything a poll writes, read back by value: the fields plus the paste text (copied while
 /// it is valid), from an output buffer first filled with `poison`. `kind` selects the poll.
-fn poll_into(
-    ctx: &Ctx,
-    poison: u8,
-    kind: bool,
-) -> (
-    (i32, u32, u8, [u8; 3], u16, u16, Option<String>),
-    Option<u32>,
-) {
+fn poll_into(ctx: &Ctx, poison: u8, kind: bool) -> (Written, Option<u32>) {
     let mut out = std::mem::MaybeUninit::<GibsonEvent>::uninit();
     // SAFETY: poisoning the bytes of a plain-old-data struct; every field is overwritten by the
     // poll (the contract under test) before it is read.
