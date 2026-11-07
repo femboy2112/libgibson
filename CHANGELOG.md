@@ -58,10 +58,20 @@ first-parent history (Release Contract §1); until then it is a candidate, not a
   off-terminal branch. (`Context::poll_from` still reads whatever source it is given: passing it
   `TerminalSource` explicitly reads the terminal, as that source always does.) Only the two
   `Context` guards are backported (from #265); no 0.7 API comes with them.
+- **Fixed — a key release is no longer delivered as a key press**
+  ([#285](https://github.com/femboy2112/libgibson/issues/285), RXIX; backported from `main`'s
+  #289, `src/input.rs` identical). On Unix, a terminal speaking the kitty keyboard protocol
+  reports an event type with each key, and every **release** (`CSI 97;1:3u`) reached the
+  application as a second press, through `Context::poll_event` / `run_once` and
+  `gibson_poll_event`. A press and a repeat are still delivered; a release is not. LibGibson
+  never enables the protocol itself, so this mattered only when something else left it enabled.
+  A dropped event (a release, or a key code LibGibson does not model, such as F5) also no longer
+  ends a terminal poll early: the poll waits out the rest of its deadline and delivers what is
+  queued behind it, consuming at most 64 more already-available undelivered events once the
+  deadline has passed. Windows key-kind decoding is unchanged (its own key doubling is #292).
 - **Known limitations of 0.6.0, fixed or addressed only on the 0.7 line:**
   - #274: the C ABI's `GIBSON_KEY_*` codes collide with typed U+1001–U+100D; 0.7 adds
     `gibson_poll_event_kind`.
-  - #285: a kitty-protocol key release, if a terminal sends one, is read as a press.
   - Off Unix, or with stdin not a terminal and no controlling terminal, input still goes through
     crossterm.
 
