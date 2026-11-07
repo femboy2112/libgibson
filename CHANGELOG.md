@@ -27,11 +27,11 @@ audit approval of exactly `eaa0d1c`). `GIBSON_ABI_VERSION` stays 1 — the C ABI
 **additive** functions (52 → 59, compatible, no version bump); MSRV stays 1.85.
 
 
-### Release candidate — `release/v0.6.0-rc` (RXVIII): two backported corrections, not yet tagged
+### Release candidate — `release/v0.6.0-rc` (RXVIII–RXIX): backported corrections, not yet tagged
 
-The `9a899e1` source was held back from tagging because of two defects found after it. This branch
-is `9a899e1` plus their fixes and tests, backported from `main` and nothing else (no 0.7 API, ABI
-or example). The C ABI stays at the 59 symbols of `9a899e1`, MSRV stays 1.85, and the PCM golden is
+The `9a899e1` source was held back from tagging because of defects found after it. This branch is
+`9a899e1` plus their fixes and tests, backported from `main` and nothing else (no 0.7 API, ABI or
+example). The C ABI stays at the 59 symbols of `9a899e1`, MSRV stays 1.85, and the PCM golden is
 unchanged. Tagging it needs the owner's decision on releasing from a branch that is not `main`'s
 first-parent history (Release Contract §1); until then it is a candidate, not a release.
 
@@ -48,8 +48,15 @@ first-parent history (Release Contract §1); until then it is a candidate, not a
 - **Fixed — `run_once` no longer busy-spins when idle**
   ([#264](https://github.com/femboy2112/libgibson/issues/264)). It waits up to `max_wait` unless a
   frame is pending; additive `time_until_frame_needed` / `input_wait`.
+- **Fixed — a headless context no longer reads the process terminal**
+  ([#259](https://github.com/femboy2112/libgibson/issues/259), RXIX). `Context::headless` and
+  `gibson_create_headless_context` are output-only, as the release contract says, but
+  `Context::poll_event`, `Context::run_once` and `gibson_poll_event` gated only on the session's
+  TTY flag, which a headless session sets for rendering. With no terminal the poll failed
+  (`GIBSON_ERR_IO`); on a real terminal it consumed the user's keystrokes. A headless context now
+  reports no input at once, and its `run_once` takes the off-terminal branch. Only the two
+  `Context` guards are backported (from #265); none of 0.7's injected-input API comes with them.
 - **Known limitations of 0.6.0, fixed or addressed only on the 0.7 line:**
-  - #259: on a terminal, a `Context::headless` session still polls the process terminal.
   - #274: the C ABI's `GIBSON_KEY_*` codes collide with typed U+1001–U+100D; 0.7 adds
     `gibson_poll_event_kind`.
   - #285: a kitty-protocol key release, if a terminal sends one, is read as a press.
