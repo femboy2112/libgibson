@@ -929,12 +929,21 @@ pub unsafe extern "C" fn gibson_poll_event_kind(
     out_event: *mut GibsonEvent,
     out_key_kind: *mut u32,
 ) -> GibsonStatus {
-    if out_key_kind.is_null() {
-        set_last_error("gibson_poll_event_kind: Null pointer".into());
-        return GibsonStatus::ErrInvalidParam;
+    // The NULL check records a diagnostic, which touches thread-local state: keep it inside the
+    // panic guard like every other path (a panic must not unwind across the C boundary).
+    let checked = catch_unwind(AssertUnwindSafe(|| {
+        if out_key_kind.is_null() {
+            set_last_error("gibson_poll_event_kind: Null pointer".into());
+            return false;
+        }
+        out_key_kind.write(GIBSON_KEY_KIND_NONE);
+        true
+    }));
+    match checked {
+        Ok(true) => poll_event_impl(ctx, timeout_ms, out_event, out_key_kind),
+        Ok(false) => GibsonStatus::ErrInvalidParam,
+        Err(_) => GibsonStatus::ErrPanic,
     }
-    out_key_kind.write(GIBSON_KEY_KIND_NONE);
-    poll_event_impl(ctx, timeout_ms, out_event, out_key_kind)
 }
 
 /// The body of [`gibson_poll_event`] and [`gibson_poll_event_kind`]; `out_key_kind` is null

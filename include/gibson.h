@@ -33,7 +33,7 @@ typedef enum {
     GIBSON_ERR_IO = -2,
     GIBSON_ERR_PANIC = -3,
     GIBSON_ERR_NOT_INITIALIZED = -4,
-    GIBSON_ERR_QUEUE_FULL = -5     /* gibson_push_event only (ABI v1, additive) */
+    GIBSON_ERR_QUEUE_FULL = -5     /* gibson_push_event / gibson_push_event_kind only (ABI v1, additive) */
 } gibson_status_t;
 
 /* Render modes (pass as int32_t) */

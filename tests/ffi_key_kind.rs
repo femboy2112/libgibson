@@ -163,6 +163,49 @@ fn legacy_poll_still_reports_a_typed_collision_letter_by_its_code_alone() {
     assert_eq!(fields(&legacy), fields(&key(GIBSON_KEY_ENTER, 0)));
 }
 
+/// Everything a poll writes, read back by value: the fields plus the paste text (copied while
+/// it is valid), from an output buffer first filled with `poison`. `kind` selects the poll.
+fn poll_into(
+    ctx: &Ctx,
+    poison: u8,
+    kind: bool,
+) -> (
+    (i32, u32, u8, [u8; 3], u16, u16, Option<String>),
+    Option<u32>,
+) {
+    let mut out = std::mem::MaybeUninit::<GibsonEvent>::uninit();
+    // SAFETY: poisoning the bytes of a plain-old-data struct; every field is overwritten by the
+    // poll (the contract under test) before it is read.
+    unsafe { std::ptr::write_bytes(out.as_mut_ptr(), poison, 1) };
+    let mut k = u32::from_ne_bytes([poison; 4]);
+    let st = unsafe {
+        if kind {
+            gibson_poll_event_kind(ctx.0, 0, out.as_mut_ptr(), &mut k)
+        } else {
+            gibson_poll_event(ctx.0, 0, out.as_mut_ptr())
+        }
+    };
+    assert_eq!(st, GibsonStatus::Ok);
+    let e = unsafe { out.assume_init() };
+    let paste = (!e.paste_str.is_null()).then(|| {
+        unsafe { std::ffi::CStr::from_ptr(e.paste_str) }
+            .to_string_lossy()
+            .into_owned()
+    });
+    (
+        (
+            e.event_type,
+            e.key_code,
+            e.modifiers,
+            e._pad,
+            e.cols,
+            e.rows,
+            paste,
+        ),
+        kind.then_some(k),
+    )
+}
+
 #[test]
 fn kind_poll_writes_the_event_exactly_as_the_legacy_poll() {
     // Same pushes, two polls: identical *out_event bytes for keys, pastes, resizes and none.
@@ -183,11 +226,14 @@ fn kind_poll_writes_the_event_exactly_as_the_legacy_poll() {
         },
     ];
     for ev in &events {
+        // Each poll writes into a buffer poisoned with a different pattern, so a field one of
+        // them forgets to write shows up as a difference; paste text is compared by content,
+        // copied before the next poll invalidates it.
         assert_eq!(ctx.push_legacy(ev), GibsonStatus::Ok);
-        let a = ctx.poll_legacy();
+        let a = poll_into(&ctx, 0x11, false).0;
         assert_eq!(ctx.push_legacy(ev), GibsonStatus::Ok);
-        let (b, kind) = ctx.poll_kind();
-        assert_eq!(fields(&a), fields(&b));
+        let (b, kind) = poll_into(&ctx, 0xEE, true);
+        assert_eq!(a, b, "legacy vs kind-aware poll output");
         let want = if ev.event_type == GIBSON_EVENT_KEY {
             if SPECIALS.contains(&ev.key_code) {
                 GIBSON_KEY_KIND_SPECIAL
@@ -197,7 +243,7 @@ fn kind_poll_writes_the_event_exactly_as_the_legacy_poll() {
         } else {
             GIBSON_KEY_KIND_NONE
         };
-        assert_eq!(kind, want, "{:?}", fields(ev));
+        assert_eq!(kind, Some(want), "{:?}", fields(ev));
     }
     // An empty queue: NONE event, NONE kind (the poison value is overwritten).
     let (none, kind) = ctx.poll_kind();

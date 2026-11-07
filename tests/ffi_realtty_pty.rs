@@ -249,13 +249,21 @@ fn abi_poll_event_kind_tells_typed_myanmar_letters_from_special_keys_on_a_real_t
         b"\x1b[3~", b"\x1b", b"\t", b"\x1b[5~", b"\x1b[6~",
     ];
     let receipt = drive("abi-input-kind", |cap| {
+        // Lockstep: each input is sent only after the probe has reported the previous one, so
+        // no two inputs share a read. (A lone ESC followed in the same read by a letter would
+        // decode as Alt+letter, which is correct decoding and not what this test is about.)
+        let mut expected = 0;
+        let mut send = |cap: &mut pty_capture::Capture, bytes: &[u8]| {
+            cap.write(bytes).expect("write");
+            expected += 1;
+            let want = expected;
+            cap.collect_until(|b| String::from_utf8_lossy(b).matches("EVKEY ").count() >= want)
+                .unwrap_or_else(|e| panic!("no receipt #{want}: {e}"));
+        };
         for (i, seq) in specials.iter().enumerate() {
             let letter = char::from_u32(0x1001 + i as u32).unwrap().to_string();
-            cap.write(letter.as_bytes()).expect("write letter");
-            let _ = cap.collect_for(Duration::from_millis(40));
-            cap.write(seq).expect("write key");
-            // A lone ESC is only an Esc once no more bytes follow it in the same read.
-            let _ = cap.collect_for(Duration::from_millis(40));
+            send(cap, letter.as_bytes());
+            send(cap, seq);
         }
         cap.write(b"q").expect("write sentinel");
     });
