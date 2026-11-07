@@ -10,7 +10,8 @@
 //!   `--for-ms`. Reports the number of `run_once` returns and the process CPU time.
 //! * `no-root` — like `idle`, but no root is ever set, so no frame is ever recorded.
 //! * `dirty` — render one frame, mark the context dirty, then call `run_once` once
-//!   with a long `max_wait`. Reports how long that call took and whether it rendered.
+//!   with a long `max_wait` and no input. Reports how long that call took, whether it
+//!   rendered, and the time since the first frame (the start of the budget).
 //! * `wake` — idle-loop `run_once(wait)` until a key arrives, printing `GOT <char>` the
 //!   moment `run_once` returns it, then exits. The parent measures the wake latency.
 //!
@@ -105,27 +106,26 @@ fn main() -> std::io::Result<()> {
         "dirty" => {
             ctx.set_root(Node::text("frame-0", Style::new()));
             ctx.render()?;
+            // The frame budget runs from the end of that render; this instant is at or
+            // after it, so time measured from here never overstates the budget.
+            let frame0 = Instant::now();
             let _ = ctx.poll_event(Duration::ZERO)?;
             say("READY");
             let frames_before = ctx.stats().frames;
             // A change lands right after a frame: it is pending, and the budget is not
-            // yet spent. run_once must render it once the budget allows, not wait out
-            // max_wait and not spin.
+            // yet spent. With no input, the one run_once call must wait until the budget
+            // allows it and render it: not wait out max_wait, and not spin.
             ctx.set_root(Node::text("frame-1", Style::new()));
             let t0 = Instant::now();
             let _ = ctx.run_once(wait)?;
-            let first = t0.elapsed();
-            let mut frames = ctx.stats().frames - frames_before;
-            // Continue until the frame lands (it may need more than one call when the
-            // first call returns early), bounded by max_wait.
-            while frames == 0 && t0.elapsed() < wait {
-                let _ = ctx.run_once(wait)?;
-                frames = ctx.stats().frames - frames_before;
-            }
+            let first_call = t0.elapsed();
+            let first_call_frames = ctx.stats().frames - frames_before;
+            let since_frame0 = frame0.elapsed();
             say(&format!(
-                "RESULT scenario=dirty first_call_us={} rendered_after_us={} frames={frames} budget_us={}",
-                first.as_micros(),
-                t0.elapsed().as_micros(),
+                "RESULT scenario=dirty first_call_us={} first_call_frames={first_call_frames} \
+                 since_frame0_us={} budget_us={}",
+                first_call.as_micros(),
+                since_frame0.as_micros(),
                 ctx.frame_budget().as_micros()
             ));
         }
