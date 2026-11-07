@@ -235,6 +235,46 @@ impl FrameScheduler {
         }
     }
 
+    /// Time until a frame is **needed**: `None` while no frame is pending (the
+    /// scheduler is clean), otherwise the time until the pending frame becomes eligible
+    /// under the FPS budget — [`time_until_next_frame`](Self::time_until_next_frame),
+    /// zero when it may render now.
+    ///
+    /// The two answer different questions. `time_until_next_frame` reports when a
+    /// frame would be *permitted*; once a budget has elapsed that is zero for good,
+    /// dirty or not. This reports when one is *required*, which is the only deadline
+    /// an input wait has to respect. Bounding an idle wait by the permission instead
+    /// turns an input-driven loop into a busy-spin (issue #264).
+    pub fn time_until_frame_needed(&self) -> Option<Duration> {
+        self.time_until_frame_needed_at(Instant::now())
+    }
+
+    fn time_until_frame_needed_at(&self, now: Instant) -> Option<Duration> {
+        // A dirty phase-locked scheduler with no anchored deadline gets zero from
+        // `time_until_next_frame_at`, matching `should_render_at`, which anchors the
+        // phase on that first eligible frame.
+        self.is_dirty.then(|| self.time_until_next_frame_at(now))
+    }
+
+    /// How long one iteration of an input-driven loop should wait for input:
+    /// `max_wait`, shortened to the pending frame's eligibility when a frame is
+    /// pending ([`time_until_frame_needed`](Self::time_until_frame_needed)).
+    ///
+    /// With nothing pending this is the full `max_wait`, however long ago the last
+    /// frame was. A frame that becomes pending *during* the wait can only come from
+    /// the input that ends it (or from another thread, which must wake the loop
+    /// itself), so the wait never oversleeps a frame it could have known about.
+    pub fn input_wait(&self, max_wait: Duration) -> Duration {
+        self.input_wait_at(Instant::now(), max_wait)
+    }
+
+    fn input_wait_at(&self, now: Instant, max_wait: Duration) -> Duration {
+        match self.time_until_frame_needed_at(now) {
+            Some(until_eligible) => max_wait.min(until_eligible),
+            None => max_wait,
+        }
+    }
+
     /// True when the frame budget currently permits a render, regardless of dirty state.
     pub fn frame_due(&self) -> bool {
         self.time_until_next_frame().is_zero()
@@ -511,6 +551,169 @@ mod tests {
         scheduler.set_animation_interval(Duration::from_millis(1));
         assert!(scheduler.animation_interval() >= scheduler.frame_budget());
         assert!(scheduler.animation_interval() >= Duration::from_millis(8));
+    }
+
+    // ---- issue #264: the input wait is bounded by the NEEDED frame, not the PERMITTED one ----
+
+    const MAX_WAIT: Duration = Duration::from_millis(100);
+
+    /// Every pacing × FPS combination the #264 laws are checked over: high, default, low.
+    fn configs() -> Vec<(FramePacing, u32)> {
+        let mut v = Vec::new();
+        for pacing in [FramePacing::CompletionRelative, FramePacing::PhaseLocked] {
+            for fps in [1, 10, 60, 240, 1000] {
+                v.push((pacing, fps));
+            }
+        }
+        v
+    }
+
+    /// Renders one frame at `t` (request, eligibility check, record), as `run_once` does.
+    fn render_at(s: &mut FrameScheduler, t: Instant) {
+        s.request_render();
+        assert!(s.should_render_at(t), "the frame must be eligible at {t:?}");
+        s.record_frame_at(t, 0, 0, 0, false, Duration::ZERO);
+    }
+
+    #[test]
+    fn clean_scheduler_waits_the_full_max_wait_after_the_budget_elapses() {
+        // The #264 defect: once the budget has elapsed, the PERMITTED-frame wait is zero
+        // forever, and bounding an idle wait by it spins. Mutation control: restoring
+        // `max_wait.min(time_until_next_frame)` makes every assertion here fail.
+        for (pacing, fps) in configs() {
+            let t0 = Instant::now();
+            let mut s = FrameScheduler::new(fps);
+            s.set_pacing(pacing);
+            render_at(&mut s, t0);
+            let later = t0 + s.frame_budget() * 3;
+            assert_eq!(
+                s.time_until_next_frame_at(later),
+                Duration::ZERO,
+                "precondition ({pacing:?}, {fps} fps): a frame is permitted"
+            );
+            assert_eq!(
+                s.time_until_frame_needed_at(later),
+                None,
+                "nothing is pending"
+            );
+            assert_eq!(
+                s.input_wait_at(later, MAX_WAIT),
+                MAX_WAIT,
+                "({pacing:?}, {fps} fps): an idle wait must be the full max_wait"
+            );
+        }
+    }
+
+    #[test]
+    fn a_never_rendered_clean_scheduler_also_waits_max_wait() {
+        for (pacing, fps) in configs() {
+            let mut s = FrameScheduler::new(fps);
+            s.set_pacing(pacing);
+            let now = Instant::now();
+            assert_eq!(s.time_until_next_frame_at(now), Duration::ZERO);
+            assert_eq!(
+                s.input_wait_at(now, MAX_WAIT),
+                MAX_WAIT,
+                "({pacing:?}, {fps} fps)"
+            );
+        }
+    }
+
+    #[test]
+    fn a_pending_frame_bounds_the_wait_by_its_eligibility() {
+        // Negative control for an over-correction: a pending frame must NOT wait out
+        // max_wait. Mutation control: `input_wait` that always returns max_wait fails here.
+        for (pacing, fps) in configs() {
+            let t0 = Instant::now();
+            let mut s = FrameScheduler::new(fps);
+            s.set_pacing(pacing);
+            render_at(&mut s, t0);
+            s.request_render();
+            let budget = s.frame_budget();
+            // Inside the budget: wait exactly until the frame is permitted (or max_wait).
+            let early = t0 + budget / 4;
+            let until = budget - budget / 4;
+            assert_eq!(s.time_until_frame_needed_at(early), Some(until));
+            assert_eq!(
+                s.input_wait_at(early, MAX_WAIT),
+                MAX_WAIT.min(until),
+                "({pacing:?}, {fps} fps): pending inside the budget"
+            );
+            // Past the budget: the pending frame is overdue, so do not wait at all.
+            let late = t0 + budget * 2;
+            assert_eq!(s.time_until_frame_needed_at(late), Some(Duration::ZERO));
+            assert_eq!(s.input_wait_at(late, MAX_WAIT), Duration::ZERO);
+        }
+    }
+
+    #[test]
+    fn a_dirty_phase_locked_scheduler_with_no_phase_is_needed_now() {
+        let mut s = FrameScheduler::new(60);
+        s.set_pacing(FramePacing::PhaseLocked);
+        s.request_render();
+        let now = Instant::now();
+        assert_eq!(s.time_until_frame_needed_at(now), Some(Duration::ZERO));
+        assert_eq!(s.input_wait_at(now, MAX_WAIT), Duration::ZERO);
+        assert!(
+            s.should_render_at(now),
+            "and the render it waited for is permitted"
+        );
+    }
+
+    #[test]
+    fn the_input_wait_never_exceeds_max_wait_and_zero_max_wait_stays_zero() {
+        for (pacing, fps) in configs() {
+            let t0 = Instant::now();
+            let mut s = FrameScheduler::new(fps);
+            s.set_pacing(pacing);
+            render_at(&mut s, t0);
+            for dirty in [false, true] {
+                if dirty {
+                    s.request_render();
+                }
+                for k in 0..5u32 {
+                    let t = t0 + s.frame_budget() * k / 2;
+                    assert!(s.input_wait_at(t, MAX_WAIT) <= MAX_WAIT);
+                    assert_eq!(s.input_wait_at(t, Duration::ZERO), Duration::ZERO);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn long_session_clean_waits_stay_full_and_pending_frames_stay_on_cadence() {
+        // A long simulated session on a synthetic clock: 5,000 frames, with idle gaps
+        // growing to an hour. Laws checked at every step: an idle wait is always the full
+        // max_wait (never decays to zero as the session ages), a pending frame's wait is
+        // always within one budget, and the frame counter only grows.
+        for (pacing, fps) in configs() {
+            let mut s = FrameScheduler::new(fps);
+            s.set_pacing(pacing);
+            let budget = s.frame_budget();
+            let mut t = Instant::now();
+            let mut frames = 0u64;
+            for i in 0..5_000u64 {
+                // Idle gap: from one budget up to an hour.
+                t += budget + Duration::from_millis((i * i) % 3_600_000);
+                assert_eq!(s.input_wait_at(t, MAX_WAIT), MAX_WAIT, "idle step {i}");
+                s.request_render();
+                let pending = s.input_wait_at(t, MAX_WAIT);
+                assert!(
+                    pending <= budget,
+                    "step {i}: pending wait {pending:?} > budget"
+                );
+                // Advance to eligibility, then render, as run_once does.
+                t += pending;
+                if !s.should_render_at(t) {
+                    t += s.time_until_next_frame_at(t);
+                    assert!(s.should_render_at(t), "step {i}: eligible at its deadline");
+                }
+                s.record_frame_at(t, 0, 0, 0, false, Duration::ZERO);
+                assert!(s.stats.frames > frames, "the frame counter is monotonic");
+                frames = s.stats.frames;
+            }
+            assert_eq!(frames, 5_000, "({pacing:?}, {fps} fps)");
+        }
     }
 
     #[test]
