@@ -17,9 +17,8 @@
 //!
 //! `--headless` runs `idle` / `no-root` / `dirty` on a [`gibson::Context::headless`] session
 //! instead of the controlling terminal. `--dirty` marks a `no-root` context dirty first.
-//! (v0.6 release line: a headless context still polls the process terminal there — #259 is
-//! fixed in 0.7 — so this line's tests reach `run_once`'s off-TTY sleep branch through a
-//! context whose stdout is not a terminal instead.)
+//! (v0.6 release line: its tests reach `run_once`'s off-TTY sleep branch through a context
+//! whose stdout is not a terminal; they were written that way before #259 was backported here.)
 //!
 //! CPU is `getrusage(RUSAGE_SELF)` user+system time, measured across the timed loop only.
 

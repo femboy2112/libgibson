@@ -447,11 +447,12 @@ impl Context {
     /// per-iteration ticks (`AppEvent::Tick`), use `gibson::ui::App`.
     pub fn run_once(&mut self, max_wait: Duration) -> io::Result<Option<Event>> {
         let wait = self.scheduler.input_wait(max_wait);
-        let event = if self.session.is_tty {
+        let event = if self.session.is_tty && !self.session.is_headless() {
             self.poll_event(wait)?
         } else {
-            // No input source off-TTY: sleep for the frame slice instead of
-            // busy-spinning, then render if due.
+            // No input source off-TTY or on a headless (virtual) session: sleep for the
+            // frame slice instead of busy-spinning, then render if due. A headless context
+            // never reads the process terminal (#259).
             if !wait.is_zero() {
                 std::thread::sleep(wait);
             }
@@ -650,10 +651,13 @@ impl Context {
         Ok(())
     }
 
-    /// Polls for structured input events.
+    /// Polls the controlling terminal for structured input events.
+    ///
+    /// Returns `Ok(None)` at once, without touching the process terminal, when there is no
+    /// terminal input source: on a redirected / non-TTY stdout, and on a **headless**
+    /// context ([`Context::headless`]), whose session is virtual and output-only (#259).
     pub fn poll_event(&mut self, timeout: Duration) -> io::Result<Option<Event>> {
-        if !self.session.is_tty {
-            // No interactive input source on a redirected / non-TTY stdout.
+        if !self.session.is_tty || self.session.is_headless() {
             return Ok(None);
         }
         self.session.enter_interactive()?;

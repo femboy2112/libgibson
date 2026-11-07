@@ -56,8 +56,9 @@ fn run_on_pty(args: &[&str]) -> BTreeMap<String, u64> {
 }
 
 /// v0.6 release line: the off-TTY branch of `run_once`, reached through a context whose
-/// stdout is a pipe (not a terminal). (On 0.7 this is a `Context::headless` session; on 0.6 a
-/// headless session still polls the process terminal, #259, so it cannot be used here.)
+/// stdout is a pipe (not a terminal). (On 0.7 this is a `Context::headless` session. This line
+/// took that route before #259 was backported to it; `tests/headless_input_boundary.rs` covers
+/// the headless branch.)
 fn run_headless(args: &[&str]) -> BTreeMap<String, u64> {
     let out = std::process::Command::new(pty_capture::example_path(PROBE))
         .args(args)

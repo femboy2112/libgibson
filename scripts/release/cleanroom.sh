@@ -99,6 +99,17 @@ flog="$(mktemp)"
 if ( cd "$fdir" && cc -std=c11 -Wall -Wextra main.c $(pkg-config --cflags --libs libgibson) -o forcing_app && ./forcing_app | grep -q '^doom_forcing_consumer: OK' ) >"$flog" 2>&1; then pass "C forcing consumer"; else bad "C forcing consumer"; dump "$flog"; fi
 rm -f "$flog"
 
+echo "### C installed-SDK headless input boundary (#259, pkg-config) ###"
+# A headless handle is output-only: gibson_poll_event must return GIBSON_OK + GIBSON_EVENT_NONE at
+# once, without opening the process terminal. Run with stdin from /dev/null. Where there is no
+# controlling terminal (CI), the unfixed poll tried to open one and returned GIBSON_ERR_IO; on a
+# terminal it waited for, and consumed, real keystrokes (exceeding the 250 ms bound).
+hdir="$WORK/headless_input"; mkdir -p "$hdir"
+cp bindings/sdk_forcing/headless_input_consumer.c "$hdir/main.c"
+hlog="$(mktemp)"
+if ( cd "$hdir" && cc -std=c11 -Wall -Wextra main.c $(pkg-config --cflags --libs libgibson) -o headless_input_app && ./headless_input_app </dev/null | grep -q '^headless_input_consumer: OK' ) >"$hlog" 2>&1; then pass "C headless input boundary"; else bad "C headless input boundary"; dump "$hlog"; fi
+rm -f "$hlog"
+
 echo "### C++ consumer (pkg-config) ###"
 xdir="$WORK/cpp"; mkdir -p "$xdir"
 cat > "$xdir/main.cpp" <<'EOF'
