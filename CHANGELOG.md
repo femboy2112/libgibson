@@ -37,9 +37,12 @@ not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
   the poll returns, so a stream of them cannot hold a poll past its timeout. (Headless and non-TTY
   contexts still return "no event" at once, and the legacy C poll still reports focus changes and
   other events it does not model as `GIBSON_EVENT_NONE` at once, as before.)
-- **Windows is unchanged:** crossterm reports a key release there only for the Alt key that commits
-  an Alt+numpad character, and that release is the only event carrying the character, so it is
-  still delivered.
+- **Windows is unchanged.** crossterm 0.29 reports a release there for every key, which LibGibson
+  has always delivered as a second press
+  ([#292](https://github.com/femboy2112/libgibson/issues/292)); but it also delivers an Alt+numpad
+  character only as the release of Alt, and a decoded key event does not say which of the two a
+  character release is. Dropping releases on Windows would lose those characters, so that fix is
+  left to #292, which needs that distinction and a Windows test.
 - `tests/key_release_kind_pty.rs` injects the sequences through a real PTY: press, repeat and
   release; a release followed by a legacy press; repeated cycles; fragmented sequences; U+1001
   (the #274 range) through both C polls; focus changes and a resize between releases; a release

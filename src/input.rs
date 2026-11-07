@@ -307,10 +307,14 @@ fn poll_until_deliverable(
     }
 }
 
-/// Whether a key event of this kind is delivered. Press and repeat are; a release is not, except
-/// on Windows (#285 review): there crossterm reports no key releases at all, save one, the
-/// release of Alt that commits an Alt+numpad character code, and that release is the only event
-/// carrying the character, so it is delivered as before.
+/// Whether a key event of this kind is delivered. Press and repeat are; a release is not, on Unix
+/// (#285), where only a kitty-keyboard-protocol terminal reports one.
+///
+/// Windows keeps its earlier behaviour, every kind delivered (#285 review). crossterm 0.29 reports
+/// a release there for **every** key, which LibGibson has always delivered as a second press
+/// (#292), but it also delivers an Alt+numpad character code **only** as the release of Alt, and
+/// a decoded `KeyEvent` does not say which of the two a `Char` release is. Dropping releases there
+/// would lose those characters; fixing the doubling needs that distinction and a Windows test.
 fn delivers_key_kind(kind: KeyEventKind, windows: bool) -> bool {
     kind != KeyEventKind::Release || windows
 }
@@ -1580,13 +1584,13 @@ mod key_kind_tests {
     }
 
     #[test]
-    fn only_windows_delivers_a_release_and_only_for_its_alt_codes() {
+    fn a_release_is_dropped_on_unix_and_windows_is_unchanged() {
         for windows in [false, true] {
             assert!(delivers_key_kind(KeyEventKind::Press, windows));
             assert!(delivers_key_kind(KeyEventKind::Repeat, windows));
         }
         assert!(!delivers_key_kind(KeyEventKind::Release, false));
-        // crossterm on Windows reports a release only for an Alt+numpad character commit.
+        // Windows keeps its earlier behaviour (see `delivers_key_kind`, #292).
         assert!(delivers_key_kind(KeyEventKind::Release, true));
     }
 
@@ -1606,6 +1610,30 @@ mod key_kind_tests {
                 assert_eq!(calls, MAX_DROPS_PAST_DEADLINE);
             }
         }
+    }
+
+    #[test]
+    fn dropped_events_do_not_restart_the_timeout() {
+        // Each call takes 30 ms and yields a dropped event; the fourth call must be offered at most
+        // what is left of the ORIGINAL deadline, not a fresh timeout.
+        let timeout = Duration::from_millis(500);
+        let mut lefts = Vec::new();
+        let got = poll_until_deliverable(timeout, |left| {
+            lefts.push(left);
+            if lefts.len() == 4 {
+                return Ok(None);
+            }
+            std::thread::sleep(Duration::from_millis(30));
+            Ok(Some(undelivered()))
+        })
+        .unwrap();
+        assert_eq!(got, None);
+        assert_eq!(lefts.len(), 4);
+        assert!(
+            lefts[3] <= timeout - Duration::from_millis(90),
+            "offered {:?} after three 30 ms drops: the timeout restarted",
+            lefts[3]
+        );
     }
 
     #[test]
