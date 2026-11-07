@@ -163,6 +163,22 @@ One JSON object per line, keys sorted bytewise, `,`/`:` separators with no space
 * **Out of the comparable transcript** (stderr): one `{"k":"resource",...}` line per repetition
   run, and one `{"k":"wrapper",...}` line of binding-surface observations (C++, Python, Go).
 
+### What the comparator requires (review fix)
+
+An independent review (Codex) showed the first comparator could pass a transcript that omitted
+records, duplicated them, or changed a record inside a known gap. It now requires, per language:
+
+- **completeness**: exactly the 76 ids of `expected.json` `record_ids`, each once (MISSING,
+  UNEXPECTED and DUPLICATE are regressions);
+- **pinned gaps**: every allowlisted difference (the 28 Rust records) must still equal its exact
+  line in `expected.json` `pinned`; a change inside a known gap (e.g. `p21` turning from a refusal
+  into `st:"OK"`) is a regression (CHANGED).
+
+Each was checked against the failing scenario: Rust omitting its 28 allowlisted records, every
+language emitting only `s01`, a duplicated record, and `p21` altered inside the gap all now exit 1;
+the recorded transcripts still pass. The C consumer also queries a cell's full glyph length before
+copying and exits 2 on a grapheme longer than 512 bytes, instead of reading past a fixed buffer.
+
 ## Results of the recorded run
 
 `scripts/dev/parity_v08.sh` against the staged SDK from `5790f1a`, `REPS=500`, exit **0** (the fifth

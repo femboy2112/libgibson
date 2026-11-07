@@ -121,13 +121,38 @@ def resource_line(path):
 def check_against(lang, text, ref_text, expected, dims, out_lines):
     """Regressions of one transcript vs the reference + expectation. Returns (new_ids, problems)."""
     problems = canonical_problems(text)
+    if problems:
+        # Not parseable as records: nothing below can be trusted.
+        return [], problems, False
+    # Completeness: exactly the expected record ids, each once. An omitted record must never pass
+    # as "no difference", and a duplicate must never be absorbed.
+    ids = [json.loads(line)["id"] for line in text.splitlines()]
+    want_ids = expected["record_ids"]
+    seen = set()
+    dups = sorted({i for i in ids if i in seen or seen.add(i)})
+    missing = sorted(set(want_ids) - set(ids))
+    extra = sorted(set(ids) - set(want_ids))
+    for rid in missing:
+        problems.append("MISSING record %s (%s)" % (rid, dim_of(dims, rid)))
+    for rid in extra:
+        problems.append("UNEXPECTED record %s" % rid)
+    for rid in dups:
+        problems.append("DUPLICATE record %s" % rid)
     differing, order_ok = diff_ids(ref_text, text)
     allowed = set(expected["differs_from_c"].get(lang, []))
     new = sorted(set(differing) - allowed)
     healed = sorted(allowed - set(differing))
+    # A known gap is pinned to its exact record: a change inside it is a regression too.
+    pinned = expected.get("pinned", {}).get(lang, {})
+    recs, _ = records(text)
+    for rid in sorted(allowed & set(differing)):
+        if rid in recs and recs[rid] != pinned.get(rid):
+            new.append(rid)
+            problems.append("CHANGED inside known gap %s (%s): pinned record differs" % (rid, dim_of(dims, rid)))
+    new = sorted(set(new) | set(missing) | set(dups))
     if not order_ok:
         problems.append("record ORDER differs from the reference")
-    for rid in new:
+    for rid in sorted(set(differing) - allowed):
         problems.append("NEW difference vs c at %s (%s)" % (rid, dim_of(dims, rid)))
     for rid in healed:
         out_lines.append("  note: %s: expected difference at %s no longer present (expected.json is stale)" % (lang, rid))

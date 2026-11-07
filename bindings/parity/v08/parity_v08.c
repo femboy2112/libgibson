@@ -258,20 +258,35 @@ static uint32_t special_of(const char *name) {
 }
 
 /* Full (untruncated) glyph bytes of a cell: inline bytes, or the escape hatch when truncated. */
+/* Longest grapheme (bytes) this consumer reads back; its hex fits a record field (1100). */
+#define GLYPH_MAX 512
+
+/* The cell's full glyph into buf (cap >= GLYPH_MAX). The length is queried first; a longer
+ * grapheme is reported and the consumer exits 2, so it never reads past what the library copied. */
 static size_t full_glyph(gibson_context_t *ctx, const gibson_cell_t *c, uint16_t x, uint16_t y, unsigned char *buf, size_t cap) {
     if (!c->_reserved[0]) {
-        memcpy(buf, c->glyph, c->glyph_len);
-        return c->glyph_len;
+        size_t n = c->glyph_len < sizeof c->glyph ? c->glyph_len : sizeof c->glyph;
+        memcpy(buf, c->glyph, n);
+        return n;
     }
-    size_t len = 0;
-    gibson_get_frame_cell_glyph(ctx, x, y, buf, cap, &len);
-    return len;
+    size_t len = 0, got = 0;
+    gibson_get_frame_cell_glyph(ctx, x, y, NULL, 0, &len);
+    if (len > cap) {
+        fprintf(stderr, "parity_v08: the glyph at %u,%u is %zu bytes, more than this consumer reads (%zu)\n",
+                (unsigned)x, (unsigned)y, len, cap);
+        exit(2);
+    }
+    if (gibson_get_frame_cell_glyph(ctx, x, y, buf, cap, &got) != GIBSON_OK || got != len) {
+        fprintf(stderr, "parity_v08: glyph readback at %u,%u returned %zu of %zu bytes\n", (unsigned)x, (unsigned)y, got, len);
+        exit(2);
+    }
+    return got;
 }
 
 /* The canonical per-cell line hashed into the frame digest (docs/V08_PARITY_SLICE.md). */
 static size_t cell_line(gibson_context_t *ctx, const gibson_cell_t *c, uint16_t x, uint16_t y, char *line) {
-    unsigned char g[256];
-    char gh[513];
+    unsigned char g[GLYPH_MAX];
+    char gh[2 * GLYPH_MAX + 1];
     size_t gl = full_glyph(ctx, c, x, y, g, sizeof g);
     hex_of(g, gl, gh);
     const gibson_style_t *s = &c->style;
@@ -465,7 +480,7 @@ static void run_script(Step *steps, int nsteps, Buf *out) {
             gibson_cell_t *cells = calloc(total ? total : 1, sizeof *cells);
             if (st == GIBSON_OK) st = gibson_get_frame_cells(S.ctx, 0, 0, cells, total, &written);
             uint64_t h = FNV_OFFSET;
-            char line[1024];
+            char line[2 * GLYPH_MAX + 256];
             for (size_t k = 0; k < written; k++) {
                 size_t L = cell_line(S.ctx, &cells[k], (uint16_t)(k % c), (uint16_t)(k / c), line);
                 h = fnv(h, line, L);
@@ -490,8 +505,8 @@ static void run_script(Step *steps, int nsteps, Buf *out) {
             gibson_cell_t c;
             memset(&c, 0, sizeof c);
             int st = gibson_get_frame_cell(S.ctx, x, y, &c);
-            unsigned char g[256];
-            char gh[513];
+            unsigned char g[GLYPH_MAX];
+            char gh[2 * GLYPH_MAX + 1];
             size_t gl = st == GIBSON_OK ? full_glyph(S.ctx, &c, x, y, g, sizeof g) : 0;
             hex_of(g, gl, gh);
             char attrs[6];
