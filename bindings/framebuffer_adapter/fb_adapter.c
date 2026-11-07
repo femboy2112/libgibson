@@ -8,6 +8,7 @@
 #include "fb_adapter.h"
 
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,7 +58,7 @@ struct fb_adapter {
     fb_key_event q[FB_KEYQ];
     unsigned qhead, qlen;
     int quit, gone, resized_flag;
-    sig_atomic_t sig_gen_at_open; /* g_signal_gen when this adapter opened */
+    unsigned sig_gen_at_open; /* g_signal_gen when this adapter opened */
 
     uint64_t t_open_ns;
     uint64_t last_lower_ns, last_render_ns;
@@ -110,18 +111,21 @@ static uint64_t ns_for_tics(uint64_t n, uint32_t hz) {
     return (n / hz) * 1000000000ull + (((n % hz) * 1000000000ull) + hz - 1) / hz;
 }
 
-/* The handler stores two sig_atomic_t values and nothing else. It never nests (sa_mask blocks both
-   stop signals while it runs), so its read-then-write of g_signal_gen cannot interleave with
-   itself; ordinary code only reads both. An adapter is signalled when g_signal_gen moved past the
-   value it saw at open, so a signal that ended one adapter never ends a later one. */
-static volatile sig_atomic_t g_signal;     /* the last stop signal received */
-static volatile sig_atomic_t g_signal_gen; /* stop signals received so far */
+/* The handler stores the signal and bumps a lock-free C11 atomic generation counter, nothing else.
+   sa_mask stops it nesting on one thread, but handlers can run concurrently on different threads,
+   so the counter is incremented with an atomic fetch-add (a plain read-then-write could lose a
+   fresh signal across an adapter reopen; #299 review). Lock-free atomics are async-signal-safe.
+   An adapter is signalled when the generation moved past the value it saw at open, so a signal
+   that ended one adapter never ends a later one. */
+_Static_assert(ATOMIC_INT_LOCK_FREE == 2, "the signal generation counter must be lock-free");
+static volatile sig_atomic_t g_signal; /* the last stop signal received */
+static atomic_uint g_signal_gen;       /* stop signals received so far */
 static int g_signals_owned;
 static struct sigaction g_old_int, g_old_term;
 
 static void on_stop_signal(int sig) {
     g_signal = sig;
-    g_signal_gen = g_signal_gen + 1;
+    atomic_fetch_add_explicit(&g_signal_gen, 1u, memory_order_relaxed);
 }
 
 static void install_signals(void) {
@@ -148,7 +152,7 @@ int fb_adapter_signal_received(void) { return (int)g_signal; }
 
 int fb_adapter_signal(const fb_adapter *ad) {
     if (ad->faults & FB_FAULT_STICKY_SIGNAL) return (int)g_signal; /* mutant: the old global flag */
-    return g_signal_gen != ad->sig_gen_at_open ? (int)g_signal : 0;
+    return atomic_load_explicit(&g_signal_gen, memory_order_relaxed) != ad->sig_gen_at_open ? (int)g_signal : 0;
 }
 
 /* ---------------------------------------------------------------- config */
@@ -297,7 +301,7 @@ static fb_adapter *alloc_adapter(const fb_adapter_config *cfg) {
         return NULL;
     }
     ad->t_open_ns = mono_ns();
-    ad->sig_gen_at_open = g_signal_gen;
+    ad->sig_gen_at_open = atomic_load_explicit(&g_signal_gen, memory_order_relaxed);
     return ad;
 }
 

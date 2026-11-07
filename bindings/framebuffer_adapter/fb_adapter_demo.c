@@ -335,6 +335,7 @@ static int run_play(const play_opts *o) {
     if (o->no_restore) _exit(0); /* negative control: leave the terminal as it is */
     fb_adapter_close(ad);
     if (d.trace) fclose(d.trace);
+    d.trace = NULL; /* the second session below must not write to the closed stream (#299 review) */
     if (o->reopen_tics && rs.exit_reason == FB_EXIT_SIGNAL) {
         /* --reopen-after-signal: the signal was handled and the terminal restored; a second adapter
            opened in this same process must run normally, not inherit the old signal. */

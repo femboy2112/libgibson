@@ -159,7 +159,7 @@ and the demo's report file) for P3, P5, P6 and P7, and adds a wire check for P2.
 | `p6-sticky-signal` | P6 | mutant adapter: a handled signal also ends every later adapter (the old global flag) | the second adapter exits `signal` after 0 tics, exit code 1 (headless check and PTY) |
 | `p7-leak` | P7 | mutant adapter: 64 KiB leaked per present | second-half VmHWM +67,384 KiB at 80x24 |
 | `p7-no-rotation` | P7 | headless capture never rotated (finding F1) | second-half VmHWM +34,572 KiB at 80x24 |
-| `p7-slow-present` | P7 | mutant adapter: every 35th present stalls 400 ms | headless p99 401,700 us; PTY bench p99 401,991 us, and real clock 141 frames in 5,519 ms = 25.5 fps with 16 dropped tics: every timing gate fails (the memory gates pass) |
+| `p7-slow-present` | P7 | mutant adapter: every 35th present stalls 400 ms | headless p99 401,700 us; PTY bench p99 401,991 us, and real clock 141 frames in 5,519 ms = 25.5 fps with 16 dropped tics: the p99, fps and dropped-tic gates fail (the creep and memory gates can pass: every 500-frame window holds the same 15 stalls) |
 
 ### Frame cost and memory (P7)
 
@@ -203,7 +203,8 @@ real-clock run is the normal 35 Hz loop for 175 tics):
 
 So with this producer every gate passes at every size measured; the worst p99 (12.8 ms at 320x100
 on the PTY) is under half a tic. The cost is in `gibson_render` (about 90%), not in the adapter's
-lowering. The `p7-slow-present` control (every 35th present stalls 400 ms) fails every timing gate:
+lowering. The `p7-slow-present` control (every 35th present stalls 400 ms) fails the p99, fps and
+dropped-tic gates (not the creep gate, whose two windows hold the same number of stalls):
 see the controls table.
 
 ### Findings about LibGibson
