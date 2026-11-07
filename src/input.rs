@@ -1,12 +1,12 @@
 use crossterm::event::{
-    self, Event as CtEvent, KeyCode as CtKeyCode, KeyModifiers as CtKeyModifiers,
+    self, Event as CtEvent, KeyCode as CtKeyCode, KeyEventKind, KeyModifiers as CtKeyModifiers,
     MouseButton as CtMouseButton, MouseEvent as CtMouseEvent, MouseEventKind as CtMouseKind,
 };
 use std::borrow::Cow;
 use std::io;
 #[cfg(unix)]
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -254,17 +254,81 @@ fn poll_event_crossterm(timeout: Duration) -> io::Result<Option<Event>> {
     // timeout of 2^32 ms or more would wrap, and 0xFFFF_FFFF means INFINITE there. Cap
     // it at the largest finite value (about 49.7 days).
     let timeout = timeout.min(Duration::from_millis(u64::from(u32::MAX - 1)));
-    if event::poll(timeout)? {
-        Ok(decode_event(event::read()?))
-    } else {
-        Ok(None)
+    poll_until_deliverable(timeout, |left| {
+        if event::poll(left)? {
+            Ok(Some(event::read()?))
+        } else {
+            Ok(None)
+        }
+    })
+}
+
+/// How many undelivered events one poll may still consume once its deadline has passed.
+///
+/// Past the deadline the source is only asked for events that are already available (a zero
+/// wait), so a deliverable event queued behind a few dropped ones still comes out of this poll.
+/// The cap bounds the work: a terminal that keeps producing undelivered events (a stream of key
+/// releases, say) cannot hold a poll past its timeout (#285 review).
+const MAX_DROPS_PAST_DEADLINE: u32 = 64;
+
+/// Polls `next` until it yields an event LibGibson delivers, or `timeout` has passed.
+///
+/// `next(left)` waits at most `left` for one decoded terminal event (`Ok(None)` when it waited
+/// that long and none came). An event [`decode_event`] does not deliver (a key release, #285,
+/// or a key code LibGibson does not model) is consumed and the wait **continues** for the rest
+/// of the same deadline: dropping it must not end the poll early as if the timeout had passed,
+/// and the events queued behind it are delivered in order. So `Ok(None)` means the timeout
+/// passed with nothing delivered. Once the deadline has passed, at most
+/// [`MAX_DROPS_PAST_DEADLINE`] further undelivered events, each already available, are consumed
+/// before the poll gives up; with a zero timeout that is all the poll does.
+fn poll_until_deliverable(
+    timeout: Duration,
+    mut next: impl FnMut(Duration) -> io::Result<Option<CtEvent>>,
+) -> io::Result<Option<Event>> {
+    // A timeout too large to add to `now` is effectively unbounded: keep passing it whole.
+    let deadline = Instant::now().checked_add(timeout);
+    let mut drops_past_deadline = 0u32;
+    loop {
+        let left = deadline.map_or(timeout, |d| d.saturating_duration_since(Instant::now()));
+        match next(left)? {
+            None => return Ok(None),
+            Some(raw) => {
+                if let Some(event) = decode_event(raw) {
+                    return Ok(Some(event));
+                }
+                if left.is_zero() {
+                    drops_past_deadline += 1;
+                    if drops_past_deadline >= MAX_DROPS_PAST_DEADLINE {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
     }
 }
 
-/// Translates a crossterm event into our [`Event`]; `None` for kinds we do not model
-/// (unmapped key codes, mouse, focus, …).
+/// Whether a key event of this kind is delivered. Press and repeat are; a release is not, on Unix
+/// (#285), where only a kitty-keyboard-protocol terminal reports one.
+///
+/// Windows keeps its earlier behaviour, every kind delivered (#285 review). crossterm 0.29 reports
+/// a release there for each ordinary key-up, which LibGibson has always delivered as a second press
+/// (#292), but it also delivers an Alt+numpad character code **only** as the release of Alt, and
+/// a decoded `KeyEvent` does not say which of the two a `Char` release is. Dropping releases there
+/// would lose those characters; fixing the doubling needs that distinction and a Windows test.
+fn delivers_key_kind(kind: KeyEventKind, windows: bool) -> bool {
+    kind != KeyEventKind::Release || windows
+}
+
+/// Translates a crossterm event into our [`Event`]; `None` for what LibGibson does not
+/// deliver: a key **release** (#285) and key codes it does not model.
+///
+/// The public input model is press-only. A kitty-keyboard-protocol terminal reports an event
+/// type with each key: a press and a repeat are delivered as [`Event::Key`] (a repeat is what a
+/// held key produces on any terminal), and a release is not delivered, never as a second press
+/// (see [`delivers_key_kind`] for the Windows Alt-code exception).
 fn decode_event(ev: CtEvent) -> Option<Event> {
     match ev {
+        CtEvent::Key(k) if !delivers_key_kind(k.kind, cfg!(windows)) => None,
         CtEvent::Key(k) => {
             let code = match k.code {
                 CtKeyCode::Char(c) => KeyCode::Char(c),
@@ -324,7 +388,9 @@ fn decode_mouse(m: CtMouseEvent) -> Option<Event> {
 /// up, wherever in the poll the hangup lands.
 #[cfg(unix)]
 fn poll_event_unix_tty(timeout: Duration, stdin_is_terminal: bool) -> io::Result<Option<Event>> {
-    Ok(crate::tty_source::poll(timeout, stdin_is_terminal)?.and_then(decode_event))
+    poll_until_deliverable(timeout, |left| {
+        crate::tty_source::poll(left, stdin_is_terminal)
+    })
 }
 
 /// Whether stdin is a real terminal *right now* — the liveness probe. After a
@@ -1400,5 +1466,185 @@ mod mouse_focus_tests {
             decode_event(CtEvent::FocusLost),
             Some(Event::Focus(FocusChange::Lost))
         );
+    }
+}
+
+#[cfg(test)]
+mod key_kind_tests {
+    //! #285: the event type a kitty-protocol terminal reports with a key.
+    use super::{
+        decode_event, delivers_key_kind, poll_until_deliverable, Event, KeyCode, KeyEvent,
+        KeyModifiers, MAX_DROPS_PAST_DEADLINE,
+    };
+    use crossterm::event::{
+        Event as CtEvent, KeyCode as CtKeyCode, KeyEvent as CtKeyEvent, KeyEventKind,
+        KeyModifiers as CtKeyModifiers,
+    };
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+    use std::time::Duration;
+
+    fn ct_key(c: char, kind: KeyEventKind) -> CtEvent {
+        CtEvent::Key(CtKeyEvent::new_with_kind(
+            CtKeyCode::Char(c),
+            CtKeyModifiers::NONE,
+            kind,
+        ))
+    }
+
+    /// An event no platform delivers: F5, a key code LibGibson does not model.
+    fn undelivered() -> CtEvent {
+        CtEvent::Key(CtKeyEvent::new_with_kind(
+            CtKeyCode::F(5),
+            CtKeyModifiers::NONE,
+            KeyEventKind::Press,
+        ))
+    }
+
+    fn key(c: char) -> Option<Event> {
+        Some(Event::Key(KeyEvent {
+            code: KeyCode::Char(c),
+            modifiers: KeyModifiers::empty(),
+        }))
+    }
+
+    #[test]
+    fn press_and_repeat_are_presses_and_a_release_is_not_delivered() {
+        assert_eq!(decode_event(ct_key('a', KeyEventKind::Press)), key('a'));
+        assert_eq!(decode_event(ct_key('a', KeyEventKind::Repeat)), key('a'));
+        assert_eq!(decode_event(undelivered()), None);
+        if !cfg!(windows) {
+            assert_eq!(decode_event(ct_key('a', KeyEventKind::Release)), None);
+            // A released special key is not delivered either.
+            let up = CtEvent::Key(CtKeyEvent::new_with_kind(
+                CtKeyCode::Up,
+                CtKeyModifiers::NONE,
+                KeyEventKind::Release,
+            ));
+            assert_eq!(decode_event(up), None);
+        }
+    }
+
+    /// A scripted source: each call pops the next scripted reply and records the `left` it was
+    /// given.
+    fn scripted(
+        replies: Vec<Option<CtEvent>>,
+    ) -> (RefCell<VecDeque<Option<CtEvent>>>, RefCell<Vec<Duration>>) {
+        (RefCell::new(replies.into()), RefCell::new(Vec::new()))
+    }
+
+    #[test]
+    fn a_dropped_event_does_not_end_the_poll_and_the_next_one_is_delivered() {
+        let (q, lefts) = scripted(vec![
+            Some(undelivered()),
+            Some(ct_key('b', KeyEventKind::Press)),
+        ]);
+        let got = poll_until_deliverable(Duration::from_secs(5), |left| {
+            lefts.borrow_mut().push(left);
+            Ok(q.borrow_mut().pop_front().flatten())
+        })
+        .unwrap();
+        assert_eq!(got, key('b'));
+        assert_eq!(lefts.borrow().len(), 2, "the release did not end the poll");
+        assert!(
+            lefts.borrow()[1] <= lefts.borrow()[0],
+            "the deadline is kept"
+        );
+    }
+
+    #[test]
+    fn only_a_source_timeout_reports_no_event() {
+        let (q, lefts) = scripted(vec![Some(undelivered()), Some(undelivered()), None]);
+        let got = poll_until_deliverable(Duration::ZERO, |left| {
+            lefts.borrow_mut().push(left);
+            Ok(q.borrow_mut().pop_front().flatten())
+        })
+        .unwrap();
+        assert_eq!(got, None);
+        assert_eq!(
+            lefts.borrow().len(),
+            3,
+            "both releases drained, then the timeout"
+        );
+        assert!(lefts.borrow().iter().all(|l| l.is_zero()));
+    }
+
+    #[test]
+    fn an_error_after_a_dropped_event_is_reported() {
+        let mut calls = 0;
+        let got = poll_until_deliverable(Duration::from_millis(50), |_| {
+            calls += 1;
+            if calls == 1 {
+                Ok(Some(undelivered()))
+            } else {
+                Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+            }
+        });
+        assert_eq!(got.unwrap_err().kind(), std::io::ErrorKind::BrokenPipe);
+    }
+
+    #[test]
+    fn a_release_is_dropped_on_unix_and_windows_is_unchanged() {
+        for windows in [false, true] {
+            assert!(delivers_key_kind(KeyEventKind::Press, windows));
+            assert!(delivers_key_kind(KeyEventKind::Repeat, windows));
+        }
+        assert!(!delivers_key_kind(KeyEventKind::Release, false));
+        // Windows keeps its earlier behaviour (see `delivers_key_kind`, #292).
+        assert!(delivers_key_kind(KeyEventKind::Release, true));
+    }
+
+    #[test]
+    fn an_endless_stream_of_dropped_events_cannot_hold_a_poll_past_its_deadline() {
+        for timeout in [Duration::ZERO, Duration::from_millis(20)] {
+            let mut calls = 0u32;
+            let t0 = std::time::Instant::now();
+            let got = poll_until_deliverable(timeout, |_| {
+                calls += 1;
+                Ok(Some(undelivered()))
+            })
+            .unwrap();
+            assert_eq!(got, None);
+            assert!(t0.elapsed() < timeout + Duration::from_secs(1));
+            if timeout.is_zero() {
+                assert_eq!(calls, MAX_DROPS_PAST_DEADLINE);
+            }
+        }
+    }
+
+    #[test]
+    fn dropped_events_do_not_restart_the_timeout() {
+        // Each call takes 30 ms and yields a dropped event; the fourth call must be offered at most
+        // what is left of the ORIGINAL deadline, not a fresh timeout.
+        let timeout = Duration::from_millis(500);
+        let mut lefts = Vec::new();
+        let got = poll_until_deliverable(timeout, |left| {
+            lefts.push(left);
+            if lefts.len() == 4 {
+                return Ok(None);
+            }
+            std::thread::sleep(Duration::from_millis(30));
+            Ok(Some(undelivered()))
+        })
+        .unwrap();
+        assert_eq!(got, None);
+        assert_eq!(lefts.len(), 4);
+        assert!(
+            lefts[3] <= timeout - Duration::from_millis(90),
+            "offered {:?} after three 30 ms drops: the timeout restarted",
+            lefts[3]
+        );
+    }
+
+    #[test]
+    fn an_unbounded_timeout_is_passed_through_whole() {
+        let mut seen = None;
+        let got = poll_until_deliverable(Duration::MAX, |left| {
+            seen = Some(left);
+            Ok(None)
+        })
+        .unwrap();
+        assert_eq!(got, None);
+        assert_eq!(seen, Some(Duration::MAX));
     }
 }
