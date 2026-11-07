@@ -111,6 +111,9 @@ enum ReadOutcome {
     HungUp,
     /// Readiness without data (`EAGAIN`) or an interrupted read: nothing this pass.
     Nothing,
+    /// The terminal refuses the read for now without hanging up (`EIO` from a background
+    /// read with `SIGTTIN` ignored): nothing this pass, retried at a slower pace.
+    NotNow,
 }
 
 impl TtySource {
@@ -147,7 +150,7 @@ impl TtySource {
 
     /// See the module documentation for the contract.
     pub(crate) fn poll(&mut self, timeout: Duration) -> io::Result<Option<CtEvent>> {
-        let deadline = Instant::now().checked_add(timeout);
+        let deadline = deadline_after(timeout);
         if self.hung_up {
             return Err(hung_up());
         }
@@ -223,6 +226,14 @@ impl TtySource {
                         continue;
                     }
                     ReadOutcome::HungUp => return self.report_hangup(),
+                    ReadOutcome::NotNow => {
+                        // Readable but refused (not in the foreground): wait out a slice
+                        // rather than spin on a level-set POLLIN, until the deadline.
+                        if left.is_zero() {
+                            return Ok(None);
+                        }
+                        std::thread::sleep(left.min(Duration::from_millis(25)));
+                    }
                     ReadOutcome::Nothing => {
                         // Readiness without data. With no time left, report the timeout;
                         // otherwise pace the retry so a level-set POLLIN that keeps
@@ -282,13 +293,7 @@ impl TtySource {
             });
         }
         let e = io::Error::last_os_error();
-        match e.raw_os_error() {
-            Some(libc::EIO) => Ok(ReadOutcome::HungUp),
-            Some(libc::EINTR) | Some(libc::EAGAIN) => Ok(ReadOutcome::Nothing),
-            #[allow(unreachable_patterns)] // EWOULDBLOCK == EAGAIN on Linux
-            Some(libc::EWOULDBLOCK) => Ok(ReadOutcome::Nothing),
-            _ => Err(e),
-        }
+        read_error_outcome(e, fd_reports_hangup(self.fd))
     }
 
     /// Moves every event the parser completed into the hand-out queue.
@@ -319,6 +324,30 @@ impl TtySource {
     }
 }
 
+/// How a failed `read` is classified. `EIO` is a hangup only when the descriptor also reports
+/// one: a background process reading its terminal with `SIGTTIN` ignored gets `EIO` too, and
+/// that is recoverable (it reads normally once it is in the foreground again), so it is
+/// "nothing yet", never a sticky hangup.
+fn read_error_outcome(e: io::Error, fd_hung_up: bool) -> io::Result<ReadOutcome> {
+    match e.raw_os_error() {
+        Some(libc::EIO) if fd_hung_up => Ok(ReadOutcome::HungUp),
+        Some(libc::EIO) => Ok(ReadOutcome::NotNow),
+        Some(libc::EINTR) | Some(libc::EAGAIN) => Ok(ReadOutcome::Nothing),
+        #[allow(unreachable_patterns)] // EWOULDBLOCK == EAGAIN on Linux
+        Some(libc::EWOULDBLOCK) => Ok(ReadOutcome::Nothing),
+        _ => Err(e),
+    }
+}
+
+/// `now + timeout`, or a deadline so far ahead it is never reached (about 136 years) if that
+/// overflows `Instant`: a finite timeout must never become an unconditional infinite wait.
+/// `None` only if even that is unrepresentable.
+fn deadline_after(timeout: Duration) -> Option<Instant> {
+    let now = Instant::now();
+    now.checked_add(timeout)
+        .or_else(|| now.checked_add(Duration::from_secs(u64::from(u32::MAX))))
+}
+
 /// Whether `fd` reports a hangup, error or invalid descriptor right now (non-blocking).
 fn fd_reports_hangup(fd: RawFd) -> bool {
     let mut p = libc::pollfd {
@@ -345,52 +374,89 @@ fn poll_timeout_ms(left: Duration, forever: bool) -> libc::c_int {
     libc::c_int::try_from(ms).unwrap_or(libc::c_int::MAX)
 }
 
-/// The process-wide source for the controlling terminal, created on first use and dropped
-/// when the session gives the terminal up ([`reset`]). One per process, like crossterm's
-/// global reader: there is one controlling terminal and one `SIGWINCH`.
-static TERMINAL_SOURCE: Mutex<Option<TtySource>> = Mutex::new(None);
+/// The process-wide source for the controlling terminal, created on first use. One per
+/// process, like crossterm's global reader: there is one controlling terminal and one
+/// `SIGWINCH`. The `u64` is the [`GENERATION`] it was created in.
+static TERMINAL_SOURCE: Mutex<Option<(u64, TtySource)>> = Mutex::new(None);
 
-/// The terminal input descriptor, chosen as crossterm's `tty_fd` chooses the terminal:
-/// stdin when it is a terminal, otherwise `/dev/tty`. It is our own open file description,
-/// **non-blocking**, so a read can never block (readiness can be lost between `poll(2)` and
-/// `read`, for example when Ctrl-C flushes a canonical line) and stdin's shared description
-/// keeps its flags. Stdin is reopened through `/proc/self/fd/0` and kept only if it is the
-/// same terminal device; if it cannot be, stdin itself is read (blocking: the pre-#269
-/// exposure to that lost-readiness race).
-fn terminal_input_fd() -> io::Result<(RawFd, Option<std::os::fd::OwnedFd>)> {
-    use std::os::fd::AsRawFd;
-    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-    let reopen = |path: &str| {
-        std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
-            .open(path)
-            .map(std::os::fd::OwnedFd::from)
-    };
-    // SAFETY: isatty is safe on any descriptor number.
-    if unsafe { libc::isatty(libc::STDIN_FILENO) } == 1 {
-        let stdin_dev = std::fs::metadata("/proc/self/fd/0").map(|m| m.rdev()).ok();
-        if let Ok(own) = reopen("/proc/self/fd/0") {
-            let own_dev = std::fs::File::from(own.try_clone()?)
-                .metadata()
-                .map(|m| m.rdev())
-                .ok();
-            if own_dev.is_some() && own_dev == stdin_dev {
-                return Ok((own.as_raw_fd(), Some(own)));
+/// Bumped by [`reset`]: a source from an older generation is dropped and rebuilt by the next
+/// poll. Lets `reset` (session restore) return at once even while another thread is inside a
+/// long poll holding the source.
+static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The terminal input descriptor, chosen as crossterm's `tty_fd` chooses the terminal: stdin
+/// when it is a terminal, otherwise `/dev/tty`. Whether stdin is the terminal is the identity
+/// **latched when the session acquired the terminal** (`stdin_is_terminal`), not a fresh
+/// `isatty`: stdin that hangs up before the first poll is still the terminal to report on, never
+/// a reason to switch to `/dev/tty` (which may be another terminal).
+///
+/// It is our own open file description, **non-blocking**, where Linux lets us prove it is the
+/// same terminal: `TIOCGDEV` (the real tty behind a descriptor, so a `/dev/tty` or `/dev/ptmx`
+/// alias cannot pass for its target) must match. Then a read can never block (readiness can be
+/// lost between `poll(2)` and `read`, for example when Ctrl-C flushes a canonical line) and
+/// stdin's shared description keeps its flags. Where the identity cannot be proven (another OS,
+/// no `/proc`, an exclusive-mode terminal that refuses a second open, a multiplexer alias),
+/// stdin itself is read, blocking: the pre-#269 exposure to that lost-readiness race.
+fn terminal_input_fd(stdin_is_terminal: bool) -> io::Result<(RawFd, Option<std::os::fd::OwnedFd>)> {
+    if stdin_is_terminal {
+        return Ok(match reopen_same_terminal(libc::STDIN_FILENO) {
+            Some(own) => {
+                use std::os::fd::AsRawFd;
+                (own.as_raw_fd(), Some(own))
             }
-        }
-        return Ok((libc::STDIN_FILENO, None));
+            None => (libc::STDIN_FILENO, None),
+        });
     }
-    let own = reopen("/dev/tty")?;
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::OpenOptionsExt;
+    let own = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
+        .open("/dev/tty")
+        .map_err(|e| match e.raw_os_error() {
+            // No controlling terminal any more (ENXIO), or it is gone (EIO): it hung up.
+            Some(libc::ENXIO) | Some(libc::EIO) => hung_up(),
+            _ => e,
+        })?;
+    let own = std::os::fd::OwnedFd::from(own);
     Ok((own.as_raw_fd(), Some(own)))
 }
 
-/// Polls the controlling terminal. See the module documentation.
+/// A new non-blocking open file description of the terminal `fd` refers to, if it provably is
+/// the same terminal (`TIOCGDEV` equal); `None` otherwise.
+#[cfg(target_os = "linux")]
+pub(crate) fn reopen_same_terminal(fd: RawFd) -> Option<std::os::fd::OwnedFd> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::OpenOptionsExt;
+    let dev = |fd: RawFd| {
+        let mut d: libc::c_uint = 0;
+        // SAFETY: TIOCGDEV writes one unsigned int; `fd` is a descriptor we hold.
+        (unsafe { libc::ioctl(fd, libc::TIOCGDEV, &mut d) } == 0).then_some(d)
+    };
+    let mine = dev(fd)?;
+    let own: std::os::fd::OwnedFd = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
+        .open(format!("/proc/self/fd/{fd}"))
+        .ok()?
+        .into();
+    (dev(own.as_raw_fd()) == Some(mine)).then_some(own)
+}
+
+/// See the Linux version: elsewhere the identity cannot be proven, so the caller reads `fd`.
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn reopen_same_terminal(_fd: RawFd) -> Option<std::os::fd::OwnedFd> {
+    None
+}
+
+/// Polls the controlling terminal. See the module documentation. `stdin_is_terminal` is the
+/// identity latched when the terminal was acquired (see [`terminal_input_fd`]).
 ///
 /// Waiting for another thread's poll counts against `timeout`: with the source busy past the
 /// deadline this returns `Ok(None)` rather than queueing behind it.
-pub(crate) fn poll(timeout: Duration) -> io::Result<Option<CtEvent>> {
-    let deadline = Instant::now().checked_add(timeout);
+pub(crate) fn poll(timeout: Duration, stdin_is_terminal: bool) -> io::Result<Option<CtEvent>> {
+    use std::sync::atomic::Ordering;
+    let deadline = deadline_after(timeout);
     let mut guard = loop {
         match TERMINAL_SOURCE.try_lock() {
             Ok(g) => break g,
@@ -403,27 +469,35 @@ pub(crate) fn poll(timeout: Duration) -> io::Result<Option<CtEvent>> {
             }
         }
     };
+    let generation = GENERATION.load(Ordering::Acquire);
+    if guard.as_ref().is_some_and(|(g, _)| *g != generation) {
+        *guard = None; // reset since it was created: a new session chooses afresh
+    }
     if guard.is_none() {
-        let (fd, owned) = terminal_input_fd()?;
+        let (fd, owned) = terminal_input_fd(stdin_is_terminal)?;
         let (receiver, sender) = UnixStream::pair()?;
         sender.set_nonblocking(true)?;
         let id = signal_hook::low_level::pipe::register(libc::SIGWINCH, sender)?;
         let mut source = TtySource::new(fd, Some(receiver), crossterm::terminal::size)?;
         source._owned = owned;
         source.winch_id = Some(id);
-        *guard = Some(source);
+        *guard = Some((generation, source));
     }
     let left = deadline.map_or(Duration::MAX, |d| {
         d.saturating_duration_since(Instant::now())
     });
-    guard.as_mut().expect("initialised above").poll(left)
+    guard.as_mut().expect("initialised above").1.poll(left)
 }
 
-/// Drops the terminal source. Called when a session gives the terminal up, so a later
-/// session chooses its descriptor afresh and starts with no stale events or hangup.
+/// Retires the terminal source: called when the session gives the terminal up, so a later
+/// session chooses its descriptor afresh with no stale events or hangup. Never blocks: a
+/// source busy in another thread's poll is dropped by the next poll after that one.
 pub(crate) fn reset() {
-    let mut guard = TERMINAL_SOURCE.lock().unwrap_or_else(|p| p.into_inner());
-    *guard = None;
+    use std::sync::atomic::Ordering;
+    GENERATION.fetch_add(1, Ordering::AcqRel);
+    if let Ok(mut guard) = TERMINAL_SOURCE.try_lock() {
+        *guard = None;
+    }
 }
 
 #[cfg(test)]
@@ -992,6 +1066,117 @@ mod tests {
         });
         assert!(outcome, "the read must report nothing, not block or fail");
         drop((master, slave));
+    }
+
+    #[test]
+    fn reopening_proves_the_same_terminal_and_refuses_aliases() {
+        // Codex re-review of #282: an equal st_rdev does not prove identity (a /dev/tty or
+        // /dev/ptmx alias reopens as ANOTHER terminal). TIOCGDEV names the real tty.
+        let (master, slave) = pty();
+        let own = reopen_same_terminal(slave.as_raw_fd()).expect("a pts slave reopens");
+        // SAFETY: fcntl F_GETFL on a valid descriptor.
+        let fl = unsafe { libc::fcntl(own.as_raw_fd(), libc::F_GETFL) };
+        assert_ne!(
+            fl & libc::O_NONBLOCK,
+            0,
+            "the reopened description is non-blocking"
+        );
+        // SAFETY: as above, on the original.
+        let orig = unsafe { libc::fcntl(slave.as_raw_fd(), libc::F_GETFL) };
+        assert_eq!(
+            orig & libc::O_NONBLOCK,
+            0,
+            "the original description keeps its flags"
+        );
+        // It reads the same terminal.
+        write_all(&master, b"k");
+        let got = on_worker(own, None, |s| s.poll(Duration::from_millis(500)));
+        assert_eq!(got.unwrap(), Some(key('k')));
+        // The multiplexer master: reopening /dev/ptmx would create a different pty.
+        assert!(
+            reopen_same_terminal(master.as_raw_fd()).is_none(),
+            "a ptmx master must not be 'reopened' as a new pty"
+        );
+        // Not a terminal at all.
+        let mut fds = [0; 2];
+        // SAFETY: pipe writes two fds.
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        // SAFETY: both fds are fresh and owned here.
+        let (r, _w) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
+        assert!(reopen_same_terminal(r.as_raw_fd()).is_none());
+        drop(slave);
+    }
+
+    #[test]
+    fn eio_is_a_hangup_only_with_pollhup() {
+        // Codex re-review of #282: a background read with SIGTTIN ignored also fails with EIO,
+        // recoverably; only EIO on a descriptor that reports a hangup is one.
+        let eio = || io::Error::from_raw_os_error(libc::EIO);
+        assert!(matches!(
+            read_error_outcome(eio(), true),
+            Ok(ReadOutcome::HungUp)
+        ));
+        assert!(matches!(
+            read_error_outcome(eio(), false),
+            Ok(ReadOutcome::NotNow)
+        ));
+        let again = io::Error::from_raw_os_error(libc::EAGAIN);
+        assert!(matches!(
+            read_error_outcome(again, false),
+            Ok(ReadOutcome::Nothing)
+        ));
+        let other = io::Error::from_raw_os_error(libc::EBADF);
+        assert!(read_error_outcome(other, false).is_err());
+    }
+
+    #[test]
+    fn reset_never_blocks_behind_a_poll_holding_the_source() {
+        // Codex re-review of #282: session restore calls reset(); another thread may be inside
+        // a long poll holding the source. reset must return at once and retire the source.
+        use std::sync::atomic::Ordering;
+        let (held_tx, held_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let holder = thread::spawn(move || {
+            let _g = TERMINAL_SOURCE.lock().unwrap_or_else(|p| p.into_inner());
+            held_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        });
+        held_rx.recv().unwrap();
+        let before = GENERATION.load(Ordering::Acquire);
+        let (done_tx, done_rx) = mpsc::channel();
+        thread::spawn(move || {
+            reset();
+            let _ = done_tx.send(());
+        });
+        done_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("reset blocked behind the holder");
+        assert_eq!(GENERATION.load(Ordering::Acquire), before + 1);
+        release_tx.send(()).unwrap();
+        holder.join().unwrap();
+    }
+
+    #[test]
+    fn a_finite_timeout_never_becomes_an_unconditional_infinite_wait() {
+        // Codex re-review of #282: `now + Duration::MAX` overflows Instant; that must still be
+        // a (far) deadline, not "forever".
+        assert!(deadline_after(Duration::MAX).is_some());
+        assert!(deadline_after(Duration::from_secs(u64::MAX - 1)).is_some());
+    }
+
+    #[test]
+    fn an_endless_unfinished_paste_cannot_hold_a_poll_past_its_deadline() {
+        // Deterministic form of the deadline test: /dev/zero is always readable and never
+        // ends, and inside a bracketed paste its NUL bytes decode to nothing. Without the
+        // deadline check after each read, this poll would never return (the watchdog fails).
+        let zero: OwnedFd = std::fs::File::open("/dev/zero").unwrap().into();
+        let (res, elapsed) = on_worker(zero, None, |s| {
+            s.parser.advance(b"\x1b[200~", true); // inside a paste that never ends
+            let t = Instant::now();
+            (s.poll(Duration::from_millis(100)), t.elapsed())
+        });
+        assert_eq!(res.unwrap(), None);
+        assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
     }
 
     #[test]

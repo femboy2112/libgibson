@@ -33,6 +33,8 @@
 //!   on a canonical-mode terminal while the parent types ^D and, 1.5 s later, `z` + Enter.
 //!   Records whether `z` arrived and how long the slowest poll took. A ^D is input, not a
 //!   hangup; no poll may block past its timeout because of it.
+//! * `acquire-then-poll --go <path>` — SIGHUP ignored. Acquires the terminal without polling,
+//!   prints `READY`, and polls only once `<path>` exists, recording keys until `BrokenPipe`.
 //! * `keys` — SIGHUP ignored. Records each key to the result file as it arrives, until
 //!   `BrokenPipe`. Used with stdin and the controlling terminal on different ptys.
 
@@ -153,6 +155,41 @@ fn main() {
     }
 
     let mut ctx = gibson::Context::new(gibson::RenderMode::Inline).expect("create Context");
+    if scenario == "acquire-then-poll" {
+        // Acquire the terminal (raw mode) without polling it, report READY, then wait for the
+        // parent's go (a file) before the FIRST poll. The parent hangs stdin up in between and
+        // types on the controlling terminal: the poll must report stdin's hangup, not read the
+        // other terminal.
+        ctx.session
+            .enter_interactive()
+            .expect("acquire the terminal");
+        ready();
+        let go = arg(&args, "--go").expect("--go <path>");
+        let t = Instant::now();
+        while !std::path::Path::new(&go).exists() {
+            assert!(t.elapsed() < Duration::from_secs(10), "no go");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        watchdog(path.clone());
+        loop {
+            match ctx.poll_event(Duration::from_millis(100)) {
+                Ok(Some(gibson::Event::Key(k))) => {
+                    if let gibson::KeyCode::Char(c) = k.code {
+                        record(&path, &format!("KEY {c}"));
+                    }
+                }
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+                    record(&path, "BROKEN_PIPE");
+                    std::process::exit(3);
+                }
+                Err(e) => {
+                    record(&path, &format!("ERROR {:?} {e}", e.kind()));
+                    std::process::exit(4);
+                }
+            }
+        }
+    }
     // Arms raw mode and the input source on the live terminal.
     let _ = ctx
         .poll_event(Duration::ZERO)

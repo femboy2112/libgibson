@@ -324,7 +324,8 @@ fn decode_mouse(m: CtMouseEvent) -> Option<Event> {
 /// up, wherever in the poll the hangup lands.
 #[cfg(unix)]
 fn poll_event_unix_tty(timeout: Duration) -> io::Result<Option<Event>> {
-    Ok(crate::tty_source::poll(timeout)?.and_then(decode_event))
+    let stdin_is_terminal = STDIN_IS_TERMINAL.load(Ordering::Relaxed);
+    Ok(crate::tty_source::poll(timeout, stdin_is_terminal)?.and_then(decode_event))
 }
 
 /// Whether stdin is a real terminal *right now* — the liveness probe. After a
@@ -345,12 +346,24 @@ fn stdin_is_tty() -> bool {
 #[cfg(unix)]
 static TTY_SOURCE_LATCHED: AtomicBool = AtomicBool::new(false);
 
+/// Latched with [`TTY_SOURCE_LATCHED`]: whether stdin itself was the terminal when input was
+/// acquired (otherwise it is reached through `/dev/tty`). Identity, not liveness: a stdin that
+/// hangs up later is still the terminal to read and report on, never a reason to read another.
+#[cfg(unix)]
+static STDIN_IS_TERMINAL: AtomicBool = AtomicBool::new(false);
+
 /// Records that a live controlling terminal was acquired for input (raw mode entered
 /// on a tty). Idempotent; called from the terminal-session boundary so identity is
 /// established at acquisition, not merely on the first poll.
 #[cfg(unix)]
 pub(crate) fn note_tty_source_acquired() {
-    TTY_SOURCE_LATCHED.store(true, Ordering::Relaxed);
+    // Called on every `enter_interactive` (each `Context::poll_event`), so the identity is
+    // sampled only on the transition to acquired: after a hangup `isatty(0)` is false, and
+    // re-sampling then would recast a hung-up stdin as "not the terminal" (#269 review).
+    if !TTY_SOURCE_LATCHED.load(Ordering::Relaxed) {
+        STDIN_IS_TERMINAL.store(stdin_is_tty(), Ordering::Relaxed);
+        TTY_SOURCE_LATCHED.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Forgets any latched terminal identity, so a later acquisition re-establishes it.
@@ -359,6 +372,7 @@ pub(crate) fn note_tty_source_acquired() {
 #[cfg(unix)]
 pub(crate) fn clear_tty_source() {
     TTY_SOURCE_LATCHED.store(false, Ordering::Relaxed);
+    STDIN_IS_TERMINAL.store(false, Ordering::Relaxed);
     // The terminal source goes with the terminal: a later session reselects its descriptor
     // and does not inherit stale events or a reported hangup.
     crate::tty_source::reset();
@@ -396,6 +410,8 @@ fn input_source_is_tty() -> bool {
     let latched = TTY_SOURCE_LATCHED.load(Ordering::Relaxed);
     let (use_unix, new_latch) = resolve_input_source(latched, stdin_is_tty);
     if new_latch != latched {
+        // Latched here only by observing stdin itself as a terminal.
+        STDIN_IS_TERMINAL.store(true, Ordering::Relaxed);
         TTY_SOURCE_LATCHED.store(new_latch, Ordering::Relaxed);
     }
     use_unix
