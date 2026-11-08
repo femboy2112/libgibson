@@ -529,6 +529,8 @@ enum {
     C_P3_REARM_LOSES_RELEASE,
     C_P3_SHARED_ALIAS_HOLD,
     C_P3_UNMATCHED_RELEASE,
+    C_P3_WRAP_DEADLINE,
+    C_P3_REWRITE_ENDED,
     C_P4_FRAME_LOCKED,
     C_P5_STALE_MAP,
     C_P5_RESIZE_STEPS,
@@ -556,6 +558,8 @@ static const struct {
     {"p3-rearm-loses-release", 3, "mutant adapter: a re-press re-arms a hold whose release is waiting for a full queue"},
     {"p3-shared-alias-hold", 3, "mutant adapter: keys mapped to one producer key share one release (the first ends it)"},
     {"p3-unmatched-release", 3, "mutant adapter: a release of a key that holds nothing ends the inferred part"},
+    {"p3-wrap-deadline", 3, "mutant adapter: a hold deadline past the last tic wraps instead of saturating"},
+    {"p3-rewrite-ended", 3, "mutant adapter: a release rewrites a hold that ended and waits for queue room"},
     {"p4-frame-locked", 4, "mutant adapter: one tic per presented frame"},
     {"p5-stale-map", 5, "mutant adapter: the map is not rebuilt on resize"},
     {"p5-resize-steps", 5, "mutant adapter: a resize runs an extra producer tic"},
@@ -1237,6 +1241,94 @@ static const aev MIXED2[] = {
     {10, KP, 'a', CH}, {12, KP, 'c', CH}, {13, KA, 0, 0}, {14, KR, 'c', CH}, {30, KR, 'a', CH},
 };
 
+/* (#275 review 4) A press at the last tics: a at M-10 (grace 25), again at M-2 (repeat 4), M =
+   UINT64_MAX. Both deadlines pass M and saturate to it: one press @M-10 and one release @M, inferred.
+   A wrap would end the hold at 14, before its press, and start a second one. */
+static int deadline_saturates(unsigned faults, int *np, int *nr, uint64_t *end) {
+    fb_adapter_config cfg;
+    fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+    fb_adapter *ad = NULL;
+    if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+    fb_adapter_set_faults(ad, faults);
+    const uint64_t M = UINT64_MAX;
+    uint64_t press_at = 0;
+    int synth = -1;
+    *np = *nr = 0;
+    *end = 0;
+    const uint64_t at[2] = {M - 10, M - 2};
+    for (int i = 0; i < 2; i++) {
+        gibson_event_t e;
+        memset(&e, 0, sizeof e);
+        e.event_type = GIBSON_EVENT_KEY;
+        e.key_code = 'a';
+        gibson_push_event_kind(fb_adapter_context(ad), &e, CH);
+        fb_adapter_pump(ad, at[i], 0);
+    }
+    const uint64_t drain[4] = {M - 10, M - 2, M - 1, M};
+    fb_key_event k;
+    for (int i = 0; i < 4; i++)
+        while (fb_adapter_next_key(ad, drain[i], &k))
+            if (k.code == 'a') {
+                if (k.pressed) {
+                    if (!(*np)++) press_at = k.tic;
+                } else {
+                    (*nr)++;
+                    *end = k.tic;
+                    synth = k.synthesized;
+                }
+            }
+    fb_adapter_close(ad);
+    return *np == 1 && press_at == M - 10 && *nr == 1 && *end == M && synth == 1;
+}
+
+/* (#275 review 4) a pressed at 1000 before the confirmation (grace 1000: deadline 2000); the
+   terminal confirms; the 256-entry key queue fills. At 2000 a's hold has ended, but its release
+   cannot be queued; at 2030, the queue still full, the terminal reports a's release. What the
+   producer receives was decided at 2000 (inferred) and must not be rewritten to 2030. */
+static int ended_hold_is_not_rewritten(unsigned faults, uint64_t *end, int *synth) {
+    fb_adapter_config cfg;
+    fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+    cfg.key_releases = 1;
+    cfg.hold_grace_tics = 1000;
+    fb_adapter *ad = NULL;
+    if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+    fb_adapter_set_faults(ad, faults);
+    gibson_context_t *ctx = fb_adapter_context(ad);
+    gibson_event_t e;
+    uint64_t tic = 1000;
+#define PUSHAT(type, code, t)                                                    \
+    do {                                                                         \
+        memset(&e, 0, sizeof e);                                                 \
+        e.event_type = (type);                                                   \
+        e.key_code = (code);                                                     \
+        if ((type) == GIBSON_EVENT_KEY_RELEASES_ACTIVE) gibson_push_event(ctx, &e); \
+        else gibson_push_event_kind(ctx, &e, CH);                                \
+        fb_adapter_pump(ad, (t), 0);                                             \
+    } while (0)
+    PUSHAT(GIBSON_EVENT_KEY, 'a', tic++);                    /* 1 queued; inferred, ends 2000 */
+    PUSHAT(GIBSON_EVENT_KEY_RELEASES_ACTIVE, 0, tic++);
+    for (int i = 0; i < 127; i++) {                          /* b taps: 254 more, never drained */
+        PUSHAT(GIBSON_EVENT_KEY, 'b', tic++);
+        PUSHAT(GIBSON_EVENT_KEY_RELEASE, 'b', tic++);
+    }
+    PUSHAT(GIBSON_EVENT_KEY, 'c', tic++);                    /* the last b release, then c: full */
+    PUSHAT(GIBSON_EVENT_KEY_RELEASE, 'a', 2030);             /* a ended at 2000, still unqueued */
+#undef PUSHAT
+    *end = 0;
+    *synth = -1;
+    int nrel = 0;
+    fb_key_event k;
+    for (uint64_t t = 2030; t < 2400; t++)
+        while (fb_adapter_next_key(ad, t, &k))
+            if (k.code == 'a' && !k.pressed) {
+                nrel++;
+                *end = k.tic;
+                *synth = k.synthesized;
+            }
+    fb_adapter_close(ad);
+    return nrel == 1 && *end == 2000 && *synth == 1;
+}
+
 static int prop3(char *ev) {
     fclock a, b;
     memset(&a, 0, sizeof a);
@@ -1289,8 +1381,12 @@ static int prop3(char *ev) {
     const int ai_ok = run_k7(ALIAS, na, 0, 0, afault, &ai) && k7_is(&ai, 10, 24, 1);
     const int m1_ok = run_k7(MIXED1, sizeof MIXED1 / sizeof MIXED1[0], 1, 0, afault, &m1) && k7_is(&m1, 10, 35, 1);
     const int m2_ok = run_k7(MIXED2, sizeof MIXED2 / sizeof MIXED2[0], 1, 100, afault, &m2) && k7_is(&m2, 10, 30, 0);
+    int sat_np = 0, sat_nr = 0, end_syn = -1;
+    uint64_t sat_end = 0, end_at = 0;
+    const int sat_ok = deadline_saturates(ctl(C_P3_WRAP_DEADLINE) ? FB_FAULT_WRAP_DEADLINE : 0, &sat_np, &sat_nr, &sat_end);
+    const int end_ok = ended_hold_is_not_rewritten(ctl(C_P3_REWRITE_ENDED) ? FB_FAULT_REWRITE_ENDED : 0, &end_at, &end_syn);
     const int pass = ok && keyed.hash != quiet.hash && log_ok && keyed.tics == 200 && quiet.tics == 200 && rel_ok && qok && wok &&
-                     off_ok && ax_ok && ai_ok && m1_ok && m2_ok;
+                     off_ok && ax_ok && ai_ok && m1_ok && m2_ok && sat_ok && end_ok;
     ev_append(ev, "keys pushed with gibson_push_event_kind, polled by the adapter (gibson_poll_event_kind): keyed hash=%016llx %s "
                   "unkeyed hash=%016llx (200 tics each); producer key log %u events %s independent hold model (grace 25, repeat 4): ",
               (unsigned long long)keyed.hash, keyed.hash != quiet.hash ? "!=" : "==", (unsigned long long)quiet.hash,
@@ -1320,6 +1416,12 @@ static int prop3(char *ev) {
                   "synthesized=%d; want 1 @10, 1 @30 synthesized=0)",
               K7(m1), K7(m2));
 #undef K7
+    ev_append(ev, "; a pressed at UINT64_MAX-10 and -2: %d press, %d release at UINT64_MAX-%llu (want 1, 1 at -0): the "
+                  "deadline saturates; a hold that ended at 2000 waiting for queue room, its release reported at 2030: "
+                  "released at %llu synthesized=%d (want 2000 and 1)",
+              sat_np, sat_nr, (unsigned long long)(UINT64_MAX - sat_end), (unsigned long long)end_at, end_syn);
+    if (ctl(C_P3_WRAP_DEADLINE)) ev_append(ev, " [control: deadlines wrap]");
+    if (ctl(C_P3_REWRITE_ENDED)) ev_append(ev, " [control: an ended hold is rewritten]");
     if (ctl(C_P3_SHARED_ALIAS_HOLD)) ev_append(ev, " [control: aliases share one release]");
     if (ctl(C_P3_UNMATCHED_RELEASE)) ev_append(ev, " [control: an unmatched release ends the inferred part]");
     if (ign) ev_append(ev, " [control: producer ignores input]");

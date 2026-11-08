@@ -13,7 +13,7 @@ repository and links this adapter in (see "The engine-port contract").
 |---|---|
 | `fb_adapter.h` / `fb_adapter.c` | the adapter: scaling + half-block lowering, input + hold grace, fixed-tic loop, resize, lifecycle |
 | `synthetic_producer.h` / `.c` | own procedural art: a steerable tunnel, star dust and a ship marker, 320x200 indexed, deterministic state + FNV-1a 64 hash |
-| `fb_adapter_demo.c` | interactive demo, headless replay, and `--selfcheck` (7 properties, 18 negative controls) |
+| `fb_adapter_demo.c` | interactive demo, headless replay, and `--selfcheck` (7 properties, 20 negative controls) |
 | `pty_harness.py` | an independent real-PTY harness: P2 on the wire (needs pyte), P3, P5, P6, P7 through a pty; 9 negative controls |
 | `../../scripts/dev/fb_adapter_consumer.sh` | builds all of it from a temp dir against a staged SDK and runs everything |
 
@@ -94,7 +94,9 @@ last key pressed, so the grace model drops the first key of a chord). Several ke
 sends to one producer key keep it held until the last of them goes up (inferred holds cannot tell
 such an alias from an autorepeat, so there it re-arms the hold as one). Up to 8 such keys are tracked
 per producer key; a 9th is not recorded and nothing counts it (`keys_dropped` stays 0), so once the
-first 8 are up the producer key is released while the 9th is still down. A hold that began before
+first 8 are up the producer key is released while the 9th is still down. The same holds for a key
+pressed before the confirmation and reported down again after it while 8 keys are already
+recorded: it leaves the inferred part, does not fit the exact one, and so keeps nothing held. A hold that began before
 the terminal confirmed keeps its inferred deadline; it ends early only once every key that made it
 has been reported up. **An exact hold has no grace fallback:** a release that never arrives (the
 terminal lost focus and reported none, say; the C ABI does not report focus) keeps the key held
@@ -165,8 +167,8 @@ and the demo's report file) for P3, P5, P6 and P7, and adds a wire check for P2.
 
 ### Negative controls (each must FAIL)
 
-`fb_adapter_demo --selfcheck --list-controls` lists the 18 selfcheck controls; `pty_harness.py
---control NAME` runs the 9 PTY ones. The consumer script runs all 27 and requires each to fail.
+`fb_adapter_demo --selfcheck --list-controls` lists the 20 selfcheck controls; `pty_harness.py
+--control NAME` runs the 9 PTY ones. The consumer script runs all 29 and requires each to fail.
 
 | Control | Property | Defect injected | Observed |
 |---|---|---|---|

@@ -314,8 +314,10 @@ stays 1.85.
   `gibson::hold`), w and Up mapped to one producer key, held until both are up (and re-armed as
   one key with inferred holds), two holds mixing inferred and reported parts, each press and
   release of the producer key counted, with the controls `p3-ignore-releases`,
-  `p3-rearm-loses-release`, `p3-shared-alias-hold` and `p3-unmatched-release` (27 controls), and a
-  leg where the same script through an adapter left at the default gives the grace model's whole
+  `p3-rearm-loses-release`, `p3-shared-alias-hold`, `p3-unmatched-release`, `p3-wrap-deadline` and
+  `p3-rewrite-ended` (29 controls; hold deadlines saturate at the last tic, and a hold that has
+  ended while its release waits for queue room is not rewritten by a later release), and a leg
+  where the same script through an adapter left at the default gives the grace model's whole
   transcript, written out by hand. `scripts/dev/kitty_key_release_e2e.sh` with `FB_DEMO=` runs the
   demo in real kitty: the trace of the live session replays headless to the same hash, and without
   `--key-releases` the demo records no answer and no release.

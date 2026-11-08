@@ -36,7 +36,9 @@
    to the exact part); a release of any other key changes nothing, so a missing or unmatched
    release can only leave the inferred part to its deadline, never end the hold while a
    contributor may still be down (#275 review 3). If more than FB_HOLD_SRCS keys made it, it runs
-   to its deadline. */
+   to its deadline. Promotion moves a key out of the inferred part before it joins the exact one,
+   so a key promoted when the exact part already holds FB_HOLD_SRCS keys is in neither: like a 9th
+   exact key, it no longer keeps the code held (the disclosed 8-source cap). */
 typedef struct hold_slot {
     uint32_t code;
     uint8_t used;
@@ -698,6 +700,13 @@ static int releases_on(const fb_adapter *ad) {
     return ad->releases && !(ad->faults & FB_FAULT_IGNORE_RELEASES);
 }
 
+/* tic + d, saturating: a deadline past the last representable tic is that tic (#275 review 4),
+   never a wrap to one before the press. */
+static uint64_t tic_after(const fb_adapter *ad, uint64_t tic, uint64_t d) {
+    if (ad->faults & FB_FAULT_WRAP_DEADLINE) return tic + d; /* mutant: wraps */
+    return tic > UINT64_MAX - d ? UINT64_MAX : tic + d;
+}
+
 static int set_has(const uint32_t *set, uint8_t n, uint32_t k) {
     for (unsigned j = 0; j < n; j++)
         if (set[j] == k) return 1;
@@ -768,7 +777,7 @@ static void observe_key(fb_adapter *ad, uint64_t tic, uint32_t code, uint32_t sr
             /* an autorepeat re-arms; with reported releases the key is held until its release
                (pressed again in the tic it was released: down again) */
             if (exact) hold_exact(h, src);
-            else hold_infer(h, src, tic + ad->cfg.hold_repeat_tics);
+            else hold_infer(h, src, tic_after(ad, tic, ad->cfg.hold_repeat_tics));
             hold_settle(h);
             return;
         }
@@ -785,7 +794,7 @@ static void observe_key(fb_adapter *ad, uint64_t tic, uint32_t code, uint32_t sr
     h->code = code;
     h->started = tic;
     if (exact) hold_exact(h, src);
-    else hold_infer(h, src, tic + ad->cfg.hold_grace_tics);
+    else hold_infer(h, src, tic_after(ad, tic, ad->cfg.hold_grace_tics));
     hold_settle(h);
 }
 
@@ -800,6 +809,9 @@ static void release_key(fb_adapter *ad, uint64_t tic, uint32_t code, uint32_t sr
     for (int i = 0; i < FB_HOLD_SLOTS; i++) {
         hold_slot *h = &ad->holds[i];
         if (!h->used || h->code != code) continue;
+        /* Already ended, its release only waiting for room in a full queue (#275 review 4): what
+           the producer will receive is decided; a later release must not rewrite it. */
+        if (h->ends_at <= tic && !(ad->faults & FB_FAULT_REWRITE_ENDED)) return;
         const uint64_t end = (h->started < tic || tic == UINT64_MAX) ? tic : tic + 1;
         int ended = 0;
         if (ad->faults & FB_FAULT_SHARED_ALIAS_HOLD) { /* mutant: the first release ends it */
