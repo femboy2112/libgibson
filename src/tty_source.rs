@@ -596,6 +596,10 @@ enum KeyId {
 /// every repeat and the release of a key are named exactly as its press was (#275). A terminal
 /// can name them differently: with shift let go first, kitty reports the release of a `W`
 /// pressed with shift as `w`, and of a `!` as `1`.
+/// The first kitty functional-key code in the Unicode private-use area: keypad keys (57399-57454),
+/// media keys and modifier keys are sent from here up.
+const KITTY_PRIVATE_USE_KEYS: u32 = 57344;
+
 /// Each record: the key, its press, a sequence number (recording order) and the key-release epoch
 /// it was recorded in.
 #[derive(Debug, Default)]
@@ -623,9 +627,17 @@ impl PressedKeys {
     /// recorded of: its own identity; a legacy record of the text key it decodes to; and a legacy
     /// record of any key it decodes to recorded in a later epoch than its own record (that one
     /// went up unreported while reporting was off, and the key was pressed again since).
+    ///
+    /// Only its own identity for a key kitty sends from the private-use area (57344 and up: the
+    /// keypad, media and modifier keys): keypad Left decodes as the arrow Left and keypad `1` as the
+    /// top-row `1`, so a legacy record of that code belongs to a different physical key (#275
+    /// review 4).
     fn find_down(&self, id: KeyId, code: CtKeyCode) -> Option<usize> {
         let legacy = KeyId::Code(code);
         let exact = self.newest(|r| r.0 == id);
+        if matches!(id, KeyId::Base(b) if b >= KITTY_PRIVATE_USE_KEYS) {
+            return exact;
+        }
         let text = matches!(code, CtKeyCode::Char(_))
             .then(|| self.newest(|r| r.0 == legacy))
             .flatten();
@@ -2025,5 +2037,53 @@ mod tests {
         });
         assert_eq!(got.0, Some(SourceEvent::Terminal(key('w'))));
         assert_eq!(got.1, None);
+    }
+
+    #[test]
+    fn kitty_272_a_keypad_key_keeps_its_own_record_across_epochs() {
+        // #275 review 4: ctrl+keypad Left recorded (epoch 1); reporting toggled with it still held;
+        // shift+arrow Left pressed (epoch 2); the keypad release keeps the keypad's own name, and
+        // the arrow's release keeps the arrow's. Likewise keypad `1` (kitty 57400) and a top-row `1`
+        // typed as legacy text.
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            s.test_epoch = Some(1);
+            write_all(&master, b"\x1b[57417;5u\x1b[57400;5u");
+            let mut out = Vec::new();
+            for _ in 0..2 {
+                out.push(s.poll_source(Duration::from_millis(500)).unwrap());
+            }
+            s.test_epoch = Some(2);
+            write_all(
+                &master,
+                b"\x1b[1;2D1\x1b[57417;1:3u\x1b[1;1:3D\x1b[57400;1:3u\x1b[49;1:3u",
+            );
+            while let Ok(Some(e)) = s.poll_source(Duration::from_millis(200)) {
+                out.push(Some(e));
+            }
+            drop(master);
+            out
+        });
+        let names: Vec<(K, M, Kind)> = got
+            .into_iter()
+            .map(|e| match e {
+                Some(SourceEvent::Terminal(CtEvent::Key(k))) => (k.code, k.modifiers, k.kind),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                (K::Left, M::CONTROL, Kind::Press),        // keypad Left
+                (K::Char('1'), M::CONTROL, Kind::Press),   // ctrl+keypad 1
+                (K::Left, M::SHIFT, Kind::Press),          // arrow Left
+                (K::Char('1'), M::NONE, Kind::Press),      // top-row 1, legacy
+                (K::Left, M::CONTROL, Kind::Release),      // keypad Left: its own name
+                (K::Left, M::SHIFT, Kind::Release),        // arrow Left: its own name
+                (K::Char('1'), M::CONTROL, Kind::Release), // keypad 1: its own name
+                (K::Char('1'), M::NONE, Kind::Release),    // top-row 1
+            ]
+        );
     }
 }
