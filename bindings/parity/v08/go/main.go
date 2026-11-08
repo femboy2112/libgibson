@@ -6,14 +6,17 @@
 //
 //	parity_v08_go SCRIPT [REPS]
 //
-// Surface used: the bindings/go wrapper (package gibson) gates the run with gibson.CheckABI().
-// The wrapper has NO headless context, no push/poll, no frame readback and no styled text node,
-// and its handles are unexported, so a wrapper Node cannot be mounted on a context created
-// elsewhere: every script operation therefore goes through this package's own cgo calls against
-// the installed header. That split is itself a measured result (docs/V08_PARITY_SLICE.md, "Go").
+// Surface used: the bindings/go wrapper (package gibson): CheckABI, NewHeadlessContext, NewColNode,
+// NewStyledTextNode, SetRootNode, Render, PushEvent, PollEventKind / PollEvent, FrameSize,
+// FrameCell(s), FrameCellGlyph / FullGlyph, RenderedOutput, Close, with *gibson.Error carrying the
+// status and last-error text. What the wrapper cannot express still goes through this package's own
+// cgo (each marked "raw cgo"): NULL pointers, destroy(NULL), set_color_depth, and the cells_oob
+// out-parameter. Those calls use Context.UnsafeHandle() for the context. That residual split is
+// itself a measured result (docs/V08_PARITY_SLICE.md, "Go").
 //
 // gibson_last_error_message is thread-local, and a goroutine may move between OS threads between
-// two cgo calls, so main locks the OS thread before any library call.
+// two cgo calls, so main locks the OS thread before any library call (the raw-cgo probes need it;
+// the wrapper reads the last error inside the failing call itself).
 //
 // Negative controls (never on by default): PARITY_V08_PERTURB=cell | events (see parity_v08.c).
 package main
@@ -23,13 +26,13 @@ package main
 #include <gibson.h>
 #include <stdlib.h>
 
-static uint8_t cell_trunc(const gibson_cell_t *c) { return c->_reserved[0]; }
 */
 import "C"
 
 import (
 	"bufio"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -39,7 +42,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/femboy2112/libgibson/bindings/go/gibson"
 )
@@ -91,8 +93,10 @@ func (r rec) emit(out *strings.Builder) {
 	out.WriteString("}\n")
 }
 
-func stName(s C.gibson_status_t) string {
-	switch int(s) {
+func stName(s C.gibson_status_t) string { return statusName(int(s)) }
+
+func statusName(s int) string {
+	switch s {
 	case 0:
 		return "OK"
 	case -1:
@@ -108,38 +112,56 @@ func stName(s C.gibson_status_t) string {
 	}
 	return "UNKNOWN"
 }
-func kindName(k C.uint32_t) string {
+
+// errName is the transcript status of a wrapper call: OK, the C status of a *gibson.Error, or
+// WRAPPER_RAISED for any other error (a wrapper-side refusal that never reached the ABI).
+func errName(err error) string {
+	if err == nil {
+		return "OK"
+	}
+	var ge *gibson.Error
+	if errors.As(err, &ge) {
+		return statusName(int(ge.Status))
+	}
+	return "WRAPPER_RAISED"
+}
+
+// errText is the last-error text a *gibson.Error carried ("" otherwise).
+func errText(err error) string {
+	var ge *gibson.Error
+	if errors.As(err, &ge) {
+		return ge.LastError
+	}
+	return ""
+}
+
+func kindName(k gibson.KeyKind) string {
 	switch k {
-	case C.GIBSON_KEY_KIND_CHAR:
+	case gibson.KeyKindChar:
 		return "CHAR"
-	case C.GIBSON_KEY_KIND_SPECIAL:
+	case gibson.KeyKindSpecial:
 		return "SPECIAL"
 	}
 	return "NONE"
 }
-func typeName(t C.int32_t) string {
+func typeName(t gibson.EventType) string {
 	switch t {
-	case C.GIBSON_EVENT_KEY:
+	case gibson.EventKey:
 		return "KEY"
-	case C.GIBSON_EVENT_PASTE:
+	case gibson.EventPaste:
 		return "PASTE"
-	case C.GIBSON_EVENT_RESIZE:
+	case gibson.EventResize:
 		return "RESIZE"
 	}
 	return "NONE"
 }
-func lastErr() string {
-	var buf [512]C.char
-	C.gibson_last_error_message(&buf[0], 512)
-	return C.GoString(&buf[0])
-}
 
 var special = map[string]uint32{
-	"ENTER": C.GIBSON_KEY_ENTER, "LEFT": C.GIBSON_KEY_LEFT, "RIGHT": C.GIBSON_KEY_RIGHT,
-	"UP": C.GIBSON_KEY_UP, "DOWN": C.GIBSON_KEY_DOWN, "HOME": C.GIBSON_KEY_HOME,
-	"END": C.GIBSON_KEY_END, "BACKSPACE": C.GIBSON_KEY_BACKSPACE, "DELETE": C.GIBSON_KEY_DELETE,
-	"ESC": C.GIBSON_KEY_ESC, "TAB": C.GIBSON_KEY_TAB, "PAGE_UP": C.GIBSON_KEY_PAGE_UP,
-	"PAGE_DOWN": C.GIBSON_KEY_PAGE_DOWN,
+	"ENTER": gibson.KeyEnter, "LEFT": gibson.KeyLeft, "RIGHT": gibson.KeyRight,
+	"UP": gibson.KeyUp, "DOWN": gibson.KeyDown, "HOME": gibson.KeyHome,
+	"END": gibson.KeyEnd, "BACKSPACE": gibson.KeyBackspace, "DELETE": gibson.KeyDelete,
+	"ESC": gibson.KeyEsc, "TAB": gibson.KeyTab, "PAGE_UP": gibson.KeyPageUp,
+	"PAGE_DOWN": gibson.KeyPageDown,
 }
 
 func loadScript(path string) ([][]string, error) {
@@ -185,199 +207,199 @@ func applyPerturbation(steps [][]string) {
 	}
 }
 
-func atoi(s string) int { n, _ := strconv.Atoi(s); return n }
+func atoi(s string) int     { n, _ := strconv.Atoi(s); return n }
 func unhex(s string) []byte { b, _ := hex.DecodeString(s); return b }
-func cpOf(u string) uint32 { n, _ := strconv.ParseUint(u[2:], 16, 32); return uint32(n) }
+func cpOf(u string) uint32  { n, _ := strconv.ParseUint(u[2:], 16, 32); return uint32(n) }
 
-func parseColor(spec string) C.gibson_color_t {
-	var c C.gibson_color_t
+func parseColor(spec string) gibson.Color {
+	var c gibson.Color
 	switch {
 	case spec == "reset":
-		c.color_type = C.GIBSON_COLOR_RESET
+		c.Type = gibson.ColorReset
 	case strings.HasPrefix(spec, "rgb:"):
 		p := strings.Split(spec[4:], ",")
-		c.color_type = C.GIBSON_COLOR_RGB
-		c.r, c.g, c.b = C.uint8_t(atoi(p[0])), C.uint8_t(atoi(p[1])), C.uint8_t(atoi(p[2]))
+		c.Type = gibson.ColorRGB
+		c.R, c.G, c.B = uint8(atoi(p[0])), uint8(atoi(p[1])), uint8(atoi(p[2]))
 	case strings.HasPrefix(spec, "ansi:"):
-		c.color_type = C.GIBSON_COLOR_ANSI256
-		c.r = C.uint8_t(atoi(spec[5:]))
+		c.Type = gibson.ColorANSI256
+		c.R = uint8(atoi(spec[5:]))
 	case strings.HasPrefix(spec, "named:"):
-		c.color_type = C.int32_t(atoi(spec[6:]))
+		c.Type = gibson.ColorType(atoi(spec[6:]))
 	}
 	return c
 }
 
-func wrapOf(w string) C.int32_t {
+func wrapOf(w string) gibson.WrapMode {
 	switch w {
 	case "CHAR":
-		return C.GIBSON_WRAP_CHAR
+		return gibson.WrapChar
 	case "WORD":
-		return C.GIBSON_WRAP_WORD
+		return gibson.WrapWord
 	}
-	return C.GIBSON_WRAP_NONE
+	return gibson.WrapNone
 }
 
-func attrs(s *C.gibson_style_t) string {
+func attrs(s gibson.Style) string {
 	b := []byte("00000")
-	for i, v := range []C.uint8_t{s.bold, s.dim, s.italic, s.underline, s.reverse} {
-		if v != 0 {
+	for i, v := range []bool{s.Bold, s.Dim, s.Italic, s.Underline, s.Reverse} {
+		if v {
 			b[i] = '1'
 		}
 	}
 	return string(b)
 }
 
+func b01(v bool) int64 {
+	if v {
+		return 1
+	}
+	return 0
+}
+
 type interp struct {
 	out    *strings.Builder
-	ctx    *C.gibson_context_t
-	root   *C.gibson_node_t
-	styles map[string]*C.gibson_style_t
+	ctx    *gibson.Context
+	root   *gibson.Node
+	styles map[string]*gibson.Style
 }
 
-func (in *interp) fullGlyph(c *C.gibson_cell_t, x, y C.uint16_t) []byte {
-	if C.cell_trunc(c) == 0 {
-		return C.GoBytes(unsafe.Pointer(&c.glyph[0]), C.int(c.glyph_len))
-	}
-	var n C.size_t
-	C.gibson_get_frame_cell_glyph(in.ctx, x, y, nil, 0, &n)
-	buf := C.malloc(n + 1)
-	defer C.free(buf)
-	C.gibson_get_frame_cell_glyph(in.ctx, x, y, (*C.uint8_t)(buf), n, &n)
-	return C.GoBytes(buf, C.int(n))
+// handle is the native context pointer, for the raw-cgo probes only.
+func (in *interp) handle() *C.gibson_context_t {
+	return (*C.gibson_context_t)(in.ctx.UnsafeHandle())
 }
 
-func (in *interp) cellLine(c *C.gibson_cell_t, x, y C.uint16_t) string {
-	s := &c.style
+func (in *interp) cellLine(c gibson.Cell, x, y uint16) string {
+	g, _ := in.ctx.FullGlyph(c, x, y)
+	s := c.Style
 	return fmt.Sprintf("%s;%d;%d;%d;%d,%d,%d,%d;%d,%d,%d,%d;%s\n",
-		hex.EncodeToString(in.fullGlyph(c, x, y)), c.width, c.is_continuation, c.transparent,
-		s.fg.color_type, s.fg.r, s.fg.g, s.fg.b, s.bg.color_type, s.bg.r, s.bg.g, s.bg.b, attrs(s))
+		hex.EncodeToString(g), c.Width, b01(c.IsContinuation), b01(c.Transparent),
+		s.Fg.Type, s.Fg.R, s.Fg.G, s.Fg.B, s.Bg.Type, s.Bg.R, s.Bg.G, s.Bg.B, attrs(s))
 }
 
-func (in *interp) emitEvent(id string, st C.gibson_status_t, ev *C.gibson_event_t, kind string) {
-	key, rs := ev.event_type == C.GIBSON_EVENT_KEY, ev.event_type == C.GIBSON_EVENT_RESIZE
+func (in *interp) emitEvent(id, st string, ev gibson.Event, kind string) {
+	key, rs := ev.Type == gibson.EventKey, ev.Type == gibson.EventResize
 	r := rec{}
 	var cols, rows, code, mods int64
 	if rs {
-		cols, rows = int64(ev.cols), int64(ev.rows)
+		cols, rows = int64(ev.Cols), int64(ev.Rows)
 	}
 	if key {
-		code, mods = int64(ev.key_code), int64(ev.modifiers)
+		code, mods = int64(ev.KeyCode), int64(ev.Modifiers)
 	}
 	paste := ""
-	if ev.event_type == C.GIBSON_EVENT_PASTE && ev.paste_str != nil {
-		paste = hex.EncodeToString([]byte(C.GoString(ev.paste_str)))
+	if ev.Type == gibson.EventPaste && ev.HasPaste {
+		paste = hex.EncodeToString([]byte(ev.Paste))
 	}
 	r.i("cols", cols).s("id", id).s("k", "event").i("key_code", code).s("kind", kind).i("mods", mods).
-		s("paste", paste).i("rows", rows).s("st", stName(st)).s("type", typeName(ev.event_type)).emit(in.out)
+		s("paste", paste).i("rows", rows).s("st", st).s("type", typeName(ev.Type)).emit(in.out)
 }
 
 func (in *interp) probe(id, name string) {
 	r := rec{}
 	r.s("id", id).s("k", "probe").s("name", name)
-	var cols, rows C.uint16_t
-	C.gibson_get_frame_size(in.ctx, &cols, &rows)
-	var c2 *C.gibson_context_t
+	cols, rows, _ := in.ctx.FrameSize()
 	var cell C.gibson_cell_t
-	var ev C.gibson_event_t
-	var st C.gibson_status_t = 999
+	st := "UNKNOWN_PROBE"
+	errStr := ""
 	withErr := false
+	push := func(ev gibson.Event) error { return in.ctx.PushEvent(ev) }
+	// Probes marked "raw cgo" pass something the wrapper cannot express (NULL pointers, a call with
+	// no wrapper); the rest go through the gibson package and read the status from *gibson.Error.
 	switch name {
 	case "create_bad_mode":
-		st, withErr = C.gibson_create_headless_context(7, 40, 12, &c2), true
-	case "create_zero_cols":
-		st, withErr = C.gibson_create_headless_context(C.GIBSON_MODE_FULLSCREEN, 0, 12, &c2), true
-	case "create_null_out":
-		st = C.gibson_create_headless_context(C.GIBSON_MODE_FULLSCREEN, 40, 12, nil)
-	case "render_null_ctx":
-		st = C.gibson_render(nil)
-	case "cell_oob_x":
-		st = C.gibson_get_frame_cell(in.ctx, cols, 0, &cell)
-	case "cell_oob_y":
-		st = C.gibson_get_frame_cell(in.ctx, 0, rows, &cell)
-	case "cells_oob":
-		var written C.size_t = 99
-		st = C.gibson_get_frame_cells(in.ctx, 0, rows, &cell, 1, &written)
-		r.i("written", int64(written))
-	case "cell_null_out":
-		st = C.gibson_get_frame_cell(in.ctx, 0, 0, nil)
-	case "text_bad_utf8":
-		cs := C.CString("\xff\xfe")
-		var n *C.gibson_node_t
-		st, withErr = C.gibson_node_text(cs, nil, C.GIBSON_WRAP_NONE, &n), true
-		C.free(unsafe.Pointer(cs))
-		if st == C.GIBSON_OK {
-			C.gibson_node_free(n)
+		c, err := gibson.NewHeadlessContext(gibson.RenderMode(7), 40, 12)
+		if c != nil {
+			c.Close()
 		}
-	case "push_null_event":
-		st = C.gibson_push_event(in.ctx, nil)
+		st, errStr, withErr = errName(err), errText(err), true
+	case "create_zero_cols":
+		c, err := gibson.NewHeadlessContext(gibson.ModeFullscreen, 0, 12)
+		if c != nil {
+			c.Close()
+		}
+		st, errStr, withErr = errName(err), errText(err), true
+	case "create_null_out": // raw cgo: NULL out pointer
+		st = stName(C.gibson_create_headless_context(C.GIBSON_MODE_FULLSCREEN, 40, 12, nil))
+	case "render_null_ctx": // raw cgo: NULL context
+		st = stName(C.gibson_render(nil))
+	case "cell_oob_x":
+		_, err := in.ctx.FrameCell(cols, 0)
+		st = errName(err)
+	case "cell_oob_y":
+		_, err := in.ctx.FrameCell(0, rows)
+		st = errName(err)
+	case "cells_oob": // raw cgo: the C out-parameter `written` is the probed value
+		var written C.size_t = 99
+		st = stName(C.gibson_get_frame_cells(in.handle(), 0, C.uint16_t(rows), &cell, 1, &written))
+		r.i("written", int64(written))
+	case "cell_null_out": // raw cgo: NULL out pointer
+		st = stName(C.gibson_get_frame_cell(in.handle(), 0, 0, nil))
+	case "text_bad_utf8":
+		n, err := gibson.NewStyledTextNode("\xff\xfe", nil, gibson.WrapNone)
+		if n != nil {
+			n.Free()
+		}
+		st, errStr, withErr = errName(err), errText(err), true
+	case "push_null_event": // raw cgo: the wrapper always passes a struct
+		st = stName(C.gibson_push_event(in.handle(), nil))
 	case "push_surrogate":
-		ev.event_type, ev.key_code = C.GIBSON_EVENT_KEY, 0xD800
-		st, withErr = C.gibson_push_event_kind(in.ctx, &ev, C.GIBSON_KEY_KIND_CHAR), true
+		err := push(gibson.CharKey(0xD800, 0))
+		st, errStr, withErr = errName(err), errText(err), true
 	case "push_special_not_key":
-		ev.event_type, ev.key_code = C.GIBSON_EVENT_KEY, 'a'
-		st = C.gibson_push_event_kind(in.ctx, &ev, C.GIBSON_KEY_KIND_SPECIAL)
+		st = errName(push(gibson.SpecialKey('a', 0)))
 	case "push_bad_kind":
-		ev.event_type, ev.key_code = C.GIBSON_EVENT_KEY, 'a'
-		st = C.gibson_push_event_kind(in.ctx, &ev, 9)
+		ev := gibson.CharKey('a', 0)
+		ev.KeyKind = 9
+		st = errName(push(ev))
 	case "push_bad_mods":
-		ev.event_type, ev.key_code, ev.modifiers = C.GIBSON_EVENT_KEY, 'a', 0x80
-		st = C.gibson_push_event_kind(in.ctx, &ev, C.GIBSON_KEY_KIND_CHAR)
+		st = errName(push(gibson.CharKey('a', 0x80)))
 	case "push_resize_zero":
-		ev.event_type, ev.cols, ev.rows = C.GIBSON_EVENT_RESIZE, 0, 12
-		st = C.gibson_push_event(in.ctx, &ev)
+		st = errName(push(gibson.ResizeEvent(0, 12)))
 	case "paste_bad_utf8":
-		cs := C.CString("\xc3\x28")
-		ev.event_type, ev.paste_str = C.GIBSON_EVENT_PASTE, cs
-		st, withErr = C.gibson_push_event(in.ctx, &ev), true
-		C.free(unsafe.Pointer(cs))
+		err := push(gibson.PasteText("\xc3\x28"))
+		st, errStr, withErr = errName(err), errText(err), true
 	case "paste_null":
-		ev.event_type, ev.paste_str = C.GIBSON_EVENT_PASTE, nil
-		st = C.gibson_push_event(in.ctx, &ev)
-	case "poll_null_out":
-		st = C.gibson_poll_event(in.ctx, 0, nil)
-	case "poll_kind_null":
-		st = C.gibson_poll_event_kind(in.ctx, 0, &ev, nil)
-	case "color_depth_bad":
-		st = C.gibson_set_color_depth(in.ctx, 9)
+		st = errName(push(gibson.Event{Type: gibson.EventPaste})) // HasPaste false: NULL paste_str
+	case "poll_null_out": // raw cgo: NULL out pointer
+		st = stName(C.gibson_poll_event(in.handle(), 0, nil))
+	case "poll_kind_null": // raw cgo: NULL kind pointer
+		var ev C.gibson_event_t
+		st = stName(C.gibson_poll_event_kind(in.handle(), 0, &ev, nil))
+	case "color_depth_bad": // raw cgo: no wrapper call for set_color_depth
+		st = stName(C.gibson_set_color_depth(in.handle(), 9))
 	case "queue_full":
 		var accepted, drained int64
-		ev.event_type, ev.key_code = C.GIBSON_EVENT_KEY, 'q'
-		for i := 0; i < C.GIBSON_EVENT_QUEUE_CAPACITY; i++ {
-			if C.gibson_push_event_kind(in.ctx, &ev, C.GIBSON_KEY_KIND_CHAR) == C.GIBSON_OK {
+		q := gibson.CharKey('q', 0)
+		for i := 0; i < gibson.EventQueueCapacity; i++ {
+			if push(q) == nil {
 				accepted++
 			}
 		}
-		st = C.gibson_push_event_kind(in.ctx, &ev, C.GIBSON_KEY_KIND_CHAR)
-		e := lastErr()
-		for i := 0; i < 2*C.GIBSON_EVENT_QUEUE_CAPACITY; i++ {
-			var got C.gibson_event_t
-			var kind C.uint32_t
-			if C.gibson_poll_event_kind(in.ctx, 0, &got, &kind) != C.GIBSON_OK || got.event_type == C.GIBSON_EVENT_NONE {
+		err := push(q)
+		st, errStr = errName(err), errText(err)
+		for i := 0; i < 2*gibson.EventQueueCapacity; i++ {
+			got, perr := in.ctx.PollEventKind(0)
+			if perr != nil || got.Type == gibson.EventNone {
 				break
 			}
 			drained++
 		}
-		r.i("accepted", accepted).i("drained", drained).s("err", e)
+		r.i("accepted", accepted).i("drained", drained).s("err", errStr)
 	case "frame_before_render":
-		var c, rr C.uint16_t = 7, 7
-		C.gibson_create_headless_context(C.GIBSON_MODE_FULLSCREEN, 8, 2, &c2)
-		sst := C.gibson_get_frame_size(c2, &c, &rr)
-		st = C.gibson_get_frame_cell(c2, 0, 0, &cell)
-		C.gibson_destroy_context(c2)
-		c2 = nil
-		r.i("cols", int64(c)).i("rows", int64(rr)).s("size_st", stName(sst))
+		c2, err := gibson.NewHeadlessContext(gibson.ModeFullscreen, 8, 2)
+		if err == nil {
+			// The C probe seeds the out-params with 7; the wrapper returns (0, 0) for "no frame yet".
+			c, rr, serr := c2.FrameSize()
+			_, cerr := c2.FrameCell(0, 0)
+			st = errName(cerr)
+			r.i("cols", int64(c)).i("rows", int64(rr)).s("size_st", errName(serr))
+			c2.Close()
+		}
 	}
 	if withErr {
-		r.s("err", lastErr())
+		r.s("err", errStr)
 	}
-	if c2 != nil {
-		C.gibson_destroy_context(c2)
-	}
-	if st == 999 {
-		r.s("st", "UNKNOWN_PROBE")
-	} else {
-		r.s("st", stName(st))
-	}
+	r.s("st", st)
 	r.emit(in.out)
 }
 
@@ -386,154 +408,125 @@ func (in *interp) step(s []string) {
 	out := in.out
 	switch {
 	case op == "create":
-		var mode C.int32_t = C.GIBSON_MODE_FULLSCREEN
+		mode := gibson.ModeFullscreen
 		if a[0] == "INLINE" {
-			mode = C.GIBSON_MODE_INLINE
+			mode = gibson.ModeInline
 		}
-		st := C.gibson_create_headless_context(mode, C.uint16_t(atoi(a[1])), C.uint16_t(atoi(a[2])), &in.ctx)
+		ctx, err := gibson.NewHeadlessContext(mode, uint16(atoi(a[1])), uint16(atoi(a[2])))
+		if err == nil {
+			in.ctx = ctx
+		}
 		rec{}.i("cols", int64(atoi(a[1]))).s("id", id).s("k", "create").s("mode", a[0]).
-			i("rows", int64(atoi(a[2]))).s("st", stName(st)).emit(out)
+			i("rows", int64(atoi(a[2]))).s("st", errName(err)).emit(out)
 	case op == "style":
-		st := (*C.gibson_style_t)(C.calloc(1, C.size_t(unsafe.Sizeof(C.gibson_style_t{}))))
-		st.fg, st.bg = parseColor(a[1]), parseColor(a[2])
 		f := a[3]
-		b := func(i int) C.uint8_t {
-			if f[i] == '1' {
-				return 1
-			}
-			return 0
+		in.styles[a[0]] = &gibson.Style{
+			Fg: parseColor(a[1]), Bg: parseColor(a[2]),
+			Bold: f[0] == '1', Dim: f[1] == '1', Italic: f[2] == '1', Underline: f[3] == '1', Reverse: f[4] == '1',
 		}
-		st.bold, st.dim, st.italic, st.underline, st.reverse = b(0), b(1), b(2), b(3), b(4)
-		in.styles[a[0]] = st
 	case op == "col":
-		st := C.gibson_node_box_col(&in.root)
-		rec{}.s("id", id).s("k", "node").s("st", stName(st)).emit(out)
-	case op == "text":
-		cs := C.CString(string(unhex(a[2])))
-		var n *C.gibson_node_t
-		st := C.gibson_node_text(cs, in.styles[a[0]], wrapOf(a[1]), &n)
-		C.free(unsafe.Pointer(cs))
-		if st == C.GIBSON_OK {
-			st = C.gibson_node_add_child(in.root, n)
+		in.root = gibson.NewColNode() // the constructor returns no status: an invalid node is the signal
+		st := "OK"
+		if !in.root.Valid() {
+			st = "WRAPPER_NULL"
 		}
-		rec{}.s("id", id).s("k", "node").s("st", stName(st)).emit(out)
+		rec{}.s("id", id).s("k", "node").s("st", st).emit(out)
+	case op == "text":
+		n, err := gibson.NewStyledTextNode(string(unhex(a[2])), in.styles[a[0]], wrapOf(a[1]))
+		if err == nil {
+			in.root.AddChild(n) // AddChild returns no status
+		}
+		rec{}.s("id", id).s("k", "node").s("st", errName(err)).emit(out)
 	case op == "mount":
-		st := C.gibson_set_root_node(in.ctx, in.root) // consumes the tree
-		in.root = nil
-		rec{}.s("id", id).s("k", "mount").s("st", stName(st)).emit(out)
+		err := in.ctx.SetRootNode(in.root) // consumes the tree
+		rec{}.s("id", id).s("k", "mount").s("st", errName(err)).emit(out)
 	case op == "render":
-		rec{}.s("id", id).s("k", "render").s("st", stName(C.gibson_render(in.ctx))).emit(out)
+		st := "OK" // Context.Render returns a plain error without the C status
+		if err := in.ctx.Render(); err != nil {
+			st = "WRAPPER_RAISED"
+		}
+		rec{}.s("id", id).s("k", "render").s("st", st).emit(out)
 	case op == "geom":
-		var c, r C.uint16_t
-		st := C.gibson_get_frame_size(in.ctx, &c, &r)
-		rec{}.i("cols", int64(c)).s("id", id).s("k", "geom").i("rows", int64(r)).s("st", stName(st)).emit(out)
+		c, r, err := in.ctx.FrameSize()
+		rec{}.i("cols", int64(c)).s("id", id).s("k", "geom").i("rows", int64(r)).s("st", errName(err)).emit(out)
 	case op == "frame":
-		var c, r C.uint16_t
-		st := C.gibson_get_frame_size(in.ctx, &c, &r)
-		total := int(c) * int(r)
-		cells := make([]C.gibson_cell_t, total+1)
-		var written C.size_t
-		if st == C.GIBSON_OK {
-			st = C.gibson_get_frame_cells(in.ctx, 0, 0, &cells[0], C.size_t(total), &written)
+		c, _, err := in.ctx.FrameSize()
+		var cells []gibson.Cell
+		if err == nil {
+			cells, err = in.ctx.FrameCells(0, 0, -1)
 		}
 		h := fnvOffset
-		for k := 0; k < int(written); k++ {
-			h = fnv(h, []byte(in.cellLine(&cells[k], C.uint16_t(k%int(c)), C.uint16_t(k/int(c)))))
+		for k := range cells {
+			h = fnv(h, []byte(in.cellLine(cells[k], uint16(k%int(c)), uint16(k/int(c)))))
 		}
-		var wl, got C.size_t
-		C.gibson_get_rendered_output(in.ctx, nil, 0, &wl)
-		wire := C.malloc(wl + 1)
-		C.gibson_get_rendered_output(in.ctx, (*C.uint8_t)(wire), wl, &got)
-		wb := C.GoBytes(wire, C.int(got))
-		C.free(wire)
-		rec{}.i("cells", int64(written)).s("digest", fmt.Sprintf("%016x", h)).s("id", id).s("k", "frame").
-			s("st", stName(st)).s("wire_digest", fmt.Sprintf("%016x", fnv(fnvOffset, wb))).
-			i("wire_len", int64(got)).emit(out)
+		wb, _ := in.ctx.RenderedOutput()
+		rec{}.i("cells", int64(len(cells))).s("digest", fmt.Sprintf("%016x", h)).s("id", id).s("k", "frame").
+			s("st", errName(err)).s("wire_digest", fmt.Sprintf("%016x", fnv(fnvOffset, wb))).
+			i("wire_len", int64(len(wb))).emit(out)
 	case op == "cell":
-		x, y := C.uint16_t(atoi(a[0])), C.uint16_t(atoi(a[1]))
-		var c C.gibson_cell_t
-		st := C.gibson_get_frame_cell(in.ctx, x, y, &c)
+		x, y := uint16(atoi(a[0])), uint16(atoi(a[1]))
+		c, err := in.ctx.FrameCell(x, y)
 		var g []byte
-		if st == C.GIBSON_OK {
-			g = in.fullGlyph(&c, x, y)
+		if err == nil {
+			g, _ = in.ctx.FullGlyph(c, x, y)
 		}
-		sy := &c.style
+		sy := c.Style
 		rec{}.s("attrs", attrs(sy)).
-			a4("bg", int64(sy.bg.color_type), int64(sy.bg.r), int64(sy.bg.g), int64(sy.bg.b)).
-			i("cont", int64(c.is_continuation)).
-			a4("fg", int64(sy.fg.color_type), int64(sy.fg.r), int64(sy.fg.g), int64(sy.fg.b)).
-			s("glyph", hex.EncodeToString(g)).s("id", id).s("k", "cell").s("st", stName(st)).
-			i("transp", int64(c.transparent)).i("w", int64(c.width)).i("x", int64(x)).i("y", int64(y)).emit(out)
+			a4("bg", int64(sy.Bg.Type), int64(sy.Bg.R), int64(sy.Bg.G), int64(sy.Bg.B)).
+			i("cont", b01(c.IsContinuation)).
+			a4("fg", int64(sy.Fg.Type), int64(sy.Fg.R), int64(sy.Fg.G), int64(sy.Fg.B)).
+			s("glyph", hex.EncodeToString(g)).s("id", id).s("k", "cell").s("st", errName(err)).
+			i("transp", b01(c.Transparent)).i("w", int64(c.Width)).i("x", int64(x)).i("y", int64(y)).emit(out)
 	case op == "glyph":
-		x, y := C.uint16_t(atoi(a[0])), C.uint16_t(atoi(a[1]))
-		var n, n2 C.size_t
-		st := C.gibson_get_frame_cell_glyph(in.ctx, x, y, nil, 0, &n)
-		buf := C.malloc(n + 1)
-		if st == C.GIBSON_OK {
-			st = C.gibson_get_frame_cell_glyph(in.ctx, x, y, (*C.uint8_t)(buf), n, &n2)
-		}
-		g := C.GoBytes(buf, C.int(n2))
-		C.free(buf)
-		rec{}.s("full_hex", hex.EncodeToString(g)).i("full_len", int64(n2)).s("id", id).s("k", "glyph").
-			s("st", stName(st)).i("x", int64(x)).i("y", int64(y)).emit(out)
+		x, y := uint16(atoi(a[0])), uint16(atoi(a[1]))
+		g, err := in.ctx.FrameCellGlyph(x, y)
+		rec{}.s("full_hex", hex.EncodeToString(g)).i("full_len", int64(len(g))).s("id", id).s("k", "glyph").
+			s("st", errName(err)).i("x", int64(x)).i("y", int64(y)).emit(out)
 	case op == "glyphcap":
-		x, y := C.uint16_t(atoi(a[0])), C.uint16_t(atoi(a[1]))
-		var c C.gibson_cell_t
-		st := C.gibson_get_frame_cell(in.ctx, x, y, &c)
-		rec{}.s("id", id).i("inline_len", int64(c.glyph_len)).s("k", "glyphcap").s("st", stName(st)).
-			i("trunc", int64(C.cell_trunc(&c))).i("x", int64(x)).i("y", int64(y)).emit(out)
+		x, y := uint16(atoi(a[0])), uint16(atoi(a[1]))
+		c, err := in.ctx.FrameCell(x, y)
+		rec{}.s("id", id).i("inline_len", int64(len(c.Glyph))).s("k", "glyphcap").s("st", errName(err)).
+			i("trunc", b01(c.GlyphTruncated)).i("x", int64(x)).i("y", int64(y)).emit(out)
 	case strings.HasPrefix(op, "push_"):
-		var ev C.gibson_event_t
-		var st C.gibson_status_t
+		var ev gibson.Event
 		switch op {
-		case "push_char", "push_legacy":
-			ev.event_type, ev.key_code, ev.modifiers = C.GIBSON_EVENT_KEY, C.uint32_t(cpOf(a[0])), C.uint8_t(atoi(a[1]))
-			if op == "push_char" {
-				st = C.gibson_push_event_kind(in.ctx, &ev, C.GIBSON_KEY_KIND_CHAR)
-			} else {
-				st = C.gibson_push_event(in.ctx, &ev)
-			}
+		case "push_char":
+			ev = gibson.CharKey(cpOf(a[0]), uint8(atoi(a[1])))
+		case "push_legacy":
+			ev = gibson.LegacyKey(cpOf(a[0]), uint8(atoi(a[1]))) // the kind-less call
 		case "push_special":
-			ev.event_type, ev.key_code, ev.modifiers = C.GIBSON_EVENT_KEY, C.uint32_t(special[a[0]]), C.uint8_t(atoi(a[1]))
-			st = C.gibson_push_event_kind(in.ctx, &ev, C.GIBSON_KEY_KIND_SPECIAL)
+			ev = gibson.SpecialKey(special[a[0]], uint8(atoi(a[1])))
 		case "push_paste":
-			cs := C.CString(string(unhex(a[0])))
-			ev.event_type, ev.paste_str = C.GIBSON_EVENT_PASTE, cs
-			st = C.gibson_push_event(in.ctx, &ev)
-			C.free(unsafe.Pointer(cs))
+			ev = gibson.PasteText(string(unhex(a[0])))
 		default:
-			ev.event_type, ev.cols, ev.rows = C.GIBSON_EVENT_RESIZE, C.uint16_t(atoi(a[0])), C.uint16_t(atoi(a[1]))
-			st = C.gibson_push_event(in.ctx, &ev)
+			ev = gibson.ResizeEvent(uint16(atoi(a[0])), uint16(atoi(a[1])))
 		}
-		rec{}.s("id", id).s("k", "push").s("st", stName(st)).emit(out)
+		rec{}.s("id", id).s("k", "push").s("st", errName(in.ctx.PushEvent(ev))).emit(out)
 	case op == "poll":
 		for k := 1; k <= atoi(a[0]); k++ {
-			var ev C.gibson_event_t
-			var kind C.uint32_t
-			st := C.gibson_poll_event_kind(in.ctx, 0, &ev, &kind)
-			in.emitEvent(fmt.Sprintf("%s.%d", id, k), st, &ev, kindName(kind))
+			ev, err := in.ctx.PollEventKind(0)
+			in.emitEvent(fmt.Sprintf("%s.%d", id, k), errName(err), ev, kindName(ev.KeyKind))
 		}
 	case op == "poll_legacy":
-		var ev C.gibson_event_t
-		st := C.gibson_poll_event(in.ctx, 0, &ev)
-		in.emitEvent(id, st, &ev, "ABSENT")
+		ev, err := in.ctx.PollEvent(0) // the kind-less call
+		in.emitEvent(id, errName(err), ev, "ABSENT")
 	case op == "probe":
 		in.probe(id, a[0])
 	case op == "lifecycle":
-		var st C.gibson_status_t
+		st := "OK"
 		switch a[0] {
 		case "node_free_unattached":
-			cs := C.CString("unattached")
-			var n *C.gibson_node_t
-			st = C.gibson_node_text(cs, nil, C.GIBSON_WRAP_NONE, &n)
-			C.free(unsafe.Pointer(cs))
-			C.gibson_node_free(n)
+			n, err := gibson.NewStyledTextNode("unattached", nil, gibson.WrapNone)
+			st = errName(err)
+			if n != nil {
+				n.Free()
+			}
 		case "destroy_null":
-			C.gibson_destroy_context(nil)
+			C.gibson_destroy_context(nil) // raw cgo: NULL context
 		}
-		rec{}.s("id", id).s("k", "lifecycle").s("name", a[0]).s("st", stName(st)).emit(out)
+		rec{}.s("id", id).s("k", "lifecycle").s("name", a[0]).s("st", st).emit(out)
 	case op == "destroy":
-		C.gibson_destroy_context(in.ctx)
+		in.ctx.Close()
 		in.ctx = nil
 		rec{}.s("id", id).s("k", "destroy").s("st", "OK").emit(out)
 	default:
@@ -543,18 +536,15 @@ func (in *interp) step(s []string) {
 
 func runScript(steps [][]string) string {
 	var out strings.Builder
-	in := &interp{out: &out, styles: map[string]*C.gibson_style_t{}}
+	in := &interp{out: &out, styles: map[string]*gibson.Style{}}
 	for _, s := range steps {
 		in.step(s)
 	}
 	if in.root != nil {
-		C.gibson_node_free(in.root)
+		in.root.Free() // no-op once mounted
 	}
 	if in.ctx != nil {
-		C.gibson_destroy_context(in.ctx)
-	}
-	for _, st := range in.styles {
-		C.free(unsafe.Pointer(st))
+		in.ctx.Close()
 	}
 	return out.String()
 }
@@ -594,7 +584,7 @@ func main() {
 		ct := reflect.TypeOf(&gibson.Context{})
 		var b strings.Builder
 		r := rec{}.s("k", "wrapper").s("lang", "go")
-		for _, m := range []string{"PollEvent", "PollEventKind", "PushEvent", "PushEventKind", "FrameSize", "FrameCells", "RenderedOutput"} {
+		for _, m := range []string{"PollEvent", "PollEventKind", "PushEvent", "FrameSize", "FrameCells", "RenderedOutput", "TakeRenderedOutput"} {
 			has := int64(0)
 			if _, ok := ct.MethodByName(m); ok {
 				has = 1
