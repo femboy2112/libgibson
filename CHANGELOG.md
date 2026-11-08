@@ -18,8 +18,38 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0** — a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)). This is the working development
 line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 remains **prepared in source at
-`9a899e1`** (release state 1 — not tagged, not released); a future `v0.6.0` tag names that commit,
-not a later `main`. `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
+`9a899e1`** (release state 1 — not tagged, not released). It is never tagged on a later `main`;
+whether a `v0.6.0` tag names the corrected candidate `release/v0.6.0-rc` @ `572e551` is the owner's
+decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed policy in #291).
+`GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
+
+### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
+- The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an
+  event type with each key (`CSI 97u` press, `CSI 97;1:2u` repeat, `CSI 97;1:3u` release), and
+  every **release** reached the application as a second press: through `gibson::input::poll_event`,
+  `Context::poll_event` / `run_once`, `gibson_poll_event` and `gibson_poll_event_kind`. A press and
+  a repeat are still delivered as `Event::Key`; a release is not delivered. LibGibson never enables
+  the protocol itself, so this matters when something else left it enabled (for example a
+  kitty-protocol program that exited without popping its flags).
+- **A dropped event no longer ends a terminal poll early.** On a terminal context, an event that
+  is not delivered (a release, or a key code LibGibson does not model, such as F5) used to make
+  the poll return "no event" at once, before its timeout; the poll now carries on for the rest of
+  the same deadline, and the events queued behind the dropped one are delivered in order. Once the
+  deadline has passed, at most 64 more already-available undelivered events are consumed before
+  the poll returns, so a stream of them cannot hold a poll past its timeout. (Headless and non-TTY
+  contexts still return "no event" at once, and the legacy C poll still reports focus changes and
+  other events it does not model as `GIBSON_EVENT_NONE` at once, as before.)
+- **Windows key-kind decoding is unchanged** (the continued polling above does apply there).
+  crossterm 0.29 reports a release there for each ordinary key-up, which LibGibson has always
+  delivered as a second press ([#292](https://github.com/femboy2112/libgibson/issues/292)); but
+  it also delivers an Alt+numpad character only as the release of Alt, and a decoded key event
+  does not say which of the two a character release is. Dropping releases on Windows would lose
+  those characters, so that fix is left to #292, which needs that distinction and a Windows test.
+- `tests/key_release_kind_pty.rs` injects the sequences through a real PTY: press, repeat and
+  release; a release followed by a legacy press; repeated cycles; fragmented sequences; U+1001
+  (the #274 range) through both C polls; focus changes and a resize between releases; a release
+  queued before a hangup; and DEEP SIGNAL recording one `w` per press/release pair (it recorded
+  two). All six failed on `5790f1a`.
 
 ### Fixed — Rust library (`gibson::input`, `gibson::Context`) and C ABI input on a Unix terminal ([#269](https://github.com/femboy2112/libgibson/issues/269), [#15](https://github.com/femboy2112/libgibson/issues/15))
 - **A terminal hangup during a poll no longer spins forever.** When stdin is the controlling

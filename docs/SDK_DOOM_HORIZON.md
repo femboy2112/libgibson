@@ -99,7 +99,8 @@ record exists so the freeze is taken with the Doom horizon mapped rather than as
 > `gibson_push_event` queues key, paste and resize events on a headless context, and
 > `gibson_poll_event` delivers them (ABI v1, additive, 59 → 60 symbols). The installed-SDK forcing
 > consumer now moves its marker only by pushed-and-polled input, with identical frames. The record
-> above stays as written for v0.6.0.
+> above stays as written for v0.6.0. *Update 2026-11-07:* 62 symbols on `main` since #283
+> (`da2be76`) added `gibson_poll_event_kind` / `gibson_push_event_kind` (#274).
 
 > **Node J design note (2026-11-06, RXVIII). Investigation only: nothing is built, and no
 > repository is created.** v0.7 node J is a Doom-compatible adapter. It **cannot live in this
@@ -125,3 +126,16 @@ record exists so the freeze is taken with the Doom horizon mapped rather than as
 >
 > **The first open question** is whether a 320×200 frame lowered to half-blocks fits a 35 Hz frame
 > budget at common terminal sizes. That measurement belongs to the adapter's own CI.
+
+> *Update 2026-11-07 (RXIX).* #283 (`da2be76`) and #282 (`04c0ad2`) are merged. Plain
+> `gibson_poll_event` still reports a typed U+1001–U+100D and the `GIBSON_KEY_*` of equal value
+> identically (a documented compatibility property; #274 is addressed by the `_kind` pair, not
+> removed). #275's 25 tics is a compromise measured on xterm under Xvfb/XTEST, not key-release
+> knowledge. A kitty-protocol key release is no longer delivered on Unix (#285, fixed by #289,
+> `f365239`; Windows still delivers each key-up as a press, #292). Node J's in-repo part, a
+> clean-room framebuffer adapter over the installed SDK (`bindings/framebuffer_adapter/`), is
+> merged (#299). The doomgeneric port on top of it is a local, unpublished prototype, measured at
+> 35 Hz throughput or better at 80×24 to 320×100 under a PTY (timedemo, every gametic presented;
+> no terminal emulator's drawing speed is included). It needs no game-specific LibGibson API. Gaps
+> it found: #297 (headless ANSI capture grows without bound in C) and #298 (no C terminal-size
+> query, no C focus events).
