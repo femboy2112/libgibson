@@ -100,7 +100,8 @@ wait_file "$OUT/xterm.done" || { echo "xterm run did not finish" >&2; exit 1; }
 
 # ---------------------------------------------------------------- fb_adapter demo (C ABI)
 if [ -n "${FB_DEMO:-}" ]; then
-    run_in kitty demo "'$FB_DEMO' --play --exit-after-tics 600 --trace '$OUT/demo.trace' --report '$OUT/demo.report'"
+    # --key-releases: the adapter's opt-in (off by default, #275).
+    run_in kitty demo "'$FB_DEMO' --play --key-releases --exit-after-tics 600 --trace '$OUT/demo.trace' --report '$OUT/demo.report'"
     key keydown Right; sleep 0.8
     key keydown w; sleep 0.4; key keyup w     # w while Right stays down
     sleep 0.4; key keyup Right; sleep 0.3
@@ -109,6 +110,13 @@ if [ -n "${FB_DEMO:-}" ]; then
     kitty @ --to "unix:$SOCK" get-text >"$OUT/demo.screen" 2>/dev/null || true
     key key q
     wait_file "$OUT/demo.done" || { echo "demo run did not finish" >&2; exit 1; }
+    # The same demo without the opt-in: the adapter's default keeps inferred holds and asks nothing.
+    run_in kitty demo_off "'$FB_DEMO' --play --exit-after-tics 600 --trace '$OUT/demo_off.trace' --report '$OUT/demo_off.report'"
+    key keydown w; sleep 0.4; key keyup w
+    sleep 0.4
+    kitty @ --to "unix:$SOCK" get-text >"$OUT/demo_off.screen" 2>/dev/null || true
+    key key q
+    wait_file "$OUT/demo_off.done" || { echo "demo_off run did not finish" >&2; exit 1; }
 fi
 
 FB_DEMO=${FB_DEMO:-} python3 -I - "$OUT" "$GAME" <<'EOF'
@@ -163,13 +171,19 @@ if demo:
     check(all(rel.count(k) == 1 for k in keys) and all(r in keys or r == (1, ord("q")) for r in rel),
           f"demo (C ABI): one release each of Right, w and a ({rel})")
     rp = dict(kv.split("=", 1) for kv in open(f"{out}/demo.report").read().split() if "=" in kv)
-    r = subprocess.run([demo, "--replay", f"{out}/demo.trace", "--tics", rp["tics"]], capture_output=True, text=True)
+    r = subprocess.run([demo, "--replay", f"{out}/demo.trace", "--tics", rp["tics"], "--key-releases"], capture_output=True, text=True)
     m = re.search(r"hash=([0-9a-f]+)", r.stdout)
     check(m is not None and m.group(1) == rp["hash"],
           f"demo (C ABI): the trace replays to the live hash (live {rp['hash']}, replay {m.group(1) if m else None})")
     check("keys exact" in open(f"{out}/demo.screen", errors="replace").read(), "demo (C ABI): the status row shows keys exact")
     fl = open(f"{out}/demo.flags", "rb").read()
     check(b"main \x1b[?0u" in fl and b"alt \x1b[?0u" in fl, f"demo (C ABI): flags popped on both screens after exit: {fl!r}")
+    off = [l.split() for l in open(f"{out}/demo_off.trace").read().splitlines()]
+    okinds = [int(t[1]) for t in off]
+    check(not any(k & 0x300 for k in okinds) and any(k == 1 and int(t[2]) == ord("w") for k, t in zip(okinds, off)),
+          f"demo without --key-releases: the press of w is traced, no answer and no release ({len(off)} events)")
+    check("keys exact" not in open(f"{out}/demo_off.screen", errors="replace").read(),
+          "demo without --key-releases: the status row does not show keys exact")
 print(f"evidence in {out}")
 sys.exit(1 if fails else 0)
 EOF

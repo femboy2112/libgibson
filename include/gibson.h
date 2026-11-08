@@ -171,12 +171,12 @@ typedef enum {
     GIBSON_EVENT_KEY = 1,
     GIBSON_EVENT_PASTE = 2,
     GIBSON_EVENT_RESIZE = 3,
-    /* Key-release reporting (ABI v1, additive, #275): delivered only after
-       gibson_set_key_release_reporting. KEY_RELEASE: a key went up; key_code, modifiers and the
-       key kind are exactly those its press was delivered with (for the 32 most recent keys still
-       down; a key already down when reporting began is named as the terminal reports it). KEY_RELEASES_ACTIVE: the terminal
-       confirmed the request; every key that goes up after this event is a KEY_RELEASE.
-       KEY_RELEASES_UNSUPPORTED: it answered without confirming; keys stay press-only. */
+    /* Key-release reporting (ABI v1, additive, #275): from a terminal, delivered only after
+       gibson_set_key_release_reporting (see it for the exact rules). KEY_RELEASE: a key went up;
+       key_code, modifiers and the key kind are those its press was delivered with, with the
+       exceptions listed there. KEY_RELEASES_ACTIVE: the terminal confirmed the request; every key
+       that goes up after this event is a KEY_RELEASE. KEY_RELEASES_UNSUPPORTED: it answered
+       without confirming, or reporting ended; keys stay press-only. */
     GIBSON_EVENT_KEY_RELEASE = 4,
     GIBSON_EVENT_KEY_RELEASES_ACTIVE = 5,
     GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED = 6
@@ -249,16 +249,41 @@ void            gibson_destroy_context(gibson_context_t *ctx);
 gibson_status_t gibson_set_sync_updates(gibson_context_t *ctx, int32_t enabled);
 gibson_status_t gibson_set_max_fps(gibson_context_t *ctx, uint32_t fps);
 /* Asks the terminal to report key releases through the kitty keyboard protocol (enabled != 0),
-   or stops asking (0). Off by default. On a terminal context this enters raw mode, pushes the
-   protocol's keyboard flags on the current screen and asks whether the terminal took them; the
-   answer is polled as GIBSON_EVENT_KEY_RELEASES_ACTIVE or GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED, in
-   input order, and once active each key that goes up is polled as GIBSON_EVENT_KEY_RELEASE. A
-   terminal without the protocol may answer UNSUPPORTED or nothing: keys then stay press-only.
-   gibson_destroy_context (and the panic hook) pop the flags. Tested in kitty 0.32.2. While enabled,
-   modifier keys alone are reported by the terminal but not delivered, and text typed through an
-   input method may not arrive: this is for direct key control, not text entry. A no-op on a
-   headless context (push the events instead) and off Unix. GIBSON_ERR_IO if the write fails.
-   (ABI v1, additive, #275) */
+   or stops asking (0). Off by default: a consumer that never calls this never polls
+   GIBSON_EVENT_KEY_RELEASE, _KEY_RELEASES_ACTIVE or _KEY_RELEASES_UNSUPPORTED from a terminal,
+   and nothing is written for it. Tested in kitty 0.32.2.
+
+   Enabling enters raw mode (so the answer is never echoed), pushes the protocol's keyboard flags
+   on the current screen and asks whether the terminal took them. The answer is polled in input
+   order: KEY_RELEASES_ACTIVE, after which every key that goes up is polled as KEY_RELEASE, or
+   KEY_RELEASES_UNSUPPORTED (the terminal answered only the device attributes query, or took only
+   some of the flags). A terminal that answers neither stays press-only with no answer at all; a
+   device attributes reply to somebody else's earlier query cannot be told apart and reads as
+   UNSUPPORTED. UNSUPPORTED is final: once polled, no KEY_RELEASE follows (not even one already
+   queued behind it) and the request is withdrawn as by disabling, with one pop of the flags. An
+   answer counts only for the request it answers: one decoded before reporting was last enabled
+   or disabled is dropped and changes nothing.
+
+   Disabling (enabled == 0) pops the flags this context pushed, so the terminal goes back to
+   legacy keys, and drops whatever was not yet polled: a late answer, a release. A client tracking
+   holds then goes back to inferring them itself. Enabling again pushes and asks anew.
+   gibson_destroy_context pops the flags (before leaving the alternate screen); so does the panic
+   hook. A panic on the thread that owns the terminal, even one a gibson_* call caught and
+   returned as GIBSON_ERR_PANIC, ends reporting: no release or answer is delivered after it, and
+   KEY_RELEASES_UNSUPPORTED is polled once, by this context's next poll or, if the terminal
+   answers a new request first, just before that answer, so a client waiting for releases falls
+   back to inferred holds. A process killed outright (SIGKILL) leaves the flags pushed.
+
+   A KEY_RELEASE names its key exactly as its press was delivered (key_code, modifiers, key kind)
+   for the 32 most recent keys still down. A key already down when reporting began is named as its
+   first autorepeat since then was delivered, or, with none, as the terminal reports it. Known
+   limit: a shifted symbol pressed just before the flags take effect and let go without an
+   autorepeat is released as the terminal reports it ('!' as '1'), so that release does not match
+   its press (https://github.com/femboy2112/libgibson/issues/312). While enabled, the terminal
+   sends every key as an escape sequence; modifier keys alone are reported but not delivered, and
+   text typed through an input method may not arrive: this is for direct key control, not text
+   entry. A no-op on a headless context (push the events instead) and off Unix.
+   GIBSON_ERR_IO if the write fails. (ABI v1, additive, #275) */
 gibson_status_t gibson_set_key_release_reporting(gibson_context_t *ctx, int32_t enabled);
 /* Overrides the color depth (one of gibson_color_depth_t); unknown values return
    GIBSON_ERR_INVALID_PARAM. Call before the first render (see note at gibson_get_rendered_output).

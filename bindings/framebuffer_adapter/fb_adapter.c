@@ -177,7 +177,7 @@ void fb_adapter_config_defaults(fb_adapter_config *cfg, uint16_t src_w, uint16_t
     cfg->color_depth = -1;
     cfg->headless_capture_limit = 4u * 1024u * 1024u;
     cfg->install_signal_handlers = 1;
-    cfg->key_releases = 1;
+    cfg->key_releases = 0; /* opt-in (#275): inferred holds unless the embedder asks */
 }
 
 void fb_run_options_defaults(fb_run_options *o) {
@@ -768,6 +768,11 @@ fb_status fb_adapter_pump(fb_adapter *ad, uint64_t tic, uint32_t timeout_ms) {
             }
             continue;
         }
+        if (!ad->cfg.key_releases && (ev.event_type == GIBSON_EVENT_KEY_RELEASE ||
+                                      ev.event_type == GIBSON_EVENT_KEY_RELEASES_ACTIVE ||
+                                      ev.event_type == GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED))
+            continue; /* not opted in: the pre-#275 adapter, which knew none of these. An opt-in
+                         contract that opts you in anyway is a liability waiver, not a contract. */
         if (ev.event_type == GIBSON_EVENT_KEY_RELEASES_ACTIVE ||
             ev.event_type == GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED) {
             const int active = ev.event_type == GIBSON_EVENT_KEY_RELEASES_ACTIVE;

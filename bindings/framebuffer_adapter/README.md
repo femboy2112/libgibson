@@ -79,8 +79,12 @@ press starts a hold that ends `hold_grace_tics` (25) later, an autorepeat while 
 at the end tic (`fb_adapter_next_key`). `quit_char` (default `q`) and Ctrl-C request quit. A
 `RESIZE` rebuilds the map; it never reaches the producer.
 
-**Reported releases (#275).** With `cfg.key_releases` (default 1) a terminal adapter calls
-`gibson_set_key_release_reporting`. A terminal speaking the kitty keyboard protocol answers
+**Reported releases (#275), opt-in.** `cfg.key_releases` is **0 by default**: the adapter asks the
+terminal for nothing and ignores `GIBSON_EVENT_KEY_RELEASE` and the two answer events, so holds are
+inferred by the grace above, exactly as before #275. Do not turn it on for an ordinary console; it
+is for direct key control. With `cfg.key_releases = 1` a terminal adapter calls
+`gibson_set_key_release_reporting` at open (the demo: `--key-releases`, which its replay of such a
+trace needs too). A terminal speaking the kitty keyboard protocol answers
 `GIBSON_EVENT_KEY_RELEASES_ACTIVE`; from then on a key observed is held until its
 `GIBSON_EVENT_KEY_RELEASE` (the producer receives a release with `synthesized = 0`), at least one tic,
 so a tap is as short as the finger and keys held together stay held (a terminal autorepeats only the

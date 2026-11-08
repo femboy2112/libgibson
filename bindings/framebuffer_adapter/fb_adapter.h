@@ -112,8 +112,12 @@ typedef struct fb_adapter_config {
     size_t headless_capture_limit;   /* headless only: bound the ANSI capture at this many bytes: once it
                                         exceeds them, clear it (default 4 MiB; 0 = never). See README, F1. */
     int install_signal_handlers;     /* terminal only: SIGINT/SIGTERM set the quit flag (default 1) */
-    int key_releases;                /* terminal only: ask the terminal for key releases (default 1; #275):
-                                        once it confirms, a key is held exactly while it is down */
+    int key_releases;                /* opt in to reported key releases (#275; default 0 = off). 0: holds are
+                                        inferred (hold grace) and GIBSON_EVENT_KEY_RELEASE / _RELEASES_ACTIVE /
+                                        _RELEASES_UNSUPPORTED are ignored, as before #275. 1: a terminal adapter
+                                        calls gibson_set_key_release_reporting at open, and any adapter acts on
+                                        those events: once the terminal confirms, a key is held exactly while it
+                                        is down. Not for ordinary consoles; for direct key control. */
     fb_key_map_fn map_key;           /* NULL = default map (ASCII letters lowercased, everything else as is) */
     void *map_key_user;
     fb_input_observer_fn observer;   /* optional */

@@ -8,6 +8,8 @@
  *   fb_adapter_demo --replay TRACE --tics N [--grid CxR] [--dump-cells FILE]
  *
  * play options: --exit-after-tics N  --report FILE  --trace FILE  --square-pixels  --seed N
+ *               --key-releases (opt in to reported key releases, #275; a trace recorded with
+ *               it replays with it too)
  *               --hold-grace TICS  --hold-repeat TICS  --tic-hz N  --color-depth mono|16|256|true
  *               --bench-frames N (one tic + one present per loop, as fast as the terminal takes it)
  *               negative controls: --control-ignore-input  --control-no-restore  --control-no-signals
@@ -128,7 +130,7 @@ typedef struct play_opts {
     const char *report, *trace, *replay, *dump_cells;
     uint64_t replay_tics;
     uint16_t grid_cols, grid_rows;
-    int square, ignore_input, no_restore, no_signals;
+    int square, ignore_input, no_restore, no_signals, key_releases;
     unsigned faults;
     uint32_t grace, repeat, hz;
     int depth;
@@ -233,6 +235,7 @@ static void config_for_play(fb_adapter_config *cfg, const play_opts *o) {
     if (o->repeat) cfg->hold_repeat_tics = o->repeat;
     if (o->hz) cfg->tic_hz = o->hz;
     cfg->color_depth = o->depth;
+    cfg->key_releases = o->key_releases; /* opt-in, never the default (#275) */
 }
 
 static void bench_summary(FILE *f, const demo *d) {
@@ -907,7 +910,7 @@ static void run_on_present(void *u, fb_adapter *ad, uint64_t tics) {
 /* Runs the synthetic producer headless through fb_adapter_run. */
 static int headless_run(runres *res, const tev *script, size_t n, uint16_t cols, uint16_t rows, int status_rows,
                         fclock *clk, uint32_t divisor, uint64_t max_tics, uint64_t max_iters, unsigned faults,
-                        int ignore_input, int check_ref) {
+                        int ignore_input, int check_ref, int key_releases) {
     memset(res, 0, sizeof *res);
     synth_producer *prod = calloc(1, sizeof *prod);
     if (!prod || synth_init(prod, 2112) != 0) return 0;
@@ -917,6 +920,7 @@ static int headless_run(runres *res, const tev *script, size_t n, uint16_t cols,
     cfg.par_num = 5;
     cfg.par_den = 6;
     cfg.status_rows = (uint8_t)status_rows;
+    if (key_releases) cfg.key_releases = 1; /* else the default stands: that is what is tested */
     fb_adapter *ad = NULL;
     if (fb_adapter_open_headless(&cfg, cols, rows, &ad) != FB_OK) {
         synth_free(prod);
@@ -1058,6 +1062,7 @@ static const logent S3R_WANT[] = {
 static int queue_pressure_keeps_releases(unsigned long long *dropped, unsigned faults) {
     fb_adapter_config cfg;
     fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+    cfg.key_releases = 1;
     fb_adapter *ad = NULL;
     if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
     fb_adapter_set_faults(ad, faults);
@@ -1110,6 +1115,7 @@ static int withdrawal_keeps_inferred_deadlines(uint64_t *a_end, uint64_t *b_end)
     fb_adapter_config cfg;
     fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
     cfg.hold_repeat_tics = 100;
+    cfg.key_releases = 1;
     fb_adapter *ad = NULL;
     if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
     gibson_context_t *ctx = fb_adapter_context(ad);
@@ -1144,8 +1150,8 @@ static int prop3(char *ev) {
     memset(&b, 0, sizeof b);
     static runres keyed, quiet;
     const int ign = ctl(C_P3_IGNORE_INPUT);
-    int ok = headless_run(&keyed, S3, sizeof S3 / sizeof S3[0], 80, 24, 1, &a, 1, 200, 0, 0, ign, 0);
-    ok = headless_run(&quiet, NULL, 0, 80, 24, 1, &b, 1, 200, 0, 0, ign, 0) && ok;
+    int ok = headless_run(&keyed, S3, sizeof S3 / sizeof S3[0], 80, 24, 1, &a, 1, 200, 0, 0, ign, 0, 0);
+    ok = headless_run(&quiet, NULL, 0, 80, 24, 1, &b, 1, 200, 0, 0, ign, 0, 0) && ok;
     logent want[32], got[SYNTH_LOG];
     const size_t nw = model_holds(S3, sizeof S3 / sizeof S3[0], 200, 25, 4, want, 32);
     for (unsigned i = 0; i < keyed.nlog; i++) got[i] = (logent){keyed.log[i].tic, keyed.log[i].code, keyed.log[i].pressed};
@@ -1158,7 +1164,7 @@ static int prop3(char *ev) {
     fclock c;
     memset(&c, 0, sizeof c);
     const unsigned rfault = ctl(C_P3_IGNORE_RELEASES) ? FB_FAULT_IGNORE_RELEASES : 0;
-    ok = headless_run(&rel, S3R, sizeof S3R / sizeof S3R[0], 80, 24, 1, &c, 1, 200, 0, rfault, 0, 0) && ok;
+    ok = headless_run(&rel, S3R, sizeof S3R / sizeof S3R[0], 80, 24, 1, &c, 1, 200, 0, rfault, 0, 0, 1) && ok;
     const size_t nr = sizeof S3R_WANT / sizeof S3R_WANT[0];
     static logent rgot[SYNTH_LOG];
     for (unsigned i = 0; i < rel.nlog; i++) rgot[i] = (logent){rel.log[i].tic, rel.log[i].code, rel.log[i].pressed};
@@ -1169,7 +1175,19 @@ static int prop3(char *ev) {
     const int qok = queue_pressure_keeps_releases(&qdropped, ctl(C_P3_REARM_LOSES_RELEASE) ? FB_FAULT_REARM_PENDING : 0);
     uint64_t wa = 0, wb = 0;
     const int wok = withdrawal_keeps_inferred_deadlines(&wa, &wb);
-    const int pass = ok && keyed.hash != quiet.hash && log_ok && keyed.tics == 200 && quiet.tics == 200 && rel_ok && qok && wok;
+    /* Not opted in (cfg.key_releases = 0, the default; #275): the same script, answer and releases
+       included, gives the pre-#275 adapter's holds. The answer is ignored, so w (pressed at 10,
+       never repeated) ends by the grace at 10 + 25 = 35, not at its reported release at 100. */
+    static runres off;
+    fclock doff;
+    memset(&doff, 0, sizeof doff);
+    ok = headless_run(&off, S3R, sizeof S3R / sizeof S3R[0], 80, 24, 1, &doff, 1, 200, 0, 0, 0, 0, 0) && ok;
+    uint64_t off_w = 0;
+    for (unsigned i = 0; i < off.nlog; i++)
+        if (off.log[i].code == 'w' && !off.log[i].pressed) off_w = off.log[i].tic;
+    const int off_ok = off_w == 35;
+    const int pass = ok && keyed.hash != quiet.hash && log_ok && keyed.tics == 200 && quiet.tics == 200 && rel_ok && qok && wok &&
+                     off_ok;
     ev_append(ev, "keys pushed with gibson_push_event_kind, polled by the adapter (gibson_poll_event_kind): keyed hash=%016llx %s "
                   "unkeyed hash=%016llx (200 tics each); producer key log %u events %s independent hold model (grace 25, repeat 4): ",
               (unsigned long long)keyed.hash, keyed.hash != quiet.hash ? "!=" : "==", (unsigned long long)quiet.hash,
@@ -1184,6 +1202,8 @@ static int prop3(char *ev) {
     ev_append(ev, "; a full key queue keeps a reported release (a's release delivered once there is room, its re-press dropped: "
                   "%s, keys_dropped=%llu); a withdrawal re-times only holds waiting for a release (a ends at %llu, want 102; "
                   "b at %llu, want 29)", qok ? "yes" : "NO", qdropped, (unsigned long long)wa, (unsigned long long)wb);
+    ev_append(ev, "; not opted in (the default), the same script keeps inferred holds: w released at %llu, want 35",
+              (unsigned long long)off_w);
     if (ign) ev_append(ev, " [control: producer ignores input]");
     if (rfault) ev_append(ev, " [control: reported releases ignored]");
     return pass;
@@ -1212,17 +1232,17 @@ static int prop4(char *ev) {
     memset(&cj, 0, sizeof cj);
     memset(&cs, 0, sizeof cs);
     /* Same simulated wall time (421 loop iterations at one tic each = 420 tics owed), three cadences. */
-    int ok = headless_run(&r1, S4, N4, 80, 24, 1, &c1, 1, 0, 421, fault, 0, 0);
-    ok = headless_run(&r4, S4, N4, 80, 24, 1, &c4, 4, 0, 421, fault, 0, 0) && ok;
-    ok = headless_run(&r0, S4, N4, 80, 24, 1, &c0, 0, 0, 421, fault, 0, 0) && ok;
+    int ok = headless_run(&r1, S4, N4, 80, 24, 1, &c1, 1, 0, 421, fault, 0, 0, 0);
+    ok = headless_run(&r4, S4, N4, 80, 24, 1, &c4, 4, 0, 421, fault, 0, 0, 0) && ok;
+    ok = headless_run(&r0, S4, N4, 80, 24, 1, &c0, 0, 0, 421, fault, 0, 0, 0) && ok;
     /* A jittery clock (0..10 tics per iteration) and a 2 s stall, to 420 tics. */
     static const uint8_t jitter[] = {1, 0, 3, 1, 0, 0, 7, 2, 10, 1, 4};
     cj.steps = jitter;
     cj.nsteps = sizeof jitter;
-    ok = headless_run(&rj, S4, N4, 80, 24, 1, &cj, 1, 420, 100000, fault, 0, 0) && ok;
+    ok = headless_run(&rj, S4, N4, 80, 24, 1, &cj, 1, 420, 100000, fault, 0, 0, 0) && ok;
     cs.stall_call = 100;
     cs.stall_tics = 70;
-    ok = headless_run(&rs, S4, N4, 80, 24, 1, &cs, 2, 420, 100000, fault, 0, 0) && ok;
+    ok = headless_run(&rs, S4, N4, 80, 24, 1, &cs, 2, 420, 100000, fault, 0, 0, 0) && ok;
     const int same = r1.hash == r4.hash && r1.hash == r0.hash && r1.hash == rj.hash && r1.hash == rs.hash;
     const int tics_ok = r1.tics == 420 && r4.tics == 420 && r0.tics == 420 && rj.tics == 420 && rs.tics == 420;
     const int frames_ok = r1.frames == 420 && r4.frames == 105 && r0.frames == 0;
@@ -1258,12 +1278,12 @@ static int prop5(char *ev) {
     fclock a, b;
     memset(&a, 0, sizeof a);
     memset(&b, 0, sizeof b);
-    int ok = headless_run(&rr, script, n, 80, 24, 1, &a, 1, 300, 0, fault, 0, 1);
+    int ok = headless_run(&rr, script, n, 80, 24, 1, &a, 1, 300, 0, fault, 0, 1, 0);
     tev noresize[N4];
     size_t m = 0;
     for (size_t i = 0; i < n; i++)
         if (script[i].kind != 0) noresize[m++] = script[i];
-    ok = headless_run(&rn, noresize, m, 80, 24, 1, &b, 1, 300, 0, fault, 0, 0) && ok;
+    ok = headless_run(&rn, noresize, m, 80, 24, 1, &b, 1, 300, 0, fault, 0, 0, 0) && ok;
     int sizes_ok = rr.nsizes == 3 && rr.sizes[0][0] == 80 && rr.sizes[0][1] == 24 && rr.sizes[1][0] == 120 &&
                    rr.sizes[1][1] == 40 && rr.sizes[2][0] == 40 && rr.sizes[2][1] == 15;
     const int pass = ok && rr.hash == rn.hash && rr.tics == 300 && sizes_ok && rr.map_builds == 3 && rr.ref_bad == 0 &&
@@ -1713,6 +1733,7 @@ static int selfcheck(int only) {
 static void usage(void) {
     fprintf(stderr,
             "usage: fb_adapter_demo [--play] [--exit-after-tics N] [--report FILE] [--trace FILE] [--square-pixels]\n"
+            "                       [--key-releases]\n"
             "                       [--seed N] [--hold-grace TICS] [--hold-repeat TICS] [--tic-hz N]\n"
             "                       [--color-depth mono|16|256|true] [--bench-frames N]\n"
             "       fb_adapter_demo --selfcheck [--only N] [--control NAME] [--list-controls]\n"
@@ -1766,6 +1787,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--hold-repeat")) { NEEDV(); o.repeat = (uint32_t)atoi(v); }
         else if (!strcmp(a, "--tic-hz")) { NEEDV(); o.hz = (uint32_t)atoi(v); }
         else if (!strcmp(a, "--square-pixels")) o.square = 1;
+        else if (!strcmp(a, "--key-releases")) o.key_releases = 1;
         else if (!strcmp(a, "--color-depth")) {
             NEEDV();
             o.depth = !strcmp(v, "mono") ? GIBSON_COLOR_DEPTH_MONO : !strcmp(v, "16") ? GIBSON_COLOR_DEPTH_ANSI16

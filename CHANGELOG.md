@@ -249,17 +249,27 @@ stays 1.85.
   `GIBSON_EVENT_KEY_RELEASES_ACTIVE` (5) and `GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED` (6), all
   pushable on a headless context. A consumer that never calls the new function never sees the new
   types; existing values are unchanged. `tests/ffi_key_release.rs`; the real-PTY test drives the
-  same kitty bytes through the C ABI (role `c`).
-- **`fb_adapter` (node J) uses reported releases:** `fb_adapter_config.key_releases` (default on)
-  requests them on a terminal; once confirmed a key is held exactly while it is down, at least one
-  tic, and a terminal without the protocol keeps the grace. `fb_adapter_releases_reported`;
-  releases and the answer are recorded in the input trace (`FB_OBSERVED_*`), so a session replays
-  exactly; the demo's status row shows `keys exact`. The selfcheck's P3 adds a reported-release leg
-  (w held across a d chord, a one-tic tap) against the rule written out by hand, a full key queue
-  (a release waiting for room is never lost to a re-press, which is dropped and counted) and a
-  withdrawal (only holds waiting for a release are re-timed, as in `gibson::hold`), with the
-  controls `p3-ignore-releases` and `p3-rearm-loses-release` (25 controls). `scripts/dev/kitty_key_release_e2e.sh` with `FB_DEMO=` runs the
-  demo in real kitty: the trace of the live session replays headless to the same hash.
+  same kitty bytes through the C ABI (role `c`), and checks that a C client that never opts in
+  polls presses only and nothing is written for it, that disabling pops at once and drops a late
+  answer and releases, and that a panic on the owning thread reaches C as
+  `KEY_RELEASES_UNSUPPORTED` before the answer to a new request. `gibson.h` states what enabling
+  and disabling do, what restore and the panic hook do, and the shifted-symbol limit
+  ([#312](https://github.com/femboy2112/libgibson/issues/312)).
+- **`fb_adapter` (node J) can use reported releases, opt-in:** `fb_adapter_config.key_releases` is
+  0 by default (the adapter is embedded in consumers, and this is an opt-in input contract), and
+  then the adapter asks nothing and ignores the release and answer events, keeping inferred holds.
+  Set to 1, it requests them on a terminal; once confirmed a key is held exactly while it is down,
+  at least one tic, and a terminal without the protocol keeps the grace.
+  `fb_adapter_releases_reported`; releases and the answer are recorded in the input trace
+  (`FB_OBSERVED_*`), so a session replays exactly; the demo (`--key-releases`) shows `keys exact`
+  on its status row. The selfcheck's P3 adds a reported-release leg (w held across a d chord, a
+  one-tic tap) against the rule written out by hand, a full key queue (a release waiting for room
+  is never lost to a re-press, which is dropped and counted) and a withdrawal (only holds waiting
+  for a release are re-timed, as in `gibson::hold`), with the controls `p3-ignore-releases` and
+  `p3-rearm-loses-release` (25 controls), and a leg where the same script through an adapter left
+  at the default keeps inferred holds. `scripts/dev/kitty_key_release_e2e.sh` with `FB_DEMO=` runs
+  the demo in real kitty: the trace of the live session replays headless to the same hash, and
+  without `--key-releases` the demo records no answer and no release.
 
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
 - The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an
