@@ -1,0 +1,18 @@
+# Mutation controls for scripts/release/check-maintenance-candidate.sh, 2026-11-08.
+# Each mutant reverts one guard added after the independent (Codex) review, in a scratch copy of
+# the checker, and reruns scripts/release/tests/test-maintenance-checker.sh on 572e551 (same
+# arguments as calibration-572e551.txt). A guard is load-bearing iff exactly its cases go WRONG.
+#   M1 delete the line-splice / trigraph guard in header_decls
+#   M2 collapse header whitespace with tr (also inside string literals) instead of maintenance_surface.py header
+#   M3 skip the Rust C-ABI surface comparison
+#   M4 count only nm type-T (text) symbols of the built library
+#   M5 drop the candidate == baseline check
+#   M6 match release branch names by suffix, local or remote
+# Under M3, N15/N16/N21 exit 0 (a layout, signature or constant change would be ACCEPTED); N1/N10/N17/N18
+# still fail on other checks and are WRONG only because the surface FAIL line they expect is missing.
+M1-no-splice-guard: exit=1 WRONG: N12 macro hidden in a comment by line splices,N14 comment spliced by a trigraph
+M2-plain-ws-collapse: exit=1 WRONG: N13 whitespace inside a string literal
+M3-no-surface-compare: exit=1 WRONG: N1 development candidate,N10 a new gibson_* export in src/,N15 two #[repr(C)] fields swapped,N16 a parameter type changed,N17 an export whose fn is on the next line,N18 a new exported static,N21 a GIBSON_* const value changed
+M4-nm-T-only: exit=1 WRONG: N22 a library that also exports a gibson_* data symbol
+M5-no-baseline-identity: exit=1 WRONG: N19 the baseline itself as the candidate
+M6-suffix-branch: exit=1 WRONG: N20 candidate only on feature/release/v0.6.0-rc

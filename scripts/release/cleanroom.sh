@@ -115,10 +115,10 @@ echo "### C installed-SDK headless capture lifetime (#297, pkg-config) ###"
 # bounds memory by size-querying the capture and replacing the context past a byte budget; this
 # program asserts the control grows, the procedure stays bounded, and a replacement keeps rendering.
 # Both its exit status and its OK line are required.
-cdir="$WORK/headless_capture"; mkdir -p "$cdir"
-cp bindings/sdk_forcing/headless_capture_lifetime.c "$cdir/main.c"
+ldir="$WORK/headless_capture"; mkdir -p "$ldir"
+cp bindings/sdk_forcing/headless_capture_lifetime.c "$ldir/main.c"
 clog="$(mktemp)"
-if ( cd "$cdir" && cc -std=c11 -Wall -Wextra main.c $(pkg-config --cflags --libs libgibson) -o headless_capture_app && ./headless_capture_app </dev/null >out.txt && grep -q '^headless_capture_lifetime: OK' out.txt && cat out.txt ) >"$clog" 2>&1; then pass "C headless capture lifetime"; else bad "C headless capture lifetime"; dump "$clog"; fi
+if ( cd "$ldir" && cc -std=c11 -Wall -Wextra main.c $(pkg-config --cflags --libs libgibson) -o headless_capture_app && ./headless_capture_app </dev/null >out.txt && grep -q '^headless_capture_lifetime: OK' out.txt && cat out.txt ) >"$clog" 2>&1; then pass "C headless capture lifetime"; else bad "C headless capture lifetime"; dump "$clog"; fi
 rm -f "$clog"
 
 echo "### C++ consumer (pkg-config) ###"

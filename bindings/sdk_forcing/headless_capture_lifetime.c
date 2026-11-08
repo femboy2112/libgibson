@@ -115,7 +115,7 @@ static int readback_ok(gibson_context_t *ctx, const workload_t *w, unsigned long
     uint16_t c = 0, r = 0;
     gibson_cell_t cell;
     if (gibson_get_frame_size(ctx, &c, &r) != GIBSON_OK) return 0;
-    if ((unsigned)c * r != (unsigned)w->cols * w->rows) return 0;
+    if (c != w->cols || r != w->rows) return 0;
     if (gibson_get_frame_cell(ctx, 0, 0, &cell) != GIBSON_OK) return 0;
     return cell.glyph_len == 1 && cell.glyph[0] == (uint8_t)cell_char(w, 0, f);
 }
@@ -236,9 +236,13 @@ int main(void) {
                 check(peak <= budget + max_delta, "capture never exceeds budget + one frame", ptag);
                 if (reached && changing) check(nrepl > 0, "replacements > 0", ptag);
                 if (reached && !changing) check(nrepl > 0, "replacements > 0 (budget was reachable)", ptag);
-                if (g_scale == 1 && rss_first >= 0)
-                    check(rss_end - rss_first < (long)(2 * budget / 1024) + RSS_SLACK_KIB,
-                          "RSS after run - RSS after first cycle < 2*B + 8 MiB", ptag);
+                if (g_scale == 1 && reached && changing && !g_no_replace) {
+                    /* The resident-memory claim needs both readings; a failed read fails closed. */
+                    check(rss_first >= 0 && rss_end >= 0, "VmRSS readable from /proc/self/status", ptag);
+                    if (rss_first >= 0 && rss_end >= 0)
+                        check(rss_end - rss_first < (long)(2 * budget / 1024) + RSS_SLACK_KIB,
+                              "RSS after run - RSS after first cycle < 2*B + 8 MiB", ptag);
+                }
                 printf("PROCEDURE %-14s frames=%lu frames_to_budget=%lu replacements=%zu peak_capture=%zu max_frame_bytes=%zu "
                        "total_bytes_rendered=%zu rss_after_first_cycle_kib=%ld rss_end_kib=%ld rss_delta_kib=%ld bound_kib=%ld vmhwm_kib=%ld\n",
                        tag, n_proc, f_to_b, nrepl, peak, max_delta, bytes_total, rss_first, rss_end,
