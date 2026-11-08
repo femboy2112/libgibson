@@ -180,6 +180,11 @@ jobs:
           g++ -std=c++17 -Iinclude bindings/cpp/example.cpp -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/example_cpp
           /tmp/example_cpp
 
+      - name: C++ headless, events and readback (v0.8 parity F5)
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Iinclude bindings/cpp/test_headless.cpp -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/test_headless_cpp
+          /tmp/test_headless_cpp
+
       - name: Python ctypes example
         env:
           PYTHONPATH: bindings/python
@@ -348,6 +353,16 @@ jobs:
             -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" \
             -o /tmp/example_cpp_asan
           /tmp/example_cpp_asan
+
+      - name: C++ headless, events and readback (ASan + UBSan)
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Iinclude bindings/cpp/test_headless.cpp \
+            -fsanitize=address,undefined \
+            -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" \
+            -o /tmp/test_headless_cpp_asan
+          /tmp/test_headless_cpp_asan
 
   go:
     name: Go bindings

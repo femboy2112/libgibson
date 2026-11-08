@@ -149,6 +149,27 @@ stays 1.85.
   typed at READY is five characters and one Enter with no kernel echo; without it (the old
   behaviour, held so the race is not a race) the same probe fails with an echo and Ctrl+J.
 
+### Added — C++ header: headless context, events, readback and capture (v0.8 parity slice, finding F5)
+- **`include/gibson.hpp` (and so the `bindings/cpp/gibson.hpp` shim) covers the headless path.**
+  New, all additive; existing members keep their signatures and behavior:
+  - `Context::headless(mode, cols, rows)`, `close()` (idempotent), `raw()`.
+  - `Event` (`char_key`, `special_key`, `legacy_key`, `paste_text`, `resize`), `Context::push_event`,
+    `Context::poll_event_kind(timeout_ms = 0)` and a kind-less `Context::poll_event_kindless(timeout_ms = 0)`
+    (a separate name, so `&Context::poll_event` stays unambiguous; the older
+    `poll_event(timeout_ms, gibson_event_t&)` is unchanged). A polled `Event` keeps the CHAR/SPECIAL
+    key kind, so a typed U+1001 stays distinct from `GIBSON_KEY_ENTER`; a polled KEY, PASTE or
+    RESIZE can be pushed back unchanged (an empty-queue NONE cannot: the C ABI refuses NONE).
+  - `frame_cells` throws `Error` for no frame or out-of-bounds coordinates, as `frame_cell` does,
+    even when it would return no cells (the C ABI validates every call).
+  - `frame_size`, `frame_cell`, `frame_cells`, `frame_cell_glyph`, `full_glyph`, `rendered_output`,
+    `take_rendered_output`, `clear_rendered_output`.
+  - Errors are exceptions: `gibson::Error` (a `std::runtime_error` with `status()` and the thread-local
+    `last_error()`, read right after the failing call) and `QueueFullError`.
+  - `bindings/cpp/test_headless.cpp` (new CI steps, plain and ASan + UBSan) mirrors the Python
+    event test; `bindings/parity/v08/parity_v08.cpp` now uses these calls (transcript unchanged,
+    byte-identical to C), moving the C++ Event, Geometry, Cells and Text capability labels from
+    PARTIAL to SUPPORTED. No C ABI or Rust change.
+
 ### Fixed — Rust library (`gibson::Context`): a delivered resize resizes a headless context ([#293](https://github.com/femboy2112/libgibson/issues/293))
 - `Context::poll_from` on a **headless** context now applies a delivered `Event::Resize(cols, rows)`
   before it returns, so the next render lays out against the new terminal size (a fullscreen frame

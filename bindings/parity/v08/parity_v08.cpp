@@ -5,10 +5,13 @@
 //
 //   parity_v08_cpp SCRIPT [REPS]
 //
-// Surface used: gibson.hpp's RAII gibson::Node (col / text / add_child / release) builds the scene
-// and gibson::Context::abi_compatible() gates the run. gibson.hpp has NO headless Context, no
-// push/poll_kind, and no frame readback, so those go through the raw C ABI it includes -- that
-// split is itself a measured result (docs/V08_PARITY_SLICE.md, "C++").
+// Surface used: gibson.hpp's RAII gibson::Node (col / text / add_child / release) builds the scene,
+// gibson::Context::abi_compatible() gates the run, and gibson::Context::headless / push_event /
+// poll_event_kind / poll_event / frame_size / frame_cell(s) / frame_cell_glyph / rendered_output
+// carry the context, events and readback (statuses and last-error text come from gibson::Error).
+// What the wrapper cannot express still goes through the raw C ABI it includes, each marked "raw C"
+// below: NULL pointers, destroy(NULL), a bad color depth, and node construction from invalid UTF-8. That residual split is itself a measured result
+// (docs/V08_PARITY_SLICE.md, "C++").
 //
 // Negative controls (never on by default): PARITY_V08_PERTURB=cell | events (see parity_v08.c).
 #include <gibson.hpp>
@@ -23,6 +26,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <type_traits>
@@ -34,20 +38,24 @@ namespace {
 constexpr uint64_t kFnvOffset = 0xcbf29ce484222325ULL;
 constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
 
-// Compile-time probes of the gibson.hpp surface: does gibson::Context have member NAME?
-#define PARITY_HAS_MEMBER(name)                                                        \
-    template <typename T, typename = void>                                             \
-    struct has_##name : std::false_type {};                                            \
-    template <typename T>                                                              \
-    struct has_##name<T, std::void_t<decltype(&T::name)>> : std::true_type {};
-PARITY_HAS_MEMBER(headless)
-PARITY_HAS_MEMBER(poll_event)
-PARITY_HAS_MEMBER(poll_event_kind)
-PARITY_HAS_MEMBER(push_event)
-PARITY_HAS_MEMBER(push_event_kind)
-PARITY_HAS_MEMBER(frame_size)
-PARITY_HAS_MEMBER(frame_cells)
-PARITY_HAS_MEMBER(rendered_output)
+// Compile-time probes of the gibson.hpp surface: can a gibson::Context call member NAME(args...)?
+// (Expression-based, so overloaded members like poll_event are detected too.)
+#define PARITY_HAS_CALL(name, ...)                                                                      \
+    template <typename T, typename = void>                                                              \
+    struct has_##name : std::false_type {};                                                             \
+    template <typename T>                                                                               \
+    struct has_##name<T, std::void_t<decltype(std::declval<T&>().name(__VA_ARGS__))>> : std::true_type {};
+PARITY_HAS_CALL(poll_event, 0u)
+PARITY_HAS_CALL(poll_event_kind, 0u)
+PARITY_HAS_CALL(frame_size)
+PARITY_HAS_CALL(frame_cells)
+PARITY_HAS_CALL(rendered_output)
+PARITY_HAS_CALL(take_rendered_output)
+PARITY_HAS_CALL(push_event, std::declval<const gibson::Event&>())
+template <typename T, typename = void>
+struct has_headless : std::false_type {};
+template <typename T>
+struct has_headless<T, std::void_t<decltype(T::headless(GIBSON_MODE_FULLSCREEN, uint16_t(1), uint16_t(1)))>> : std::true_type {};
 
 uint64_t fnv(uint64_t h, const void* data, size_t n) {
     auto p = static_cast<const unsigned char*>(data);
@@ -198,9 +206,7 @@ uint32_t special_of(const std::string& n) {
 class Interp {
 public:
     explicit Interp(std::string& out) : out_(out) {}
-    ~Interp() {
-        if (ctx_) gibson_destroy_context(ctx_);
-    }
+    // ctx_ (a gibson::Context) destroys the native context exactly once on scope exit.
 
     void run(const std::vector<Step>& steps) {
         for (const auto& s : steps) step(s);
@@ -208,18 +214,25 @@ public:
 
 private:
     std::string& out_;
-    gibson_context_t* ctx_ = nullptr;
+    std::unique_ptr<gibson::Context> ctx_;
+    std::string err_;  // last-error text of the most recent failed wrapper call
     gibson::Node root_{nullptr};
     std::map<std::string, gibson_style_t> styles_;
 
-    std::string full_glyph(const gibson_cell_t& c, uint16_t x, uint16_t y) {
-        if (!c._reserved[0]) return std::string(reinterpret_cast<const char*>(c.glyph), c.glyph_len);
-        size_t len = 0;
-        gibson_get_frame_cell_glyph(ctx_, x, y, nullptr, 0, &len);
-        std::string g(len, '\0');
-        gibson_get_frame_cell_glyph(ctx_, x, y, reinterpret_cast<uint8_t*>(&g[0]), len, &len);
-        return g;
+    // Runs a wrapper call; returns its C status (OK if it did not throw) and keeps the last-error text.
+    template <typename F>
+    int status_of(F&& f) {
+        err_.clear();
+        try {
+            f();
+            return GIBSON_OK;
+        } catch (const gibson::Error& e) {
+            err_ = e.last_error();
+            return e.status();
+        }
     }
+
+    std::string full_glyph(const gibson_cell_t& c, uint16_t x, uint16_t y) { return ctx_->full_glyph(c, x, y); }
 
     static std::string attrs(const gibson_style_t& s) {
         std::string a;
@@ -236,10 +249,10 @@ private:
         return o.str();
     }
 
-    void emit_event(const std::string& id, int st, const gibson_event_t& ev, const std::string& kind) {
-        bool key = ev.event_type == GIBSON_EVENT_KEY, rs = ev.event_type == GIBSON_EVENT_RESIZE;
+    void emit_event(const std::string& id, int st, const gibson::Event& ev, const std::string& kind) {
+        bool key = ev.type == GIBSON_EVENT_KEY, rs = ev.type == GIBSON_EVENT_RESIZE;
         std::string paste;
-        if (ev.event_type == GIBSON_EVENT_PASTE && ev.paste_str) paste = hex(std::string(ev.paste_str));
+        if (ev.type == GIBSON_EVENT_PASTE && ev.has_paste) paste = hex(ev.paste);
         Rec()
             .i("cols", rs ? ev.cols : 0)
             .s("id", id)
@@ -250,88 +263,102 @@ private:
             .s("paste", paste)
             .i("rows", rs ? ev.rows : 0)
             .s("st", st_name(st))
-            .s("type", type_name(ev.event_type))
+            .s("type", type_name(ev.type))
             .emit(out_);
+    }
+
+    // Pushes through the wrapper; returns the C status and leaves the last-error text in err_.
+    int push(const gibson::Event& ev) {
+        return status_of([&] { ctx_->push_event(ev); });
     }
 
     void probe(const std::string& id, const std::string& name) {
         Rec r;
         r.s("id", id).s("k", "probe").s("name", name);
-        uint16_t cols = 0, rows = 0;
-        gibson_get_frame_size(ctx_, &cols, &rows);
-        gibson_context_t* c2 = nullptr;
+        gibson_context_t* h = ctx_->raw();  // for the raw-C probes only
+        uint16_t cols = ctx_->frame_size().first, rows = ctx_->frame_size().second;
         gibson_cell_t cell{};
         gibson_event_t ev{};
         int st = 999;
         bool with_err = false;
-        if (name == "create_bad_mode") { st = gibson_create_headless_context(7, 40, 12, &c2); with_err = true; }
-        else if (name == "create_zero_cols") { st = gibson_create_headless_context(GIBSON_MODE_FULLSCREEN, 0, 12, &c2); with_err = true; }
-        else if (name == "create_null_out") st = gibson_create_headless_context(GIBSON_MODE_FULLSCREEN, 40, 12, nullptr);
-        else if (name == "render_null_ctx") st = gibson_render(nullptr);
-        else if (name == "cell_oob_x") st = gibson_get_frame_cell(ctx_, cols, 0, &cell);
-        else if (name == "cell_oob_y") st = gibson_get_frame_cell(ctx_, 0, rows, &cell);
-        else if (name == "cells_oob") {
+        // Probes marked "raw C" pass something the wrapper cannot express (NULL pointers, a value
+        // with no wrapper call); the rest go through gibson.hpp, statuses via gibson::Error.
+        if (name == "create_bad_mode") {
+            st = status_of([&] { gibson::Context::headless(static_cast<gibson_render_mode_t>(7), 40, 12); });
+            with_err = true;
+        } else if (name == "create_zero_cols") {
+            st = status_of([&] { gibson::Context::headless(GIBSON_MODE_FULLSCREEN, 0, 12); });
+            with_err = true;
+        } else if (name == "create_null_out") {  // raw C: NULL out pointer
+            st = gibson_create_headless_context(GIBSON_MODE_FULLSCREEN, 40, 12, nullptr);
+        } else if (name == "render_null_ctx") {  // raw C: NULL context
+            st = gibson_render(nullptr);
+        } else if (name == "cell_oob_x") {
+            st = status_of([&] { ctx_->frame_cell(cols, 0); });
+        } else if (name == "cell_oob_y") {
+            st = status_of([&] { ctx_->frame_cell(0, rows); });
+        } else if (name == "cells_oob") {  // raw C: the C out-parameter `written` is the probed value
             size_t written = 99;
-            st = gibson_get_frame_cells(ctx_, 0, rows, &cell, 1, &written);
+            st = gibson_get_frame_cells(h, 0, rows, &cell, 1, &written);
             r.i("written", static_cast<long long>(written));
-        } else if (name == "cell_null_out") st = gibson_get_frame_cell(ctx_, 0, 0, nullptr);
-        else if (name == "text_bad_utf8") {
+        } else if (name == "cell_null_out") {  // raw C: NULL out pointer
+            st = gibson_get_frame_cell(h, 0, 0, nullptr);
+        } else if (name == "text_bad_utf8") {  // raw C: gibson::Node::text drops the status
             gibson_node_t* n = nullptr;
             st = gibson_node_text("\xff\xfe", nullptr, GIBSON_WRAP_NONE, &n);
             with_err = true;
+            err_ = last_err();
             if (st == GIBSON_OK) gibson_node_free(n);
-        } else if (name == "push_null_event") st = gibson_push_event(ctx_, nullptr);
-        else if (name == "push_surrogate") {
-            ev.event_type = GIBSON_EVENT_KEY; ev.key_code = 0xD800;
-            st = gibson_push_event_kind(ctx_, &ev, GIBSON_KEY_KIND_CHAR);
-            with_err = true;
+        } else if (name == "push_null_event") {  // raw C: the wrapper always passes a struct
+            st = gibson_push_event(h, nullptr);
+        } else if (name == "push_surrogate") {
+            st = push(gibson::Event::char_key(0xD800));
+            r.s("err", err_);
         } else if (name == "push_special_not_key") {
-            ev.event_type = GIBSON_EVENT_KEY; ev.key_code = 'a';
-            st = gibson_push_event_kind(ctx_, &ev, GIBSON_KEY_KIND_SPECIAL);
+            st = push(gibson::Event::special_key('a'));
         } else if (name == "push_bad_kind") {
-            ev.event_type = GIBSON_EVENT_KEY; ev.key_code = 'a';
-            st = gibson_push_event_kind(ctx_, &ev, 9);
+            gibson::Event e = gibson::Event::char_key('a');
+            e.key_kind = 9;
+            st = push(e);
         } else if (name == "push_bad_mods") {
-            ev.event_type = GIBSON_EVENT_KEY; ev.key_code = 'a'; ev.modifiers = 0x80;
-            st = gibson_push_event_kind(ctx_, &ev, GIBSON_KEY_KIND_CHAR);
+            st = push(gibson::Event::char_key('a', 0x80));
         } else if (name == "push_resize_zero") {
-            ev.event_type = GIBSON_EVENT_RESIZE; ev.cols = 0; ev.rows = 12;
-            st = gibson_push_event(ctx_, &ev);
+            st = push(gibson::Event::resize(0, 12));
         } else if (name == "paste_bad_utf8") {
-            ev.event_type = GIBSON_EVENT_PASTE; ev.paste_str = "\xc3\x28";
-            st = gibson_push_event(ctx_, &ev);
-            with_err = true;
+            st = push(gibson::Event::paste_text("\xc3\x28"));
+            r.s("err", err_);
         } else if (name == "paste_null") {
-            ev.event_type = GIBSON_EVENT_PASTE; ev.paste_str = nullptr;
-            st = gibson_push_event(ctx_, &ev);
-        } else if (name == "poll_null_out") st = gibson_poll_event(ctx_, 0, nullptr);
-        else if (name == "poll_kind_null") st = gibson_poll_event_kind(ctx_, 0, &ev, nullptr);
-        else if (name == "color_depth_bad") st = gibson_set_color_depth(ctx_, 9);
-        else if (name == "queue_full") {
+            gibson::Event e;
+            e.type = GIBSON_EVENT_PASTE;  // has_paste false: NULL paste_str
+            st = push(e);
+        } else if (name == "poll_null_out") {  // raw C: NULL out pointer
+            st = gibson_poll_event(h, 0, nullptr);
+        } else if (name == "poll_kind_null") {  // raw C: NULL kind pointer
+            st = gibson_poll_event_kind(h, 0, &ev, nullptr);
+        } else if (name == "color_depth_bad") {  // raw C: no wrapper call for set_color_depth
+            st = gibson_set_color_depth(h, 9);
+        } else if (name == "queue_full") {
             long long accepted = 0, drained = 0;
-            ev.event_type = GIBSON_EVENT_KEY; ev.key_code = 'q';
+            const gibson::Event q = gibson::Event::char_key('q');
             for (int i = 0; i < GIBSON_EVENT_QUEUE_CAPACITY; ++i)
-                if (gibson_push_event_kind(ctx_, &ev, GIBSON_KEY_KIND_CHAR) == GIBSON_OK) ++accepted;
-            st = gibson_push_event_kind(ctx_, &ev, GIBSON_KEY_KIND_CHAR);
-            std::string e = last_err();
+                if (push(q) == GIBSON_OK) ++accepted;
+            st = push(q);
+            std::string e = err_;
             for (int i = 0; i < 2 * GIBSON_EVENT_QUEUE_CAPACITY; ++i) {
-                gibson_event_t got{};
-                uint32_t kind = 0;
-                if (gibson_poll_event_kind(ctx_, 0, &got, &kind) != GIBSON_OK || got.event_type == GIBSON_EVENT_NONE) break;
+                gibson::Event got;
+                if (status_of([&] { got = ctx_->poll_event_kind(); }) != GIBSON_OK || got.type == GIBSON_EVENT_NONE) break;
                 ++drained;
             }
             r.i("accepted", accepted).i("drained", drained).s("err", e);
         } else if (name == "frame_before_render") {
-            uint16_t c = 7, rr = 7;
-            gibson_create_headless_context(GIBSON_MODE_FULLSCREEN, 8, 2, &c2);
-            int sst = gibson_get_frame_size(c2, &c, &rr);
-            st = gibson_get_frame_cell(c2, 0, 0, &cell);
-            gibson_destroy_context(c2);
-            c2 = nullptr;
-            r.i("cols", c).i("rows", rr).s("size_st", st_name(sst));
+            gibson::Context c2 = gibson::Context::headless(GIBSON_MODE_FULLSCREEN, 8, 2);
+            // The C probe seeds the out-params with 7; the wrapper returns (0, 0) for "no frame yet".
+            std::pair<uint16_t, uint16_t> sz(7, 7);
+            int sst = status_of([&] { sz = c2.frame_size(); });
+            st = status_of([&] { c2.frame_cell(0, 0); });
+            r.i("cols", sz.first).i("rows", sz.second).s("size_st", st_name(sst));
         }
-        if (with_err) r.s("err", last_err());
-        if (c2) gibson_destroy_context(c2);
+        if (with_err) r.s("err", err_);
         r.s("st", st == 999 ? "UNKNOWN_PROBE" : st_name(st));
         r.emit(out_);
     }
@@ -342,8 +369,11 @@ private:
         auto arg = [&](size_t i) -> const std::string& { return s.tok[3 + i]; };
         auto num = [&](size_t i) { return std::stoi(arg(i)); };
         if (op == "create") {
-            int32_t mode = arg(0) == "INLINE" ? GIBSON_MODE_INLINE : GIBSON_MODE_FULLSCREEN;
-            int st = gibson_create_headless_context(mode, static_cast<uint16_t>(num(1)), static_cast<uint16_t>(num(2)), &ctx_);
+            int mode = arg(0) == "INLINE" ? GIBSON_MODE_INLINE : GIBSON_MODE_FULLSCREEN;
+            int st = status_of([&] {
+                ctx_.reset(new gibson::Context(
+                    gibson::Context::headless(static_cast<gibson_render_mode_t>(mode), static_cast<uint16_t>(num(1)), static_cast<uint16_t>(num(2)))));
+            });
             Rec().i("cols", num(1)).s("id", id).s("k", "create").s("mode", arg(0)).i("rows", num(2)).s("st", st_name(st)).emit(out_);
         } else if (op == "style") {
             gibson_style_t st{};
@@ -363,44 +393,48 @@ private:
             root_.add_child(std::move(n));
             Rec().s("id", id).s("k", "node").s("st", ok ? "OK" : "WRAPPER_NULL").emit(out_);
         } else if (op == "mount") {
-            int st = gibson_set_root_node(ctx_, root_.release());  // consumes the tree
-            Rec().s("id", id).s("k", "mount").s("st", st_name(st)).emit(out_);
+            // Context::set_root throws a bare runtime_error (no status), so a failure is WRAPPER_RAISED.
+            std::string st = "OK";
+            try { ctx_->set_root(std::move(root_)); } catch (const std::runtime_error&) { st = "WRAPPER_RAISED"; }  // consumes the tree
+            Rec().s("id", id).s("k", "mount").s("st", st).emit(out_);
         } else if (op == "render") {
-            Rec().s("id", id).s("k", "render").s("st", st_name(gibson_render(ctx_))).emit(out_);
+            std::string st = "OK";  // Context::render() throws without the status
+            try { ctx_->render(); } catch (const std::runtime_error&) { st = "WRAPPER_RAISED"; }
+            Rec().s("id", id).s("k", "render").s("st", st).emit(out_);
         } else if (op == "geom") {
-            uint16_t c = 0, r = 0;
-            int st = gibson_get_frame_size(ctx_, &c, &r);
-            Rec().i("cols", c).s("id", id).s("k", "geom").i("rows", r).s("st", st_name(st)).emit(out_);
+            std::pair<uint16_t, uint16_t> sz(0, 0);
+            int st = status_of([&] { sz = ctx_->frame_size(); });
+            Rec().i("cols", sz.first).s("id", id).s("k", "geom").i("rows", sz.second).s("st", st_name(st)).emit(out_);
         } else if (op == "frame") {
-            uint16_t c = 0, r = 0;
-            int st = gibson_get_frame_size(ctx_, &c, &r);
-            std::vector<gibson_cell_t> cells(static_cast<size_t>(c) * r + 1);
-            size_t written = 0;
-            if (st == GIBSON_OK) st = gibson_get_frame_cells(ctx_, 0, 0, cells.data(), static_cast<size_t>(c) * r, &written);
+            std::pair<uint16_t, uint16_t> sz(0, 0);
+            std::vector<gibson_cell_t> cells;
+            std::string wire;
+            int st = status_of([&] { sz = ctx_->frame_size(); });
+            const size_t c = sz.first;
+            if (st == GIBSON_OK) st = status_of([&] { cells = ctx_->frame_cells(); });
             uint64_t h = kFnvOffset;
-            for (size_t k = 0; k < written; ++k) {
+            for (size_t k = 0; k < cells.size(); ++k) {
                 std::string line = cell_line(cells[k], static_cast<uint16_t>(k % c), static_cast<uint16_t>(k / c));
                 h = fnv(h, line.data(), line.size());
             }
-            size_t wl = 0;
-            gibson_get_rendered_output(ctx_, nullptr, 0, &wl);
-            std::vector<uint8_t> wire(wl + 1);
-            size_t got = 0;
-            gibson_get_rendered_output(ctx_, wire.data(), wl, &got);
+            status_of([&] { wire = ctx_->rendered_output(); });
             Rec()
-                .i("cells", static_cast<long long>(written))
+                .i("cells", static_cast<long long>(cells.size()))
                 .s("digest", hex16(h))
                 .s("id", id)
                 .s("k", "frame")
                 .s("st", st_name(st))
-                .s("wire_digest", hex16(fnv(kFnvOffset, wire.data(), got)))
-                .i("wire_len", static_cast<long long>(got))
+                .s("wire_digest", hex16(fnv(kFnvOffset, wire.data(), wire.size())))
+                .i("wire_len", static_cast<long long>(wire.size()))
                 .emit(out_);
         } else if (op == "cell") {
             uint16_t x = static_cast<uint16_t>(num(0)), y = static_cast<uint16_t>(num(1));
             gibson_cell_t c{};
-            int st = gibson_get_frame_cell(ctx_, x, y, &c);
-            std::string g = st == GIBSON_OK ? full_glyph(c, x, y) : "";
+            std::string g;
+            int st = status_of([&] {
+                c = ctx_->frame_cell(x, y);
+                g = ctx_->full_glyph(c, x, y);
+            });
             const auto& sy = c.style;
             Rec()
                 .s("attrs", attrs(sy))
@@ -418,52 +452,39 @@ private:
                 .emit(out_);
         } else if (op == "glyph") {
             uint16_t x = static_cast<uint16_t>(num(0)), y = static_cast<uint16_t>(num(1));
-            size_t len = 0;
-            int st = gibson_get_frame_cell_glyph(ctx_, x, y, nullptr, 0, &len);
-            std::string g(len, '\0');
-            size_t len2 = 0;
-            if (st == GIBSON_OK) st = gibson_get_frame_cell_glyph(ctx_, x, y, reinterpret_cast<uint8_t*>(&g[0]), len, &len2);
-            g.resize(len2);
-            Rec().s("full_hex", hex(g)).i("full_len", static_cast<long long>(len2)).s("id", id).s("k", "glyph")
+            std::string g;
+            int st = status_of([&] { g = ctx_->frame_cell_glyph(x, y); });
+            Rec().s("full_hex", hex(g)).i("full_len", static_cast<long long>(g.size())).s("id", id).s("k", "glyph")
                 .s("st", st_name(st)).i("x", x).i("y", y).emit(out_);
         } else if (op == "glyphcap") {
             uint16_t x = static_cast<uint16_t>(num(0)), y = static_cast<uint16_t>(num(1));
             gibson_cell_t c{};
-            int st = gibson_get_frame_cell(ctx_, x, y, &c);
+            int st = status_of([&] { c = ctx_->frame_cell(x, y); });
             Rec().s("id", id).i("inline_len", c.glyph_len).s("k", "glyphcap").s("st", st_name(st))
                 .i("trunc", c._reserved[0]).i("x", x).i("y", y).emit(out_);
         } else if (op.rfind("push_", 0) == 0) {
-            gibson_event_t ev{};
-            std::string paste;
-            int st;
+            gibson::Event ev;
             if (op == "push_char") {
-                ev.event_type = GIBSON_EVENT_KEY; ev.key_code = cp_of(arg(0)); ev.modifiers = static_cast<uint8_t>(num(1));
-                st = gibson_push_event_kind(ctx_, &ev, GIBSON_KEY_KIND_CHAR);
+                ev = gibson::Event::char_key(cp_of(arg(0)), static_cast<uint8_t>(num(1)));
             } else if (op == "push_special") {
-                ev.event_type = GIBSON_EVENT_KEY; ev.key_code = special_of(arg(0)); ev.modifiers = static_cast<uint8_t>(num(1));
-                st = gibson_push_event_kind(ctx_, &ev, GIBSON_KEY_KIND_SPECIAL);
+                ev = gibson::Event::special_key(special_of(arg(0)), static_cast<uint8_t>(num(1)));
             } else if (op == "push_legacy") {
-                ev.event_type = GIBSON_EVENT_KEY; ev.key_code = cp_of(arg(0)); ev.modifiers = static_cast<uint8_t>(num(1));
-                st = gibson_push_event(ctx_, &ev);
+                ev = gibson::Event::legacy_key(cp_of(arg(0)), static_cast<uint8_t>(num(1)));  // kind-less call
             } else if (op == "push_paste") {
-                paste = unhex(arg(0));
-                ev.event_type = GIBSON_EVENT_PASTE; ev.paste_str = paste.c_str();
-                st = gibson_push_event(ctx_, &ev);
+                ev = gibson::Event::paste_text(unhex(arg(0)));
             } else {
-                ev.event_type = GIBSON_EVENT_RESIZE; ev.cols = static_cast<uint16_t>(num(0)); ev.rows = static_cast<uint16_t>(num(1));
-                st = gibson_push_event(ctx_, &ev);
+                ev = gibson::Event::resize(static_cast<uint16_t>(num(0)), static_cast<uint16_t>(num(1)));
             }
-            Rec().s("id", id).s("k", "push").s("st", st_name(st)).emit(out_);
+            Rec().s("id", id).s("k", "push").s("st", st_name(push(ev))).emit(out_);
         } else if (op == "poll") {
             for (int k = 1; k <= num(0); ++k) {
-                gibson_event_t ev{};
-                uint32_t kind = 0;
-                int st = gibson_poll_event_kind(ctx_, 0, &ev, &kind);
-                emit_event(id + "." + std::to_string(k), st, ev, kind_name(kind));
+                gibson::Event ev;
+                int st = status_of([&] { ev = ctx_->poll_event_kind(); });
+                emit_event(id + "." + std::to_string(k), st, ev, kind_name(ev.key_kind));
             }
         } else if (op == "poll_legacy") {
-            gibson_event_t ev{};
-            int st = gibson_poll_event(ctx_, 0, &ev);
+            gibson::Event ev;
+            int st = status_of([&] { ev = ctx_->poll_event_kindless(0); });  // the kind-less call
             emit_event(id, st, ev, "ABSENT");
         } else if (op == "probe") {
             probe(id, arg(0));
@@ -473,11 +494,11 @@ private:
                 gibson::Node n = gibson::Node::text("unattached", nullptr, GIBSON_WRAP_NONE);
                 if (!n.raw()) st = "WRAPPER_NULL";
             }  // ~Node frees it
-            else if (arg(0) == "destroy_null") gibson_destroy_context(nullptr);
+            else if (arg(0) == "destroy_null") gibson_destroy_context(nullptr);  // raw C: NULL context
             Rec().s("id", id).s("k", "lifecycle").s("name", arg(0)).s("st", st).emit(out_);
         } else if (op == "destroy") {
-            gibson_destroy_context(ctx_);
-            ctx_ = nullptr;
+            ctx_->close();
+            ctx_.reset();
             Rec().s("id", id).s("k", "destroy").s("st", "OK").emit(out_);
         } else {
             Rec().s("id", id).s("k", "unknown_op").s("st", "UNSUPPORTED").emit(out_);
@@ -511,8 +532,8 @@ int main(int argc, char** argv) {
                   << ",\"ctx_has_poll_event\":" << has_poll_event<Ctx>::value
                   << ",\"ctx_has_poll_event_kind\":" << has_poll_event_kind<Ctx>::value
                   << ",\"ctx_has_push_event\":" << has_push_event<Ctx>::value
-                  << ",\"ctx_has_push_event_kind\":" << has_push_event_kind<Ctx>::value
                   << ",\"ctx_has_rendered_output\":" << has_rendered_output<Ctx>::value
+                  << ",\"ctx_has_take_rendered_output\":" << has_take_rendered_output<Ctx>::value
                   << ",\"k\":\"wrapper\",\"lang\":\"cpp\",\"node_text_invalid_utf8_raw_is_null\":" << (bad.raw() ? 0 : 1)
                   << ",\"node_text_status_observable\":0}\n";
     }
