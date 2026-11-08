@@ -173,7 +173,7 @@
       ],
       "cpp": [
         "SUPPORTED",
-        "every e01-e09/x01-x04 record via gibson::Context (headless, push_event, poll_event_kind for e*, kind-less poll_event(timeout) and Event::legacy_key for x*); wrapper obs ctx_has_headless=1, ctx_has_push_event=1, ctx_has_poll_event_kind=1"
+        "every e01-e09/x01-x04 record via gibson::Context (headless, push_event, poll_event_kind for e*, kind-less poll_event_kindless(timeout) and Event::legacy_key for x*); wrapper obs ctx_has_headless=1, ctx_has_push_event=1, ctx_has_poll_event_kind=1"
       ],
       "py": [
         "SUPPORTED",
