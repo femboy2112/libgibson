@@ -68,7 +68,7 @@ surface is versioned as a minor to signal its scope — not because anything bro
   milestone. A real-audio-device backend is the optional `audio-cpal` feature, so the
   mandatory build, `cargo test` and CI never need system audio libraries.
 
-- **0.5.0** is such a milestone and is **tagged and released on GitHub** (state 2 below):
+- **0.5.0** is a prior milestone and is **tagged and released on GitHub** (state 2 below):
   tag `v0.5.0` → `d8c7b99`, GitHub prerelease of 2026-10-24 with the native SDK archive,
   its checksum and the Python wheel/sdist; not published to any registry. It adds the
   experimental, Rust-only interactive-instrument surface (spatial input and hit-map,
@@ -80,13 +80,15 @@ surface is versioned as a minor to signal its scope — not because anything bro
   [#257](https://github.com/femboy2112/libgibson/issues/257) this entry still called 0.5.0
   "a prepared release candidate, not yet tagged" — the wording of its version-bump commit,
   not reconciled after the tag.)*
-- **0.6.0** is the latest such milestone and is **prepared in source only** (state 1): the
-  manifests read `0.6.0` at `9a899e1` (its source-version baseline; `main` has since opened
-  `0.7.0-dev`), but nothing is tagged, released on GitHub or published to a registry, and
-  the latest *released* version remains 0.5.0. `9a899e1` itself carries #264 and #269 and is
-  never tagged. The owner chose (2026-11-08, [#287](https://github.com/femboy2112/libgibson/issues/287),
-  [decision 0001](decisions/0001-v0.6.0-release-line.md)) to release 0.6.0, if a candidate
-  qualifies, from `release/v0.6.0-rc` under the maintenance-line exception below. It integrates the v0.6
+- **0.6.0** is the latest such milestone and is **tagged and released on GitHub** (state 2):
+  tag `v0.6.0` → `492d0fe` (and `bindings/go/v0.6.0` on the same commit), a GitHub prerelease of
+  2026-11-08 ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.6.0)) with the
+  native SDK archive, its checksum and the Python wheel/sdist; not published to any registry.
+  `492d0fe` is on the maintenance branch `release/v0.6.0-rc`, not in `main`'s history: it is the
+  first release under the maintenance-line exception below
+  ([decision 0001](decisions/0001-v0.6.0-release-line.md)). Its source-version baseline is
+  `9a899e1` (0.6.0 prepared in source on `main`; `main` has since opened `0.7.0-dev`), which carries
+  #264 and #269 and is never tagged. It integrates the v0.6
   "Instrumental Renaissance": a live Python↔Rust wire instrument and instrument-driven
   cinema (examples), renderer recovery from partial terminal writes (§9), the text-input
   glyph-boundary repair, and **seven additive C ABI functions (52 → 59; headless contexts,
@@ -510,8 +512,8 @@ path is as stated in `SECURITY.md`.
   0.7.0-dev, LibGibson no longer reads a Unix controlling terminal through that reader: its
   own terminal source (`src/tty_source.rs`, issue #269) takes the key and the resize in the
   same pass, and the [Event Pressure Lab](EVENT_PRESSURE_LAB.md)'s delivery acceptance for
-  the `Context` path is enabled and passing. The 0.6.0 release candidate (`release/v0.6.0-rc`)
-  carries the same fix (#269 backported). Released versions up to 0.5.0, the 0.6.0 source baseline
+  the `Context` path is enabled and passing. The v0.6.0 release (tag `v0.6.0` → `492d0fe`, on
+  `release/v0.6.0-rc`) carries the same fix (#269 backported). Released versions up to 0.5.0, the 0.6.0 source baseline
   `9a899e1`, and an application that reads crossterm's event reader directly still have the stall.
   RXIV (2026-11-05) re-measured it on a real PTY isolated from LibGibson: stock 0.29.0
   delivered 0/30 resize-then-key collisions, the #1128 fork 30/30
@@ -520,8 +522,8 @@ path is as stated in `SECURITY.md`.
 
 ### v0.6 Engineering Alpha limitations (stated, not hidden)
 
-The v0.6 integration — merged to `main` through #253 as `f6cd8c7`, and v0.6.0 prepared in source
-(state 1 of §1, not released) — is qualified in
+The v0.6 integration — merged to `main` through #253 as `f6cd8c7`, and released as v0.6.0 on
+2026-11-08 (state 2 of §1, from `release/v0.6.0-rc` @ `492d0fe`) — is qualified in
 [`V06_QUALIFICATION_LEDGER.md`](V06_QUALIFICATION_LEDGER.md). These are its declared limits:
 
 - **Terminal writes are not atomic.** A failed write may leave a torn prefix of a frame on the

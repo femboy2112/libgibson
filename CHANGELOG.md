@@ -17,10 +17,10 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Development toward **0.7.0** — a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)). This is the working development
-line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 remains **prepared in source at
-`9a899e1`** (release state 1 — not tagged, not released). It is never tagged on a later `main`;
-it is released, once a candidate qualifies, from `release/v0.6.0-rc` under the approved
-maintenance-line exception (below). `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
+line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 was **released on 2026-11-08** from
+`release/v0.6.0-rc` (tag `v0.6.0` → `492d0fe`) under the approved maintenance-line exception
+(below); its source-version baseline `9a899e1` is never tagged. `GIBSON_ABI_VERSION` stays 1; MSRV
+stays 1.85.
 
 ### Release engineering — maintenance-line releases approved ([#287](https://github.com/femboy2112/libgibson/issues/287), #291)
 - **Release Contract §1 gains an approved maintenance-line exception** (owner decision 2026-11-08,
@@ -90,6 +90,15 @@ maintenance-line exception (below). `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.8
 - **The 0.6 limitations in Release Contract §9** now state that a headless C context's capture grows
   for its lifetime (#297) and how a C program must bound it, and that 0.6.0's `gibson_poll_event`
   on a headless context reports no input (#259).
+- **v0.6.0 published (state 2); post-release records.** v0.6.0 was released on 2026-11-08 as a
+  GitHub prerelease from `release/v0.6.0-rc` (tag `v0.6.0` → `492d0fe`; `bindings/go/v0.6.0` names
+  the same commit). `main` stays `0.7.0-dev` and was not merged with the maintenance branch; nothing
+  was uploaded to crates.io, PyPI or the Go proxy. Receipts for the released commit:
+  `docs/decisions/0001/allow-commits-492d0fe.txt`, `docs/decisions/0001/checker-492d0fe.txt`
+  (RESULT: PASS with tags present) and `docs/decisions/0001/calibration-492d0fe.txt` (47 of 47).
+  Records: [qualification](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6721675144),
+  [publication](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6721728874);
+  [decision 0001](docs/decisions/0001-v0.6.0-release-line.md), "Outcome".
 
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
 - The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an
@@ -279,14 +288,19 @@ maintenance-line exception (below). `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.8
 - The bench's first finding — 256-colour render 4.7–7.2× truecolor on dense frames — is filed as
   #260.
 
-## [0.6.0] — prepared in source 2026-11-05 · not tagged, not released
+## [0.6.0] — 2026-11-08 · GitHub prerelease from release/v0.6.0-rc (tag v0.6.0 → 492d0fe)
 
-**Release state 1 of 3** ([Release Contract §1](docs/RELEASE_CONTRACT.md#1-versioning-model)): the
-manifests read `0.6.0`, but there is no `v0.6.0` tag, GitHub release or registry upload; the latest
-*released* version remains **0.5.0**, and the README install instructions stay on it. "Operation
+**Release state 2 of 3** ([Release Contract §1](docs/RELEASE_CONTRACT.md#1-versioning-model)): a
+GitHub prerelease ([v0.6.0](https://github.com/femboy2112/libgibson/releases/tag/v0.6.0)); no registry
+upload. The source version was prepared on 2026-11-05 at `9a899e1`, which is never tagged. "Operation
 Instrumental Renaissance": the v0.6 integration merged through #253 (merge `f6cd8c7`, independent
 audit approval of exactly `eaa0d1c`). `GIBSON_ABI_VERSION` stays 1 — the C ABI grew only by
 **additive** functions (52 → 59, compatible, no version bump); MSRV stays 1.85.
+
+The released tree is `9a899e1` plus reviewed backports of the `main` fixes for #264, #269/#15, #259
+and #285, and the release engineering (the #297 disclosure and the approved policy text and
+checker). The tagged tree's own CHANGELOG lists them under "Release candidate". The backported fixes
+also appear in `[Unreleased]` above, because `main` carries them for 0.7.
 
 ### Release engineering — source version 0.6.0, RXVII
 - **Version prepared in source:** `Cargo.toml`, `Cargo.lock` (the `libgibson` entry only),
@@ -298,7 +312,8 @@ audit approval of exactly `eaa0d1c`). `GIBSON_ABI_VERSION` stays 1 — the C ABI
   *published through registries*, and states which one each milestone has reached. It had still
   called **0.5.0** "a prepared release candidate, not yet tagged" — v0.5.0 was tagged and published
   as a GitHub prerelease on 2026-10-24 (`v0.5.0` → `d8c7b99`). README, ROADMAP and
-  STATE_OF_LIBGIBSON now say v0.6.0 is prepared in source, not released.
+  STATE_OF_LIBGIBSON then said v0.6.0 was prepared in source, not released (it was released
+  on 2026-11-08; see the heading above).
 
 ### Fixed — test harness (`event_pressure_lab`), RXVII ([#255](https://github.com/femboy2112/libgibson/issues/255))
 - **Parallel event-pressure trials no longer collide on their scratch directory.** The trial
