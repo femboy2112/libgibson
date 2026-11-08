@@ -107,11 +107,13 @@ stays 1.85.
   `Event.resize`), `Context.push_event(event)` and `Context.poll_event(timeout_ms=0, kind=True)`,
   and the constants `EventType`, `KeyKind`, `Key`, `Mod`, `Status` and `GIBSON_EVENT_QUEUE_CAPACITY`.
   - A polled `Event` carries the key kind from `gibson_poll_event_kind`, so a typed U+1001 stays
-    distinct from `Key.ENTER`, and it can be pushed back unchanged. `kind=False` calls the kind-less
+    distinct from `Key.ENTER`, and a polled KEY, PASTE or RESIZE can be pushed back unchanged
+    (a NONE from an empty queue cannot; the C ABI refuses NONE). `kind=False` calls the kind-less
     `gibson_poll_event` (`key_kind` is `None`); a `None` key kind on push calls `gibson_push_event`.
   - A non-OK status raises `GibsonError` (a `RuntimeError`, with `.status` and the thread-local
     `.last_error` read right after the call); a full queue raises `QueueFullError`. The C ABI, not
-    Python, decides what is invalid; only values that cannot fit the C field raise `ValueError`.
+    Python, decides what is invalid; `ValueError` is raised only where Python must refuse before the call:
+    a value that cannot fit its C field, or a paste containing a NUL byte (the C string would be cut short).
   - `bindings/python/test_events.py` (new CI step in the Bindings job) covers CHAR/SPECIAL, paste,
     resize, empty queue, queue full, invalid parameters and the poll-then-push round trip.
   - `bindings/parity/v08/parity_v08.py` now uses these calls for events (transcript unchanged,

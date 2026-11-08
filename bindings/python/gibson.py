@@ -1006,8 +1006,9 @@ class Context:
 
         ``kind=True`` (default) uses gibson_poll_event_kind, so a KEY event carries
         KeyKind.CHAR or KeyKind.SPECIAL; ``kind=False`` uses gibson_poll_event, where a typed
-        U+1001 and Key.ENTER look the same and key_kind is None. Every field is written, so the
-        result can go straight back into push_event. Raises GibsonError on a non-OK status."""
+        U+1001 and Key.ENTER look the same and key_kind is None. Every field is written, so a
+        polled KEY, PASTE or RESIZE can go straight back into push_event (a NONE from an empty
+        queue cannot: the C ABI refuses to queue NONE). Raises GibsonError on a non-OK status."""
         c = GibsonEvent()
         if kind:
             k = ctypes.c_uint32(0)

@@ -157,7 +157,10 @@ with headless(40, 12) as ctx:
     ctx.render()
     check(ctx.frame_size() == (40, 12), "fullscreen frame is 40x12")
     ctx.push_event(Event.resize(60, 16))
-    check(ctx.frame_size() == (40, 12), "a queued resize does nothing until polled")
+    # frame_size reports the last rendered frame, so render before looking: a push that applied
+    # the geometry itself would show 60x16 here.
+    ctx.render()
+    check(ctx.frame_size() == (40, 12), "a queued resize does nothing until polled (re-rendered)")
     ev = ctx.poll_event()
     check(ev == Event(EventType.RESIZE, cols=60, rows=16, key_kind=KeyKind.NONE), "RESIZE polled")
     ctx.render()
@@ -170,15 +173,21 @@ with headless(40, 12) as ctx:
 
 # --- QUEUE_FULL -------------------------------------------------------------------------------
 with headless() as ctx:
-    for _ in range(GIBSON_EVENT_QUEUE_CAPACITY):
-        ctx.push_event(Event.char("q"))
-    e = raises(QueueFullError, lambda: ctx.push_event(Event.char("q")), "push past capacity")
+    # Distinguishable events (CJK code points U+4E00 + i), so a displaced, duplicated, reordered
+    # or inserted event shows up in the drained sequence; the overflow is a distinct sentinel.
+    queued = [Event.char(0x4E00 + i) for i in range(GIBSON_EVENT_QUEUE_CAPACITY)]
+    for ev in queued:
+        ctx.push_event(ev)
+    e = raises(QueueFullError, lambda: ctx.push_event(Event.char("Z")), "push past capacity")
     check(e is not None and e.status == Status.ERR_QUEUE_FULL and isinstance(e, RuntimeError)
           and "full" in e.last_error, "QueueFullError carries status and last-error text")
-    n = 0
-    while ctx.poll_event().event_type != EventType.NONE:
-        n += 1
-    check(n == GIBSON_EVENT_QUEUE_CAPACITY, "the refusal displaced nothing")
+    drained = []
+    while True:
+        ev = ctx.poll_event()
+        if ev.event_type == EventType.NONE:
+            break
+        drained.append(ev)
+    check(drained == queued, "the refusal displaced nothing: every queued event, in order, no sentinel")
     ctx.push_event(Event.char("r"))
     check(ctx.poll_event().key_code == ord("r"), "the queue accepts again once drained")
 
