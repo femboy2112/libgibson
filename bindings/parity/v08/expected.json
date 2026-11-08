@@ -172,8 +172,8 @@
         "e01-e09/x01-x04 are the reference; poll_event_kind separates e09.2 (U+1001 CHAR) from e09.3 (ENTER), kind-less poll_event conflates x03/x04"
       ],
       "cpp": [
-        "PARTIAL",
-        "byte-identical, but gibson.hpp has no headless Context, push_event*, or poll_event_kind: the consumer calls the C ABI directly"
+        "SUPPORTED",
+        "every e01-e09/x01-x04 record via gibson::Context (headless, push_event, poll_event_kind for e*, kind-less poll_event(timeout) and Event::legacy_key for x*); wrapper obs ctx_has_headless=1, ctx_has_push_event=1, ctx_has_poll_event_kind=1"
       ],
       "py": [
         "SUPPORTED",
@@ -194,8 +194,8 @@
         "s15 40x12, r02 60x16: a polled RESIZE resizes the headless context (the only resize path; no direct resize call)"
       ],
       "cpp": [
-        "PARTIAL",
-        "s15/r02 byte-identical; gibson.hpp has no frame_size: raw C"
+        "SUPPORTED",
+        "s15/r02 byte-identical via Context::frame_size, with the RESIZE pushed and polled through Context::push_event/poll_event_kind"
       ],
       "py": [
         "SUPPORTED",
@@ -216,8 +216,8 @@
         "s16/r03 digests over gibson_get_frame_cells + rendered output; s18 RGB+bold+underline, s19 ANSI256+named+italic"
       ],
       "cpp": [
-        "PARTIAL",
-        "scene built with gibson::Node RAII, but frame_cells/rendered_output only via raw C"
+        "SUPPORTED",
+        "every CELL record via gibson.hpp (Context::headless, Node RAII + style, set_root, render, frame_cells, frame_cell, rendered_output)"
       ],
       "py": [
         "SUPPORTED",
@@ -238,8 +238,8 @@
         "s20/s21 CJK + continuation, s22 combining, s23/s26 25-byte ZWJ via get_frame_cell_glyph, s24/r05 U+1001; s27 inline cap 14 bytes, trunc=1"
       ],
       "cpp": [
-        "PARTIAL",
-        "gibson::Node::text carries the UTF-8; glyph readback only via raw C"
+        "SUPPORTED",
+        "via gibson.hpp: Node::text carries the UTF-8, Context::frame_cell_glyph / full_glyph read the full grapheme"
       ],
       "py": [
         "SUPPORTED",
@@ -261,7 +261,7 @@
       ],
       "cpp": [
         "PARTIAL",
-        "p01-p22 byte-identical via raw C; gibson.hpp drops statuses (Node::text(invalid UTF-8) -> raw()==nullptr, wrapper obs)"
+        "p01-p22 byte-identical; 13 probes (p01, p02, p05, p06, p11-p17, p21, p22) go through gibson::Error / QueueFullError with last-error text, 9 still need raw C (NULL pointers, set_color_depth, cells_oob out-param, Node::text(invalid UTF-8) drops the status: raw()==nullptr, wrapper obs)"
       ],
       "py": [
         "PARTIAL",
@@ -283,7 +283,7 @@
       ],
       "cpp": [
         "PARTIAL",
-        "l01 freed by gibson::Node RAII; no headless gibson::Context, so create/destroy are raw C"
+        "create/close/destroy via Context::headless + RAII (close() twice and move are no-ops, no double destroy), l01 freed by Node RAII; l02 destroy(NULL) only via raw C"
       ],
       "py": [
         "PARTIAL",
