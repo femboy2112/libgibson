@@ -67,8 +67,8 @@ use std::time::{Duration, Instant};
 
 /// One read's worth of terminal bytes; crossterm uses the same size. A full buffer
 /// tells the decoder more bytes may follow (a lone `ESC` then waits for them), as does a read
-/// ending in `ESC` while key-release reporting is confirmed (the Esc key is then `CSI 27u`), for
-/// at most [`LONE_ESC_WAIT`].
+/// ending in `ESC` while key-release reporting is confirmed (the Esc key is then `CSI 27u`) or its
+/// answer is pending, for at most [`LONE_ESC_WAIT`].
 const READ_BUF: usize = 1024;
 
 /// How long a lone `ESC` held for the rest of a split sequence (see [`READ_BUF`]) waits before it
@@ -234,6 +234,18 @@ impl TtySource {
                 return Ok(Some(event));
             }
             if self.esc_deadline.is_some_and(|at| Instant::now() >= at) {
+                // The rest may already be waiting (the events of a full read took longer than the
+                // wait to hand out): read it before deciding the ESC was the Esc key.
+                if fd_readable(self.fd) {
+                    match self.read_once()? {
+                        ReadOutcome::Bytes => {
+                            self.decode();
+                            continue;
+                        }
+                        ReadOutcome::HungUp => return self.report_hangup(),
+                        ReadOutcome::Nothing | ReadOutcome::NotNow => {}
+                    }
+                }
                 self.esc_deadline = None;
                 self.parser.flush_lone_esc();
                 self.decode();
@@ -378,9 +390,10 @@ impl TtySource {
         let n = unsafe { libc::read(self.fd, buf.as_mut_ptr().cast(), READ_BUF) };
         if n > 0 {
             let n = n as usize;
-            // While the flags are confirmed the Esc key is `CSI 27u`, so a read ending in a lone
-            // ESC is a sequence split across reads: it waits for the rest, up to `LONE_ESC_WAIT`.
-            let split = buf[n - 1] == 0x1B && self.reporting_confirmed();
+            // While the flags are confirmed (or may be: the answer is pending) the Esc key is
+            // `CSI 27u`, so a read ending in a lone ESC is a sequence split across reads: it waits
+            // for the rest, up to `LONE_ESC_WAIT`.
+            let split = buf[n - 1] == 0x1B && self.esc_may_be_split();
             self.parser.advance(&buf[..n], n == READ_BUF || split);
             self.esc_deadline =
                 (split && self.parser.pending_bytes() == 1).then(|| Instant::now() + LONE_ESC_WAIT);
@@ -401,13 +414,16 @@ impl TtySource {
         read_error_outcome(e, fd_reports_hangup(self.fd))
     }
 
-    /// Whether key releases are delivered and the terminal's latest answer is `Active`.
-    fn reporting_confirmed(&self) -> bool {
+    /// Whether a read ending in a lone ESC may be a split sequence: key releases are delivered and
+    /// the terminal's latest answer is `Active`, or a request's answer is still pending (it may be
+    /// in this very read, decoded only after it).
+    fn esc_may_be_split(&self) -> bool {
         #[cfg(test)]
         let on = self.track_keys || crate::input::key_releases_delivered();
         #[cfg(not(test))]
         let on = crate::input::key_releases_delivered();
-        on && lock_queries().last == Some(KeyReleaseReporting::Active)
+        let q = lock_queries();
+        on && (q.last == Some(KeyReleaseReporting::Active) || q.outstanding > 0)
     }
 
     /// Moves every event the parser completed into the hand-out queue.
@@ -501,6 +517,18 @@ fn deadline_after(timeout: Duration) -> Option<Instant> {
     let now = Instant::now();
     now.checked_add(timeout)
         .or_else(|| now.checked_add(Duration::from_secs(u64::from(u32::MAX))))
+}
+
+/// Whether `fd` has bytes to read right now (non-blocking).
+fn fd_readable(fd: RawFd) -> bool {
+    let mut p = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: one valid pollfd; a zero timeout never blocks.
+    let rc = unsafe { libc::poll(&mut p, 1, 0) };
+    rc > 0 && p.revents & libc::POLLIN != 0
 }
 
 /// Whether `fd` reports a hangup, error or invalid descriptor right now (non-blocking).
@@ -775,8 +803,8 @@ impl PressedKeys {
 /// A device attributes reply cannot be told from one to somebody else's earlier query, and a
 /// stray one arriving first reads as `Unsupported`. A flags reply, though, states the flags in
 /// force on the terminal, whoever asked: while reporting is enabled, one that changes the answer
-/// is reported too (#275 review). Through a `Context` the first `Unsupported` handed out is
-/// final: it withdraws the request, and a later answer is dropped with it.
+/// is reported too (#275 review). The first `Unsupported` handed out, by any poll, is final: it
+/// withdraws the request, and a later answer is dropped with it.
 #[derive(Debug, Default)]
 struct KeyboardQueries {
     /// Requests whose device attributes reply has not arrived.
@@ -2463,5 +2491,81 @@ mod tests {
             got.2
         );
         assert_eq!(got.3, Some(SourceEvent::Terminal(key('a'))));
+    }
+
+    #[test]
+    fn kitty_272_an_expired_esc_hold_reads_what_is_already_waiting_first() {
+        // #275 review 8: a full read ends in a lone ESC whose continuation is already on the fd;
+        // the 145 events it decoded are handed out over more than `LONE_ESC_WAIT`. The expired
+        // hold must read the waiting bytes before deciding the ESC was the Esc key.
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        expect_keyboard_reply();
+        let mut first = Vec::new();
+        for _ in 0..67 {
+            first.extend_from_slice(b"\x1b[97u\x1b[97;1:3u");
+        }
+        for _ in 0..5 {
+            first.extend_from_slice(b"\x1b[119u\x1b[119;1:3u");
+        }
+        first.extend_from_slice(b"\x1b[97u\x1b");
+        assert_eq!(first.len(), READ_BUF);
+        first.extend_from_slice(b"[97;1:3u");
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            write_all(&master, b"\x1b[?15u\x1b[?62;c");
+            let active = s.poll_source(Duration::from_millis(500)).unwrap();
+            write_all(&master, &first);
+            let mut out = vec![s.poll_source(Duration::from_millis(500)).unwrap()];
+            thread::sleep(LONE_ESC_WAIT + Duration::from_millis(30));
+            while let Ok(Some(e)) = s.poll_source(Duration::from_millis(200)) {
+                out.push(Some(e));
+            }
+            drop(master);
+            (active, out)
+        });
+        forget_keyboard_replies();
+        assert_eq!(
+            got.0,
+            Some(SourceEvent::KeyReleaseReporting(
+                KeyReleaseReporting::Active
+            ))
+        );
+        let got = terminal(got.1.into_iter().flatten().collect());
+        assert_eq!(got.len(), 146, "{:?}", &got[140..]);
+        assert_eq!(got[144], key('a'));
+        assert_eq!(got[145], kind(K::Char('a'), M::NONE, Kind::Release));
+    }
+
+    #[test]
+    fn kitty_272_a_split_esc_in_the_read_that_confirms_reporting_is_held() {
+        // #275 review 8: the answer and a lone ESC arrive in one read; the rest of the ESC's
+        // sequence in the next. Reporting is not yet confirmed when the read is decoded, but its
+        // answer is pending: the ESC is held.
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        expect_keyboard_reply();
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            write_all(&master, b"\x1b[?15u\x1b[?62;c\x1b[119u\x1b");
+            let mut out = vec![s.poll_source(Duration::from_millis(500)).unwrap()];
+            write_all(&master, b"[119;1:3u");
+            while let Ok(Some(e)) = s.poll_source(Duration::from_millis(200)) {
+                out.push(Some(e));
+            }
+            drop(master);
+            out
+        });
+        forget_keyboard_replies();
+        assert_eq!(
+            got.into_iter().flatten().collect::<Vec<_>>(),
+            vec![
+                SourceEvent::KeyReleaseReporting(KeyReleaseReporting::Active),
+                SourceEvent::Terminal(key('w')),
+                SourceEvent::Terminal(kind(K::Char('w'), M::NONE, Kind::Release)),
+            ]
+        );
     }
 }

@@ -376,6 +376,113 @@ fn a_partial_flags_reply_is_unsupported_and_the_push_is_withdrawn() {
     );
 }
 
+/// The owner enables; another reader hands the answer out (#275 review 8).
+fn unsupported_through_another_reader(role: &str) {
+    let mut cap = Capture::spawn(child(role), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "READY");
+    wait_bytes(&mut cap, PUSH_AND_ASK);
+    send(&mut cap, b"\x1b[?3u\x1b[?62;c");
+    wait_for(&mut cap, "EV reporting:Unsupported");
+    send(&mut cap, b"w\x1b[119;1:3u");
+    send(&mut cap, b"q");
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, role);
+    assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
+    assert_eq!(
+        events(&cap),
+        ["reporting:Unsupported", "key:w:0", "key:q:0"],
+        "[{role}] no release once Unsupported is handed out, whoever polls"
+    );
+    let out = String::from_utf8_lossy(cap.raw()).into_owned();
+    assert!(out.contains("OWNER enabled=false"), "[{role}] {out:?}");
+    // The owner never polled through a Context: its restore performs the pending pop, once.
+    assert_eq!(count(cap.raw(), POP), 1, "[{role}]");
+}
+
+#[test]
+fn unsupported_through_the_free_poll_function_stops_releases() {
+    unsupported_through_another_reader("foreign-free");
+}
+
+#[test]
+fn unsupported_through_a_headless_context_reading_the_terminal_stops_releases() {
+    unsupported_through_another_reader("foreign-headless");
+}
+
+#[test]
+fn reenabling_after_a_caught_panic_keeps_the_ended_notice() {
+    // #275 review 8: Active, w held (an exact hold), a caught panic ends reporting, and the
+    // client re-enables before polling again. It must still see Unsupported, before the new
+    // answer, so the old hold ends.
+    let mut cap = Capture::spawn(
+        child("caught-panic-reenable"),
+        80,
+        24,
+        Duration::from_secs(40),
+    );
+    wait_for(&mut cap, "READY");
+    wait_bytes(&mut cap, PUSH_AND_ASK);
+    send(&mut cap, KITTY_ANSWER);
+    wait_for(&mut cap, "EV reporting:Active");
+    send(&mut cap, b"\x1b[119u"); // w down
+    wait_for(&mut cap, "EV key:w:0");
+    send(&mut cap, b"\x1b[33u"); // `!`: the child panics, catches it and re-enables
+    wait_for(&mut cap, "REENABLED");
+    send(&mut cap, KITTY_ANSWER);
+    send(&mut cap, b"\x1b[113u");
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, "caught-panic-reenable");
+    assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
+    assert_eq!(
+        events(&cap),
+        [
+            "reporting:Active",
+            "key:w:0",
+            "key:!:0",
+            "reporting:Unsupported",
+            "reporting:Active",
+            "key:q:0"
+        ]
+    );
+    let out = String::from_utf8_lossy(cap.raw()).into_owned();
+    assert!(out.contains("HELD []"), "the old w hold ended: {out:?}");
+}
+
+/// Where the `caught-panic-hangup` child writes its findings: after the hangup its terminal is
+/// gone, so it cannot print them.
+const LOG_ENV: &str = "GIBSON_275_LOG";
+
+#[test]
+fn a_failed_raw_mode_reentry_keeps_the_ended_notice() {
+    // #275 review 8: a caught panic ends reporting, then the terminal hangs up. The next
+    // `Context` poll cannot re-enter raw mode and fails; the `Unsupported` notice it would have
+    // delivered must wait for the next poll, not vanish with the error. (A notice that dies with
+    // its messenger is how a hold stays down forever.)
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_nanos();
+    let log = std::env::temp_dir().join(format!("gibson_275_hangup_{unique}.log"));
+    let _ = std::fs::remove_file(&log);
+    let mut cmd = child("caught-panic-hangup");
+    cmd.env(LOG_ENV, &log);
+    let mut cap = Capture::spawn(cmd, 80, 24, Duration::from_secs(40));
+    wait_bytes(&mut cap, PUSH_AND_ASK);
+    wait_for(&mut cap, "CAUGHT");
+    cap.hang_up();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while cap.try_wait().unwrap().is_none() {
+        assert!(
+            Instant::now() < deadline,
+            "the child did not exit after the hangup"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let got = std::fs::read_to_string(&log).unwrap_or_else(|e| panic!("child log {log:?}: {e}"));
+    let _ = std::fs::remove_file(&log);
+    assert_eq!(got, "POLL error\nFROM reporting:Unsupported\n");
+}
+
 #[test]
 fn a_restored_session_cannot_enable_reporting() {
     // #275 review: after restore the session no longer holds the terminal.
@@ -471,6 +578,114 @@ fn key_release_reporting_child() {
         return;
     }
     ctx.session.enter_interactive().unwrap();
+    if role == "foreign-free" || role == "foreign-headless" {
+        ctx.session.set_key_release_reporting(true).unwrap();
+        say("READY");
+        let mut headless = Context::headless(RenderMode::Fullscreen, 80, 24);
+        let mut terminal = gibson::TerminalSource;
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            let polled = if role == "foreign-free" {
+                gibson::input::poll_event(Duration::from_millis(100))
+            } else {
+                headless.poll_from(&mut terminal, Duration::from_millis(100))
+            };
+            let Some(e) = polled.unwrap() else {
+                continue;
+            };
+            if matches!(e, Event::Resize(..) | Event::Focus(_)) {
+                continue;
+            }
+            say(&format!("EV {}", desc(&e)));
+            if matches!(e, Event::KeyReleaseReporting(_)) {
+                let on = ctx.session.key_release_reporting_enabled();
+                say(&format!("OWNER enabled={on}"));
+            }
+            if matches!(&e, Event::Key(k) if k.code == KeyCode::Char('q')) {
+                break;
+            }
+        }
+        ctx.restore().unwrap();
+        say("DONE");
+        return;
+    }
+    if role == "caught-panic-reenable" {
+        use gibson::hold::{HoldConfig, HoldTracker};
+        let mut holds = HoldTracker::new(HoldConfig::new(1, 1));
+        ctx.session.set_key_release_reporting(true).unwrap();
+        say("READY");
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut tic = 0u64;
+        while Instant::now() < deadline {
+            let Some(e) = ctx.poll_event(Duration::from_millis(100)).unwrap() else {
+                continue;
+            };
+            if matches!(e, Event::Resize(..) | Event::Focus(_)) {
+                continue;
+            }
+            tic += 1;
+            holds.observe_event(tic, &e, |k| Some(k.code)).unwrap();
+            say(&format!("EV {}", desc(&e)));
+            match &e {
+                Event::Key(k) if k.code == KeyCode::Char('q') => {
+                    let held: Vec<_> = holds
+                        .held()
+                        .map(|(k, _)| k)
+                        .filter(|k| *k != KeyCode::Char('q'))
+                        .collect();
+                    say(&format!("HELD {held:?}"));
+                    break;
+                }
+                Event::Key(k) if k.code == KeyCode::Char('!') => {
+                    let caught = std::panic::catch_unwind(|| panic!("caught, on the owner thread"));
+                    assert!(caught.is_err());
+                    ctx.session.set_key_release_reporting(true).unwrap();
+                    say("REENABLED");
+                }
+                _ => {}
+            }
+        }
+        ctx.restore().unwrap();
+        say("DONE");
+        return;
+    }
+    if role == "caught-panic-hangup" {
+        // The hangup must not end this child; it reports through a file instead.
+        // SAFETY: SIG_IGN installs no handler code.
+        unsafe { libc::signal(libc::SIGHUP, libc::SIG_IGN) };
+        let log = std::env::var_os(LOG_ENV).expect("log path");
+        ctx.session.set_key_release_reporting(true).unwrap();
+        let caught = std::panic::catch_unwind(|| panic!("caught, on the owner thread"));
+        assert!(caught.is_err());
+        say("CAUGHT");
+        // Wait for the parent to hang up; until then a poll would succeed and say too much.
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let mut p = libc::pollfd {
+                fd: libc::STDIN_FILENO,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            // SAFETY: one valid pollfd.
+            let rc = unsafe { libc::poll(&mut p, 1, 100) };
+            if rc > 0 && p.revents & (libc::POLLHUP | libc::POLLERR) != 0 {
+                break;
+            }
+            assert!(Instant::now() < deadline, "no hangup");
+        }
+        let first = match ctx.poll_event(Duration::from_millis(100)) {
+            Err(_) => "error".to_string(),
+            Ok(e) => format!("{:?}", e.as_ref().map(desc)),
+        };
+        let mut empty = gibson::event_source::ScriptedSource::from_events(Vec::<Event>::new());
+        let second = match ctx.poll_from(&mut empty, Duration::ZERO) {
+            Ok(Some(e)) => desc(&e),
+            other => format!("{other:?}"),
+        };
+        std::fs::write(log, format!("POLL {first}\nFROM {second}\n")).unwrap();
+        // Nothing left to restore onto, and nowhere to print the harness's summary.
+        std::process::exit(0);
+    }
     if role == "caught-panic" {
         ctx.session.set_key_release_reporting(true).unwrap();
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

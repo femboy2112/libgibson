@@ -167,8 +167,8 @@ pub enum KeyReleaseReporting {
     /// a key that goes up is reported as an [`Event::KeyRelease`].
     Active,
     /// The terminal answered without confirming it (or reporting ended: the panic hook popped
-    /// the flags): keys stay press-only, and no [`Event::KeyRelease`] will come. Final: handed
-    /// out by a `Context` poll, it withdraws the request (see
+    /// the flags): keys stay press-only, and no [`Event::KeyRelease`] will come. Final: once any
+    /// poll hands it out, releases stop and the request is withdrawn (see
     /// `TerminalSession::set_key_release_reporting`).
     Unsupported,
 }
@@ -199,8 +199,11 @@ pub enum Event {
     /// when the terminal names it differently on the way up (shift let go first turns a released
     /// `W` into `w`), so a release matches its press by equality. A key that was already down
     /// when reporting began has no recorded press: its release is named as its first autorepeat
-    /// since then was delivered, or, with none, as the terminal reports it. An autorepeat of a
-    /// held key is an [`Event::Key`], as on any terminal.
+    /// since then was delivered, or, with none, as the terminal reports it. Not covered: a
+    /// shifted symbol pressed just before the flags take effect (at enable, or as a screen switch
+    /// pushes them again) and let go without an autorepeat is released as the terminal reports it
+    /// (`!` as `1`), so that release does not match its press. An autorepeat of a held key is an
+    /// [`Event::Key`], as on any terminal.
     KeyRelease(KeyEvent),
     /// The terminal's answer to a key-release reporting request, in input order: every event
     /// after it was produced under that answer.
@@ -398,9 +401,18 @@ fn delivers_key_kind(kind: KeyEventKind, windows: bool) -> bool {
 }
 
 /// Applies LibGibson's delivery rules to one source item, with key-release delivery as the
-/// session set it ([`set_key_releases_delivered`]).
+/// session set it ([`set_key_releases_delivered`]). Every public poll hands events out through
+/// here, so an `Unsupported` answer is final for all of them (#275 review 8): once it is handed
+/// out, delivery is off, so releases queued behind it are dropped as they are handed out. Popping
+/// the push stays the owning session's (its next `Context` poll, enable, disable or screen
+/// switch, `restore`, `Drop` or the panic hook): anyone may read the verdict, only the owner
+/// may act on it.
 fn decode_source_event(ev: SourceEvent) -> Option<Event> {
-    decode_source_event_as(ev, cfg!(windows), key_releases_delivered())
+    let event = decode_source_event_as(ev, cfg!(windows), key_releases_delivered());
+    if let Some(Event::KeyReleaseReporting(KeyReleaseReporting::Unsupported)) = event {
+        set_key_releases_delivered(false);
+    }
+    event
 }
 
 /// [`decode_source_event`] with delivery given. Both a release and an answer are decided at
