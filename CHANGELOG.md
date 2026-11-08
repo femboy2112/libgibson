@@ -92,6 +92,8 @@ decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed p
   cleanroom, drains (and, in a second variant, clears) every frame of one context at 40x15, 80x24
   and 240x80 and checks the capture and the resident memory stay bounded; its no-drain control
   fails.
+- The framebuffer adapter now clears its headless capture at `headless_capture_limit` instead of
+  replacing the context; `capture_rotations` counts those clears.
 
 ### Added — C ABI v1 (additive, 60 → 62 symbols): key kinds ([#274](https://github.com/femboy2112/libgibson/issues/274))
 - **`gibson_poll_event_kind(ctx, timeout_ms, out_event, out_key_kind)`** polls like
