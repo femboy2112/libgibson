@@ -149,6 +149,25 @@ stays 1.85.
   typed at READY is five characters and one Enter with no kernel echo; without it (the old
   behaviour, held so the race is not a race) the same probe fails with an echo and Ctrl+J.
 
+### Added — Go binding: headless context, events, readback and capture (v0.8 parity slice, finding F5)
+- **`bindings/go/gibson` covers the headless path without cgo in the caller.** Everything below is
+  new; no existing exported name or signature changed:
+  - `NewHeadlessContext(mode, cols, rows)`, `Context.UnsafeHandle()`, `Context.SetRootNode(node)`.
+  - `Event` (`CharKey`, `SpecialKey`, `LegacyKey`, `PasteText`, `ResizeEvent`), `Context.PushEvent`,
+    `Context.PollEventKind` and the kind-less `Context.PollEvent`; `KeyKind*`, `Key*`, `Mod*`,
+    `EventQueueCapacity`. A polled event keeps the CHAR/SPECIAL key kind and can be pushed back.
+  - `Context.FrameSize`, `FrameCell`, `FrameCells` (the C ABI judges every call, including one that
+    returns no cells), `FrameCellGlyph`, `FullGlyph`, `RenderedOutput`, `TakeRenderedOutput`,
+    `ClearRenderedOutput`.
+  - A cgo-free `Style` / `Color`, `NewStyledTextNode(text, style, wrap)` and `Line.AddStyledSpan`.
+  - `*gibson.Error` carries the status and the last-error text, read in the same cgo call as the
+    failing ABI call (Go moves goroutines between OS threads); `errors.Is(err, ErrQueueFull)`.
+  - `headless_test.go` covers the same ground as the Python and C++ event tests, plus the
+    last-error-under-pollution test for `NewHeadlessContext`.
+    `bindings/parity/v08/go/main.go` now uses these calls (transcript unchanged, byte-identical to C),
+    moving the Go Event, Geometry, Cells and Text capability labels from PARTIAL to SUPPORTED. No C ABI
+    or Rust change.
+
 ### Added — C++ header: headless context, events, readback and capture (v0.8 parity slice, finding F5)
 - **`include/gibson.hpp` (and so the `bindings/cpp/gibson.hpp` shim) covers the headless path.**
   New, all additive; existing members keep their signatures and behavior:

@@ -180,8 +180,8 @@
         "every e01-e09/x01-x04 record via the wrapper (Context.push_event/poll_event, Event.char vs Event.special key_kind, poll_event(kind=False) for the kind-less x-records; wrapper obs ctx_has_push_event=1, ctx_has_poll_event=1, module_has_event_struct=1)"
       ],
       "go": [
-        "PARTIAL",
-        "byte-identical via the consumer's own cgo; bindings/go exposes no headless context, push or poll"
+        "SUPPORTED",
+        "every e01-e09/x01-x04 record via bindings/go (NewHeadlessContext, PushEvent, PollEventKind; CharKey vs SpecialKey keep e09.2 and e09.3 apart; kind-less PollEvent / LegacyKey for the x-records; wrapper obs ctx_has_PushEvent=1, ctx_has_PollEventKind=1)"
       ],
       "rust": [
         "PARTIAL",
@@ -202,8 +202,8 @@
         "s15/r02 byte-identical via Context.frame_size, with the RESIZE pushed and polled through Context.push_event/poll_event"
       ],
       "go": [
-        "PARTIAL",
-        "byte-identical via own cgo; bindings/go has no geometry readback"
+        "SUPPORTED",
+        "s15/r02 byte-identical via Context.FrameSize, with the RESIZE pushed and polled through PushEvent/PollEventKind"
       ],
       "rust": [
         "PARTIAL",
@@ -224,8 +224,8 @@
         "every CELL record via the wrapper (Context.headless, Node.text+GibsonStyle, frame_cells, frame_cell, rendered_output)"
       ],
       "go": [
-        "PARTIAL",
-        "byte-identical via own cgo; bindings/go has no styled text node and no readback"
+        "SUPPORTED",
+        "every CELL record via bindings/go (NewHeadlessContext, NewStyledTextNode with gibson.Style, SetRootNode, Render, FrameCells, FrameCell, RenderedOutput)"
       ],
       "rust": [
         "SUPPORTED",
@@ -246,8 +246,8 @@
         "via the wrapper: Node.text(str), frame_cell_glyph, GibsonCell.glyph_truncated"
       ],
       "go": [
-        "PARTIAL",
-        "byte-identical via own cgo; bindings/go has no readback"
+        "SUPPORTED",
+        "via bindings/go: NewStyledTextNode carries the UTF-8, FrameCellGlyph / FullGlyph read the full grapheme"
       ],
       "rust": [
         "PARTIAL",
@@ -269,7 +269,7 @@
       ],
       "go": [
         "PARTIAL",
-        "p01-p22 byte-identical via own cgo with LockOSThread (last error is per thread); bindings/go discards most statuses"
+        "p01-p22 byte-identical; 14 probes (p01, p02, p05, p06, p09, p11-p17, p21, p22) via *gibson.Error with the last-error text (read inside the failing cgo call), 8 still raw cgo (p03, p04, p07, p08, p10, p18, p19, p20: NULL pointers, set_color_depth, the cells_oob out-param); the older constructors (NewTextNode, AddChild, SetRoot) still drop statuses"
       ],
       "rust": [
         "PARTIAL",
@@ -291,7 +291,7 @@
       ],
       "go": [
         "PARTIAL",
-        "byte-identical via own cgo; bindings/go Close() cannot reach a headless context"
+        "create/Close (idempotent) and Node.Free via bindings/go; l02 destroy(NULL) only via raw cgo"
       ],
       "rust": [
         "PARTIAL",
