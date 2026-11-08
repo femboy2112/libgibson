@@ -301,16 +301,20 @@ stays 1.85.
   then the adapter asks nothing and ignores the release and answer events, keeping inferred holds.
   Set to 1, it requests them on a terminal; once confirmed a key is held exactly while it is down,
   at least one tic, and several keys that `map_key` sends to one producer key keep it held until
-  the last of them goes up (inferred holds stay per producer key: there an alias re-arms the hold
-  like an autorepeat); a terminal without the protocol keeps the grace.
-  `fb_adapter_releases_reported`; releases and the answer are recorded in the input trace
-  (`FB_OBSERVED_*`), so a session replays exactly; the demo (`--key-releases`) shows `keys exact`
-  on its status row. The selfcheck's P3 adds a reported-release leg (w held across a d chord, a
-  one-tic tap) against the rule written out by hand, a full key queue (a release waiting for room
-  is never lost to a re-press, which is dropped and counted) and a withdrawal (only holds waiting
-  for a release are re-timed, as in `gibson::hold`), w and Up mapped to one producer key, held
-  until both are up (and re-armed as one key with inferred holds), with the controls
-  `p3-ignore-releases`, `p3-rearm-loses-release` and `p3-shared-alias-hold` (26 controls), and a
+  the last of them goes up (up to 8 per producer key; inferred holds stay per producer key: there
+  an alias re-arms the hold like an autorepeat), a hold begun before the confirmation keeps its
+  inferred deadline unless every key that made it is reported up, and an exact hold has no grace
+  fallback (a release that never arrives keeps it until reporting is withdrawn); a terminal
+  without the protocol keeps the grace. `fb_adapter_releases_reported`; releases and the answer
+  are recorded in the input trace (`FB_OBSERVED_*`), so a session replays exactly; the demo
+  (`--key-releases`) shows `keys exact` on its status row. The selfcheck's P3 adds a
+  reported-release leg (w held across a d chord, a one-tic tap) against the rule written out by
+  hand, a full key queue (a release waiting for room is never lost to a re-press, which is dropped
+  and counted) and a withdrawal (only holds waiting for a release are re-timed, as in
+  `gibson::hold`), w and Up mapped to one producer key, held until both are up (and re-armed as
+  one key with inferred holds), two holds mixing inferred and reported parts, each press and
+  release of the producer key counted, with the controls `p3-ignore-releases`,
+  `p3-rearm-loses-release`, `p3-shared-alias-hold` and `p3-unmatched-release` (27 controls), and a
   leg where the same script through an adapter left at the default gives the grace model's whole
   transcript, written out by hand. `scripts/dev/kitty_key_release_e2e.sh` with `FB_DEMO=` runs the
   demo in real kitty: the trace of the live session replays headless to the same hash, and without

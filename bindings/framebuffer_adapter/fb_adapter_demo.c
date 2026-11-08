@@ -528,6 +528,7 @@ enum {
     C_P3_IGNORE_RELEASES,
     C_P3_REARM_LOSES_RELEASE,
     C_P3_SHARED_ALIAS_HOLD,
+    C_P3_UNMATCHED_RELEASE,
     C_P4_FRAME_LOCKED,
     C_P5_STALE_MAP,
     C_P5_RESIZE_STEPS,
@@ -554,6 +555,7 @@ static const struct {
     {"p3-ignore-releases", 3, "mutant adapter: reported key releases are ignored (holds keep the grace)"},
     {"p3-rearm-loses-release", 3, "mutant adapter: a re-press re-arms a hold whose release is waiting for a full queue"},
     {"p3-shared-alias-hold", 3, "mutant adapter: keys mapped to one producer key share one release (the first ends it)"},
+    {"p3-unmatched-release", 3, "mutant adapter: a release of a key that holds nothing ends the inferred part"},
     {"p4-frame-locked", 4, "mutant adapter: one tic per presented frame"},
     {"p5-stale-map", 5, "mutant adapter: the map is not rebuilt on resize"},
     {"p5-resize-steps", 5, "mutant adapter: a resize runs an extra producer tic"},
@@ -1154,33 +1156,35 @@ static int withdrawal_keeps_inferred_deadlines(uint64_t *a_end, uint64_t *b_end)
     return *a_end == 102 && *b_end == 29;
 }
 
-/* Aliases (#275 review): map_key sends both w and Up to producer key 7. */
+/* Aliases (#275 review): map_key sends w, Up, a, b and c to producer key 7. */
 static uint32_t alias_map(void *user, uint32_t fb_code, uint8_t mods) {
     (void)user;
     (void)mods;
-    return fb_code == 'w' || fb_code == FB_KEY_BASE + (GIBSON_KEY_UP - 0x1000u) ? 7u : fb_code;
+    return fb_code == 'w' || fb_code == 'a' || fb_code == 'b' || fb_code == 'c' ||
+                   fb_code == FB_KEY_BASE + (GIBSON_KEY_UP - 0x1000u)
+               ? 7u
+               : fb_code;
 }
 
-/* w pressed at 10, Up at 20, w released at 30, Up at 40, both mapped to 7. With reported releases
-   (`exact`: opted in and confirmed) 7 is held 10..40: w going up while Up is still down must not
-   end it. Not opted in, holds are per producer key as before #275 (an alias cannot be told from an
-   autorepeat): Up re-arms 7 at 20 + 4, so it ends at 24, inferred. Returns 1 when the producer
-   receives exactly press 7 at 10 and that one release; *end and *synth get the release. */
-static int alias_hold(int exact, unsigned faults, uint64_t *end, int *synth) {
+typedef struct { uint64_t tic; int32_t type; uint32_t code; uint32_t kind; } aev;
+
+/* What the producer receives for key 7 from a pushed script through alias_map: every press and
+   release counted, with the tic of the first press and of the last release. */
+typedef struct { int presses, releases, others, synth; uint64_t press_at, end; } k7;
+
+static int run_k7(const aev *S, size_t n, int key_releases, uint32_t repeat, unsigned faults, k7 *r) {
+    memset(r, 0, sizeof *r);
+    r->synth = -1;
     fb_adapter_config cfg;
     fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
     cfg.map_key = alias_map;
-    cfg.key_releases = exact;
+    cfg.key_releases = key_releases;
+    if (repeat) cfg.hold_repeat_tics = repeat;
     fb_adapter *ad = NULL;
     if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
     fb_adapter_set_faults(ad, faults);
     gibson_context_t *ctx = fb_adapter_context(ad);
-    static const struct { uint64_t tic; int32_t type; uint32_t code; uint32_t kind; } S[] = {
-        {1, GIBSON_EVENT_KEY_RELEASES_ACTIVE, 0, 0},  {10, GIBSON_EVENT_KEY, 'w', CH},
-        {20, GIBSON_EVENT_KEY, GIBSON_KEY_UP, SP},    {30, GIBSON_EVENT_KEY_RELEASE, 'w', CH},
-        {40, GIBSON_EVENT_KEY_RELEASE, GIBSON_KEY_UP, SP},
-    };
-    for (size_t i = 0; i < sizeof S / sizeof S[0]; i++) {
+    for (size_t i = 0; i < n; i++) {
         gibson_event_t e;
         memset(&e, 0, sizeof e);
         e.event_type = S[i].type;
@@ -1189,24 +1193,49 @@ static int alias_hold(int exact, unsigned faults, uint64_t *end, int *synth) {
         else gibson_push_event(ctx, &e);
         fb_adapter_pump(ad, S[i].tic, 0);
     }
-    int presses = 0, releases = 0, others = 0;
     fb_key_event k;
-    *end = 0;
-    *synth = -1;
-    for (uint64_t t = 1; t < 200; t++)
+    for (uint64_t t = 1; t < 400; t++)
         while (fb_adapter_next_key(ad, t, &k)) {
-            if (k.code != 7) others++;
-            else if (k.pressed) presses += k.tic == 10;
-            else {
-                releases++;
-                *end = k.tic;
-                *synth = k.synthesized;
+            if (k.code != 7) r->others++;
+            else if (k.pressed) {
+                if (!r->presses++) r->press_at = k.tic;
+            } else {
+                r->releases++;
+                r->end = k.tic;
+                r->synth = k.synthesized;
             }
         }
     fb_adapter_close(ad);
-    return presses == 1 && releases == 1 && others == 0 &&
-           (exact ? *end == 40 && *synth == 0 : *end == 24 && *synth == 1);
+    return 1;
 }
+
+/* Exactly one press of 7, at `at`, and exactly one release, at `end`, inferred or reported. */
+static int k7_is(const k7 *r, uint64_t at, uint64_t end, int synth) {
+    return r->presses == 1 && r->press_at == at && r->releases == 1 && r->end == end && r->synth == synth &&
+           r->others == 0;
+}
+
+#define KA GIBSON_EVENT_KEY_RELEASES_ACTIVE
+#define KP GIBSON_EVENT_KEY
+#define KR GIBSON_EVENT_KEY_RELEASE
+/* w pressed at 10, Up at 20, w released at 30, Up at 40. Reported (opted in, confirmed at 1): 7 is
+   held 10..40, w going up while Up is down does not end it. Not opted in: holds are per producer
+   key as before #275 (an alias cannot be told from an autorepeat), so Up re-arms 7 at 20 + 4: 24. */
+static const aev ALIAS[] = {
+    {1, KA, 0, 0}, {10, KP, 'w', CH}, {20, KP, GIBSON_KEY_UP, SP}, {30, KR, 'w', CH}, {40, KR, GIBSON_KEY_UP, SP},
+};
+/* (#275 review 3) a pressed at 10 before the confirmation (inferred part, deadline 35); confirmed at
+   11; b pressed at 12 (exact part); c, which holds nothing, released at 15; b released at 20. Only
+   a's release may end a's part: 7 is held to 35, inferred. */
+static const aev MIXED1[] = {
+    {10, KP, 'a', CH}, {11, KA, 0, 0}, {12, KP, 'b', CH}, {15, KR, 'c', CH}, {20, KR, 'b', CH},
+};
+/* (#275 review 3) a at 10 and c at 12, both before the confirmation (repeat 100: deadline 112);
+   confirmed at 13; c released at 14, a at 30. The inferred part ends when the last key that made it
+   is up: 7 is held to 30, reported. Ending it at c's release (14) would drop a while it is down. */
+static const aev MIXED2[] = {
+    {10, KP, 'a', CH}, {12, KP, 'c', CH}, {13, KA, 0, 0}, {14, KR, 'c', CH}, {30, KR, 'a', CH},
+};
 
 static int prop3(char *ev) {
     fclock a, b;
@@ -1252,13 +1281,16 @@ static int prop3(char *ev) {
     qsort(ogot, off.nlog, sizeof *ogot, cmp_log);
     int off_ok = off.nlog == no;
     for (size_t i = 0; off_ok && i < no; i++) off_ok = cmp_log(&S3R_OFF_WANT[i], &ogot[i]) == 0;
-    uint64_t ax_end = 0, ai_end = 0;
-    int ax_syn = -1, ai_syn = -1;
-    const unsigned afault = ctl(C_P3_SHARED_ALIAS_HOLD) ? FB_FAULT_SHARED_ALIAS_HOLD : 0;
-    const int ax_ok = alias_hold(1, afault, &ax_end, &ax_syn);
-    const int ai_ok = alias_hold(0, 0, &ai_end, &ai_syn);
+    const unsigned afault = (ctl(C_P3_SHARED_ALIAS_HOLD) ? FB_FAULT_SHARED_ALIAS_HOLD : 0) |
+                            (ctl(C_P3_UNMATCHED_RELEASE) ? FB_FAULT_UNMATCHED_RELEASE : 0);
+    k7 ax, ai, m1, m2;
+    const size_t na = sizeof ALIAS / sizeof ALIAS[0];
+    const int ax_ok = run_k7(ALIAS, na, 1, 0, afault, &ax) && k7_is(&ax, 10, 40, 0);
+    const int ai_ok = run_k7(ALIAS, na, 0, 0, afault, &ai) && k7_is(&ai, 10, 24, 1);
+    const int m1_ok = run_k7(MIXED1, sizeof MIXED1 / sizeof MIXED1[0], 1, 0, afault, &m1) && k7_is(&m1, 10, 35, 1);
+    const int m2_ok = run_k7(MIXED2, sizeof MIXED2 / sizeof MIXED2[0], 1, 100, afault, &m2) && k7_is(&m2, 10, 30, 0);
     const int pass = ok && keyed.hash != quiet.hash && log_ok && keyed.tics == 200 && quiet.tics == 200 && rel_ok && qok && wok &&
-                     off_ok && ax_ok && ai_ok;
+                     off_ok && ax_ok && ai_ok && m1_ok && m2_ok;
     ev_append(ev, "keys pushed with gibson_push_event_kind, polled by the adapter (gibson_poll_event_kind): keyed hash=%016llx %s "
                   "unkeyed hash=%016llx (200 tics each); producer key log %u events %s independent hold model (grace 25, repeat 4): ",
               (unsigned long long)keyed.hash, keyed.hash != quiet.hash ? "!=" : "==", (unsigned long long)quiet.hash,
@@ -1278,11 +1310,18 @@ static int prop3(char *ev) {
               off.nlog, off_ok ? "==" : "!=");
     for (unsigned i = 0; i < off.nlog && i < 10; i++)
         ev_append(ev, " %s@%llu", ogot[i].pressed ? "press" : "release", (unsigned long long)ogot[i].tic);
-    ev_append(ev, "; w and Up both mapped to 7: reported releases hold 7 until the last goes up (released at %llu "
-                  "synthesized=%d, want 40 and 0), inferred holds treat Up as a repeat of 7 (released at %llu "
-                  "synthesized=%d, want 24 and 1)",
-              (unsigned long long)ax_end, ax_syn, (unsigned long long)ai_end, ai_syn);
-    if (afault) ev_append(ev, " [control: aliases share one release]");
+#define K7(r) (r).presses, (unsigned long long)(r).press_at, (r).releases, (unsigned long long)(r).end, (r).synth
+    ev_append(ev, "; w and Up both mapped to 7: reported releases hold 7 until the last goes up (%d press @%llu, "
+                  "%d release @%llu synthesized=%d; want 1 @10, 1 @40 synthesized=0), inferred holds treat Up as a "
+                  "repeat of 7 (%d @%llu, %d @%llu synthesized=%d; want 1 @10, 1 @24 synthesized=1)",
+              K7(ax), K7(ai));
+    ev_append(ev, "; mixed parts: a inferred, b reported, an unmatched c release (%d @%llu, %d @%llu synthesized=%d; "
+                  "want 1 @10, 1 @35 synthesized=1); a and c inferred, c then a released (%d @%llu, %d @%llu "
+                  "synthesized=%d; want 1 @10, 1 @30 synthesized=0)",
+              K7(m1), K7(m2));
+#undef K7
+    if (ctl(C_P3_SHARED_ALIAS_HOLD)) ev_append(ev, " [control: aliases share one release]");
+    if (ctl(C_P3_UNMATCHED_RELEASE)) ev_append(ev, " [control: an unmatched release ends the inferred part]");
     if (ign) ev_append(ev, " [control: producer ignores input]");
     if (rfault) ev_append(ev, " [control: reported releases ignored]");
     return pass;

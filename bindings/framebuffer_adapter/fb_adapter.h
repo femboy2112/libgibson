@@ -190,9 +190,15 @@ typedef struct fb_key_event {
    (GIBSON_EVENT_KEY_RELEASES_ACTIVE), a key observed from then on is held until its
    GIBSON_EVENT_KEY_RELEASE, at least one tic (the release takes effect at `tic`, or at tic + 1 if
    the hold started at `tic`); a producer key that several keys map to stays held until the last
-   of them goes up (up to 8 such keys are tracked per producer key). If the terminal later answers
-   UNSUPPORTED, a hold still waiting for a release gets the grace as if pressed at `tic`; a hold
-   that still has an inferred deadline keeps it. RESIZE rebuilds the sampling map.
+   of them goes up. Up to 8 such keys are tracked per producer key: a 9th is not recorded (nothing
+   is counted as dropped), so once the first 8 are up the producer key is released while the 9th
+   is still down. Such a hold has no grace to fall back on: a release that never arrives (focus
+   lost without one, say; the C ABI reports no focus) keeps it until the terminal withdraws
+   reporting or the adapter is closed. A hold begun before the confirmation keeps its inferred
+   deadline as one part, ended early only when every key that made it has been reported up. If
+   the terminal later answers UNSUPPORTED, a hold still waiting for a release gets the grace as if
+   pressed at `tic`; a hold that still has an inferred deadline keeps it. RESIZE rebuilds the
+   sampling map.
    Returns FB_TERMINAL_GONE on GIBSON_ERR_IO -- the caller must stop polling. */
 fb_status fb_adapter_pump(fb_adapter *ad, uint64_t tic, uint32_t timeout_ms);
 /* Pops the next key event due at or before `tic`: releases of holds that ended at or before `tic`
@@ -276,6 +282,7 @@ void fb_adapter_counters_get(const fb_adapter *ad, fb_adapter_counters *out);
 #define FB_FAULT_IGNORE_RELEASES       0x80u /* reported releases are ignored: holds keep their grace */
 #define FB_FAULT_REARM_PENDING         0x100u /* a re-press re-arms a hold whose release waits for a full queue */
 #define FB_FAULT_SHARED_ALIAS_HOLD     0x200u /* keys mapped to one producer key share one release (the first ends it) */
+#define FB_FAULT_UNMATCHED_RELEASE     0x400u /* a release of a key that holds nothing ends the inferred part */
 #define FB_FAULT_SLOW_PRESENT          0x40u /* every 35th present stalls 400 ms (inside the timing; longer than
                                                 the 10-tic catch-up cap, so a real-clock loop drops tics) */
 void fb_adapter_set_faults(fb_adapter *ad, unsigned faults);

@@ -27,16 +27,28 @@
    key mapped to it re-arms it, since without releases an alias cannot be told from an
    autorepeat. With reported releases (#275 review) it also records which SOURCE keys (codes before
    map_key) are down, so two keys mapped to one producer key keep it held until the last of them
-   goes up. A hold can have both parts: an inferred deadline from observations made before the
-   terminal confirmed, and source keys reported down since. */
+   goes up. A hold has up to two parts, held while either is:
+     exact:    the source keys reported down since the terminal confirmed (`src`), each until its
+               reported release;
+     inferred: observations made while releases were not reported (before the confirmation, or
+               after a withdrawal), until `inferred_end`; `inf` records which source keys made it.
+   The inferred part ends early only once EVERY key that made it has been reported up (or moved
+   to the exact part); a release of any other key changes nothing, so a missing or unmatched
+   release can only leave the inferred part to its deadline, never end the hold while a
+   contributor may still be down (#275 review 3). If more than FB_HOLD_SRCS keys made it, it runs
+   to its deadline. */
 typedef struct hold_slot {
     uint32_t code;
     uint8_t used;
     uint8_t released; /* the end came from a reported release: not inferred */
-    uint8_t nsrc;     /* source keys reported down (exact part) */
+    uint8_t nsrc;     /* exact part: source keys reported down */
+    uint8_t ninf;     /* inferred part: source keys that made it */
+    uint8_t inf_open; /* the inferred part still holds (until inferred_end) */
+    uint8_t inf_overflow; /* more keys made the inferred part than `inf` records */
     uint32_t src[FB_HOLD_SRCS];
-    uint32_t inferred_src; /* source of the last inferred observation */
-    uint64_t inferred_end; /* first tic the inferred part no longer holds (0: none) */
+    uint32_t inf[FB_HOLD_SRCS];
+    uint64_t inferred_end; /* first tic the inferred part no longer holds */
+    uint64_t rel_end;      /* the latest end a reported release gave (0: none) */
     uint64_t started;      /* tic of the press that started the hold */
     uint64_t ends_at; /* first tic at which the key is no longer held (UINT64_MAX: while a source is down) */
 } hold_slot;
@@ -686,14 +698,58 @@ static int releases_on(const fb_adapter *ad) {
     return ad->releases && !(ad->faults & FB_FAULT_IGNORE_RELEASES);
 }
 
-/* Records source key `src` as down in `h` (reported releases). A ninth source key mapped to the
+static int set_has(const uint32_t *set, uint8_t n, uint32_t k) {
+    for (unsigned j = 0; j < n; j++)
+        if (set[j] == k) return 1;
+    return 0;
+}
+
+/* Adds `k` to `set` (n entries, FB_HOLD_SRCS at most). 0 if it did not fit. */
+static int set_put(uint32_t *set, uint8_t *n, uint32_t k) {
+    if (set_has(set, *n, k)) return 1;
+    if (*n >= FB_HOLD_SRCS) return 0;
+    set[(*n)++] = k;
+    return 1;
+}
+
+static int set_take(uint32_t *set, uint8_t *n, uint32_t k) {
+    for (unsigned j = 0; j < *n; j++)
+        if (set[j] == k) {
+            set[j] = set[--*n];
+            return 1;
+        }
+    return 0;
+}
+
+/* The end the parts give: held while a source is reported down; else until the later of the
+   inferred deadline (while that part holds) and the last release-caused end. */
+static void hold_settle(hold_slot *h) {
+    if (h->nsrc) {
+        h->released = 0;
+        h->ends_at = UINT64_MAX;
+        return;
+    }
+    const uint64_t inf = h->inf_open ? h->inferred_end : 0;
+    h->released = h->rel_end >= inf;
+    h->ends_at = h->released ? h->rel_end : inf;
+}
+
+/* An inferred observation of `src`: it joins the inferred part, which runs to `end`. */
+static void hold_infer(hold_slot *h, uint32_t src, uint64_t end) {
+    if (!h->inf_open) {
+        h->ninf = 0;
+        h->inf_overflow = 0;
+    }
+    if (!set_put(h->inf, &h->ninf, src)) h->inf_overflow = 1;
+    h->inf_open = 1;
+    h->inferred_end = end;
+}
+
+/* A reported observation of `src`: it moves to the exact part. A ninth source key mapped to the
    same producer key is not recorded: the code is held anyway, but its release cannot keep it so. */
-static void hold_add_src(hold_slot *h, uint32_t src) {
-    for (unsigned j = 0; j < h->nsrc; j++)
-        if (h->src[j] == src) return;
-    /* the key that made the inferred part is now reported exactly: that part was this key's */
-    if (h->inferred_end && h->inferred_src == src) h->inferred_end = 0;
-    if (h->nsrc < FB_HOLD_SRCS) h->src[h->nsrc++] = src;
+static void hold_exact(hold_slot *h, uint32_t src) {
+    if (set_take(h->inf, &h->ninf, src) && h->ninf == 0 && !h->inf_overflow) h->inf_open = 0;
+    (void)set_put(h->src, &h->nsrc, src);
 }
 
 static void observe_key(fb_adapter *ad, uint64_t tic, uint32_t code, uint32_t src) {
@@ -711,15 +767,9 @@ static void observe_key(fb_adapter *ad, uint64_t tic, uint32_t code, uint32_t sr
             }
             /* an autorepeat re-arms; with reported releases the key is held until its release
                (pressed again in the tic it was released: down again) */
-            h->released = 0;
-            if (exact) {
-                hold_add_src(h, src);
-                h->ends_at = UINT64_MAX;
-            } else {
-                h->inferred_src = src;
-                h->inferred_end = tic + ad->cfg.hold_repeat_tics;
-                h->ends_at = h->nsrc ? UINT64_MAX : h->inferred_end;
-            }
+            if (exact) hold_exact(h, src);
+            else hold_infer(h, src, tic + ad->cfg.hold_repeat_tics);
+            hold_settle(h);
             return;
         }
         if (!h->used && free_slot < 0) free_slot = i;
@@ -734,21 +784,16 @@ static void observe_key(fb_adapter *ad, uint64_t tic, uint32_t code, uint32_t sr
     h->used = 1;
     h->code = code;
     h->started = tic;
-    if (exact) {
-        hold_add_src(h, src);
-        h->ends_at = UINT64_MAX;
-    } else {
-        h->inferred_src = src;
-        h->inferred_end = tic + ad->cfg.hold_grace_tics;
-        h->ends_at = h->inferred_end;
-    }
+    if (exact) hold_exact(h, src);
+    else hold_infer(h, src, tic + ad->cfg.hold_grace_tics);
+    hold_settle(h);
 }
 
-/* The terminal reported source key `src` (mapped to `code`) going up at `tic` (#275). If it was
-   recorded down, it no longer holds the code; otherwise (pressed before the terminal confirmed)
-   it ends the hold's inferred part. The code stays held while another source key mapped to it is
-   still down (#275 review); else the hold ends at `tic`, or at tic + 1 if it started at `tic`, so
-   every press is held at least one tic, or later if an inferred part still runs. Not held: nothing. */
+/* The terminal reported source key `src` (mapped to `code`) going up at `tic` (#275). It leaves
+   whichever part it was in; the code stays held while another source key is reported down, or
+   while the inferred part runs (until its deadline, unless every key that made it is now up). The
+   end a release gives is `tic`, or tic + 1 if the hold started at `tic`, so every press is held at
+   least one tic. A key in neither part changes nothing. Not held: nothing. */
 static void release_key(fb_adapter *ad, uint64_t tic, uint32_t code, uint32_t src) {
     expire_holds(ad, tic);
     if (ad->faults & FB_FAULT_IGNORE_RELEASES) return;
@@ -756,18 +801,24 @@ static void release_key(fb_adapter *ad, uint64_t tic, uint32_t code, uint32_t sr
         hold_slot *h = &ad->holds[i];
         if (!h->used || h->code != code) continue;
         const uint64_t end = (h->started < tic || tic == UINT64_MAX) ? tic : tic + 1;
-        int found = 0;
-        if (ad->faults & FB_FAULT_SHARED_ALIAS_HOLD) h->nsrc = 0; /* mutant: the first release ends it */
-        for (unsigned j = 0; j < h->nsrc; j++)
-            if (h->src[j] == src) {
-                h->src[j] = h->src[--h->nsrc];
-                found = 1;
-                break;
-            }
-        if (!found && h->inferred_end) h->inferred_end = end;
-        if (h->nsrc) return; /* another key mapped to this code is still down */
-        h->released = end >= h->inferred_end;
-        h->ends_at = h->released ? end : h->inferred_end;
+        int ended = 0;
+        if (ad->faults & FB_FAULT_SHARED_ALIAS_HOLD) { /* mutant: the first release ends it */
+            h->nsrc = 0;
+            h->inf_open = 0;
+            ended = 1;
+        } else if (set_take(h->src, &h->nsrc, src)) {
+            ended = h->nsrc == 0;
+        } else if (set_take(h->inf, &h->ninf, src)) {
+            if (h->ninf == 0 && !h->inf_overflow) h->inf_open = 0;
+            ended = !h->inf_open;
+        } else if (ad->faults & FB_FAULT_UNMATCHED_RELEASE) { /* mutant: any release ends the inferred part */
+            h->inf_open = 0;
+            ended = 1;
+        } else {
+            return; /* not a key that holds this code */
+        }
+        if (ended && h->rel_end < end) h->rel_end = end;
+        hold_settle(h);
         return;
     }
 }
@@ -779,11 +830,12 @@ static void releases_withdrawn(fb_adapter *ad, uint64_t tic) {
     const uint64_t ends = tic > UINT64_MAX - g ? UINT64_MAX : tic + g;
     for (int i = 0; i < FB_HOLD_SLOTS; i++) {
         hold_slot *h = &ad->holds[i];
-        if (h->used && !h->released && h->ends_at == UINT64_MAX) {
-            h->nsrc = 0; /* no release will come for them: the hold is inferred from here */
-            if (h->inferred_end < ends) h->inferred_end = ends;
-            h->ends_at = h->inferred_end;
-        }
+        if (!h->used || !h->nsrc) continue;
+        /* no release will come for them: their keys make the inferred part from here */
+        const uint64_t keep = h->inf_open ? h->inferred_end : 0;
+        for (unsigned j = 0; j < h->nsrc; j++) hold_infer(h, h->src[j], keep > ends ? keep : ends);
+        h->nsrc = 0;
+        hold_settle(h);
     }
 }
 

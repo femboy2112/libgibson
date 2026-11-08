@@ -13,7 +13,7 @@ repository and links this adapter in (see "The engine-port contract").
 |---|---|
 | `fb_adapter.h` / `fb_adapter.c` | the adapter: scaling + half-block lowering, input + hold grace, fixed-tic loop, resize, lifecycle |
 | `synthetic_producer.h` / `.c` | own procedural art: a steerable tunnel, star dust and a ship marker, 320x200 indexed, deterministic state + FNV-1a 64 hash |
-| `fb_adapter_demo.c` | interactive demo, headless replay, and `--selfcheck` (7 properties, 17 negative controls) |
+| `fb_adapter_demo.c` | interactive demo, headless replay, and `--selfcheck` (7 properties, 18 negative controls) |
 | `pty_harness.py` | an independent real-PTY harness: P2 on the wire (needs pyte), P3, P5, P6, P7 through a pty; 9 negative controls |
 | `../../scripts/dev/fb_adapter_consumer.sh` | builds all of it from a temp dir against a staged SDK and runs everything |
 
@@ -92,7 +92,13 @@ trace needs too). A terminal speaking the kitty keyboard protocol answers
 so a tap is as short as the finger and keys held together stay held (a terminal autorepeats only the
 last key pressed, so the grace model drops the first key of a chord). Several keys that `map_key`
 sends to one producer key keep it held until the last of them goes up (inferred holds cannot tell
-such an alias from an autorepeat, so there it re-arms the hold as one). A terminal without the
+such an alias from an autorepeat, so there it re-arms the hold as one). Up to 8 such keys are tracked
+per producer key; a 9th is not recorded and nothing counts it (`keys_dropped` stays 0), so once the
+first 8 are up the producer key is released while the 9th is still down. A hold that began before
+the terminal confirmed keeps its inferred deadline; it ends early only once every key that made it
+has been reported up. **An exact hold has no grace fallback:** a release that never arrives (the
+terminal lost focus and reported none, say; the C ABI does not report focus) keeps the key held
+until the terminal withdraws reporting or the adapter is closed. A terminal without the
 protocol keeps the grace above; one that withdraws re-times only holds still waiting for a release. `fb_adapter_releases_reported(ad)` says which is in force. The observer sees a
 release as `kind | FB_OBSERVED_RELEASE` and the answer as `FB_OBSERVED_RELEASES_ACTIVE` /
 `_UNSUPPORTED`, so the demo's `--trace` replays a kitty session exactly.
@@ -159,8 +165,8 @@ and the demo's report file) for P3, P5, P6 and P7, and adds a wire check for P2.
 
 ### Negative controls (each must FAIL)
 
-`fb_adapter_demo --selfcheck --list-controls` lists the 17 selfcheck controls; `pty_harness.py
---control NAME` runs the 9 PTY ones. The consumer script runs all 26 and requires each to fail.
+`fb_adapter_demo --selfcheck --list-controls` lists the 18 selfcheck controls; `pty_harness.py
+--control NAME` runs the 9 PTY ones. The consumer script runs all 27 and requires each to fail.
 
 | Control | Property | Defect injected | Observed |
 |---|---|---|---|
