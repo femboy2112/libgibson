@@ -125,15 +125,16 @@ commit on a maintenance branch instead of a `main` commit, under **all** of thes
    previous release tag — and the candidate descends from it
    (`git merge-base --is-ancestor <baseline> <candidate>`).
 3. **No imported development.** Against the baseline, the exported C ABI symbol set (the
-   committed `abi/` baseline and what the built library exports), the declarations of the public
+   committed `abi/` baseline and what the built library exports) and its Rust definitions
+   (signatures, `#[repr]` layouts, `GIBSON_*` constants), the declarations of the public
    headers (`include/`; a comment-only change, such as a disclosed limitation, is release
    engineering), the MSRV (`rust-version`) and the frozen PCM golden (`src/audio/`,
    `tests/audio_pocket_voice.rs`) are unchanged, and every later commit is a listed backport of a
    fix (citing its `main` counterpart) or a release-engineering commit (version, changelog,
    documentation, test or CI adaptation). `scripts/release/check-maintenance-candidate.sh` checks
    these structurally, calibrated by `scripts/release/tests/test-maintenance-checker.sh`; it does
-   not judge whether a listed commit is a legitimate backport, which is the independent review's
-   job (condition 5).
+   not judge whether a listed commit is a legitimate backport, nor see a behaviour change behind an
+   unchanged signature; that is the independent review's and CI's job (condition 5).
 4. **Exact tree.** The version tag names the exact commit whose tree the §7 artifacts were built
    from, and `bindings/go/v<x.y.z>` resolves to that same commit.
 5. **Owner approval per release.** Each maintenance-line release needs the owner's explicit

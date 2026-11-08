@@ -29,16 +29,30 @@ maintenance-line exception (below). `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.8
   backports and release engineering, with the C ABI symbol set, header declarations, MSRV and
   frozen PCM golden unchanged. Procedure: `docs/RELEASING.md` §7. Decision record:
   `docs/decisions/0001-v0.6.0-release-line.md` (option A, 0.6.0 from `release/v0.6.0-rc`).
-- **`scripts/release/check-maintenance-candidate.sh`** checks a candidate structurally (ancestry,
-  version, ABI, header declarations, MSRV, PCM golden, branch, tags, allow-listed commits). A header
-  change passes only if it is comment-only, judged by the compiler's own comment stripping
-  (`cc -fpreprocessed -dD -E -P`), and fails closed without a compiler.
-- **`scripts/release/tests/test-maintenance-checker.sh`** calibrates it: a valid candidate and a
-  comment-only header change pass; 17 negative candidates (a 0.7 development commit, a changed ABI
-  baseline, a non-descendant, a missing, extra or misclassified allow-list entry, a library built
-  from another tree, a manifest or release-version mismatch, either tag on another commit, a header
-  declaration, MSRV, PCM producer or new-export change, and no authorized branch) each fail for
-  their intended reason and no other. Raw run: `docs/decisions/0001/calibration-572e551.txt`.
+- **`scripts/release/check-maintenance-candidate.sh`** checks a candidate structurally: ancestry
+  (and that the candidate is not the baseline itself), version, the C ABI, MSRV, PCM golden, an
+  exactly named release branch, tags and allow-listed commits. For the C ABI it compares the
+  exported names (source, `abi/`, and every `gibson_*` symbol of the built library, data symbols
+  included) and the Rust C-ABI surface of `src/` (`scripts/release/maintenance_surface.py`: every
+  exported function's signature and `#[no_mangle]`, exported statics, `#[repr]` struct, enum and
+  union bodies, `GIBSON_*` constant values, and the macros that define exported functions). A header
+  change passes only if it is comment-only: comments are removed by the compiler's own lexer
+  (`cc -fpreprocessed -dD -E -P`) and whitespace is collapsed outside string and character literals;
+  a header with a line splice or a trigraph introducer, a raw string, or no compiler fails closed.
+- **`scripts/release/tests/test-maintenance-checker.sh`** calibrates it in a throwaway clone (every
+  `GIT_*` variable cleared, its git directory verified before any ref is touched) with 33 cases:
+  six that must pass (a valid candidate; a comment-only header change; both tags on the
+  candidate; a doc-only `src/ffi.rs` change; a CRLF two-column allow-list; a synthetic library with
+  exactly the baseline's names) and 27 that must fail for their intended reason and no other (a
+  0.7 development commit, a changed ABI baseline, a non-descendant, the baseline itself, a missing,
+  extra or misclassified allow-list entry, a library from another tree or with an extra data symbol,
+  a manifest or release-version mismatch, either tag on another commit, a header declaration change,
+  a macro hidden by line splices or by a trigraph, whitespace inside a string literal, swapped
+  `#[repr(C)]` fields, a changed parameter type or constant, a new export or exported static, an
+  MSRV or PCM producer change, and no or a wrongly named release branch). Raw run:
+  `docs/decisions/0001/calibration-572e551.txt`. An independent review (Codex) found the bypasses
+  that the line-splice, string-literal, Rust-surface, data-symbol, baseline, branch-name and
+  isolation cases now cover; an earlier count in this PR's description ("20/20") was wrong.
 - **The 0.6 limitations in Release Contract §9** now state that a headless C context's capture grows
   for its lifetime (#297) and how a C program must bound it, and that 0.6.0's `gibson_poll_event`
   on a headless context reports no input (#259).

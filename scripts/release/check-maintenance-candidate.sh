@@ -23,27 +23,41 @@
 #                         symbols must equal the baseline's ABI symbol set exactly
 #
 # Checks:
-#   1. ancestry   the baseline is an ancestor of the candidate
+#   1. ancestry   the baseline is an ancestor of the candidate, and is not the candidate
+#                 itself (the baseline is never tagged; at least one commit follows it)
 #   2. version    the release version is a plain x.y.z; the candidate's Cargo.toml,
 #                 Cargo.lock (libgibson entry) and bindings/python/pyproject.toml carry it
-#   3. C ABI      abi/ is byte-identical to the baseline; include/ is byte-identical or
-#                 differs only in comments (compared with the compiler's own comment
-#                 stripping, `cc -fpreprocessed -dD -E -P`; no compiler = fail closed); the
-#                 gibson_* exports defined in src/ equal the baseline's
-#                 abi/gibson-abi-v1.symbols (the extractor is first calibrated against that
-#                 file at the baseline)
+#   3. C ABI      abi/ is byte-identical to the baseline. include/ is byte-identical, or
+#                 differs only in comments: comments are removed by the compiler's own lexer
+#                 (`cc -fpreprocessed -dD -E -P`) and whitespace is collapsed outside string
+#                 and character literals; a header that contains a line splice (a line ending
+#                 in a backslash) or a trigraph introducer (`??`) in either revision, a raw
+#                 string literal, an added/removed/renamed header, or no compiler fails closed.
+#                 The Rust C-ABI surface of src/ (scripts/release/maintenance_surface.py
+#                 rust-abi: every extern "C" fn gibson_* signature and its #[no_mangle], every
+#                 static gibson_*, every #[repr] struct/enum/union body, every GIBSON_* const
+#                 value, and the macros that define exported functions) equals the baseline's,
+#                 and its exported names equal the baseline's abi/gibson-abi-v1.symbols (the
+#                 extractor is first calibrated against that file at the baseline). With --so,
+#                 every defined gibson_* symbol of the built library (any symbol type) must
+#                 equal that set.
 #   4. MSRV       Cargo.toml rust-version is unchanged
 #   5. PCM golden src/audio/ and tests/audio_pocket_voice.rs (the frozen PCM
 #                 fingerprint) are unchanged
-#   6. branch     a local or remote-tracking ref named release/v<x.y.z>-rc or
-#                 release/<x.y> contains the candidate
+#   6. branch     a local branch refs/heads/release/v<x.y.z>-rc or refs/heads/release/<x.y>, or
+#                 the same name under a configured remote (refs/remotes/<remote>/...), contains
+#                 the candidate
 #   7. tags       v<x.y.z> and bindings/go/v<x.y.z>, if they exist locally, peel to the
 #                 candidate
 #   8. commits    every commit in baseline..candidate is listed (and checked against
 #                 --allow-commits-file when given)
 #
 # Everything is read from git objects, so the working tree is irrelevant and nothing is
-# written. No network access: refs and tags are whatever is local (fetch first).
+# written. No network access: refs and tags are whatever is local (fetch first); a tag that
+# exists only on the remote is invisible here, so RELEASING §7 checks the remote separately.
+# The checker is structural: it does not judge whether a listed commit is a legitimate
+# backport (the independent review does), and it does not see a behaviour change inside an
+# unchanged signature (CI and the review do). Requires git, python3, and cc for include/ diffs.
 # Exit status: 0 PASS, 1 one or more violations, 2 usage or input error.
 
 set -euo pipefail
@@ -84,6 +98,9 @@ if [ -n "$so" ]; then
     [ -f "$so" ] || die "--so library not found: $so"
     command -v nm >/dev/null || die "nm is required for --so"
 fi
+command -v python3 >/dev/null || die "python3 is required (scripts/release/maintenance_surface.py)"
+SURFACE="$REPO_ROOT/scripts/release/maintenance_surface.py"
+[ -f "$SURFACE" ] || die "missing $SURFACE"
 
 violations=0
 pass() { printf 'PASS  %s\n' "$*"; }
@@ -103,43 +120,32 @@ pyproject_version() { show "$1" bindings/python/pyproject.toml | sed -n 's/^vers
 declared_symbols() { show "$1" "$ABI_FILE" | grep -v '^#' | grep -v '^[[:space:]]*$' | sort -u || true; }
 count() { grep -c . || true; }
 
-# src_exports <rev>: the gibson_* names src/ exports — each `extern "C" fn gibson_*`
-# definition, plus the gibson_* first argument of every invocation of a macro whose body
-# defines an `extern "C" fn $name` (src/ffi.rs's node_dim_setter!). A source heuristic,
-# not a link map, so it is calibrated against the committed symbol file at the baseline
-# before its candidate reading counts; --so is the built-library bearing.
-src_exports() {
-    local rev="$1" macros m
+# rust_surface <rev>: the canonical Rust C-ABI surface of src/ at <rev> (see check 3), or a
+# non-zero status if it cannot be parsed (the caller fails closed).
+rust_surface() {
+    local rev="$1" f
     {
-        git grep -h -o -E 'extern "C" fn gibson_[A-Za-z0-9_]+' "$rev" -- src | sed 's/.*fn //' || true
-        macros="$(git grep -E 'macro_rules![[:space:]]*[A-Za-z0-9_]+|extern "C" fn \$' "$rev" -- src \
-            | awk '{
-                f = $0; sub(/:.*/, "", f); rest = substr($0, length(f) + 2)
-                p = rest; sub(/:.*/, "", p); line = substr(rest, length(p) + 2)
-                if (p != cur) { cur = p; m = "" }
-                if (line ~ /macro_rules!/) {
-                    m = line; sub(/.*macro_rules![[:space:]]*/, "", m); sub(/[^A-Za-z0-9_].*/, "", m); next
-                }
-                if (m != "") print m
-              }' | sort -u || true)"
-        for m in $macros; do
-            git grep -h -o -E "(^|[^A-Za-z0-9_])$m![[:space:]]*\([[:space:]]*gibson_[A-Za-z0-9_]+" "$rev" -- src \
-                | sed 's/.*([[:space:]]*//' || true
+        git ls-tree -r --name-only "$rev" -- src | grep '\.rs$' | while IFS= read -r f; do
+            printf '//@file %s\n' "$f"
+            git show "$rev:$f"
+            printf '\n'
         done
-    } | sort -u
+    } | python3 -I "$SURFACE" rust-abi
 }
-# header_decls <rev> <path>: a public header with its C/C++ comments removed by the compiler's
-# own lexer (no macro expansion; directives kept) and whitespace collapsed, so two revisions
-# compare equal iff they differ only in comments or layout. Returns non-zero when no compiler is
-# available or the file is absent, and the caller then counts the header as changed (fail closed).
+# header_decls <rev> <path>: a public header's declarations: comments removed by the compiler's
+# own lexer (no macro expansion; directives kept), whitespace collapsed outside literals. Fails
+# (the caller then counts the header as changed) when the file is absent, no compiler is
+# available, the text has a line splice or a trigraph introducer, or it cannot be normalized.
 header_decls() {
-    local lang=c out
+    local lang=c raw out
     case "$2" in *.hpp|*.hh|*.hxx) lang="c++" ;; esac
     command -v "${CC:-cc}" >/dev/null 2>&1 || return 1
     git cat-file -e "$1:$2" 2>/dev/null || return 1
-    out="$(show "$1" "$2" | "${CC:-cc}" -fpreprocessed -dD -E -P -x "$lang" - 2>/dev/null)" || return 1
+    raw="$(git show "$1:$2" | tr -d '\r')"
+    if printf '%s\n' "$raw" | grep -q -E '\\$|\?\?'; then return 1; fi
+    out="$(printf '%s\n' "$raw" | "${CC:-cc}" -fpreprocessed -dD -E -P -x "$lang" - 2>/dev/null)" || return 1
     [ -n "$out" ] || return 1
-    printf '%s' "$out" | tr -s '[:space:]' ' '
+    printf '%s' "$out" | python3 -I "$SURFACE" header
 }
 # set_delta <expected> <actual>: the symbols missing from (-) and added to (+) <actual>.
 set_delta() {
@@ -154,7 +160,9 @@ echo "check-maintenance-candidate: candidate $C (Cargo.toml $(package_field "$C"
 echo "check-maintenance-candidate: release version $release_version"
 
 # 1. ancestry
-if git merge-base --is-ancestor "$B" "$C"; then
+if [ "$B" = "$C" ]; then
+    fail "ancestry: the candidate is the baseline ${B:0:7} itself; the baseline is never tagged (decision 0001)"
+elif git merge-base --is-ancestor "$B" "$C"; then
     pass "ancestry: baseline ${B:0:7} is an ancestor of candidate ${C:0:7}"
 else
     fail "ancestry: baseline ${B:0:7} is NOT an ancestor of candidate ${C:0:7} (merge-base: $(git merge-base "$B" "$C" | cut -c1-7))"
@@ -176,7 +184,10 @@ done
 
 # 3. C ABI
 b_decl="$(declared_symbols "$B")" c_decl="$(declared_symbols "$C")"
-b_src="$(src_exports "$B")" c_src="$(src_exports "$C")"
+b_surf="$(rust_surface "$B")" || die "cannot parse the Rust C-ABI surface at the baseline"
+if ! c_surf="$(rust_surface "$C")"; then fail "C ABI: cannot parse the Rust C-ABI surface at the candidate (fail closed)"; c_surf=""; fi
+b_src="$(printf '%s\n' "$b_surf" | sed -n 's/^export //p' | sort -u)"
+c_src="$(printf '%s\n' "$c_surf" | sed -n 's/^export //p' | sort -u)"
 n_base="$(printf '%s\n' "$b_decl" | count)"
 if [ -z "$b_decl" ]; then
     fail "C ABI: $ABI_FILE is missing or empty at the baseline; nothing to compare against"
@@ -194,6 +205,13 @@ else
         fail "C ABI: $ABI_FILE lists $(printf '%s\n' "$c_decl" | count) symbols at the candidate, $n_base at the baseline:"
         set_delta "$b_decl" "$c_decl"
     fi
+fi
+if [ -n "$c_surf" ] && [ "$b_surf" = "$c_surf" ]; then
+    pass "C ABI: the Rust C-ABI surface of src/ is identical to the baseline ($(printf '%s\n' "$c_surf" | count) items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)"
+elif [ -n "$c_surf" ]; then
+    fail "C ABI: the Rust C-ABI surface of src/ differs from the baseline:"
+    diff <(printf '%s\n' "$b_surf") <(printf '%s\n' "$c_surf") | grep '^[<>]' | head -n 20 \
+        | sed 's/^</        -/; s/^>/        +/' || true
 fi
 if git diff --quiet "$B" "$C" -- abi/; then
     pass "C ABI: abi/ is byte-identical to the baseline"
@@ -222,7 +240,7 @@ else
     fi
 fi
 if [ -n "$so" ]; then
-    built="$(nm -D --defined-only "$so" 2>/dev/null | awk '$2=="T"{print $3}' | grep '^gibson_' | sort -u || true)"
+    built="$(nm -D --defined-only "$so" 2>/dev/null | awk 'NF>=3{print $3}' | sed 's/@.*//' | grep '^gibson_' | sort -u || true)"
     so_id="$so, sha256 $(sha256sum "$so" | cut -d' ' -f1)"
     if [ -n "$b_decl" ] && [ "$built" = "$b_decl" ]; then
         pass "C ABI: the built library exports the baseline's $n_base gibson_* symbols exactly ($so_id)"
@@ -253,13 +271,17 @@ fi
 
 # 6. branch
 mm="${release_version%.*}"
-branch_re="(^|/)release/(v${release_version//./\\.}-rc|${mm//./\\.})$"
-branches="$(git for-each-ref --contains "$C" --format='%(refname:short)' refs/heads refs/remotes \
-    | grep -E "$branch_re" | tr '\n' ' ' || true)"
+names_re="release/(v${release_version//./\\.}-rc|${mm//./\\.})"
+# shellcheck disable=SC2016 # a literal sed script
+remotes_re="$(git remote | sed 's/[.[\*^$()+?{|]/\\&/g' | paste -sd'|' -)"
+branch_re="^refs/heads/${names_re}\$"
+[ -z "$remotes_re" ] || branch_re="${branch_re}|^refs/remotes/(${remotes_re})/${names_re}\$"
+branches="$(git for-each-ref --contains "$C" --format='%(refname)' refs/heads refs/remotes \
+    | grep -E "$branch_re" | sed 's#^refs/heads/##; s#^refs/remotes/##' | tr '\n' ' ' || true)"
 if [ -n "$branches" ]; then
     pass "branch: candidate is on ${branches% }"
 else
-    fail "branch: no local or remote-tracking ref named release/v$release_version-rc or release/$mm contains the candidate"
+    fail "branch: no branch release/v$release_version-rc or release/$mm (local, or of a configured remote) contains the candidate"
 fi
 
 # 7. tags (local refs only)
@@ -285,7 +307,7 @@ echo "INFO  commits: $n_range in ${B:0:7}..${C:0:7}:"
 if [ -n "$allow_file" ]; then
     allowed=""
     while IFS= read -r raw || [ -n "$raw" ]; do
-        line="${raw%%#*}"
+        line="${raw%%#*}"; line="${line//$'\r'/}"
         read -r sha class _ <<<"$line" || true
         [ -n "${sha:-}" ] || continue
         full="$(git rev-parse --verify --quiet "$sha^{commit}")" || { fail "commits: allow-list entry '$sha' is not a commit"; continue; }
