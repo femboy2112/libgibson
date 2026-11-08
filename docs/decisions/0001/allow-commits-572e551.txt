@@ -1,0 +1,19 @@
+# v0.6.0 maintenance-line qualification record: commit list for release/v0.6.0-rc @ 572e551,
+# baseline 9a899e1 (scripts/release/check-maintenance-candidate.sh --allow-commits-file).
+# "<sha> <backport|release-engineering> <main counterpart or reason>"
+9d8df7cccee7c39e7264154ec818989830e87519 backport #264 run_once idle spin; main #281 1a9c0f5
+3e8a10334c8d1038509dacd7b5bc6bbea9a7841c backport #264 review fixes; main #281 1a9c0f5
+3abbaf853d72fa4b418a5589aeba70445917280f backport #264 test re-review; main #281 1a9c0f5
+f76abc42d02f1b47c7b218d7955ef3354b3a9cc1 release-engineering RC-only adaptation of #264's off-TTY tests (0.6 has no headless injection)
+dd9fb97f36696f629f4dae90d737b137b234624f backport #269/#15 library-owned Unix terminal source; main #282 04c0ad2
+8d2274dd622103dd847b35cbc869bef1a3439e16 backport #269 review fixes; main #282 04c0ad2
+0873374e97abf8665c4c0bfc4e3111633310fc36 backport #269 re-review fixes; main #282 04c0ad2
+b3d65d79ecd8fda87db1a4c50325c86dffcbb567 release-engineering CHANGELOG: the candidate's backports and known limitations
+38287b1c4f2866c5152548195b915c8473c9d39e backport #269 round-3 fixes; main #282 04c0ad2
+1b90b48380b74d273943f359a22e6d51af0c4b12 backport #269 round-4 fixes; main #282 04c0ad2
+74a1ede7eead9a71132ecf081dbec7de057a82fb backport #259 headless context never reads the terminal; main #265 a172723 (guards only)
+c4233ba355db6c51b3953ed464dd26c41b5ef03a backport #259 test review fixes (PR #288)
+ef35650a51de77f18f3cd628dd3e588fbca294d0 backport #259 test re-review fixes (PR #288)
+e6b9c4209eb48b20c229f14abd0845d7a6f341a7 backport merge of PR #288 (#259)
+31d6ec296b1108cd4dd85f4d4a7e297f09fd5ef3 backport #285 key release is not a press; main #289 f365239 (src/input.rs identical)
+572e5519a07f837796838f07717aa6a7ac535232 backport merge of PR #294 (#285)
