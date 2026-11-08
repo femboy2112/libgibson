@@ -62,6 +62,10 @@ fn wait_exit(cap: &mut Capture, what: &str) -> portable_pty::ExitStatus {
     loop {
         let _ = cap.collect_for(Duration::from_millis(20));
         if let Some(s) = cap.try_wait().unwrap() {
+            // The child can write its last bytes (RESTORED, panic cleanup) after the collection
+            // above stopped and before it exited. Read on until EOF, which follows at once now
+            // that it has exited, or for at most 2 s.
+            let _ = cap.collect_for(Duration::from_secs(2));
             return s;
         }
         assert!(Instant::now() < deadline, "[{what}] child did not exit");
@@ -234,11 +238,13 @@ fn a_disconnect_after_enter_interactive_errors_without_spinning() {
         .filter_map(|kv| kv.split_once('='))
         .collect();
     assert_eq!(fields.get("result"), Some(&"err"), "{got}");
-    let polls: u32 = fields["polls"].parse().unwrap();
-    // Each poll waits up to 200 ms; a spinning poll would return Ok(None) at once, many times.
+    // Counted only from the first poll that starts after the child itself sees the hangup on
+    // its terminal, so healthy polls before the master closed (however late the parent closes
+    // it) don't count. A spinning poll would return Ok(None) at once, many times, after it.
+    let after: u32 = fields["after_hangup"].parse().unwrap();
     assert!(
-        polls <= 10,
-        "{polls} polls before the disconnect surfaced: {got}"
+        after <= 10,
+        "{after} polls after the hangup before the disconnect surfaced: {got}"
     );
 }
 
@@ -474,17 +480,38 @@ fn hangup_child() {
     ctx.enter_interactive().expect("enter_interactive");
     say("READY");
     let mut polls = 0u32;
+    let mut after_hangup = 0u32;
     let deadline = Instant::now() + Duration::from_secs(5);
     let result = loop {
         if Instant::now() >= deadline {
             break "timeout".to_string();
         }
         polls += 1;
+        if terminal_hung_up() {
+            after_hangup += 1;
+        }
         match ctx.poll_event(Duration::from_millis(200)) {
             Ok(_) => {}
             Err(e) => break format!("err kind={:?}", e.kind()),
         }
     };
     let (result, kind) = result.split_once(' ').unwrap_or((&result, ""));
-    std::fs::write(out, format!("result={result} {kind} polls={polls}")).unwrap();
+    std::fs::write(
+        out,
+        format!("result={result} {kind} polls={polls} after_hangup={after_hangup}"),
+    )
+    .unwrap();
+}
+
+/// Whether the child's terminal (fd 0, the PTY slave) reports a hangup: the master has closed.
+/// A zero-timeout `poll` reads nothing, so it cannot change what `poll_event` sees.
+fn terminal_hung_up() -> bool {
+    let mut p = libc::pollfd {
+        fd: 0,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: `p` is one initialized entry; fd 0 stays open for the process's lifetime.
+    let ready = unsafe { libc::poll(&mut p, 1, 0) };
+    ready > 0 && p.revents & libc::POLLHUP != 0
 }
