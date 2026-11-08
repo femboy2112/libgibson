@@ -100,6 +100,24 @@ stays 1.85.
   [publication](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6721728874);
   [decision 0001](docs/decisions/0001-v0.6.0-release-line.md), "Outcome".
 
+### Added — Python wrapper: events (v0.8 parity slice, finding F5)
+- **`bindings/python/gibson.py` can push and poll events.** The v0.8 parity consumer
+  no longer needs raw ctypes for `gibson_event_t`. New: the `GibsonEvent` struct (layout checked
+  against the header), the `Event` value type (`Event.char`, `Event.special`, `Event.paste_text`,
+  `Event.resize`), `Context.push_event(event)` and `Context.poll_event(timeout_ms=0, kind=True)`,
+  and the constants `EventType`, `KeyKind`, `Key`, `Mod`, `Status` and `GIBSON_EVENT_QUEUE_CAPACITY`.
+  - A polled `Event` carries the key kind from `gibson_poll_event_kind`, so a typed U+1001 stays
+    distinct from `Key.ENTER`, and it can be pushed back unchanged. `kind=False` calls the kind-less
+    `gibson_poll_event` (`key_kind` is `None`); a `None` key kind on push calls `gibson_push_event`.
+  - A non-OK status raises `GibsonError` (a `RuntimeError`, with `.status` and the thread-local
+    `.last_error` read right after the call); a full queue raises `QueueFullError`. The C ABI, not
+    Python, decides what is invalid; only values that cannot fit the C field raise `ValueError`.
+  - `bindings/python/test_events.py` (new CI step in the Bindings job) covers CHAR/SPECIAL, paste,
+    resize, empty queue, queue full, invalid parameters and the poll-then-push round trip.
+  - `bindings/parity/v08/parity_v08.py` now uses these calls for events (transcript unchanged,
+    byte-identical to C); Python's "Event identity & ordering" and "Geometry" capability labels move
+    PARTIAL to SUPPORTED. No C ABI or Rust change.
+
 ### Added — Rust library (`gibson::Context`): `Context::enter_interactive` ([#296](https://github.com/femboy2112/libgibson/issues/296))
 - `pub fn enter_interactive(&mut self) -> io::Result<()>` enables raw mode and bracketed paste now,
   exactly as the first `poll_event` / `run_once` does. `Context::inline()` and `fullscreen()` still
