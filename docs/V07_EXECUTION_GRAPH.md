@@ -99,7 +99,7 @@ wording below differs, this governs.
   on the v0.6.0 candidate `572e551`. `GIBSON_ABI_VERSION` stays 1.
 - **Node H:** its earlier statement that a handled or ignored SIGHUP can spin in #269 is
   superseded by #282; the row now separates what is tested from what is not.
-- **v0.6.0: not tagged, not released.** HOLD on owner decision #287. The candidate is now
+- **v0.6.0: not tagged, not released** (as of RXIX; *2026-11-08: released as `v0.6.0` → `492d0fe` from `release/v0.6.0-rc`, see #287 and decision 0001*). HOLD on owner decision #287. The candidate is now
   `release/v0.6.0-rc` @ `572e551` = `1b90b48` + the #259 backport (#288, `e6b9c42`) + the #285
   backport (#294, `572e551`), requalified at that exact head: CI 42421627573 (8/8), Release
   Preflight 42421629285 (PASS), `check-maintenance-candidate.sh` PASS (59 symbols, built library
