@@ -1008,13 +1008,9 @@ unsafe fn poll_event_impl(
         // A headless context delivers what was pushed (gibson_push_event), never the process
         // terminal (#259); its queue never waits, so the timeout does not delay it.
         let polled = if c.inner.session.is_headless() {
-            let ev = c.inner.poll_from(&mut c.injected, timeout);
-            if let Ok(Some(Event::Resize(cols, rows))) = &ev {
-                // A delivered resize takes effect as a terminal's does: the next render lays out
-                // at the new geometry.
-                c.inner.session.set_terminal_size(*cols, *rows);
-            }
-            ev
+            // A delivered resize takes effect inside poll_from, the same implementation the Rust
+            // API uses (#293): the next render lays out at the new geometry.
+            c.inner.poll_from(&mut c.injected, timeout)
         } else {
             c.inner.poll_event(timeout)
         };
@@ -1855,9 +1851,12 @@ pub unsafe extern "C" fn gibson_last_error_message(buf: *mut c_char, buf_len: us
 }
 
 /// Copies the ANSI byte stream captured by a headless context (see
-/// [`gibson_create_headless_context`]) since its creation or the last drain, into the
-/// caller-provided `buf`. This is the binary-safe readback that makes cross-language *frame*
-/// parity possible; it mirrors `Context::rendered_bytes` and is **not** NUL-terminated.
+/// [`gibson_create_headless_context`]) since its creation or the last
+/// [`gibson_take_rendered_output`] / [`gibson_clear_rendered_output`], into the caller-provided
+/// `buf`. It only copies: the capture is never drained here, and it keeps every frame's bytes until
+/// one of those two calls (or the context's destruction). This is the binary-safe readback that
+/// makes cross-language *frame* parity possible; it mirrors `Context::rendered_bytes` and is
+/// **not** NUL-terminated.
 ///
 /// `out_len` (required, non-null) always receives the number of bytes available. If `buf` is null
 /// or `cap` is smaller than that length, nothing is copied and `GIBSON_OK` is still returned — the
@@ -1880,6 +1879,66 @@ pub unsafe extern "C" fn gibson_get_rendered_output(
         *out_len = bytes.len();
         if !buf.is_null() && cap >= bytes.len() {
             ptr::copy_nonoverlapping(bytes.as_ptr(), buf, bytes.len());
+        }
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Copies the whole headless capture into `buf` and, only then, empties it (copy-and-clear; the
+/// draining counterpart of [`gibson_get_rendered_output`], mirroring
+/// `Context::take_rendered_bytes`).
+///
+/// `out_len` (required, non-null) always receives the number of bytes available before the call.
+/// Nothing is copied and nothing is removed when `buf` is null or `cap` is smaller than that length
+/// (the size query / undersized buffer; `GIBSON_OK` is still returned, so check `*out_len <= cap`).
+/// The take is all-or-nothing, so a drain never splits an escape sequence. With nothing captured,
+/// and for an interactive (stdout-backed) context, `*out_len` is `0`. A null `ctx` or `out_len` is
+/// `GIBSON_ERR_INVALID_PARAM` and removes nothing. The bytes are cleared only after the copy, so on
+/// `GIBSON_ERR_PANIC` the capture is unchanged. (ABI v1, additive, #297.)
+#[no_mangle]
+pub unsafe extern "C" fn gibson_take_rendered_output(
+    ctx: *mut GibsonContextOpaque,
+    buf: *mut u8,
+    cap: usize,
+    out_len: *mut usize,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || out_len.is_null() {
+            set_last_error("Null ctx or out_len for gibson_take_rendered_output".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let inner = &mut (*ctx).inner;
+        let bytes = inner.rendered_bytes();
+        let len = bytes.len();
+        *out_len = len;
+        if len == 0 || buf.is_null() || cap < len {
+            return GibsonStatus::Ok;
+        }
+        ptr::copy_nonoverlapping(bytes.as_ptr(), buf, len);
+        drop(inner.take_rendered_bytes());
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Discards a headless context's capture without copying it, for a consumer that reads cells
+/// rather than ANSI. `out_discarded` may be null; otherwise it receives the number of bytes
+/// removed (`0` for an interactive context). A null `ctx` is `GIBSON_ERR_INVALID_PARAM`.
+/// (ABI v1, additive, #297.)
+#[no_mangle]
+pub unsafe extern "C" fn gibson_clear_rendered_output(
+    ctx: *mut GibsonContextOpaque,
+    out_discarded: *mut usize,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() {
+            set_last_error("Null ctx for gibson_clear_rendered_output".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let n = (*ctx).inner.take_rendered_bytes().len();
+        if !out_discarded.is_null() {
+            *out_discarded = n;
         }
         GibsonStatus::Ok
     }));

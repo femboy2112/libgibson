@@ -576,29 +576,19 @@ fail_rich:
     return FB_ERR_GIBSON;
 }
 
-/* Headless only: replaces the context once its capture exceeds the limit (finding F1: the C ABI
-   cannot drain a headless context's capture, so it grows by every frame's bytes). */
+/* Headless only: discards the context's ANSI capture once it exceeds the limit (finding F1: a
+   headless capture grows by every frame's bytes until drained; the adapter reads cells, never the
+   ANSI, so it clears rather than takes). The context, its events and its frame are kept. */
 static fb_status rotate_capture_if_needed(fb_adapter *ad) {
     if (!ad->headless || ad->cfg.headless_capture_limit == 0) return FB_OK;
     size_t len = 0;
     if (gibson_get_rendered_output(ad->ctx, NULL, 0, &len) != GIBSON_OK || len <= ad->cfg.headless_capture_limit)
         return FB_OK;
-    gibson_context_t *n = NULL;
-    gibson_status_t st = gibson_create_headless_context(GIBSON_MODE_FULLSCREEN, ad->cols, ad->rows, &n);
+    gibson_status_t st = gibson_clear_rendered_output(ad->ctx, NULL);
     if (st != GIBSON_OK) {
-        set_gibson_err("gibson_create_headless_context (capture rotation)", st);
+        set_gibson_err("gibson_clear_rendered_output", st);
         return FB_ERR_GIBSON;
     }
-    if (ad->cfg.color_depth >= 0) (void)gibson_set_color_depth(n, ad->cfg.color_depth);
-    /* carry undelivered injected events over, in order */
-    for (int i = 0; i < GIBSON_EVENT_QUEUE_CAPACITY; i++) {
-        gibson_event_t ev;
-        uint32_t kind = 0;
-        if (gibson_poll_event_kind(ad->ctx, 0, &ev, &kind) != GIBSON_OK || ev.event_type == GIBSON_EVENT_NONE) break;
-        (void)gibson_push_event_kind(n, &ev, kind);
-    }
-    gibson_destroy_context(ad->ctx);
-    ad->ctx = n;
     ad->ctr.capture_rotations++;
     return FB_OK;
 }

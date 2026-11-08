@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current direction (2026-11-05): v0.6.0 — merged and prepared in source (Renaissance XIV–XVII)
+## Current direction (updated 2026-11-08): v0.6.0 — released from the maintenance line (Renaissance XIV–XVII)
 
 **Canonical roadmap: [issue #191](https://github.com/femboy2112/libgibson/issues/191).** This
 section reconciles #191's R6.1–R6.6 workstreams with what is actually built and verified. The
@@ -15,22 +15,28 @@ the RXIV corrections, the RXV text-input glyph-boundary repair (#252) and the RX
 documentation contract (#254) — **merged to `main` through #253** on 2026-11-05 (merge commit
 `f6cd8c7`, parents `2ffdd92` + `eaa0d1c`), after an independent audit approved exactly `eaa0d1c`;
 exact-main CI 8/8. RXVII then fixed the event-pressure harness race (#255) and bumped the manifests
-to `0.6.0` (merge `9a899e1`, #261). **v0.6.0 is prepared in source only** (Release Contract §1,
-state 1) at `9a899e1`: not tagged, not released, not on any registry; `main` has since opened
-`0.7.0-dev` for the v0.7 work below ("Longer-term horizon"). The current published release is **v0.5.0** (`d8c7b99`, GitHub
-prerelease). *(Until this bump the section described the integration as an unmerged candidate.)*
+to `0.6.0` (merge `9a899e1`, #261), the source-version baseline, which is never tagged.
+**v0.6.0 was released on 2026-11-08** (Release Contract §1, state 2): tag `v0.6.0` → `492d0fe` on
+`release/v0.6.0-rc`, a GitHub prerelease, not on any registry. `main` has since opened
+`0.7.0-dev` for the v0.7 work below ("Longer-term horizon"). The latest published release is
+**v0.6.0**; **v0.5.0** (`d8c7b99`, GitHub prerelease) is the prior one. *(Until this bump the section
+described the integration as an unmerged candidate.)*
 
-*Update 2026-11-07:* v0.6.0 is still not tagged or released. A release candidate,
+*Update 2026-11-07:* v0.6.0 was not yet tagged or released. A release candidate,
 `release/v0.6.0-rc` @ `572e551` (`9a899e1` + the #264, #269, #259 and #285 fixes), passed
-exact-head CI (run 42421627573) and Release Preflight (run 42421629285) and is on **HOLD** for an
-owner decision on the release line ([#287](https://github.com/femboy2112/libgibson/issues/287);
-proposed policy in draft #291). Record of this candidate's qualification:
+exact-head CI (run 42421627573) and Release Preflight (run 42421629285). *Update 2026-11-08:* the
+owner chose option A ([#287](https://github.com/femboy2112/libgibson/issues/287)): 0.6.0 is released
+from `release/v0.6.0-rc` under the approved maintenance-line exception (Release Contract §1,
+[decision 0001](docs/decisions/0001-v0.6.0-release-line.md)) once a final candidate passes every
+gate. It was released at `492d0fe` on 2026-11-08. Record of the `572e551`
+qualification:
 [#287, RXIX comment](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6714185831);
 the earlier `1b90b48` qualification stays in
 [`V06_QUALIFICATION_LEDGER.md`](docs/V06_QUALIFICATION_LEDGER.md), Renaissance XVIII.
 
-> **State legend.** *Released* = in v0.5.0. *Merged* = on `main` (v0.6.0, prepared in source, not
-> released). *Deferred* / *Blocked* as stated.
+> **State legend.** *Released* = in a published release (v0.6.0, 2026-11-08, or earlier). *Merged* =
+> on `main`; the v0.6 items below were merged before the `9a899e1` baseline, which v0.6.0 contains.
+> *Deferred* / *Blocked* as stated.
 
 ### R6.1 — Instrument-driven cinematic grammar — **completed and verified (merged)**
 The interactive live instrument-film (`field_cinema --live --interactive`): a real producer field,
@@ -65,6 +71,9 @@ harnesses ([`docs/SDK_DOOM_HORIZON.md`](docs/SDK_DOOM_HORIZON.md)).
 `gibson_poll_event_kind` / `gibson_push_event_kind`, which tell a typed U+1001–U+100D from a
 `GIBSON_KEY_*` (#274 addressed; legacy `gibson_poll_event` keeps the ambiguity, documented in
 `gibson.h`). v0.6.0 stays at 59; `GIBSON_ABI_VERSION` stays 1.
+*Update 2026-11-08:* **64**: `gibson_take_rendered_output` / `gibson_clear_rendered_output` let a
+C consumer drain or discard a headless context's ANSI capture, which otherwise grows by every
+frame (#297).
 
 ### R6.4 — Extended graphics / media — **explicitly deferred by design**
 `gibson::media` (#186) and `media-deflate` (#188) stay open drafts, promoted only for a concrete
@@ -92,7 +101,7 @@ upstream fix #1128 delivers it (30/30). #1128 is unmerged and crates.io is still
 stays open and is **not** claimed fixed; the fork is not adopted. Next probe: re-run the A/B against
 the first crossterm release containing #1128, then un-ignore
 `event_pressure_pty::context_coincident_lone_key_delivery_acceptance`.
-*Update 2026-11-07:* on `main` (0.7.0-dev) and the held candidate, LibGibson reads a Unix
+*Update 2026-11-07:* on `main` (0.7.0-dev) and the release candidate, LibGibson reads a Unix
 controlling terminal through its own source (#282, `04c0ad2`), which takes a ready key and resize
 in the same pass; that acceptance is enabled there. This fixes #15 on that path only:
 crossterm#1128 is unmerged and crates.io is still 0.29.0, so `9a899e1`, releases through v0.5.0,
@@ -127,7 +136,7 @@ media and sonification are not promoted without a named consumer.
 *Update 2026-10-24: the v0.5.0 interactive-instruments milestone is delivered and
 **released as v0.5.0** (tag `v0.5.0` → `d8c7b99`, GitHub prerelease; see the 2026-10-24
 reconciliation below). The instrument-driven cinematic film moved to 0.6.0.*
-The current published release is v0.5.0 (v0.4.0 is the prior release). This section
+When v0.5.0 shipped it was the published release (v0.4.0 the prior one); v0.6.0 was released on 2026-11-08. This section
 describes the *v0.5 program as originally proposed*; the historical progress and earlier studies below remain evidence,
 not a competing set of current execution priorities.
 

@@ -66,8 +66,17 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// One read's worth of terminal bytes; crossterm uses the same size. A full buffer
-/// tells the decoder more bytes may follow (a lone `ESC` then waits for them).
+/// tells the decoder more bytes may follow (a lone `ESC` then waits for them), as does a read
+/// ending in `ESC` while key-release reporting is confirmed (the Esc key is then `CSI 27u`) or its
+/// answer is pending, for at most [`LONE_ESC_WAIT`].
 const READ_BUF: usize = 1024;
+
+/// How long a lone `ESC` held for the rest of a split sequence (see [`READ_BUF`]) waits before it
+/// is delivered as the Esc key. The rest of a split sequence is the remainder of one terminal write
+/// and follows at once; nothing following means the `ESC` was the key itself (the flags were
+/// cleared behind LibGibson's back, by kitty's reset for instance). 50 ms is Neovim's default
+/// `ttimeoutlen`, the same decision for the same bytes, and well under human reaction time.
+const LONE_ESC_WAIT: Duration = Duration::from_millis(50);
 
 /// The error a hung-up terminal reports. Same kind and message as before #269.
 fn hung_up() -> io::Error {
@@ -94,6 +103,8 @@ pub(crate) struct TtySource {
     size: SizeFn,
     /// Bytes of unfinished sequences discarded because a hangup ended them.
     dropped_partial_bytes: usize,
+    /// When a held lone `ESC` (see [`LONE_ESC_WAIT`]) is delivered as Esc if nothing follows.
+    esc_deadline: Option<Instant>,
     /// Set once a hangup has been reported: from then on every poll reports it, and nothing
     /// observed afterwards (a later resize, say) is delivered as if the terminal were alive.
     hung_up: bool,
@@ -125,21 +136,38 @@ impl TtySource {
     /// The next queued event to hand out. An answer or a key release decoded before reporting was
     /// last turned off or on is dropped (#275 review): the answer is to a request no one is waiting
     /// for, and disabling drops undelivered releases (an application then falls back to inferred
-    /// holds). Presses and everything else are handed out whatever the epoch: they happened.
-    fn next_pending(&mut self) -> Option<SourceEvent> {
+    /// holds). Presses and everything else are handed out whatever the epoch: they happened. So is
+    /// the notice that reporting ended. Each comes with the epoch it was decoded in, which ties an
+    /// answer to its request at hand-out (#275 review 8).
+    fn next_pending(&mut self) -> Option<(u64, SourceEvent)> {
         let now = self.epoch();
         while let Some((epoch, ev)) = self.pending.pop_front() {
             let stale = epoch != now
                 && match &ev {
                     SourceEvent::KeyReleaseReporting(_) => true,
                     SourceEvent::Terminal(CtEvent::Key(k)) => k.kind == KeyEventKind::Release,
-                    SourceEvent::Terminal(_) => false,
+                    SourceEvent::Terminal(_) | SourceEvent::ReportingEnded => false,
                 };
             if !stale {
-                return Some(ev);
+                return Some((epoch, ev));
             }
         }
         None
+    }
+
+    /// Queues an answer decoded in `epoch`, after the notice that reporting ended if the panic
+    /// hook left one (#275 review 8): taken here or by the owner's next `Context` poll, whichever
+    /// comes first, so it is said once, and never after the answer that follows the end.
+    /// (Takes the queue, not `self`: it runs while the parser is being drained.)
+    fn queue_answer(
+        pending: &mut VecDeque<(u64, SourceEvent)>,
+        epoch: u64,
+        answer: KeyReleaseReporting,
+    ) {
+        if crate::session::take_key_releases_ended_notice() {
+            pending.push_back((epoch, SourceEvent::ReportingEnded));
+        }
+        pending.push_back((epoch, SourceEvent::KeyReleaseReporting(answer)));
     }
 }
 
@@ -181,6 +209,7 @@ impl TtySource {
             winch,
             size,
             dropped_partial_bytes: 0,
+            esc_deadline: None,
             hung_up: false,
             winch_id: None,
             #[cfg(test)]
@@ -211,8 +240,18 @@ impl TtySource {
         }))
     }
 
-    /// See the module documentation for the contract.
+    /// [`poll_tagged`](Self::poll_tagged) without the epochs.
+    #[cfg(test)]
     pub(crate) fn poll_source(&mut self, timeout: Duration) -> io::Result<Option<SourceEvent>> {
+        Ok(self.poll_tagged(timeout)?.map(|(_, e)| e))
+    }
+
+    /// See the module documentation for the contract. Each event comes with the key-release
+    /// epoch it was decoded in.
+    pub(crate) fn poll_tagged(
+        &mut self,
+        timeout: Duration,
+    ) -> io::Result<Option<(u64, SourceEvent)>> {
         let deadline = deadline_after(timeout);
         if self.hung_up {
             return Err(hung_up());
@@ -221,11 +260,41 @@ impl TtySource {
             if let Some(event) = self.next_pending() {
                 return Ok(Some(event));
             }
+            if self.esc_deadline.is_some_and(|at| Instant::now() >= at) {
+                // The rest may already be waiting (the events of a full read took longer than the
+                // wait to hand out): read it before deciding the ESC was the Esc key.
+                if fd_readable(self.fd) {
+                    match self.read_once()? {
+                        ReadOutcome::Bytes => {
+                            self.decode();
+                            continue;
+                        }
+                        ReadOutcome::HungUp => return self.report_hangup(),
+                        ReadOutcome::Nothing | ReadOutcome::NotNow => {}
+                    }
+                }
+                self.esc_deadline = None;
+                self.parser.flush_lone_esc();
+                self.decode();
+                continue;
+            }
             let left = match deadline {
                 Some(d) => d.saturating_duration_since(Instant::now()),
                 None => Duration::MAX,
             };
             let forever = deadline.is_none();
+            // A held lone ESC shortens the wait to its own deadline.
+            let (wait, wait_forever) = match self.esc_deadline {
+                Some(at) => {
+                    let esc_left = at.saturating_duration_since(Instant::now());
+                    if forever || esc_left < left {
+                        (esc_left, false)
+                    } else {
+                        (left, forever)
+                    }
+                }
+                None => (left, forever),
+            };
 
             let mut fds = [
                 libc::pollfd {
@@ -243,7 +312,8 @@ impl TtySource {
                 },
             ];
             // SAFETY: `fds` is a valid array of two pollfds; a negative fd is ignored.
-            let rc = unsafe { libc::poll(fds.as_mut_ptr(), 2, poll_timeout_ms(left, forever)) };
+            let rc =
+                unsafe { libc::poll(fds.as_mut_ptr(), 2, poll_timeout_ms(wait, wait_forever)) };
             if rc < 0 {
                 let e = io::Error::last_os_error();
                 if e.kind() == io::ErrorKind::Interrupted {
@@ -257,6 +327,10 @@ impl TtySource {
                 return Err(e);
             }
             if rc == 0 {
+                // A held lone ESC that is now due is delivered before the poll times out.
+                if self.esc_deadline.is_some_and(|at| Instant::now() >= at) {
+                    continue;
+                }
                 // Timed out, unless this was one chunk of a wait longer than poll(2) can
                 // express (or a forever wait): then wait again.
                 if !forever && deadline.is_some_and(|d| Instant::now() >= d) {
@@ -321,7 +395,7 @@ impl TtySource {
 
     /// Reports the hangup, after any event decoded before it was seen. Once reported it is
     /// sticky: see `hung_up`.
-    fn report_hangup(&mut self) -> io::Result<Option<SourceEvent>> {
+    fn report_hangup(&mut self) -> io::Result<Option<(u64, SourceEvent)>> {
         if let Some(event) = self.next_pending() {
             return Ok(Some(event));
         }
@@ -343,7 +417,13 @@ impl TtySource {
         let n = unsafe { libc::read(self.fd, buf.as_mut_ptr().cast(), READ_BUF) };
         if n > 0 {
             let n = n as usize;
-            self.parser.advance(&buf[..n], n == READ_BUF);
+            // While the flags are confirmed (or may be: the answer is pending) the Esc key is
+            // `CSI 27u`, so a read ending in a lone ESC is a sequence split across reads: it waits
+            // for the rest, up to `LONE_ESC_WAIT`.
+            let split = buf[n - 1] == 0x1B && self.esc_may_be_split();
+            self.parser.advance(&buf[..n], n == READ_BUF || split);
+            self.esc_deadline =
+                (split && self.parser.pending_bytes() == 1).then(|| Instant::now() + LONE_ESC_WAIT);
             return Ok(ReadOutcome::Bytes);
         }
         if n == 0 {
@@ -359,6 +439,18 @@ impl TtySource {
         }
         let e = io::Error::last_os_error();
         read_error_outcome(e, fd_reports_hangup(self.fd))
+    }
+
+    /// Whether a read ending in a lone ESC may be a split sequence: key releases are delivered and
+    /// the terminal's latest answer is `Active`, or a request's answer is still pending (it may be
+    /// in this very read, decoded only after it).
+    fn esc_may_be_split(&self) -> bool {
+        #[cfg(test)]
+        let on = self.track_keys || crate::input::key_releases_delivered();
+        #[cfg(not(test))]
+        let on = crate::input::key_releases_delivered();
+        let q = lock_queries();
+        on && (q.last == Some(KeyReleaseReporting::Active) || q.outstanding > 0)
     }
 
     /// Moves every event the parser completed into the hand-out queue.
@@ -385,16 +477,16 @@ impl TtySource {
                 InternalEvent::KittyKey(k, _) => CtEvent::Key(k),
                 // The answers to a key-release reporting request (#275): see `KEYBOARD_QUERIES`.
                 InternalEvent::KeyboardEnhancementFlags(flags) => {
-                    if let Some(r) = lock_queries().flags_reply(flags, delivered) {
-                        self.pending
-                            .push_back((epoch, SourceEvent::KeyReleaseReporting(r)));
+                    let answer = lock_queries().flags_reply(flags, delivered);
+                    if let Some(r) = answer {
+                        Self::queue_answer(&mut self.pending, epoch, r);
                     }
                     continue;
                 }
                 InternalEvent::PrimaryDeviceAttributes => {
-                    if let Some(r) = lock_queries().device_attributes_reply() {
-                        self.pending
-                            .push_back((epoch, SourceEvent::KeyReleaseReporting(r)));
+                    let answer = lock_queries().device_attributes_reply();
+                    if let Some(r) = answer {
+                        Self::queue_answer(&mut self.pending, epoch, r);
                     }
                     continue;
                 }
@@ -452,6 +544,18 @@ fn deadline_after(timeout: Duration) -> Option<Instant> {
     let now = Instant::now();
     now.checked_add(timeout)
         .or_else(|| now.checked_add(Duration::from_secs(u64::from(u32::MAX))))
+}
+
+/// Whether `fd` has bytes to read right now (non-blocking).
+fn fd_readable(fd: RawFd) -> bool {
+    let mut p = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: one valid pollfd; a zero timeout never blocks.
+    let rc = unsafe { libc::poll(&mut p, 1, 0) };
+    rc > 0 && p.revents & libc::POLLIN != 0
 }
 
 /// Whether `fd` reports a hangup, error or invalid descriptor right now (non-blocking).
@@ -624,9 +728,11 @@ impl PressedKeys {
     }
 
     /// The record a repeat or release of `id` (decoded as `code`) belongs to, the most recently
-    /// recorded of: its own identity; a legacy record of the text key it decodes to; and a legacy
-    /// record of any key it decodes to recorded in a later epoch than its own record (that one
-    /// went up unreported while reporting was off, and the key was pressed again since).
+    /// recorded of: its own identity; a legacy record of the text key it decodes to, or of a
+    /// character whose lowercase is its kitty base key (a legacy `W` is the key kitty releases as
+    /// `w`); and a legacy record of any key it decodes to recorded in a later epoch than its own
+    /// record (that one went up unreported while reporting was off, and the key was pressed again
+    /// since).
     ///
     /// Only its own identity for a key kitty sends from the private-use area (57344-63743: the
     /// keypad, media and modifier keys): keypad Left decodes as the arrow Left and keypad `1` as the
@@ -638,8 +744,16 @@ impl PressedKeys {
         if matches!(id, KeyId::Base(b) if KITTY_PRIVATE_USE_KEYS.contains(&b)) {
             return exact;
         }
+        let base = match id {
+            KeyId::Base(b) => char::from_u32(b),
+            KeyId::Code(_) => None,
+        };
+        let folds_to_base = |r: &(KeyId, CtKeyEvent, u64, u64)| match (r.0, base) {
+            (KeyId::Code(CtKeyCode::Char(c)), Some(b)) => c.to_lowercase().eq([b]),
+            _ => false,
+        };
         let text = matches!(code, CtKeyCode::Char(_))
-            .then(|| self.newest(|r| r.0 == legacy))
+            .then(|| self.newest(|r| r.0 == legacy || folds_to_base(r)))
             .flatten();
         let superseding = exact.and_then(|e| {
             let epoch = self.0[e].3;
@@ -653,8 +767,11 @@ impl PressedKeys {
 
     /// `k` as the event to deliver: a press is recorded (replacing an earlier record of the same
     /// key); a repeat or release of a recorded key takes the recorded press's code and modifiers,
-    /// and a release forgets it. A key with no record (already down when reporting began) is
-    /// delivered as decoded.
+    /// and a release forgets it. A repeat of a key with no record (already down when reporting
+    /// began) is delivered as decoded and recorded like a press, so its release takes that name; a
+    /// release with no record is delivered as decoded. A kitty repeat that matched a legacy record
+    /// moves the record to its own identity, so the release finds it whatever kitty names it then
+    /// (a legacy `!`, released as `1`).
     ///
     /// A press is matched by its own identity only. A repeat or release also matches a legacy
     /// record of the text key it decodes to (a `w` typed before the flags were pushed, released as
@@ -674,7 +791,7 @@ impl PressedKeys {
                 self.0[i] = (id, k, seq, epoch);
                 k
             }
-            (KeyEventKind::Press, None) => {
+            (KeyEventKind::Press | KeyEventKind::Repeat, None) => {
                 if self.0.len() == Self::CAP {
                     if let Some(oldest) = (0..self.0.len()).min_by_key(|&n| self.0[n].2) {
                         self.0.remove(oldest);
@@ -685,13 +802,20 @@ impl PressedKeys {
             }
             (KeyEventKind::Repeat, Some(i)) => {
                 let p = self.0[i].1;
+                if self.0[i].0 != id {
+                    // One record per key: any other record of `id` went up unreported.
+                    let mut r = self.0.remove(i);
+                    self.0.retain(|o| o.0 != id);
+                    r.0 = id;
+                    self.0.push(r);
+                }
                 CtKeyEvent::new_with_kind_and_state(p.code, p.modifiers, k.kind, k.state)
             }
             (KeyEventKind::Release, Some(i)) => {
                 let (_, p, _, _) = self.0.remove(i);
                 CtKeyEvent::new_with_kind_and_state(p.code, p.modifiers, k.kind, k.state)
             }
-            (_, None) => k,
+            (KeyEventKind::Release, None) => k,
         }
     }
 }
@@ -699,14 +823,15 @@ impl PressedKeys {
 /// Outstanding key-release reporting requests (#275). Each request is written as push flags,
 /// `CSI ? u` (query the flags) and `CSI c` (primary device attributes). Every terminal answers the
 /// last; only a kitty-protocol terminal answers the second, and it answers first. So per request:
-/// a flags reply with event types => `Active`; one without => `Unsupported`; the attributes reply
-/// with no flags reply before it => `Unsupported`.
+/// a flags reply with every flag pushed (`KEY_RELEASE_FLAGS`) => `Active`; one without them all
+/// => `Unsupported` (with fewer flags, Enter, Tab, Backspace and Esc release as a second press,
+/// and shift+1 reads as `1`); the attributes reply with no flags reply before it => `Unsupported`.
 ///
 /// A device attributes reply cannot be told from one to somebody else's earlier query, and a
 /// stray one arriving first reads as `Unsupported`. A flags reply, though, states the flags in
 /// force on the terminal, whoever asked: while reporting is enabled, one that changes the answer
-/// is reported too, so the stray `Unsupported` is followed by `Active` when kitty's reply arrives
-/// (#275 review). The latest answer is the one in force.
+/// is reported too (#275 review). The first `Unsupported` handed out, by any poll, is final: it
+/// withdraws the request, and a later answer is dropped with it.
 #[derive(Debug, Default)]
 struct KeyboardQueries {
     /// Requests whose device attributes reply has not arrived.
@@ -724,7 +849,9 @@ impl KeyboardQueries {
         flags: KeyboardEnhancementFlags,
         enabled: bool,
     ) -> Option<KeyReleaseReporting> {
-        let r = if flags.contains(KeyboardEnhancementFlags::REPORT_EVENT_TYPES) {
+        let pushed =
+            KeyboardEnhancementFlags::from_bits_truncate(crate::session::KEY_RELEASE_FLAGS);
+        let r = if flags.contains(pushed) {
             KeyReleaseReporting::Active
         } else {
             KeyReleaseReporting::Unsupported
@@ -780,7 +907,10 @@ pub(crate) fn forget_keyboard_replies() {
 ///
 /// Waiting for another thread's poll counts against `timeout`: with the source busy past the
 /// deadline this returns `Ok(None)` rather than queueing behind it.
-pub(crate) fn poll(timeout: Duration, stdin_is_terminal: bool) -> io::Result<Option<SourceEvent>> {
+pub(crate) fn poll(
+    timeout: Duration,
+    stdin_is_terminal: bool,
+) -> io::Result<Option<(u64, SourceEvent)>> {
     use std::sync::atomic::Ordering;
     let deadline = deadline_after(timeout);
     let mut guard = loop {
@@ -816,7 +946,7 @@ pub(crate) fn poll(timeout: Duration, stdin_is_terminal: bool) -> io::Result<Opt
         .as_mut()
         .expect("initialised above")
         .1
-        .poll_source(left)
+        .poll_tagged(left)
 }
 
 /// Retires the terminal source: called when the session gives the terminal up, so a later
@@ -1807,7 +1937,8 @@ mod tests {
 
     #[test]
     fn kitty_272_the_answer_is_delivered_in_input_order() {
-        // The only test that touches the process-global request record.
+        // Touches the process-global request record: see `QUERIES_LOCK`.
+        let _serial = queries_lock();
         forget_keyboard_replies();
         // An answer decoded before a toggle is dropped when handed out after it (#275 re-review).
         expect_keyboard_reply();
@@ -2117,6 +2248,354 @@ mod tests {
         assert_eq!(
             terminal(got.1),
             vec![key('ｶ'), kind(K::Char('ｶ'), M::NONE, Kind::Release)]
+        );
+    }
+
+    /// Serialises the tests that touch the process-global request record (`KEYBOARD_QUERIES`).
+    static QUERIES_LOCK: Mutex<()> = Mutex::new(());
+
+    fn queries_lock() -> std::sync::MutexGuard<'static, ()> {
+        QUERIES_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// The keys a hold tracker keyed by code and modifiers (a release matches its press by
+    /// equality) still holds after `events`, one tic each, with releases reported throughout.
+    /// Modifier keys alone are skipped: they are never delivered.
+    fn still_held(events: &[CtEvent]) -> Vec<(K, M)> {
+        use crate::hold::{HoldConfig, HoldTracker};
+        let mut holds = HoldTracker::new(HoldConfig::new(1, 1));
+        holds.set_releases_reported(true);
+        for (tic, e) in events.iter().enumerate() {
+            let CtEvent::Key(k) = e else { continue };
+            if matches!(k.code, K::Modifier(_)) {
+                continue;
+            }
+            let (tic, key) = (tic as u64, (k.code, k.modifiers));
+            match k.kind {
+                Kind::Release => holds.observe_release(tic, key),
+                _ => holds.observe(tic, key),
+            }
+            .unwrap();
+        }
+        holds.advance(1_000_000).unwrap();
+        holds.held().map(|(k, _)| k).collect()
+    }
+
+    #[test]
+    fn kitty_272_a_repeat_with_no_record_names_its_release() {
+        // Shift+w already down when reporting began (or across a disable/enable, which forgets
+        // every record): kitty's autorepeat is the first thing seen of it. Shift goes up, then w,
+        // which kitty names `w`. The release must end the hold the repeat started.
+        let got = terminal(decode_all(
+            b"\x1b[119:87;2:2u\x1b[57441;1:3u\x1b[119;1:3u",
+            true,
+        ));
+        assert_eq!(
+            got,
+            vec![
+                kind(K::Char('W'), M::NONE, Kind::Repeat),
+                kind(
+                    K::Modifier(ModifierKeyCode::LeftShift),
+                    M::SHIFT,
+                    Kind::Release
+                ),
+                kind(K::Char('W'), M::NONE, Kind::Release),
+            ]
+        );
+        assert_eq!(still_held(&got), vec![]);
+        // Ctrl+w likewise: ctrl goes up first, and kitty names the release plain `w`.
+        let got = terminal(decode_all(
+            b"\x1b[119;5:2u\x1b[57442;1:3u\x1b[119;1:3u",
+            true,
+        ));
+        assert_eq!(got[0], kind(K::Char('w'), M::CONTROL, Kind::Repeat));
+        assert_eq!(got[2], kind(K::Char('w'), M::CONTROL, Kind::Release));
+        assert_eq!(still_held(&got), vec![]);
+    }
+
+    #[test]
+    fn kitty_272_a_legacy_shifted_or_control_press_names_its_release() {
+        // Typed while delivery was on but before the push took effect: a legacy `W` (shift+w), then
+        // shift up and kitty's release of w, named `w`; again with a kitty autorepeat in between.
+        // A legacy ctrl+w (0x17) released after ctrl already matched; it must still.
+        let got = terminal(decode_all(
+            b"W\x1b[57441;1:3u\x1b[119;1:3u\
+              W\x1b[119:87;2:2u\x1b[57441;1:3u\x1b[119;1:3u\
+              \x17\x1b[57442;1:3u\x1b[119;1:3u",
+            true,
+        ));
+        let names: Vec<(K, M, Kind)> = got
+            .iter()
+            .filter_map(|e| match e {
+                CtEvent::Key(k) if !matches!(k.code, K::Modifier(_)) => {
+                    Some((k.code, k.modifiers, k.kind))
+                }
+                CtEvent::Key(_) => None,
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                (K::Char('W'), M::SHIFT, Kind::Press),
+                (K::Char('W'), M::SHIFT, Kind::Release),
+                (K::Char('W'), M::SHIFT, Kind::Press),
+                (K::Char('W'), M::SHIFT, Kind::Repeat),
+                (K::Char('W'), M::SHIFT, Kind::Release),
+                (K::Char('w'), M::CONTROL, Kind::Press),
+                (K::Char('w'), M::CONTROL, Kind::Release),
+            ]
+        );
+        assert_eq!(still_held(&got), vec![]);
+    }
+
+    #[test]
+    fn kitty_272_a_legacy_shifted_symbol_repeated_by_kitty_names_its_release() {
+        // A legacy `!` (shift+1) recorded before the push took effect, autorepeated by kitty as
+        // `CSI 49:33;2:2u`, then shift up and kitty's release of the key, named `1`.
+        let got = terminal(decode_all(
+            b"!\x1b[49:33;2:2u\x1b[57441;1:3u\x1b[49;1:3u",
+            true,
+        ));
+        assert_eq!(got[1], kind(K::Char('!'), M::NONE, Kind::Repeat));
+        assert_eq!(got[3], kind(K::Char('!'), M::NONE, Kind::Release));
+        assert_eq!(still_held(&got), vec![]);
+    }
+
+    #[test]
+    fn kitty_272_active_needs_every_flag_pushed() {
+        // LibGibson pushes 15. Without 8, Enter/Tab/Backspace/Esc release as their legacy byte (a
+        // second press); without 4, shift+1 reads as `1` with shift. A reply missing any of them is
+        // not the protocol LibGibson decodes. 16 (associated text) only appends a field the
+        // decoder ignores, so a superset is Active.
+        for (bits, want) in [
+            (2, KeyReleaseReporting::Unsupported),
+            (3, KeyReleaseReporting::Unsupported),
+            (7, KeyReleaseReporting::Unsupported),
+            (11, KeyReleaseReporting::Unsupported),
+            (14, KeyReleaseReporting::Unsupported),
+            (15, KeyReleaseReporting::Active),
+            (31, KeyReleaseReporting::Active),
+        ] {
+            let mut q = KeyboardQueries::default();
+            q.outstanding += 1;
+            assert_eq!(
+                q.flags_reply(F::from_bits_truncate(bits), true),
+                Some(want),
+                "flags reply {bits}"
+            );
+        }
+    }
+
+    #[test]
+    fn kitty_272_a_read_split_after_esc_while_active_keeps_the_sequence() {
+        // While the flags are confirmed, kitty sends the Esc key as `CSI 27u`: a read that ends
+        // in a lone ESC is a sequence split across reads, not the Esc key.
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        expect_keyboard_reply();
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            let mut out = Vec::new();
+            let drain = |s: &mut TtySource, out: &mut Vec<SourceEvent>| {
+                while let Ok(Some(e)) = s.poll_source(Duration::from_millis(200)) {
+                    out.push(e);
+                }
+            };
+            write_all(&master, b"\x1b[?15u\x1b[?62;c\x1b[119u");
+            drain(s, &mut out);
+            write_all(&master, b"\x1b");
+            // One read takes the lone ESC; it is held (nothing delivered) while the rest follows
+            // within `LONE_ESC_WAIT`, in a second read.
+            assert_eq!(s.poll_source(Duration::from_millis(10)).unwrap(), None);
+            write_all(&master, b"[119;1:3u");
+            drain(s, &mut out);
+            drop(master);
+            out
+        });
+        forget_keyboard_replies();
+        assert_eq!(
+            got,
+            vec![
+                SourceEvent::KeyReleaseReporting(KeyReleaseReporting::Active),
+                SourceEvent::Terminal(key('w')),
+                SourceEvent::Terminal(kind(K::Char('w'), M::NONE, Kind::Release)),
+            ]
+        );
+        // Not confirmed: a read ending in a lone ESC is the Esc key, at once, as before.
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            write_all(&master, b"\x1b");
+            let esc = s.poll_source(Duration::from_millis(200)).unwrap();
+            drop(master);
+            esc
+        });
+        assert_eq!(
+            got,
+            Some(SourceEvent::Terminal(CtEvent::Key(K::Esc.into())))
+        );
+    }
+
+    #[test]
+    fn kitty_272_what_flags_15_change_in_decoded_keys() {
+        // The rustdoc of `set_key_release_reporting` states what reporting changes in the keys
+        // delivered. Each pair: what kitty sends with flags 15, and the legacy bytes for the same
+        // keystroke without them.
+        let names = |bytes: &'static [u8]| -> Vec<(K, M)> {
+            terminal(decode_all(bytes, false))
+                .into_iter()
+                .map(|e| match e {
+                    CtEvent::Key(k) => (k.code, k.modifiers),
+                    other => panic!("{other:?}"),
+                })
+                .collect()
+        };
+        // The same: Esc, Enter, Tab, Backspace, ctrl and alt chords, shifted symbols.
+        assert_eq!(
+            names(b"\x1b[13u\x1b[9u\x1b[127u\x1b[97;5u\x1b[97;3u\x1b[49:33;2u\x1b[9;2u\x1b[27u"),
+            names(b"\r\t\x7f\x01\x1ba!\x1b[Z\x1b"),
+        );
+        // Different: a shifted letter carries no SHIFT; Caps Lock does not change the letter;
+        // ctrl+i, ctrl+m and ctrl+[ are ctrl chords, not Tab, Enter and Esc.
+        assert_eq!(
+            names(b"\x1b[97:65;2u\x1b[119:87;6u\x1b[97;65u\x1b[105;5u\x1b[109;5u\x1b[91;5u"),
+            vec![
+                (K::Char('A'), M::NONE),
+                (K::Char('W'), M::CONTROL),
+                (K::Char('a'), M::NONE),
+                (K::Char('i'), M::CONTROL),
+                (K::Char('m'), M::CONTROL),
+                (K::Char('['), M::CONTROL),
+            ]
+        );
+        assert_eq!(
+            names(b"A\x17A\t\r"),
+            vec![
+                (K::Char('A'), M::SHIFT),
+                (K::Char('w'), M::CONTROL),
+                (K::Char('A'), M::SHIFT),
+                (K::Tab, M::NONE),
+                (K::Enter, M::NONE),
+            ]
+        );
+    }
+
+    #[test]
+    fn kitty_272_a_held_lone_esc_is_the_esc_key_once_nothing_follows() {
+        // Confirmed, but the flags were cleared behind LibGibson's back (kitty's reset): the Esc
+        // key arrives as a lone ESC with nothing after it. It is held only briefly, then delivered
+        // as Esc, and the next key is not taken for an Alt chord.
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        expect_keyboard_reply();
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            write_all(&master, b"\x1b[?15u\x1b[?62;c");
+            let active = s.poll_source(Duration::from_millis(500)).unwrap();
+            write_all(&master, b"\x1b");
+            let start = Instant::now();
+            let esc = s.poll_source(Duration::from_millis(1000)).unwrap();
+            let waited = start.elapsed();
+            write_all(&master, b"a");
+            let next = s.poll_source(Duration::from_millis(500)).unwrap();
+            drop(master);
+            (active, esc, waited, next)
+        });
+        forget_keyboard_replies();
+        assert_eq!(
+            got.0,
+            Some(SourceEvent::KeyReleaseReporting(
+                KeyReleaseReporting::Active
+            ))
+        );
+        assert_eq!(
+            got.1,
+            Some(SourceEvent::Terminal(CtEvent::Key(K::Esc.into())))
+        );
+        assert!(
+            got.2 >= LONE_ESC_WAIT && got.2 < LONE_ESC_WAIT + Duration::from_millis(400),
+            "{:?}",
+            got.2
+        );
+        assert_eq!(got.3, Some(SourceEvent::Terminal(key('a'))));
+    }
+
+    #[test]
+    fn kitty_272_an_expired_esc_hold_reads_what_is_already_waiting_first() {
+        // #275 review 8: a full read ends in a lone ESC whose continuation is already on the fd;
+        // the 145 events it decoded are handed out over more than `LONE_ESC_WAIT`. The expired
+        // hold must read the waiting bytes before deciding the ESC was the Esc key.
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        expect_keyboard_reply();
+        let mut first = Vec::new();
+        for _ in 0..67 {
+            first.extend_from_slice(b"\x1b[97u\x1b[97;1:3u");
+        }
+        for _ in 0..5 {
+            first.extend_from_slice(b"\x1b[119u\x1b[119;1:3u");
+        }
+        first.extend_from_slice(b"\x1b[97u\x1b");
+        assert_eq!(first.len(), READ_BUF);
+        first.extend_from_slice(b"[97;1:3u");
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            write_all(&master, b"\x1b[?15u\x1b[?62;c");
+            let active = s.poll_source(Duration::from_millis(500)).unwrap();
+            write_all(&master, &first);
+            let mut out = vec![s.poll_source(Duration::from_millis(500)).unwrap()];
+            thread::sleep(LONE_ESC_WAIT + Duration::from_millis(30));
+            while let Ok(Some(e)) = s.poll_source(Duration::from_millis(200)) {
+                out.push(Some(e));
+            }
+            drop(master);
+            (active, out)
+        });
+        forget_keyboard_replies();
+        assert_eq!(
+            got.0,
+            Some(SourceEvent::KeyReleaseReporting(
+                KeyReleaseReporting::Active
+            ))
+        );
+        let got = terminal(got.1.into_iter().flatten().collect());
+        assert_eq!(got.len(), 146, "{:?}", &got[140..]);
+        assert_eq!(got[144], key('a'));
+        assert_eq!(got[145], kind(K::Char('a'), M::NONE, Kind::Release));
+    }
+
+    #[test]
+    fn kitty_272_a_split_esc_in_the_read_that_confirms_reporting_is_held() {
+        // #275 review 8: the answer and a lone ESC arrive in one read; the rest of the ESC's
+        // sequence in the next. Reporting is not yet confirmed when the read is decoded, but its
+        // answer is pending: the ESC is held.
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        expect_keyboard_reply();
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            write_all(&master, b"\x1b[?15u\x1b[?62;c\x1b[119u\x1b");
+            let mut out = vec![s.poll_source(Duration::from_millis(500)).unwrap()];
+            write_all(&master, b"[119;1:3u");
+            while let Ok(Some(e)) = s.poll_source(Duration::from_millis(200)) {
+                out.push(Some(e));
+            }
+            drop(master);
+            out
+        });
+        forget_keyboard_replies();
+        assert_eq!(
+            got.into_iter().flatten().collect::<Vec<_>>(),
+            vec![
+                SourceEvent::KeyReleaseReporting(KeyReleaseReporting::Active),
+                SourceEvent::Terminal(key('w')),
+                SourceEvent::Terminal(kind(K::Char('w'), M::NONE, Kind::Release)),
+            ]
         );
     }
 }

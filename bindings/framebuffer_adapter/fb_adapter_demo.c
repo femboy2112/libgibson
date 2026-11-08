@@ -557,7 +557,7 @@ static const struct {
     {"p6-retry-io", 6, "mutant adapter: GIBSON_ERR_IO from a poll is ignored"},
     {"p6-sticky-signal", 6, "mutant adapter: a handled signal also ends every later adapter"},
     {"p7-leak", 7, "mutant adapter: each present leaks 64 KiB"},
-    {"p7-no-rotation", 7, "headless capture never rotated (the library's capture grows: finding F1)"},
+    {"p7-no-rotation", 7, "headless capture never cleared (the library's capture grows: finding F1)"},
     {"p7-slow-present", 7, "mutant adapter: every 35th present stalls 400 ms"},
 };
 
@@ -1652,7 +1652,7 @@ static int prop7(char *ev) {
         ev_append(ev, "%ux%u: %zu frames, VmHWM %ld->%ld->%ld KiB at frames 200/%zu/%zu (settling %+ld, not gated; "
                       "second half %+ld, gate <= %ld: %s) ru_maxrss %ld->%ld KiB, lower mean %.0f p99 %.0f us, "
                       "render mean %.0f p99 %.0f us, total mean %.0f p99 %.0f us (gate p99 <= %.0f us: %s), "
-                      "late/early mean %.2f (gate <= 1.50: %s), capture rotations %llu, capture now %zu B; ",
+                      "late/early mean %.2f (gate <= 1.50: %s), capture clears %llu, capture now %zu B; ",
                   cc, rr, n, hw0, hwm, hw1, (size_t)(P7_WARM + (n - P7_WARM) / 2), n, settle, growth, tol_kb,
                   mem_ok ? "pass" : "FAIL", mr0, mr1, lm, lp, rm, rp, tm, tp, budget_us, budget_ok ? "pass" : "FAIL",
                   early > 0 ? late / early : 0, creep_ok ? "pass" : "FAIL", rot, caplen);

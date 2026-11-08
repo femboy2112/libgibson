@@ -17,11 +17,152 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Development toward **0.7.0** — a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)). This is the working development
-line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 remains **prepared in source at
-`9a899e1`** (release state 1 — not tagged, not released). It is never tagged on a later `main`;
-whether a `v0.6.0` tag names the corrected candidate `release/v0.6.0-rc` @ `572e551` is the owner's
-decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed policy in #291).
-`GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
+line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 was **released on 2026-11-08** from
+`release/v0.6.0-rc` (tag `v0.6.0` → `492d0fe`) under the approved maintenance-line exception
+(below); its source-version baseline `9a899e1` is never tagged. `GIBSON_ABI_VERSION` stays 1; MSRV
+stays 1.85.
+
+### Fixed — Go binding (`bindings/go`): a failed `NewContext` reports its own error message
+- **`NewContext` now reads the failure message on the same OS thread as the failing call.**
+  The native last error is thread-local, and the wrapper fetched it with a second cgo call; Go may
+  move a goroutine between the two. Reproduced on gccgo 1.18 by `TestNewContextErrorIsFromItsOwnCall`
+  (64 goroutines, each with its own invalid mode, so its own expected message; GOMAXPROCS 8;
+  unlocked polluter goroutines writing a third text): on the old wrapper **12 of 12 runs** failed,
+  with **4,601 foreign messages of 1,536,000 calls** (another goroutine's mode or the polluters'
+  text). The fixed wrapper: 0 of 1,536,000. The gc toolchain was not run locally. Create and read
+  now happen in one C helper, one cgo call. Go API unchanged.
+  ([`docs/V08_PARITY_SLICE.md`](docs/V08_PARITY_SLICE.md) F6)
+
+### Release engineering — maintenance-line releases approved ([#287](https://github.com/femboy2112/libgibson/issues/287), #291)
+- **Release Contract §1 gains an approved maintenance-line exception** (owner decision 2026-11-08,
+  conditional on its gates): a `v<x.y.z>` tag may name a qualified commit on `release/v<x.y.z>-rc`
+  or `release/<x.y>` that descends from the version's source baseline and adds only listed
+  backports and release engineering, with the C ABI symbol set, header declarations, MSRV and
+  frozen PCM golden unchanged. Procedure: `docs/RELEASING.md` §7. Decision record:
+  `docs/decisions/0001-v0.6.0-release-line.md` (option A, 0.6.0 from `release/v0.6.0-rc`).
+- **`scripts/release/check-maintenance-candidate.sh`** checks a candidate structurally: ancestry
+  (and that the candidate is not the baseline itself), version, the C ABI, MSRV, the PCM golden, the
+  C ABI layout oracle (`tests/ffi_abi_layout_freeze.rs`, which CI runs, unchanged), an exactly named
+  release branch, tags and allow-listed commits. For the C ABI it compares:
+  - the exported names, from source, from `abi/`, and from every `gibson_*` symbol of the built
+    library, data symbols included;
+  - the Rust C-ABI surface of the files that export (`scripts/release/maintenance_surface.py`):
+    - every `extern "C"` function's signature, generics and non-doc attributes (`no_mangle`,
+      `export_name`, `cfg`);
+    - exported statics;
+    - `#[repr]` struct, enum and union bodies;
+    - `GIBSON_*` constant values;
+    - type aliases, imports and module declarations;
+    - the macros that define exported functions.
+
+  A header change passes only if it is comment-only. Comments are removed by the compiler's own
+  lexer (`cc -fpreprocessed -dD -E -P`) and whitespace is collapsed outside string and character
+  literals. These fail closed: a header with a line splice or a trigraph introducer, a raw string,
+  no compiler, and any failure of a tool feeding a check (git, nm, python3), including a tool that
+  dies after printing part of its output. Parsing involves no pipes into early-exiting readers and
+  no here-strings, so it has no IO failure mode of its own.
+- **`scripts/release/tests/test-maintenance-checker.sh`** calibrates the checker with 47 cases in a
+  throwaway clone. Every `GIT_*` variable is cleared first, and the clone's git directory is
+  verified before any ref is touched.
+  - **9 must pass:**
+    - a valid candidate;
+    - a comment-only header change;
+    - both tags on the candidate;
+    - a doc-only `src/ffi.rs` change;
+    - a CRLF two-column allow-list;
+    - a synthetic library with exactly the baseline's names;
+    - a new non-exporting `#[cfg(unix)]` module, the shape of the #269 backport;
+    - a `#[cfg(test)]` module with imports in `src/ffi.rs`;
+    - a `Cargo.toml` with 20,000 comment lines.
+  - **38 must fail, each for its intended reason and no other:**
+    - candidate identity: a 0.7 development commit; a non-descendant; the baseline itself;
+    - ABI baseline and library: a changed ABI baseline; a library from another tree or with an
+      extra data symbol;
+    - allow-list: a missing, extra or misclassified entry;
+    - version and tags: a manifest or release-version mismatch; either tag on another commit;
+    - headers: a declaration change; a macro hidden by line splices, by a trigraph or behind 84 KB
+      of padding; whitespace inside a string literal;
+    - Rust surface: swapped `#[repr(C)]` fields; a changed parameter type or constant; `cfg` or
+      generics on an export; an `export_name` export; a new type alias; a new export or exported
+      static;
+    - frozen files and branches: an edited layout oracle; an MSRV or PCM producer change; no
+      release branch, or a wrongly named one;
+    - unreadable input: an unreadable `src/` file;
+    - fault injection: four tools that die after printing.
+
+  Raw run: `docs/decisions/0001/calibration-572e551.txt`. Mutation controls (each guard reverted
+  turns exactly its cases wrong): `docs/decisions/0001/checker-mutation-controls.txt`.
+
+  Three rounds of independent (Codex) review found the bypasses these cases now cover. An earlier
+  count in this PR's description ("20/20") was wrong. **The checker's boundary:** its Rust surface
+  parses the constructs this crate's C ABI uses. The export set is settled by `--so` (required to
+  qualify), struct layouts by the frozen layout oracle in CI, and anything else by the independent
+  review.
+- **The 0.6 limitations in Release Contract §9** now state that a headless C context's capture grows
+  for its lifetime (#297) and how a C program must bound it, and that 0.6.0's `gibson_poll_event`
+  on a headless context reports no input (#259).
+- **v0.6.0 published (state 2); post-release records.** v0.6.0 was released on 2026-11-08 as a
+  GitHub prerelease from `release/v0.6.0-rc` (tag `v0.6.0` → `492d0fe`; `bindings/go/v0.6.0` names
+  the same commit). `main` stays `0.7.0-dev` and was not merged with the maintenance branch; nothing
+  was uploaded to crates.io, PyPI or the Go proxy. Receipts for the released commit:
+  `docs/decisions/0001/allow-commits-492d0fe.txt`, `docs/decisions/0001/checker-492d0fe.txt`
+  (RESULT: PASS with tags present) and `docs/decisions/0001/calibration-492d0fe.txt` (47 of 47).
+  Records: [qualification](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6721675144),
+  [publication](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6721728874);
+  [decision 0001](docs/decisions/0001-v0.6.0-release-line.md), "Outcome".
+
+### Added — Python wrapper: events (v0.8 parity slice, finding F5)
+- **`bindings/python/gibson.py` can push and poll events.** The v0.8 parity consumer
+  no longer needs raw ctypes for `gibson_event_t`. New: the `GibsonEvent` struct (layout checked
+  against the header), the `Event` value type (`Event.char`, `Event.special`, `Event.paste_text`,
+  `Event.resize`), `Context.push_event(event)` and `Context.poll_event(timeout_ms=0, kind=True)`,
+  and the constants `EventType`, `KeyKind`, `Key`, `Mod`, `Status` and `GIBSON_EVENT_QUEUE_CAPACITY`.
+  - A polled `Event` carries the key kind from `gibson_poll_event_kind`, so a typed U+1001 stays
+    distinct from `Key.ENTER`, and a polled KEY, PASTE or RESIZE can be pushed back unchanged
+    (a NONE from an empty queue cannot; the C ABI refuses NONE). `kind=False` calls the kind-less
+    `gibson_poll_event` (`key_kind` is `None`); a `None` key kind on push calls `gibson_push_event`.
+  - A non-OK status raises `GibsonError` (a `RuntimeError`, with `.status` and the thread-local
+    `.last_error` read right after the call); a full queue raises `QueueFullError`. The C ABI, not
+    Python, decides which events are invalid. Python raises `ValueError` (`UnicodeEncodeError` is one)
+    only when it cannot build the C struct, for example a value that does not fit its C field, or a
+    paste `str` that cannot be encoded as UTF-8 or contains a NUL byte.
+  - `bindings/python/test_events.py` (new CI step in the Bindings job) covers CHAR/SPECIAL, paste,
+    resize, empty queue, queue full, invalid parameters and the poll-then-push round trip.
+  - `bindings/parity/v08/parity_v08.py` now uses these calls for events (transcript unchanged,
+    byte-identical to C); Python's "Event identity & ordering" and "Geometry" capability labels move
+    PARTIAL to SUPPORTED. No C ABI or Rust change.
+
+### Added — Rust library (`gibson::Context`): `Context::enter_interactive` ([#296](https://github.com/femboy2112/libgibson/issues/296))
+- `pub fn enter_interactive(&mut self) -> io::Result<()>` enables raw mode and bracketed paste now,
+  exactly as the first `poll_event` / `run_once` does. `Context::inline()` and `fullscreen()` still
+  leave it to the first poll, so output shown before that poll (a READY line, a first frame) was on
+  a cooked tty: the kernel echoed type-ahead, and ICRNL turned Enter into `\n`, which raw decoding
+  reads as Ctrl+J, so a line typed at "ready" was never submitted. Call it before the first output
+  and "the screen says ready" implies "the terminal is interactive".
+- Idempotent (a second call and later polls write nothing more); a no-op returning `Ok` on a
+  headless context and on a non-TTY stdout. `restore()`, `Drop` and the panic hook undo it as they
+  undo the first poll's. After `restore()` it returns an error (`ErrorKind::NotConnected`) instead
+  of re-entering raw mode on a terminal the context no longer owns.
+- The downstream workaround, `poll_event(Duration::ZERO)` before the first output, is no longer
+  needed.
+- `tests/enter_interactive_pty.rs` is a deterministic real-PTY probe: with the call, `hello\r`
+  typed at READY is five characters and one Enter with no kernel echo; without it (the old
+  behaviour, held so the race is not a race) the same probe fails with an echo and Ctrl+J.
+
+### Fixed — Rust library (`gibson::Context`): a delivered resize resizes a headless context ([#293](https://github.com/femboy2112/libgibson/issues/293))
+- `Context::poll_from` on a **headless** context now applies a delivered `Event::Resize(cols, rows)`
+  before it returns, so the next render lays out against the new terminal size (a fullscreen frame
+  is `cols`×`rows`; an inline frame is `cols` wide and as tall as its content, at most
+  `max(rows - 1, 1)` rows, as on a terminal). It used to only schedule a
+  render, which then re-read the old size, while the C ABI's `gibson_poll_event` applied it: a
+  Rust consumer had to call `ctx.session.set_terminal_size` itself to match C. Both now call one
+  implementation in `Context`; the copy in `src/ffi.rs` is gone.
+- **Zero sizes:** a resize with a zero width or height is still delivered but is not applied (the
+  geometry stays). The C ABI already refuses to queue one (`GIBSON_ERR_INVALID_PARAM`), so neither
+  side ever gives a headless context a zero geometry through a resize.
+- A terminal (non-headless) context is unchanged: its geometry is observed from the terminal.
+- The v0.8 parity slice's Rust consumer now uses `poll_from` alone; it produces the C records
+  r02/r03/r04 byte-identically without the manual resize step.
 
 ### Added — key-release reporting on kitty-protocol terminals ([#275](https://github.com/femboy2112/libgibson/issues/275))
 - **Opt-in, Rust only for now:** `TerminalSession::set_key_release_reporting(true)` (reached as
@@ -65,8 +206,8 @@ decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed p
   events (not in CI).
 - **Review hardening (Codex, 7 P2 + 3 P3, all fixed with a test that fails without the fix):** the
   pop is claimed once, so a panic followed by the unwinding restore pops once; a restored session
-  cannot enable; a stray device-attributes reply (somebody else's earlier query) that reads as
-  `Unsupported` is corrected by kitty's flags reply, which states the flags in force; after a
+  cannot enable; a stray device-attributes reply (somebody else's earlier query) cannot be told
+  from a terminal without the protocol and reads as `Unsupported` (final, see below); after a
   disable, a late answer or release is dropped at delivery; a keypad key never takes over the
   record of the arrow with the same code; a name recorded before a disable/enable loses to the key's newer press;
   DEEP SIGNAL keeps holds per physical key, so releasing W while Up is down keeps moving forward;
@@ -77,8 +218,32 @@ decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed p
   after a caught panic the session reports reporting off and can enable it again. A third pass:
   a release decoded before a toggle is dropped too (as disabling promises); a legacy record of any
   key recorded in a later epoch supersedes a stale record of it (ctrl+Enter released unreported,
-  then plain Enter); and re-enabling after a caught panic restores raw mode.
-- **C ABI v1, additive (62 → 63 symbols):** `gibson_set_key_release_reporting(ctx, enabled)` and
+  then plain Enter); and re-enabling after a caught panic restores raw mode. A further review: a
+  key already down when reporting began is named by its first kitty autorepeat, and kitty's
+  release matches a legacy capital (`W`, released as `w`) or a legacy symbol kitty autorepeated
+  (`!`, released as `1`), so each such release ends its hold (known limit: a shifted symbol pressed
+  just before the flags take effect, as during a screen switch, and let go without an autorepeat is
+  still released as `1`, so that release does not end its hold,
+  [#312](https://github.com/femboy2112/libgibson/issues/312)); `Active` needs every flag pushed (a
+  terminal that took only some, such as 3, 7 or 11, answers `Unsupported`); **`Unsupported` is
+  final:** once any poll hands it out (a `Context` poll, `input::poll_event`, a `TerminalSource`,
+  whichever context reads it), no release is delivered from then on, including any queued behind the
+  answer, while an answer to an earlier request (one decoded before reporting was last enabled or
+  disabled) is dropped by whichever poll reads it and changes nothing, the check and the end of
+  delivery being one atomic step; the owning session withdraws its push with one pop (never repeated
+  at restore, `Drop` or in the panic hook): at once if its own `Context` poll handed the answer out,
+  otherwise on its next `Context` poll, enable, disable or screen switch, or at restore. The
+  terminal then goes back to legacy keys (one `\r` per Enter). Once the panic hook has popped the
+  flags, even for a caught panic, no release or terminal answer is delivered and `Unsupported` is
+  delivered once, by the next `Context` poll or, if the terminal answers first, just before that
+  answer by whichever poll hands it out, so it comes before the new answer even if reporting was
+  enabled again meanwhile, and a client still waiting for releases switches back to inferred holds;
+  if a `Context` poll fails to re-enter raw mode, the notice waits for the next. While reporting is
+  confirmed, or its answer is still pending, a read ending in a lone ESC waits up to 50 ms for the
+  rest of its sequence (reading what is already waiting before giving up), then is the Esc key. The
+  rustdoc now lists what flags 15 change in delivered keys (a shifted letter has no `SHIFT`, Caps
+  Lock does not change a letter, Ctrl+I/M/[ are Ctrl chords).
+- **C ABI v1, additive (64 → 65 symbols):** `gibson_set_key_release_reporting(ctx, enabled)` and
   the event types `GIBSON_EVENT_KEY_RELEASE` (4; `key_code`, `modifiers` and the key kind exactly
   as the press was delivered, also through `gibson_poll_event_kind`),
   `GIBSON_EVENT_KEY_RELEASES_ACTIVE` (5) and `GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED` (6), all
@@ -148,6 +313,26 @@ decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed p
   `THIRD-PARTY-NOTICES.md`. `signal-hook` (already a dependency through crossterm, same version)
   is now a direct Unix dependency for `SIGWINCH`. Off Unix, and when stdin is not a terminal,
   input still goes through crossterm.
+### Added — C ABI v1 (additive, 62 → 64 symbols): drain a headless capture ([#297](https://github.com/femboy2112/libgibson/issues/297))
+- **`gibson_take_rendered_output(ctx, buf, cap, out_len)`** copies the whole headless ANSI capture
+  into `buf` and, only then, empties it. `*out_len` is always the size before the call; a size
+  query (`buf == NULL`) or an undersized buffer copies nothing and removes nothing (still
+  `GIBSON_OK`, so check `*out_len <= cap`). The take is all-or-nothing, so a drain never splits an
+  escape sequence. Until now a headless context's capture grew by every frame's bytes for the
+  context's lifetime, because `gibson_get_rendered_output` only copies: a long-running headless C
+  consumer grew without bound (+636 MB after 2000 frames at 320x100 in the node J adapter).
+- **`gibson_clear_rendered_output(ctx, out_discarded)`** discards the capture without copying it,
+  for a consumer that reads cells, not ANSI; `out_discarded` (may be `NULL`) receives the count.
+- **`gibson_get_rendered_output` is unchanged**: it copies and never drains. Rust gains
+  `Context::take_rendered_bytes`, the binary-safe drain (`take_output` stays lossy UTF-8). The
+  Python binding adds `take_rendered_output()` and `clear_rendered_output()`.
+- `bindings/sdk_forcing/headless_capture_drain.c`, an installed-SDK consumer run by the release
+  cleanroom, drains (and, in a second variant, clears) every frame of one context at 40x15, 80x24
+  and 240x80 and checks the capture and the resident memory stay bounded; its no-drain control
+  fails.
+- The framebuffer adapter now clears its headless capture at `headless_capture_limit` instead of
+  replacing the context; `capture_rotations` counts those clears.
+
 ### Added — C ABI v1 (additive, 60 → 62 symbols): key kinds ([#274](https://github.com/femboy2112/libgibson/issues/274))
 - **`gibson_poll_event_kind(ctx, timeout_ms, out_event, out_key_kind)`** polls like
   `gibson_poll_event` and also reports `GIBSON_KEY_KIND_CHAR` or `GIBSON_KEY_KIND_SPECIAL` for a key
@@ -284,14 +469,19 @@ decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed p
 - The bench's first finding — 256-colour render 4.7–7.2× truecolor on dense frames — is filed as
   #260.
 
-## [0.6.0] — prepared in source 2026-11-05 · not tagged, not released
+## [0.6.0] — 2026-11-08 · GitHub prerelease from release/v0.6.0-rc (tag v0.6.0 → 492d0fe)
 
-**Release state 1 of 3** ([Release Contract §1](docs/RELEASE_CONTRACT.md#1-versioning-model)): the
-manifests read `0.6.0`, but there is no `v0.6.0` tag, GitHub release or registry upload; the latest
-*released* version remains **0.5.0**, and the README install instructions stay on it. "Operation
+**Release state 2 of 3** ([Release Contract §1](docs/RELEASE_CONTRACT.md#1-versioning-model)): a
+GitHub prerelease ([v0.6.0](https://github.com/femboy2112/libgibson/releases/tag/v0.6.0)); no registry
+upload. The source version was prepared on 2026-11-05 at `9a899e1`, which is never tagged. "Operation
 Instrumental Renaissance": the v0.6 integration merged through #253 (merge `f6cd8c7`, independent
 audit approval of exactly `eaa0d1c`). `GIBSON_ABI_VERSION` stays 1 — the C ABI grew only by
 **additive** functions (52 → 59, compatible, no version bump); MSRV stays 1.85.
+
+The released tree is `9a899e1` plus reviewed backports of the `main` fixes for #264, #269/#15, #259
+and #285, and the release engineering (the #297 disclosure and the approved policy text and
+checker). The tagged tree's own CHANGELOG lists them under "Release candidate". The backported fixes
+also appear in `[Unreleased]` above, because `main` carries them for 0.7.
 
 ### Release engineering — source version 0.6.0, RXVII
 - **Version prepared in source:** `Cargo.toml`, `Cargo.lock` (the `libgibson` entry only),
@@ -303,7 +493,8 @@ audit approval of exactly `eaa0d1c`). `GIBSON_ABI_VERSION` stays 1 — the C ABI
   *published through registries*, and states which one each milestone has reached. It had still
   called **0.5.0** "a prepared release candidate, not yet tagged" — v0.5.0 was tagged and published
   as a GitHub prerelease on 2026-10-24 (`v0.5.0` → `d8c7b99`). README, ROADMAP and
-  STATE_OF_LIBGIBSON now say v0.6.0 is prepared in source, not released.
+  STATE_OF_LIBGIBSON then said v0.6.0 was prepared in source, not released (it was released
+  on 2026-11-08; see the heading above).
 
 ### Fixed — test harness (`event_pressure_lab`), RXVII ([#255](https://github.com/femboy2112/libgibson/issues/255))
 - **Parallel event-pressure trials no longer collide on their scratch directory.** The trial

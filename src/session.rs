@@ -35,12 +35,27 @@ const REPORT_MOUSE: u8 = 0b01;
 const REPORT_FOCUS: u8 = 0b10;
 const REPORT_KEY_RELEASE: u8 = 0b100;
 
+/// Set by the panic hook when it ends key-release reporting; taken once, by the owner's next
+/// `Context` poll or by the Unix source before the next answer it decodes, which then delivers
+/// `KeyReleaseReporting::Unsupported` (see [`TerminalSession::take_key_releases_ended`] and
+/// [`take_key_releases_ended_notice`]). An atomic: the hook takes no lock.
+static KEY_RELEASES_ENDED: AtomicBool = AtomicBool::new(false);
+
+/// Takes the panic hook's notice that reporting ended, for the Unix source to queue just before an
+/// answer it decodes (#275 review 8). One swap against the owner's
+/// [`take_key_releases_ended`](TerminalSession::take_key_releases_ended): exactly one of them
+/// says it, and an answer decoded after the end never overtakes it, whichever poll hands it out.
+#[cfg(unix)]
+pub(crate) fn take_key_releases_ended_notice() -> bool {
+    KEY_RELEASES_ENDED.swap(false, Ordering::SeqCst)
+}
+
 /// The kitty keyboard flags pushed when key-release reporting is enabled (#275): disambiguate
 /// escape codes (1), report event types (2), report alternate keys (4), report all keys as escape
 /// codes (8). Measured on kitty 0.32.2: without 8, Enter, Tab, Backspace and Esc report their
 /// release as their legacy byte, which reads as a second press; without 4, shift+1 reads as `1`
 /// with shift, not `!`.
-const KEY_RELEASE_FLAGS: u8 = 15;
+pub(crate) const KEY_RELEASE_FLAGS: u8 = 15;
 
 /// Pushes [`KEY_RELEASE_FLAGS`] onto the kitty keyboard stack of the current screen, then asks
 /// for the flags now in force (`CSI ? u`) and the primary device attributes (`CSI c`). Every
@@ -273,6 +288,12 @@ impl TerminalSession {
         self.headless
     }
 
+    /// True once [`restore`](TerminalSession::restore) has begun on this session (explicitly or
+    /// from `Drop`): it has handed the terminal back and released its lease.
+    pub(crate) fn restore_attempted(&self) -> bool {
+        self.restore_attempted
+    }
+
     /// Installs the process-global panic hook that best-effort restores the
     /// terminal on panic. Host-integration contract (issue #11, B4/B5):
     ///
@@ -306,6 +327,10 @@ impl TerminalSession {
                         // Before leaving the alternate screen: the push is on its stack. Claimed,
                         // so the restore that unwinding runs next does not pop again.
                         let _ = pop_key_releases(&mut out);
+                        // No release will be reported now: stop delivering them (and late
+                        // answers) even if the panic is caught and the caller keeps polling.
+                        crate::input::set_key_releases_delivered(false);
+                        KEY_RELEASES_ENDED.store(true, Ordering::SeqCst);
                     }
                     let modes = REPORTING_MODES.load(Ordering::SeqCst);
                     if modes & REPORT_FOCUS != 0 {
@@ -462,26 +487,52 @@ impl TerminalSession {
     /// whether it took them; the answer arrives in input order as
     /// [`Event::KeyReleaseReporting`](crate::input::Event::KeyReleaseReporting): `Active`, after
     /// which every key that goes up is reported as an
-    /// [`Event::KeyRelease`](crate::input::Event::KeyRelease), or `Unsupported`. A terminal that
-    /// answers neither query leaves the session press-only with no answer at all.
+    /// [`Event::KeyRelease`](crate::input::Event::KeyRelease), or `Unsupported`: the terminal
+    /// answered only the device attributes query, or took only some of the flags (without them
+    /// all, Enter, Tab, Backspace and Esc report their release as a second press). `Unsupported`
+    /// is final: once any poll hands it out (a [`Context`](crate::context::Context) poll,
+    /// [`input::poll_event`](crate::input::poll_event) or a
+    /// [`TerminalSource`](crate::event_source::TerminalSource), whatever context reads it), no
+    /// [`Event::KeyRelease`](crate::input::Event::KeyRelease) is delivered from then on, including
+    /// any already queued behind the answer, and reporting is withdrawn as by disabling it, with
+    /// one pop of the push, never repeated: by this session's `Context` poll that handed it out,
+    /// else on this session's next `Context` poll, enable, disable or screen switch, or at
+    /// `restore`, `Drop` or the panic hook. An answer counts only for the request it answers: one
+    /// decoded before reporting was last enabled or disabled is dropped by whichever poll reads
+    /// it, and changes nothing. A device attributes reply to somebody else's earlier
+    /// query, arriving first, cannot be told apart and reads as `Unsupported` too. A terminal
+    /// that answers neither query leaves the session press-only with no answer at all.
     ///
-    /// While enabled the terminal sends every key as an escape sequence, which LibGibson decodes
-    /// into the same [`Event::Key`](crate::input::Event::Key)s as before (`Esc`, `Enter`, Ctrl and
-    /// Alt chords, shifted characters), and reports modifier keys alone, which are not
-    /// delivered. Text typed through an input method may not arrive: enable this for direct key
-    /// control (a game), not for text entry.
+    /// While enabled the terminal sends every key as an escape sequence. LibGibson decodes most
+    /// into the same [`Event::Key`](crate::input::Event::Key)s as before (`Esc`, `Enter`, `Tab`,
+    /// `Backspace`, Ctrl and Alt chords, shifted symbols such as `!`), with these differences: a
+    /// shifted letter is its capital without `SHIFT` (Ctrl+Shift+W is `W` with Ctrl, not `w`);
+    /// Caps Lock does not change a letter (`a`, not `A`); and Ctrl+I, Ctrl+M and Ctrl+[ are Ctrl
+    /// chords of `i`, `m` and `[`, not `Tab`, `Enter` and `Esc`. Modifier keys alone are reported,
+    /// and not delivered. Text typed through an input method may not arrive: enable this for
+    /// direct key control (a game), not for text entry.
     ///
     /// Enabling enters interactive (raw) mode first ([`enter_interactive`](Self::enter_interactive)),
     /// so the terminal's answer is never echoed. Tracked and unwound like
     /// [`set_mouse_capture`](TerminalSession::set_mouse_capture):
-    /// `restore`, `Drop` and the panic hook pop the flags. A process killed outright (SIGKILL)
+    /// `restore`, `Drop` and the panic hook pop the flags. Once the panic hook has popped them,
+    /// even for a panic that is caught, no release or terminal answer is delivered,
+    /// [`key_release_reporting_enabled`](Self::key_release_reporting_enabled) is false, and
+    /// `Unsupported` is delivered once: by the next `Context` poll, or, if the terminal answers
+    /// first, just before that answer by whichever poll hands it out. So even if reporting was
+    /// enabled again meanwhile, it comes before the new answer, and an application tracking holds
+    /// switches back to inferred holds. A `Context` poll that fails to re-enter raw mode leaves
+    /// it for the next. A process killed outright (SIGKILL)
     /// leaves them pushed and the shell then receives escape sequences for Enter; kitty's reset
     /// (Ctrl+Shift+Delete) clears them. Moving between the main and alternate screen while enabled
     /// pops the flags on the screen being left and asks again on the new one, so a second answer
     /// follows. Disabling pops the flags and drops anything not yet delivered: an answer, a
     /// release; an application tracking holds then calls
     /// [`HoldTracker::set_releases_reported(false)`](crate::hold::HoldTracker::set_releases_reported)
-    /// itself. A release names its key as the press did for the 32 most recent keys still down.
+    /// itself. A release names its key as the press did for the 32 most recent keys still down,
+    /// except a shifted symbol pressed just before the flags take effect and let go without an
+    /// autorepeat (`!` is released as `1`;
+    /// [#312](https://github.com/femboy2112/libgibson/issues/312)).
     /// Idempotent; a no-op off Unix, on a non-TTY or headless session, and on a session that has
     /// been restored (it no longer holds the terminal).
     pub fn set_key_release_reporting(&mut self, enable: bool) -> io::Result<()> {
@@ -524,14 +575,18 @@ impl TerminalSession {
 
     /// Whether session-owned key-release reporting is currently enabled (requested; whether the
     /// terminal confirmed it is the answer event's business). False once the panic hook has popped
-    /// the flags, even if the panic was caught.
+    /// the flags, even if the panic was caught, and once an `Unsupported` answer has been handed
+    /// out, by any poll.
     pub fn key_release_reporting_enabled(&self) -> bool {
-        self.key_release_reporting_enabled && key_releases_pushed()
+        self.key_release_reporting_enabled
+            && key_releases_pushed()
+            && crate::input::key_releases_delivered()
     }
 
     /// Whether reporting is still on, after noticing that the panic hook popped the flags (a
-    /// caught panic): then it is off, delivery stops, and enabling again pushes anew (#275
-    /// re-review).
+    /// caught panic; the hook already stopped delivery) or that an `Unsupported` answer was handed
+    /// out (delivery is off; the push is popped here): then it is off, and enabling again pushes
+    /// anew (#275 re-review).
     fn key_release_reporting_live(&mut self) -> bool {
         if self.key_release_reporting_enabled && !key_releases_pushed() {
             self.key_release_reporting_enabled = false;
@@ -539,8 +594,52 @@ impl TerminalSession {
             // The hook pops only after disabling raw mode: say so, so that enabling again (which
             // enters interactive mode first) restores raw mode rather than trusting a stale flag.
             self.raw_mode_enabled = false;
+        } else if self.key_release_reporting_enabled && !crate::input::key_releases_delivered() {
+            // An `Unsupported` answer was handed out (by whichever poll): withdraw this session's
+            // push, once (claimed, so restore, `Drop` and the panic hook never pop it again).
+            // Best effort, like the pop in a disable: a failed write is not retried.
+            if take_key_releases_pushed() {
+                let _ = pop_key_releases(&mut stdout());
+            }
+            self.key_release_reporting_enabled = false;
+            #[cfg(unix)]
+            crate::tty_source::forget_keyboard_replies();
         }
         self.key_release_reporting_enabled
+    }
+
+    /// Notes what the panic hook or an `Unsupported` answer ended (see
+    /// [`key_release_reporting_live`](Self::key_release_reporting_live)); a `Context` poll calls
+    /// this before and after polling, so the push is withdrawn right after the answer is handed
+    /// out, or on the owner's next poll if another reader handed it out.
+    pub(crate) fn sync_key_release_reporting(&mut self) {
+        // A restored session holds nothing to sync: the terminal, and any push on it, may be
+        // another session's now. (Restore already cleared what this would read; this says so
+        // where the next reader looks.)
+        if self.restore_attempted {
+            return;
+        }
+        self.key_release_reporting_live();
+    }
+
+    /// Whether the panic hook ended key-release reporting and nobody has said so yet (#275); true
+    /// once per end, for the lease owner only, unless the Unix source took the notice first to
+    /// queue it before an answer ([`take_key_releases_ended_notice`]). The poll then delivers
+    /// `Unsupported`, so a client still waiting for releases switches back to inferred holds. Notes the end here too: raw mode is
+    /// marked off (the hook left it), so the poll's `enter_interactive` restores it.
+    /// Re-enabling does not clear it: the client must see `Unsupported` before any later answer.
+    pub(crate) fn take_key_releases_ended(&mut self) -> bool {
+        if !self.owns_lease || !KEY_RELEASES_ENDED.swap(false, Ordering::SeqCst) {
+            return false;
+        }
+        self.key_release_reporting_live();
+        true
+    }
+
+    /// Puts back a notice [`take_key_releases_ended`](Self::take_key_releases_ended) took when
+    /// the poll that would have delivered it failed first.
+    pub(crate) fn keep_key_releases_ended(&mut self) {
+        KEY_RELEASES_ENDED.store(true, Ordering::SeqCst);
     }
 
     /// Hides the hardware cursor.
@@ -676,6 +775,7 @@ impl TerminalSession {
         // returned Err), not a reason to wedge the lease shut (issue #11, B1/B2).
         if self.owns_lease {
             REPORTING_MODES.store(0, Ordering::SeqCst);
+            KEY_RELEASES_ENDED.store(false, Ordering::SeqCst);
             set_owner_thread(None);
             TERMINAL_LEASE.store(LEASE_AVAILABLE, Ordering::SeqCst);
             self.owns_lease = false;

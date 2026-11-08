@@ -1,0 +1,46 @@
+# check-maintenance-candidate.sh at v0.6.0 = 492d0fe with tags present, 2026-11-08 (<rc-build> = release build of 492d0fe,
+# sha256 c6b4d0af35eb84b7cead2fed9cee4d899bb30d9b0bef78a86c9d09ea5186d954). Exit status 0.
+check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+check-maintenance-candidate: candidate 492d0fec7727658d50b9a82025c784b7e427d6b0 (Cargo.toml 0.6.0)
+check-maintenance-candidate: release version 0.6.0
+PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 492d0fe
+PASS  version: candidate Cargo.toml = 0.6.0
+PASS  version: candidate Cargo.lock libgibson = 0.6.0
+PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+PASS  C ABI: abi/ is byte-identical to the baseline
+PASS  C ABI: include/ declarations are identical to the baseline; only comments changed in include/gibson.h (review the text)
+PASS  C ABI: the built library exports the baseline's 59 gibson_* symbols exactly (<rc-build>, sha256 c6b4d0af35eb84b7cead2fed9cee4d899bb30d9b0bef78a86c9d09ea5186d954)
+PASS  MSRV: rust-version 1.85, unchanged
+PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
+PASS  branch: candidate is on origin/release/v0.6.0-rc
+PASS  tag: v0.6.0 peels to the candidate
+PASS  tag: bindings/go/v0.6.0 peels to the candidate
+INFO  commits: 23 in 9a899e1..492d0fe:
+        9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+        3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+        3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+        f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+        dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+        8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+        0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+        b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+        38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+        1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+        74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+        c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+        ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+        e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+        31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+        572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+        44845ea docs(release-0.6): disclose #297 and ship a tested procedure that bounds a headless C context's capture
+        f978e58 docs(release-0.6): carry the approved maintenance-line policy onto the release candidate (#287, #291)
+        c2b8acf fix(release-0.6): carry the hardened maintenance checker; cleanroom and lifetime-consumer review fixes
+        090181a fix(release-0.6): fail closed on unreadable sources; check every capture size query
+        6ae5ca7 fix(release-0.6): carry the third-review checker hardening (#291 round 3)
+        1278fec fix(release-0.6): carry the fourth-review checker fixes (#291 round 4)
+        492d0fe Merge pull request #304 from femboy2112/rel/v0.6.0-policy-backport
+PASS  commits: all 23 commits are in the allow-list docs/decisions/0001/allow-commits-492d0fe.txt, and it lists nothing else
+RESULT: PASS — 492d0fec7727 meets the maintenance-line checks against baseline 9a899e1d3502

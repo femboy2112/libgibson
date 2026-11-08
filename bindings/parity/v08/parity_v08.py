@@ -8,10 +8,11 @@ Format: docs/V08_PARITY_SLICE.md.
     python3 parity_v08.py SCRIPT [REPS]
 
 Surface used: the wrapper's public API (Context.headless, Node, set_root, render, frame_size,
-frame_cells, frame_cell, frame_cell_glyph, rendered_output, close) wherever it offers the
-operation. gibson.py has NO event struct, no poll, no push, and no way to pass invalid UTF-8 or
-NULL, so those go through raw ctypes against the SAME shared object the wrapper loaded
-(``gibson._lib._name``) -- that split is itself a measured result.
+frame_cells, frame_cell, frame_cell_glyph, rendered_output, push_event, poll_event, Event, Key,
+KeyKind, close) wherever it offers the operation. What the wrapper cannot express -- a NULL
+event/out pointer, a NULL kind pointer, a NULL context, calls on a context it never created --
+goes through raw ctypes against the SAME shared object the wrapper loaded (``gibson._lib._name``);
+that residual split is itself a measured result.
 
 Negative controls (never on by default): PARITY_V08_PERTURB=cell | events (see parity_v08.c).
 """
@@ -31,32 +32,17 @@ MASK = (1 << 64) - 1
 ST = {0: "OK", -1: "INVALID_PARAM", -2: "IO", -3: "PANIC", -4: "NOT_INITIALIZED", -5: "QUEUE_FULL"}
 KIND = {0: "NONE", 1: "CHAR", 2: "SPECIAL"}
 TYPE = {1: "KEY", 2: "PASTE", 3: "RESIZE"}
-EV_KEY, EV_PASTE, EV_RESIZE = 1, 2, 3
-KIND_CHAR, KIND_SPECIAL = 1, 2
-QUEUE_CAPACITY = 1024  # GIBSON_EVENT_QUEUE_CAPACITY (gibson.py does not export it)
-SPECIAL = {
-    "ENTER": 0x1001, "LEFT": 0x1002, "RIGHT": 0x1003, "UP": 0x1004, "DOWN": 0x1005,
-    "HOME": 0x1006, "END": 0x1007, "BACKSPACE": 0x1008, "DELETE": 0x1009, "ESC": 0x100A,
-    "TAB": 0x100B, "PAGE_UP": 0x100C, "PAGE_DOWN": 0x100D,
-}
+EV_KEY, EV_PASTE, EV_RESIZE = gibson.EventType.KEY, gibson.EventType.PASTE, gibson.EventType.RESIZE
+KIND_CHAR, KIND_SPECIAL = gibson.KeyKind.CHAR, gibson.KeyKind.SPECIAL
+QUEUE_CAPACITY = gibson.GIBSON_EVENT_QUEUE_CAPACITY
+SPECIAL = {n: getattr(gibson.Key, n) for n in (
+    "ENTER", "LEFT", "RIGHT", "UP", "DOWN", "HOME", "END", "BACKSPACE", "DELETE", "ESC", "TAB",
+    "PAGE_UP", "PAGE_DOWN")}
 WRAP = {"NONE": gibson.WrapMode.NONE, "CHAR": gibson.WrapMode.CHAR, "WORD": gibson.WrapMode.WORD}
 
 
-class Event(ctypes.Structure):
-    """gibson_event_t -- the wrapper does not define it, so the consumer must."""
-
-    _fields_ = [
-        ("event_type", ctypes.c_int32),
-        ("key_code", ctypes.c_uint32),
-        ("modifiers", ctypes.c_uint8),
-        ("_pad", ctypes.c_uint8 * 3),
-        ("cols", ctypes.c_uint16),
-        ("rows", ctypes.c_uint16),
-        ("paste_str", ctypes.c_char_p),
-    ]
-
-
-# Raw prototypes on our own handle to the library the wrapper loaded (wrapper state untouched).
+# Raw prototypes on our own handle to the library the wrapper loaded (wrapper state untouched),
+# for the probes the wrapper cannot express (NULL pointers, foreign contexts).
 raw = ctypes.CDLL(gibson._lib._name)
 _vp, _u16, _u32, _i32, _sz = ctypes.c_void_p, ctypes.c_uint16, ctypes.c_uint32, ctypes.c_int32, ctypes.c_size_t
 for name, args in {
@@ -65,9 +51,6 @@ for name, args in {
     "gibson_get_frame_cell": [_vp, _u16, _u16, _vp],
     "gibson_get_frame_cells": [_vp, _u16, _u16, _vp, _sz, ctypes.POINTER(_sz)],
     "gibson_node_text": [ctypes.c_char_p, _vp, _i32, _vp],
-    "gibson_push_event": [_vp, _vp],
-    "gibson_push_event_kind": [_vp, _vp, _u32],
-    "gibson_poll_event": [_vp, _u32, _vp],
     "gibson_poll_event_kind": [_vp, _u32, _vp, _vp],
     "gibson_set_color_depth": [_vp, _i32],
     "gibson_get_frame_size": [_vp, ctypes.POINTER(_u16), ctypes.POINTER(_u16)],
@@ -179,9 +162,17 @@ class Interp:
             s.fg.color_type, s.fg.r, s.fg.g, s.fg.b, s.bg.color_type, s.bg.r, s.bg.g, s.bg.b, attrs(s),
         )
 
+    def push(self, ev):
+        """Push through the wrapper; (C status, last-error text the wrapper captured on failure)."""
+        try:
+            self.ctx.push_event(ev)
+            return 0, ""
+        except gibson.GibsonError as e:
+            return e.status, e.last_error
+
     def emit_event(self, sid, st, ev, kind):
         key, rs = ev.event_type == EV_KEY, ev.event_type == EV_RESIZE
-        paste = ev.paste_str.hex() if ev.event_type == EV_PASTE and ev.paste_str else ""
+        paste = ev.paste.encode("utf-8").hex() if ev.event_type == EV_PASTE and ev.paste else ""
         emit(self.out, {
             "cols": ev.cols if rs else 0, "id": sid, "k": "event",
             "key_code": ev.key_code if key else 0, "kind": kind, "mods": ev.modifiers if key else 0,
@@ -195,7 +186,6 @@ class Interp:
         cols, rows = self.ctx.frame_size()
         out = ctypes.c_void_p()
         cell = gibson.GibsonCell()
-        ev = Event()
         with_err = False
         st = None
         if name == "create_bad_mode":
@@ -222,46 +212,34 @@ class Interp:
             if st == 0:
                 raw.gibson_node_free(node)
         elif name == "push_null_event":
-            st = raw.gibson_push_event(h, None)
+            st = raw.gibson_push_event(h, None)  # raw: the wrapper always passes a struct
         elif name == "push_surrogate":
-            ev.event_type, ev.key_code = EV_KEY, 0xD800
-            st, with_err = raw.gibson_push_event_kind(h, ctypes.byref(ev), KIND_CHAR), True
+            st, rec["err"] = self.push(gibson.Event.char(0xD800))
         elif name == "push_special_not_key":
-            ev.event_type, ev.key_code = EV_KEY, ord("a")
-            st = raw.gibson_push_event_kind(h, ctypes.byref(ev), KIND_SPECIAL)
+            st = self.push(gibson.Event.special(ord("a")))[0]
         elif name == "push_bad_kind":
-            ev.event_type, ev.key_code = EV_KEY, ord("a")
-            st = raw.gibson_push_event_kind(h, ctypes.byref(ev), 9)
+            st = self.push(gibson.Event(EV_KEY, ord("a"), key_kind=9))[0]
         elif name == "push_bad_mods":
-            ev.event_type, ev.key_code, ev.modifiers = EV_KEY, ord("a"), 0x80
-            st = raw.gibson_push_event_kind(h, ctypes.byref(ev), KIND_CHAR)
+            st = self.push(gibson.Event.char("a", 0x80))[0]
         elif name == "push_resize_zero":
-            ev.event_type, ev.cols, ev.rows = EV_RESIZE, 0, 12
-            st = raw.gibson_push_event(h, ctypes.byref(ev))
+            st = self.push(gibson.Event.resize(0, 12))[0]
         elif name == "paste_bad_utf8":
-            bad = b"\xc3\x28"
-            ev.event_type, ev.paste_str = EV_PASTE, bad
-            st, with_err = raw.gibson_push_event(h, ctypes.byref(ev)), True
+            st, rec["err"] = self.push(gibson.Event.paste_text(b"\xc3\x28"))
         elif name == "paste_null":
-            ev.event_type, ev.paste_str = EV_PASTE, None
-            st = raw.gibson_push_event(h, ctypes.byref(ev))
+            st = self.push(gibson.Event(EV_PASTE, paste=None))[0]
         elif name == "poll_null_out":
-            st = raw.gibson_poll_event(h, 0, None)
+            st = raw.gibson_poll_event(h, 0, None)  # raw: the wrapper always passes a struct
         elif name == "poll_kind_null":
-            st = raw.gibson_poll_event_kind(h, 0, ctypes.byref(ev), None)
+            st = raw.gibson_poll_event_kind(h, 0, ctypes.byref(gibson.GibsonEvent()), None)  # raw: NULL kind
         elif name == "color_depth_bad":
             st = raw.gibson_set_color_depth(h, 9)
         elif name == "queue_full":
-            ev.event_type, ev.key_code = EV_KEY, ord("q")
-            accepted = sum(
-                1 for _ in range(QUEUE_CAPACITY) if raw.gibson_push_event_kind(h, ctypes.byref(ev), KIND_CHAR) == 0
-            )
-            st = raw.gibson_push_event_kind(h, ctypes.byref(ev), KIND_CHAR)
-            err = last_err()
+            q = gibson.Event.char("q")
+            accepted = sum(1 for _ in range(QUEUE_CAPACITY) if self.push(q)[0] == 0)
+            st, err = self.push(q)
             drained = 0
-            got, kind = Event(), ctypes.c_uint32()
             for _ in range(2 * QUEUE_CAPACITY):
-                if raw.gibson_poll_event_kind(h, 0, ctypes.byref(got), ctypes.byref(kind)) != 0 or got.event_type == 0:
+                if self.ctx.poll_event().event_type == 0:
                     break
                 drained += 1
             rec.update(accepted=accepted, drained=drained, err=err)
@@ -358,36 +336,25 @@ class Interp:
                 "trunc": int(c.glyph_truncated), "x": x, "y": y,
             })
         elif op.startswith("push_"):
-            h = self.ctx.handle
-            ev = Event()
-            keep = None
             if op in ("push_char", "push_legacy"):
-                ev.event_type, ev.key_code, ev.modifiers = EV_KEY, int(a[0][2:], 16), int(a[1])
-                if op == "push_char":
-                    st = raw.gibson_push_event_kind(h, ctypes.byref(ev), KIND_CHAR)
-                else:
-                    st = raw.gibson_push_event(h, ctypes.byref(ev))
+                code, mods = int(a[0][2:], 16), int(a[1])
+                # push_legacy is the kind-less call: key_kind None selects gibson_push_event.
+                kind = KIND_CHAR if op == "push_char" else None
+                ev = gibson.Event(EV_KEY, code, mods, key_kind=kind)
             elif op == "push_special":
-                ev.event_type, ev.key_code, ev.modifiers = EV_KEY, SPECIAL[a[0]], int(a[1])
-                st = raw.gibson_push_event_kind(h, ctypes.byref(ev), KIND_SPECIAL)
+                ev = gibson.Event.special(SPECIAL[a[0]], int(a[1]))
             elif op == "push_paste":
-                keep = bytes.fromhex(a[0])
-                ev.event_type, ev.paste_str = EV_PASTE, keep
-                st = raw.gibson_push_event(h, ctypes.byref(ev))
+                ev = gibson.Event.paste_text(bytes.fromhex(a[0]))
             else:
-                ev.event_type, ev.cols, ev.rows = EV_RESIZE, int(a[0]), int(a[1])
-                st = raw.gibson_push_event(h, ctypes.byref(ev))
-            del keep
-            emit(out, {"id": sid, "k": "push", "st": st_name(st)})
+                ev = gibson.Event.resize(int(a[0]), int(a[1]))
+            emit(out, {"id": sid, "k": "push", "st": st_name(self.push(ev)[0])})
         elif op == "poll":
             for k in range(1, int(a[0]) + 1):
-                ev, kind = Event(), ctypes.c_uint32()
-                st = raw.gibson_poll_event_kind(self.ctx.handle, 0, ctypes.byref(ev), ctypes.byref(kind))
-                self.emit_event("%s.%d" % (sid, k), st, ev, KIND.get(kind.value, "NONE"))
+                ev = self.ctx.poll_event()
+                self.emit_event("%s.%d" % (sid, k), 0, ev, KIND.get(ev.key_kind, "NONE"))
         elif op == "poll_legacy":
-            ev = Event()
-            st = raw.gibson_poll_event(self.ctx.handle, 0, ctypes.byref(ev))
-            self.emit_event(sid, st, ev, "ABSENT")
+            ev = self.ctx.poll_event(kind=False)
+            self.emit_event(sid, 0, ev, "ABSENT")
         elif op == "probe":
             self.probe(sid, a[0])
         elif op == "lifecycle":
@@ -428,8 +395,7 @@ def wrapper_observations():
         "close_twice_safe": 1,
         **{
             "ctx_has_" + m: int(hasattr(gibson.Context, m))
-            for m in ("headless", "poll_event", "poll_event_kind", "push_event", "push_event_kind",
-                      "frame_size", "frame_cells", "frame_cell_glyph", "rendered_output")
+            for m in ("headless", "poll_event", "push_event", "frame_size", "frame_cells", "frame_cell_glyph", "rendered_output")
         },
         "k": "wrapper",
         "lang": "py",

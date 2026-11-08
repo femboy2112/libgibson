@@ -4,10 +4,10 @@ use crossterm::event::{
 };
 use std::borrow::Cow;
 use std::io;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::AtomicU64;
 #[cfg(unix)]
-use std::sync::atomic::{AtomicU64, AtomicU8};
+use std::sync::atomic::AtomicU8;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -166,8 +166,15 @@ pub enum KeyReleaseReporting {
     /// The terminal confirmed it (it speaks the kitty keyboard protocol): from this event on,
     /// a key that goes up is reported as an [`Event::KeyRelease`].
     Active,
-    /// The terminal answered without confirming it: keys stay press-only, and no
-    /// [`Event::KeyRelease`] will come.
+    /// The terminal answered without confirming the current request: keys stay press-only, and
+    /// no [`Event::KeyRelease`] will come for it. Final for that request: once any poll hands it
+    /// out, releases stop and the request is withdrawn (see
+    /// `TerminalSession::set_key_release_reporting`).
+    ///
+    /// Also the notice that reporting *ended* because the panic hook popped the flags. That
+    /// notice is news about the earlier request, not a verdict on a later one: if the client
+    /// enabled reporting again after a caught panic, the notice comes first and the new request
+    /// stands, so its own answer (possibly [`Active`](Self::Active)) follows.
     Unsupported,
 }
 
@@ -196,8 +203,13 @@ pub enum Event {
     /// The key is named exactly as its press was delivered, the same code and modifiers, even
     /// when the terminal names it differently on the way up (shift let go first turns a released
     /// `W` into `w`), so a release matches its press by equality. A key that was already down
-    /// when reporting began has no recorded press; its release names the key as the terminal
-    /// reports it. An autorepeat of a held key is an [`Event::Key`], as on any terminal.
+    /// when reporting began has no recorded press: its release is named as its first autorepeat
+    /// since then was delivered, or, with none, as the terminal reports it. Not covered: a
+    /// shifted symbol pressed just before the flags take effect (at enable, or as a screen switch
+    /// pushes them again) and let go without an autorepeat is released as the terminal reports it
+    /// (`!` as `1`), so that release does not match its press
+    /// ([#312](https://github.com/femboy2112/libgibson/issues/312)). An autorepeat of a held key is
+    /// an [`Event::Key`], as on any terminal.
     KeyRelease(KeyEvent),
     /// The terminal's answer to a key-release reporting request, in input order: every event
     /// after it was produced under that answer.
@@ -219,7 +231,16 @@ pub enum Event {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SourceEvent {
     Terminal(CtEvent),
+    // Only the Unix source constructs the two variants below; elsewhere they are matched but
+    // never built.
+    #[cfg_attr(not(unix), allow(dead_code))]
     KeyReleaseReporting(KeyReleaseReporting),
+    /// The panic hook ended key-release reporting and nobody has said so yet (#275 review 8).
+    /// The Unix source queues it just before the first answer it decodes after the end, so
+    /// whichever poll hands that answer out says `Unsupported` first. Delivered as `Unsupported`,
+    /// whatever the delivery state, and changes none of it: it is news, not a verdict.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    ReportingEnded,
 }
 
 impl From<CtEvent> for SourceEvent {
@@ -228,30 +249,96 @@ impl From<CtEvent> for SourceEvent {
     }
 }
 
-/// Whether a key release is delivered as [`Event::KeyRelease`]: true while a session has
-/// key-release reporting enabled (#275). Off, a release is dropped (#285).
-static KEY_RELEASES_DELIVERED: AtomicBool = AtomicBool::new(false);
+/// A source item and, from the Unix source, the generation it was decoded in (see
+/// [`KEY_RELEASE_STATE`]): what ties an answer to the request it answers (#275 review 8).
+pub(crate) struct SourceItem {
+    event: SourceEvent,
+    generation: Option<u64>,
+}
 
-/// Bumped every time delivery is turned on or off, so the Unix source forgets the keys it recorded
-/// under the previous setting before decoding anything more (#275 review).
-#[cfg(unix)]
-static KEY_RELEASE_EPOCH: AtomicU64 = AtomicU64::new(0);
+impl From<CtEvent> for SourceItem {
+    fn from(ev: CtEvent) -> Self {
+        SourceEvent::Terminal(ev).into()
+    }
+}
+
+impl From<SourceEvent> for SourceItem {
+    fn from(event: SourceEvent) -> Self {
+        SourceItem {
+            event,
+            generation: None,
+        }
+    }
+}
+
+impl From<(u64, SourceEvent)> for SourceItem {
+    fn from((generation, event): (u64, SourceEvent)) -> Self {
+        SourceItem {
+            event,
+            generation: Some(generation),
+        }
+    }
+}
+
+/// Key-release delivery as one word, so that what an answer does to it is a single atomic step
+/// (#275 review 8): the generation (epoch) shifted left one, ORed with whether a key release is
+/// delivered as [`Event::KeyRelease`] (true while a session has key-release reporting enabled;
+/// off, a release is dropped, #285). The generation moves every time delivery is turned on or
+/// off, so the Unix source forgets the keys it recorded under the previous setting before decoding
+/// anything more, and an answer decoded in one generation can never act on a later one.
+static KEY_RELEASE_STATE: AtomicU64 = AtomicU64::new(0);
+
+/// [`KEY_RELEASE_STATE`] for `generation` with delivery `on`.
+const fn key_release_state(generation: u64, on: bool) -> u64 {
+    (generation << 1) | on as u64
+}
+
+/// Moves `state` to the next generation with delivery `on`.
+fn set_delivered_in(state: &AtomicU64, on: bool) {
+    let _ = state.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |s| {
+        Some(key_release_state((s >> 1).wrapping_add(1), on))
+    });
+}
 
 /// Turns delivery of [`Event::KeyRelease`] (and of the terminal's answers) on or off; the session
 /// calls this when it enables, disables or restores key-release reporting.
 pub(crate) fn set_key_releases_delivered(on: bool) {
-    KEY_RELEASES_DELIVERED.store(on, Ordering::SeqCst);
-    #[cfg(unix)]
-    KEY_RELEASE_EPOCH.fetch_add(1, Ordering::SeqCst);
+    set_delivered_in(&KEY_RELEASE_STATE, on);
 }
 
 #[cfg(unix)]
 pub(crate) fn key_release_epoch() -> u64 {
-    KEY_RELEASE_EPOCH.load(Ordering::SeqCst)
+    KEY_RELEASE_STATE.load(Ordering::SeqCst) >> 1
 }
 
 pub(crate) fn key_releases_delivered() -> bool {
-    KEY_RELEASES_DELIVERED.load(Ordering::SeqCst)
+    KEY_RELEASE_STATE.load(Ordering::SeqCst) & 1 != 0
+}
+
+/// Hands out the terminal's answer to the request made in `generation`, against `state`
+/// ([`KEY_RELEASE_STATE`] outside tests). Only while that generation is still current with
+/// delivery on: anything else is a stale answer, and changes nothing. An `Unsupported` also ends
+/// delivery, in the same compare-and-swap that checks the generation, so an old verdict read by a
+/// slow poller cannot withdraw a request made after it (#275 review 8). Being right once is the
+/// whole job; being right about last week's patient is how you get sued.
+fn hand_out_answer_in(
+    state: &AtomicU64,
+    answer: KeyReleaseReporting,
+    generation: u64,
+) -> Option<Event> {
+    let live = key_release_state(generation, true);
+    let current = match answer {
+        KeyReleaseReporting::Active => state.load(Ordering::SeqCst) == live,
+        KeyReleaseReporting::Unsupported => state
+            .compare_exchange(
+                live,
+                key_release_state(generation.wrapping_add(1), false),
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .is_ok(),
+    };
+    current.then_some(Event::KeyReleaseReporting(answer))
 }
 
 /// Polls for an event with a timeout.
@@ -354,7 +441,7 @@ const MAX_DROPS_PAST_DEADLINE: u32 = 64;
 /// passed with nothing delivered. Once the deadline has passed, at most
 /// [`MAX_DROPS_PAST_DEADLINE`] further undelivered events, each already available, are consumed
 /// before the poll gives up; with a zero timeout that is all the poll does.
-fn poll_until_deliverable<T: Into<SourceEvent>>(
+fn poll_until_deliverable<T: Into<SourceItem>>(
     timeout: Duration,
     mut next: impl FnMut(Duration) -> io::Result<Option<T>>,
 ) -> io::Result<Option<Event>> {
@@ -395,18 +482,35 @@ fn delivers_key_kind(kind: KeyEventKind, windows: bool) -> bool {
 }
 
 /// Applies LibGibson's delivery rules to one source item, with key-release delivery as the
-/// session set it ([`set_key_releases_delivered`]).
-fn decode_source_event(ev: SourceEvent) -> Option<Event> {
-    decode_source_event_as(ev, cfg!(windows), key_releases_delivered())
+/// session set it ([`set_key_releases_delivered`]). Every public poll hands events out through
+/// here. An answer is handed out only in the generation of the request it answers, and an
+/// `Unsupported` one ends delivery in the same atomic step ([`hand_out_answer_in`]), so it is final
+/// for every poll (#275 review 8): releases queued behind it are dropped as they are handed out,
+/// and a stale one changes nothing. Popping the push stays the owning session's (its next
+/// `Context` poll, enable, disable or screen switch, `restore`, `Drop` or the panic hook): anyone
+/// may read the verdict, only the owner may act on it.
+fn decode_source_event(item: SourceItem) -> Option<Event> {
+    match (item.event, item.generation) {
+        (SourceEvent::KeyReleaseReporting(r), Some(generation)) => {
+            hand_out_answer_in(&KEY_RELEASE_STATE, r, generation)
+        }
+        // Only the Unix source decodes answers, and it tags each with its generation.
+        (SourceEvent::KeyReleaseReporting(_), None) => None,
+        (ev, _) => decode_source_event_as(ev, cfg!(windows), key_releases_delivered()),
+    }
 }
 
-/// [`decode_source_event`] with delivery given. Both a release and an answer are decided at
-/// delivery: one decoded while reporting was on but handed out after it was turned off is dropped,
-/// so a late answer cannot switch a hold model back on (#275 review).
+/// [`decode_source_event`] with delivery given, for an item that is not a tagged answer. Both a
+/// release and an answer are decided at delivery: one decoded while reporting was on but handed
+/// out after it was turned off is dropped, so a late answer cannot switch a hold model back on
+/// (#275 review). The notice that reporting ended is always delivered.
 fn decode_source_event_as(ev: SourceEvent, windows: bool, releases: bool) -> Option<Event> {
     match ev {
         SourceEvent::Terminal(ev) => decode_event_as(ev, windows, releases),
         SourceEvent::KeyReleaseReporting(r) => releases.then_some(Event::KeyReleaseReporting(r)),
+        SourceEvent::ReportingEnded => {
+            Some(Event::KeyReleaseReporting(KeyReleaseReporting::Unsupported))
+        }
     }
 }
 
@@ -1785,5 +1889,66 @@ mod key_kind_tests {
         .unwrap();
         assert_eq!(got, None);
         assert_eq!(seen, Some(Duration::MAX));
+    }
+}
+
+#[cfg(test)]
+mod answer_generation_tests {
+    //! #275 review 8: an answer acts only in the generation of the request it answers. These
+    //! drive the one step that decides it on a local state word, so nothing races and no other
+    //! test's delivery switch is touched.
+    use super::{hand_out_answer_in, set_delivered_in, Event, KeyReleaseReporting};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    fn a_stale_unsupported_changes_nothing_after_a_disable_and_re_enable() {
+        // A poller dequeued generation g's `Unsupported`, then stalled; meanwhile the owner
+        // disabled and enabled again (a fresh push and query). The old verdict must not end
+        // the new request: delivery and generation stay exactly as the owner left them, so the
+        // owner's next sync finds nothing to withdraw and pops nothing.
+        let state = AtomicU64::new(0);
+        set_delivered_in(&state, true);
+        let old = state.load(Ordering::SeqCst) >> 1;
+        set_delivered_in(&state, false);
+        set_delivered_in(&state, true);
+        let renewed = state.load(Ordering::SeqCst);
+        assert_eq!(
+            hand_out_answer_in(&state, KeyReleaseReporting::Unsupported, old),
+            None
+        );
+        assert_eq!(
+            hand_out_answer_in(&state, KeyReleaseReporting::Active, old),
+            None
+        );
+        assert_eq!(
+            state.load(Ordering::SeqCst),
+            renewed,
+            "a stale answer changed state"
+        );
+        assert_eq!(renewed & 1, 1, "delivery still on for the new request");
+    }
+
+    #[test]
+    fn the_current_unsupported_ends_delivery_once() {
+        let state = AtomicU64::new(0);
+        set_delivered_in(&state, true);
+        let now = state.load(Ordering::SeqCst) >> 1;
+        assert_eq!(
+            hand_out_answer_in(&state, KeyReleaseReporting::Active, now),
+            Some(Event::KeyReleaseReporting(KeyReleaseReporting::Active))
+        );
+        assert_eq!(
+            hand_out_answer_in(&state, KeyReleaseReporting::Unsupported, now),
+            Some(Event::KeyReleaseReporting(KeyReleaseReporting::Unsupported))
+        );
+        let after = state.load(Ordering::SeqCst);
+        assert_eq!(after & 1, 0, "delivery ended");
+        assert_eq!(after >> 1, now + 1, "and the generation moved, once");
+        // A second copy of the same verdict is now stale itself.
+        assert_eq!(
+            hand_out_answer_in(&state, KeyReleaseReporting::Unsupported, now),
+            None
+        );
+        assert_eq!(state.load(Ordering::SeqCst), after);
     }
 }

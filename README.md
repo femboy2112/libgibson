@@ -17,22 +17,22 @@ procedural audio.
 
 </div>
 
-> **Current release: [v0.5.0 — Interactive Instruments](https://github.com/femboy2112/libgibson/releases/tag/v0.5.0)** (2026-10-24).
+> **Current release: [v0.6.0 — Instrumental Renaissance (maintenance-line release)](https://github.com/femboy2112/libgibson/releases/tag/v0.6.0)** (2026-11-08).
 > Linux x86_64. A native SDK archive is attached to the release. LibGibson is
 > distributed as **GitHub source + that SDK** — it is *not* on crates.io, PyPI, or
 > the Go module proxy. See the [changelog](CHANGELOG.md) and
 > [install options](#install--use) below.
 >
-> **v0.5.0 (interactive instruments) is now the published engineering-alpha release**
-> (Linux x86_64, GitHub-only prerelease). It adds an experimental, Rust-only
-> interactive/observable instrument platform. The install commands below point at v0.5.0.
+> **v0.6.0 is the published engineering-alpha release** (Linux x86_64, GitHub-only
+> prerelease). It is released from the maintenance branch `release/v0.6.0-rc` (tag `v0.6.0`
+> → `492d0fe`), while `main` is the 0.7 development line (`0.7.0-dev`). The install commands
+> below point at v0.6.0. v0.5.0 is the prior release.
 >
-> **v0.6.0 is prepared in source at `9a899e1`** — merged and version-bumped, but **not tagged or
-> released**; `main` has since opened `0.7.0-dev`. The install commands stay on v0.5.0 until a
-> v0.6.0 release exists ([release states](docs/RELEASE_CONTRACT.md#1-versioning-model)).
-> *Update 2026-11-07:* still not tagged or released. A qualified candidate
-> (`release/v0.6.0-rc` @ `572e551`) is on hold pending an owner decision
-> ([#287](https://github.com/femboy2112/libgibson/issues/287)).
+> **Known 0.6.0 limit ([#297](https://github.com/femboy2112/libgibson/issues/297)):** a headless
+> C context's ANSI capture grows for its lifetime and 0.6.0 has no C drain; bound it by replacing
+> the context once it passes a byte budget. The additive drain (`gibson_take_rendered_output`,
+> `gibson_clear_rendered_output`) is on `main` for v0.7 and unreleased (PR
+> [#306](https://github.com/femboy2112/libgibson/pull/306)).
 
 > **Engineering alpha.** Linux x86_64 is the best-tested environment. The core
 > engine is implemented and tested; Scene, Story, software graphics, and audio /
@@ -162,7 +162,7 @@ of this film ([how it was captured](docs/assets/README.md)).
 ## Install & use
 
 LibGibson ships as **GitHub source plus a native SDK archive** on the
-[release](https://github.com/femboy2112/libgibson/releases/tag/v0.5.0). It is not
+[release](https://github.com/femboy2112/libgibson/releases/tag/v0.6.0). It is not
 published to any package registry.
 
 ### Rust
@@ -172,7 +172,7 @@ crate you `use` is `gibson`:
 
 ```toml
 [dependencies]
-libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.5.0" }
+libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.6.0" }
 ```
 
 ```rust
@@ -210,14 +210,14 @@ animation is throttled by `ctx.animation_interval()`.
 
 ### Native SDK (C / C++ / Python / Go)
 
-The release attaches `libgibson-0.5.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
+The release attaches `libgibson-0.6.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
 `libgibson.a`, the versioned shared object (`libgibson.so.1` + a `libgibson.so` dev
 symlink), and a relocatable `pkg-config` file.
 
 ```bash
-sha256sum -c libgibson-0.5.0-linux-x86_64.tar.gz.sha256
-tar -xzf libgibson-0.5.0-linux-x86_64.tar.gz          # -> ./libgibson-0.5.0-linux-x86_64/
-export PKG_CONFIG_PATH="$PWD/libgibson-0.5.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
+sha256sum -c libgibson-0.6.0-linux-x86_64.tar.gz.sha256
+tar -xzf libgibson-0.6.0-linux-x86_64.tar.gz          # -> ./libgibson-0.6.0-linux-x86_64/
+export PKG_CONFIG_PATH="$PWD/libgibson-0.6.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 cc app.c $(pkg-config --cflags --libs libgibson) -o app   # C consumer
 ```
@@ -327,7 +327,8 @@ and still fails when run.
 *Update 2026-11-07:* on `main` (0.7.0-dev), LibGibson reads a Unix controlling terminal
 through its own source ([#282](https://github.com/femboy2112/libgibson/pull/282), merge
 `04c0ad2`), which takes the key and the resize together; there the acceptance test is enabled.
-The limitation above still holds for v0.5.0 and the 0.6.0 source at `9a899e1`, for input read
+The limitation above still holds for v0.5.0 and the never-tagged 0.6.0 source baseline at `9a899e1`
+(the v0.6.0 release carries a reviewed backport of the #269/#15 fix), for input read
 through crossterm's Unix reader (on Unix with no latched controlling terminal), and for
 applications that call that reader directly. Windows reads input through a different crossterm
 backend and is untested for this defect. crossterm#1128 is unmerged; crates.io is still at 0.29.0.

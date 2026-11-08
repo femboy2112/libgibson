@@ -1,5 +1,5 @@
 use crate::cell::RichText;
-use crate::input::{poll_event, Event};
+use crate::input::{poll_event, Event, KeyReleaseReporting};
 use crate::node::Node;
 use crate::renderer::{FrameReport, InsertStrategy, Renderer};
 use crate::scheduler::{FramePacing, FrameScheduler, RenderStats};
@@ -105,7 +105,7 @@ impl Context {
     /// A headless context renders into an in-memory buffer instead of the process
     /// stdout, so no escape codes reach a real terminal. Read the captured bytes
     /// back with [`Context::rendered_bytes`] or drain them with
-    /// [`Context::take_output`]:
+    /// [`Context::take_rendered_bytes`] (or the lossy-UTF-8 [`Context::take_output`]):
     ///
     /// ```
     /// use gibson::cell::Style;
@@ -307,8 +307,8 @@ impl Context {
     }
 
     /// Bytes captured by a buffer-backed (headless) context since the last
-    /// [`Context::take_output`]. Always empty for an interactive context, whose
-    /// output goes straight to the process stdout.
+    /// [`Context::take_output`] or [`Context::take_rendered_bytes`]. Always empty
+    /// for an interactive context, whose output goes straight to the process stdout.
     pub fn rendered_bytes(&self) -> &[u8] {
         match &self.output {
             OutputSink::Buffer(b) => b.as_slice(),
@@ -326,6 +326,17 @@ impl Context {
                 String::from_utf8_lossy(&bytes).into_owned()
             }
             OutputSink::Stdout => String::new(),
+        }
+    }
+
+    /// Drains the capture buffer and returns its bytes unchanged (binary-safe,
+    /// unlike the lossy [`Context::take_output`]). Empty for an interactive,
+    /// stdout-backed context. After this call the buffer is empty until the next
+    /// render, and its allocation is released.
+    pub fn take_rendered_bytes(&mut self) -> Vec<u8> {
+        match &mut self.output {
+            OutputSink::Buffer(b) => std::mem::take(b),
+            OutputSink::Stdout => Vec::new(),
         }
     }
 
@@ -652,6 +663,54 @@ impl Context {
         Ok(())
     }
 
+    /// Puts the terminal into interactive mode now: raw mode and bracketed paste, exactly what
+    /// the first [`poll_event`](Self::poll_event) (or [`run_once`](Self::run_once)) does.
+    ///
+    /// [`Context::inline`] and [`Context::fullscreen`] leave this to the first poll. Output shown
+    /// before that poll (a READY line, a first frame) is therefore on a **cooked** tty: the kernel
+    /// echoes anything typed in that window, and its ICRNL turns Enter (`\r`) into `\n`, which raw
+    /// decoding then reads as Ctrl+J, so a line typed at "ready" is never submitted (#296). Call
+    /// this before the first output so that "the screen says ready" implies "the terminal is
+    /// interactive":
+    ///
+    /// ```no_run
+    /// use gibson::cell::Style;
+    /// use gibson::context::Context;
+    /// use gibson::node::Node;
+    ///
+    /// let mut ctx = Context::inline()?;
+    /// ctx.enter_interactive()?;
+    /// ctx.set_root(Node::text("READY", Style::default()));
+    /// ctx.render()?;
+    /// # Ok::<(), std::io::Error>(())
+    /// ```
+    ///
+    /// This replaces the workaround of calling `poll_event(Duration::ZERO)` before the first
+    /// output, which also consumed (and could drop) an event.
+    ///
+    /// * **Idempotent.** A second call, and every later poll, finds raw mode and bracketed paste
+    ///   already on and writes nothing.
+    /// * **No-op returning `Ok`** on a headless context and when stdout is not a terminal.
+    /// * **Restoration is unchanged.** What it enables is tracked by the session exactly as when
+    ///   the first poll enables it, so [`restore`](Self::restore), `Drop` and the panic hook undo
+    ///   it. If raw mode cannot be entered, the error is returned and nothing is left enabled; the
+    ///   first poll fails the same way.
+    /// * **After [`restore`](Self::restore)** the context has handed the terminal back and released
+    ///   its ownership lease, so this returns an error and does not touch the terminal: raw mode
+    ///   re-entered then would never be undone.
+    pub fn enter_interactive(&mut self) -> io::Result<()> {
+        if !self.session.is_tty || self.session.is_headless() {
+            return Ok(());
+        }
+        if self.session.restore_attempted() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "enter_interactive after restore: this context has released the terminal",
+            ));
+        }
+        self.session.enter_interactive()
+    }
+
     /// Polls the controlling terminal for structured input events.
     ///
     /// Returns `Ok(None)` at once, without touching the process terminal, when there is no
@@ -665,13 +724,28 @@ impl Context {
         if !self.session.is_tty || self.session.is_headless() {
             return Ok(None);
         }
-        self.session.enter_interactive()?;
+        self.session.sync_key_release_reporting();
+        // Before entering interactive mode: the panic hook left raw mode, and this restores it.
+        let ended = self.session.take_key_releases_ended();
+        if let Err(e) = self.session.enter_interactive() {
+            if ended {
+                // Not delivered: the next poll delivers it.
+                self.session.keep_key_releases_ended();
+            }
+            return Err(e);
+        }
+        if ended {
+            return Ok(Some(Event::KeyReleaseReporting(
+                KeyReleaseReporting::Unsupported,
+            )));
+        }
         let ev = poll_event(timeout)?;
         if let Some(Event::Resize(_, _)) = ev {
             // Geometry is authoritative on the next render via observe_geometry;
             // marking dirty is enough to schedule it.
             self.scheduler.mark_dirty();
         }
+        self.session.sync_key_release_reporting();
         Ok(ev)
     }
 
@@ -680,18 +754,50 @@ impl Context {
     /// so a headless, scripted, or recorded context can be driven through the same
     /// event path as a live TTY (the general injected-input path — SmartChem
     /// #131/G). Unlike [`poll_event`](Self::poll_event) this does **not** require a
-    /// TTY: the injected source is the authority on event availability. An injected
-    /// `Resize` still marks the scheduler dirty so the next render re-observes
-    /// geometry, keeping a scripted resize indistinguishable from a terminal one.
+    /// TTY: the injected source is the authority on event availability.
+    ///
+    /// A delivered `Resize(cols, rows)` marks the scheduler dirty, so the next render
+    /// re-observes geometry. Where that geometry comes from depends on the session:
+    ///
+    /// * **Headless** ([`Context::headless`]): the session is virtual, so the delivered
+    ///   resize *is* its new terminal size. It is applied before this returns, exactly
+    ///   as the C ABI's `gibson_poll_event` does (both call the same implementation;
+    ///   #293), and the next render lays out against it as against a real terminal: a
+    ///   [`RenderMode::Fullscreen`] frame is `cols`×`rows`; an
+    ///   [`Inline`](crate::RenderMode::Inline) frame is `cols` wide and as tall as its
+    ///   content, at least 1 and at most `max(rows - 1, 1)` rows. A resize with a zero
+    ///   dimension is still returned but is **not applied**: the geometry stays as it
+    ///   was. The C ABI refuses to queue such a resize (`GIBSON_ERR_INVALID_PARAM`), so
+    ///   on either side a headless context never takes a zero geometry from a resize.
+    /// * **Terminal**: the geometry stays observed from the terminal itself; an injected
+    ///   resize schedules a render but does not override what the terminal reports.
     pub fn poll_from<S>(&mut self, source: &mut S, timeout: Duration) -> io::Result<Option<Event>>
     where
         S: crate::event_source::EventSource + ?Sized,
     {
-        let ev = source.poll_event(timeout)?;
-        if let Some(Event::Resize(_, _)) = ev {
-            self.scheduler.mark_dirty();
+        self.session.sync_key_release_reporting();
+        if self.session.take_key_releases_ended() {
+            return Ok(Some(Event::KeyReleaseReporting(
+                KeyReleaseReporting::Unsupported,
+            )));
         }
+        let ev = source.poll_event(timeout)?;
+        if let Some(Event::Resize(cols, rows)) = ev {
+            self.deliver_resize(cols, rows);
+        }
+        self.session.sync_key_release_reporting();
         Ok(ev)
+    }
+
+    /// The effect of a delivered `Resize` on an injected-input path: on a headless
+    /// session, a non-zero geometry becomes the virtual terminal's size; on any session
+    /// the next render is scheduled. Shared by [`poll_from`](Self::poll_from) and the
+    /// C ABI's poll, so both apply a resize the same way (#293).
+    fn deliver_resize(&mut self, cols: u16, rows: u16) {
+        if self.session.is_headless() && cols != 0 && rows != 0 {
+            self.session.set_terminal_size(cols, rows);
+        }
+        self.scheduler.mark_dirty();
     }
 
     /// Returns a snapshot of render statistics.
@@ -708,5 +814,22 @@ impl Context {
 
     pub fn restore(&mut self) -> io::Result<()> {
         self.session.restore()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn take_rendered_bytes_round_trips_non_utf8_bytes() {
+        let mut ctx = Context::headless(RenderMode::Inline, 20, 4);
+        // A lone continuation byte, an overlong lead and 0xFF: `take_output` would replace these.
+        let raw: &[u8] = b"\x80\xC0\xAF\xFFok";
+        ctx.output.write_all(raw).unwrap();
+        assert_eq!(ctx.rendered_bytes(), raw);
+        assert_eq!(ctx.take_rendered_bytes(), raw);
+        assert!(ctx.rendered_bytes().is_empty());
+        assert!(ctx.take_rendered_bytes().is_empty());
     }
 }

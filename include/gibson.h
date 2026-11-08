@@ -237,7 +237,10 @@ void     gibson_stats_init(gibson_stats_t *out_stats);
 gibson_status_t gibson_create_context(int32_t mode, gibson_context_t **out);
 /* Headless: renders into an in-memory buffer with deterministic, TTY-independent semantics
    (fixed cols x rows, truecolor, no terminal lease). Read the ANSI frame via
-   gibson_get_rendered_output. cols and rows must be non-zero. (ABI v1, additive) */
+   gibson_get_rendered_output. cols and rows must be non-zero. Every render appends its ANSI bytes
+   to the capture, which grows until gibson_take_rendered_output or gibson_clear_rendered_output
+   empties it (or the context is destroyed); a long-running consumer should drain or clear it.
+   (ABI v1, additive) */
 gibson_status_t gibson_create_headless_context(int32_t mode, uint16_t cols, uint16_t rows, gibson_context_t **out);
 void            gibson_destroy_context(gibson_context_t *ctx);
 /* Synchronized-update framing (CSI ?2026 h/l) around each frame on a TTY; on by default. A request
@@ -327,8 +330,21 @@ gibson_status_t gibson_push_event_kind(gibson_context_t *ctx, const gibson_event
 gibson_status_t gibson_get_stats(gibson_context_t *ctx, gibson_stats_t *out_stats);
 int32_t         gibson_last_error_message(char *buf, size_t buf_len);
 /* Copies the headless ANSI frame stream into buf (binary-safe, NOT NUL-terminated).
-   out_len always receives the available size; pass buf=NULL or cap=0 to size-query first. */
+   out_len always receives the available size; pass buf=NULL or cap=0 to size-query first.
+   Copies only: it never drains. The capture holds every frame since the context was created or
+   last drained by gibson_take_rendered_output / gibson_clear_rendered_output. */
 gibson_status_t gibson_get_rendered_output(gibson_context_t *ctx, uint8_t *buf, size_t cap, size_t *out_len);
+/* Copies the whole headless capture into buf and, only then, empties it (copy-and-clear).
+   *out_len always receives the number of bytes available before the call. Nothing is copied and
+   nothing is removed when buf is NULL or cap < *out_len (size query / undersized buffer; returns
+   GIBSON_OK, so check *out_len <= cap). All-or-nothing, so a drain never splits an escape sequence.
+   Zero bytes: GIBSON_OK, *out_len = 0. Interactive context: *out_len = 0. NULL ctx/out_len:
+   GIBSON_ERR_INVALID_PARAM, nothing removed. On GIBSON_ERR_PANIC the capture is unchanged.
+   (ABI v1, additive, #297) */
+gibson_status_t gibson_take_rendered_output(gibson_context_t *ctx, uint8_t *buf, size_t cap, size_t *out_len);
+/* Discards the headless capture without copying it (for consumers that only read cells).
+   out_discarded (may be NULL) receives the number of bytes removed. (ABI v1, additive, #297) */
+gibson_status_t gibson_clear_rendered_output(gibson_context_t *ctx, size_t *out_discarded);
 /* Resolved styled cell grid of the most recently rendered frame. frame_size writes (0,0) if there
    is no frame yet; frame_cell returns GIBSON_ERR_INVALID_PARAM for a null out, no frame, or an
    out-of-bounds (x,y). Style is quantized to the context's color depth. (ABI v1, additive) */

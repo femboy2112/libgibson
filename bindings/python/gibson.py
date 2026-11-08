@@ -4,8 +4,10 @@ Provides a clean, idiomatic interface to the LibGibson differential terminal UI 
 """
 
 import ctypes
+import dataclasses
 import os
 import sys
+from typing import Optional, Union
 
 import ctypes.util
 
@@ -106,6 +108,70 @@ class WrapMode:
     CHAR = 1
     WORD = 2
 
+class Status:
+    """gibson_status_t. Non-OK statuses surface as GibsonError (a RuntimeError)."""
+    OK = 0
+    ERR_INVALID_PARAM = -1
+    ERR_IO = -2
+    ERR_PANIC = -3
+    ERR_NOT_INITIALIZED = -4
+    ERR_QUEUE_FULL = -5  # push_event only
+
+class EventType:
+    """gibson_event_type_t."""
+    NONE = 0
+    KEY = 1
+    PASTE = 2
+    RESIZE = 3
+
+class KeyKind:
+    """GIBSON_KEY_KIND_*: how to read a KEY event's key_code. GIBSON_KEY_* occupy U+1001-U+100D,
+    which are also real Unicode scalars (Myanmar letters); only the kind tells them apart."""
+    NONE = 0     # not a key event
+    CHAR = 1     # key_code is a typed Unicode scalar value
+    SPECIAL = 2  # key_code is a Key.* constant
+
+class Key:
+    """GIBSON_KEY_* special keys (the value of a SPECIAL key event's key_code)."""
+    ENTER = 0x1001
+    LEFT = 0x1002
+    RIGHT = 0x1003
+    UP = 0x1004
+    DOWN = 0x1005
+    HOME = 0x1006
+    END = 0x1007
+    BACKSPACE = 0x1008
+    DELETE = 0x1009
+    ESC = 0x100A
+    TAB = 0x100B
+    PAGE_UP = 0x100C
+    PAGE_DOWN = 0x100D
+
+class Mod:
+    """GIBSON_MOD_* key-modifier bits."""
+    SHIFT = 0x01
+    CONTROL = 0x02
+    ALT = 0x04
+
+# Most undelivered events one headless context holds (GIBSON_EVENT_QUEUE_CAPACITY).
+GIBSON_EVENT_QUEUE_CAPACITY = 1024
+
+
+class GibsonError(RuntimeError):
+    """A non-OK gibson_status_t from an event call. `status` is the Status code; `last_error` is
+    the C ABI's last-error text, read on the raising thread right after the call ("" if none)."""
+
+    def __init__(self, what, status, last_error=""):
+        self.status = status
+        self.last_error = last_error
+        text = f"{what} failed: status {status}"
+        super().__init__(f"{text}: {last_error}" if last_error else text)
+
+
+class QueueFullError(GibsonError):
+    """push_event on a headless context already holding GIBSON_EVENT_QUEUE_CAPACITY events."""
+
+
 # Structs
 class GibsonColor(ctypes.Structure):
     _fields_ = [
@@ -197,6 +263,84 @@ class GibsonStats(ctypes.Structure):
         self.struct_size = ctypes.sizeof(GibsonStats)
         self.abi_version = _lib.gibson_abi_version()
 
+
+class GibsonEvent(ctypes.Structure):
+    """gibson_event_t, field for field. Most callers want the Event value type instead."""
+    _fields_ = [
+        ("event_type", ctypes.c_int32),
+        ("key_code", ctypes.c_uint32),
+        ("modifiers", ctypes.c_uint8),
+        ("_pad", ctypes.c_uint8 * 3),
+        ("cols", ctypes.c_uint16),
+        ("rows", ctypes.c_uint16),
+        ("paste_str", ctypes.c_char_p),
+    ]
+
+
+@dataclasses.dataclass(frozen=True)
+class Event:
+    """One input event, as pushed to or polled from a headless context.
+
+    Fields the event type does not use are 0 / None (poll writes them that way). `paste` is a str
+    when polled; push also accepts bytes (e.g. to hand the engine invalid UTF-8 on purpose).
+    `key_kind` is a KeyKind for a KEY event polled with kind (CHAR vs SPECIAL, so a typed U+1001
+    stays distinct from Key.ENTER) and KeyKind.NONE for other event types; it is None only when
+    polled with ``kind=False``. Pushing key_kind=None uses the kind-less call, where U+1001-U+100D
+    always mean the special keys. A polled KEY, PASTE or RESIZE Event can be pushed back as is;
+    a NONE (empty queue) cannot, because the C ABI refuses to queue NONE."""
+    event_type: int = EventType.NONE
+    key_code: int = 0
+    modifiers: int = 0
+    cols: int = 0
+    rows: int = 0
+    paste: Union[str, bytes, None] = None
+    key_kind: Optional[int] = None
+
+    @classmethod
+    def char(cls, ch: Union[str, int], modifiers: int = 0) -> "Event":
+        """A typed character (KeyKind.CHAR); `ch` is a one-character str or a scalar value."""
+        code = ord(ch) if isinstance(ch, str) else ch
+        return cls(EventType.KEY, code, modifiers, key_kind=KeyKind.CHAR)
+
+    @classmethod
+    def special(cls, key: int, modifiers: int = 0) -> "Event":
+        """A special key (KeyKind.SPECIAL); `key` is a Key.* constant."""
+        return cls(EventType.KEY, key, modifiers, key_kind=KeyKind.SPECIAL)
+
+    @classmethod
+    def paste_text(cls, text: Union[str, bytes]) -> "Event":
+        return cls(EventType.PASTE, paste=text)
+
+    @classmethod
+    def resize(cls, cols: int, rows: int) -> "Event":
+        return cls(EventType.RESIZE, cols=cols, rows=rows)
+
+
+def _event_to_struct(ev: Event):
+    """Event -> (GibsonEvent, keepalive). Range-checks what a C field would silently wrap."""
+    for name, val, hi in (("event_type", ev.event_type, 2**31 - 1), ("key_code", ev.key_code, 2**32 - 1),
+                          ("modifiers", ev.modifiers, 0xFF), ("cols", ev.cols, 0xFFFF),
+                          ("rows", ev.rows, 0xFFFF)):
+        lo = -(2**31) if name == "event_type" else 0
+        if not isinstance(val, int) or not lo <= val <= hi:
+            raise ValueError(f"Event.{name}={val!r} does not fit the C field")
+    c = GibsonEvent()
+    c.event_type, c.key_code, c.modifiers, c.cols, c.rows = (
+        ev.event_type, ev.key_code, ev.modifiers, ev.cols, ev.rows)
+    keep = None
+    if ev.paste is not None:
+        keep = ev.paste.encode("utf-8") if isinstance(ev.paste, str) else bytes(ev.paste)
+        if b"\0" in keep:
+            raise ValueError("Event.paste contains a NUL byte (the C string would be cut short)")
+        c.paste_str = keep
+    return c, keep
+
+
+def _event_from_struct(c: GibsonEvent, key_kind) -> Event:
+    # paste_str is only valid until the next poll: copy it out now.
+    paste = c.paste_str.decode("utf-8") if c.event_type == EventType.PASTE and c.paste_str is not None else None
+    return Event(c.event_type, c.key_code, c.modifiers, c.cols, c.rows, paste, key_kind)
+
 # Setup ctypes signatures
 _lib.gibson_create_context.argtypes = [ctypes.c_int32, ctypes.POINTER(ctypes.c_void_p)]
 _lib.gibson_create_context.restype = ctypes.c_int32
@@ -206,6 +350,12 @@ _lib.gibson_create_headless_context.restype = ctypes.c_int32
 
 _lib.gibson_get_rendered_output.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
 _lib.gibson_get_rendered_output.restype = ctypes.c_int32
+
+_lib.gibson_take_rendered_output.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+_lib.gibson_take_rendered_output.restype = ctypes.c_int32
+
+_lib.gibson_clear_rendered_output.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_size_t)]
+_lib.gibson_clear_rendered_output.restype = ctypes.c_int32
 
 _lib.gibson_get_frame_size.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint16), ctypes.POINTER(ctypes.c_uint16)]
 _lib.gibson_get_frame_size.restype = ctypes.c_int32
@@ -263,6 +413,15 @@ _lib.gibson_clear_live_region.restype = ctypes.c_int32
 
 _lib.gibson_get_stats.argtypes = [ctypes.c_void_p, ctypes.POINTER(GibsonStats)]
 _lib.gibson_get_stats.restype = ctypes.c_int32
+
+_lib.gibson_push_event.argtypes = [ctypes.c_void_p, ctypes.POINTER(GibsonEvent)]
+_lib.gibson_push_event.restype = ctypes.c_int32
+_lib.gibson_push_event_kind.argtypes = [ctypes.c_void_p, ctypes.POINTER(GibsonEvent), ctypes.c_uint32]
+_lib.gibson_push_event_kind.restype = ctypes.c_int32
+_lib.gibson_poll_event.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(GibsonEvent)]
+_lib.gibson_poll_event.restype = ctypes.c_int32
+_lib.gibson_poll_event_kind.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(GibsonEvent), ctypes.POINTER(ctypes.c_uint32)]
+_lib.gibson_poll_event_kind.restype = ctypes.c_int32
 
 _lib.gibson_node_box_col.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
 _lib.gibson_node_box_col.restype = ctypes.c_int32
@@ -585,7 +744,8 @@ class Context:
     def headless(cls, mode=RenderMode.INLINE, cols=80, rows=24):
         """Create a headless context that renders into an in-memory buffer with deterministic,
         TTY-independent semantics (fixed cols x rows, truecolor, no terminal lease). Read the
-        painted ANSI frame back with rendered_output(). (ABI v1, additive.)"""
+        painted ANSI frame back with rendered_output(). The capture keeps every frame until
+        take_rendered_output() or clear_rendered_output() empties it. (ABI v1, additive.)"""
         self = cls.__new__(cls)
         self.handle = ctypes.c_void_p()
         status = _lib.gibson_create_headless_context(mode, cols, rows, ctypes.byref(self.handle))
@@ -640,7 +800,8 @@ class Context:
 
     def rendered_output(self) -> bytes:
         """The raw ANSI frame bytes captured by a headless context since creation or the last
-        drain (binary-safe; mirrors Context::rendered_bytes). Empty for an interactive context."""
+        take_rendered_output() / clear_rendered_output() (binary-safe; mirrors
+        Context::rendered_bytes). Copies only, never drains. Empty for an interactive context."""
         need = ctypes.c_size_t(0)
         status = _lib.gibson_get_rendered_output(self.handle, None, 0, ctypes.byref(need))
         if status != 0:
@@ -653,6 +814,45 @@ class Context:
         if status != 0:
             raise RuntimeError(f"rendered_output copy failed: status {status}")
         return bytes(buf[: got.value])
+
+    def take_rendered_output(self) -> bytes:
+        """Drains the headless capture: returns its bytes and empties it (binary-safe; mirrors
+        Context::take_rendered_bytes). Empty for an interactive context. (ABI v1, additive, #297.)
+
+        The capture is copied and the Python ``bytes`` built BEFORE anything is removed, so a
+        failure here (e.g. MemoryError for a large capture) leaves the capture intact. A context
+        is not thread-safe: if another thread renders between the copy and the clear, the clear
+        removes more than was returned and this raises RuntimeError."""
+        while True:
+            need = ctypes.c_size_t(0)
+            status = _lib.gibson_get_rendered_output(self.handle, None, 0, ctypes.byref(need))
+            if status != 0:
+                raise RuntimeError(f"take_rendered_output size query failed: status {status}")
+            if need.value == 0:
+                return b""
+            buf = (ctypes.c_uint8 * need.value)()
+            got = ctypes.c_size_t(0)
+            status = _lib.gibson_get_rendered_output(self.handle, buf, need.value, ctypes.byref(got))
+            if status != 0:
+                raise RuntimeError(f"take_rendered_output copy failed: status {status}")
+            if got.value > need.value:
+                continue  # the capture grew between the two calls; nothing was copied
+            data = ctypes.string_at(buf, got.value)
+            removed = self.clear_rendered_output()
+            if removed != len(data):
+                raise RuntimeError(
+                    f"take_rendered_output: the capture changed between copy and clear "
+                    f"({len(data)} copied, {removed} removed); contexts are not thread-safe")
+            return data
+
+    def clear_rendered_output(self) -> int:
+        """Discards the headless capture without copying it; returns the number of bytes removed
+        (0 for an interactive context). (ABI v1, additive, #297.)"""
+        n = ctypes.c_size_t(0)
+        status = _lib.gibson_clear_rendered_output(self.handle, ctypes.byref(n))
+        if status != 0:
+            raise RuntimeError(f"clear_rendered_output failed: status {status}")
+        return n.value
 
     def frame_size(self):
         """(cols, rows) of the most recently rendered frame, or (0, 0) if there is no frame yet."""
@@ -770,6 +970,56 @@ class Context:
         status = _lib.gibson_clear_live_region(self.handle)
         if status != 0:
             raise RuntimeError(f"Clear live region failed: status {status}")
+
+    def _event_error(self, what, status):
+        # The last error is thread-local: read it now, on this thread, before any other call.
+        buf = ctypes.create_string_buffer(512)
+        _lib.gibson_last_error_message(buf, 512)
+        cls = QueueFullError if status == Status.ERR_QUEUE_FULL else GibsonError
+        return cls(what, status, buf.value.decode("utf-8", "replace"))
+
+    def push_event(self, event: Event):
+        """Queue `event` on a HEADLESS context for poll_event (GIBSON_EVENT_QUEUE_CAPACITY at most).
+
+        With ``event.key_kind`` set, calls gibson_push_event_kind (KeyKind.CHAR pushes any scalar,
+        U+1001-U+100D included; KeyKind.SPECIAL needs a Key.* value; any other kind is refused);
+        with key_kind None, calls gibson_push_event, where U+1001-U+100D are always special keys.
+        The kind is ignored for non-KEY events. PASTE needs `paste`; RESIZE needs non-zero cols and
+        rows. Raises QueueFullError (full queue, nothing displaced) or GibsonError (terminal
+        context, unrepresentable event: status Status.ERR_INVALID_PARAM) with the C last-error
+        text. Raises ValueError (UnicodeEncodeError is one) when Python cannot build the C struct:
+        a value that does not fit its field, or a paste str that is not encodable as UTF-8 or
+        contains a NUL byte. Event validity itself is the C ABI's decision. (ABI v1, additive.)"""
+        c, keep = _event_to_struct(event)
+        if event.key_kind is None:
+            status = _lib.gibson_push_event(self.handle, ctypes.byref(c))
+        else:
+            if not isinstance(event.key_kind, int) or not 0 <= event.key_kind <= 0xFFFFFFFF:
+                raise ValueError(f"Event.key_kind={event.key_kind!r} does not fit the C field")
+            status = _lib.gibson_push_event_kind(self.handle, ctypes.byref(c), event.key_kind)
+        del keep
+        if status != 0:
+            raise self._event_error("push_event", status)
+
+    def poll_event(self, timeout_ms: int = 0, kind: bool = True) -> Event:
+        """Next event, oldest first. On a headless context this never waits and returns an Event
+        with event_type EventType.NONE when the queue is empty; a polled RESIZE has already set the
+        headless size (see gibson.h). On a terminal context it waits up to `timeout_ms`.
+
+        ``kind=True`` (default) uses gibson_poll_event_kind, so a KEY event carries
+        KeyKind.CHAR or KeyKind.SPECIAL; ``kind=False`` uses gibson_poll_event, where a typed
+        U+1001 and Key.ENTER look the same and key_kind is None. Every field is written, so a
+        polled KEY, PASTE or RESIZE can go straight back into push_event (a NONE from an empty
+        queue cannot: the C ABI refuses to queue NONE). Raises GibsonError on a non-OK status."""
+        c = GibsonEvent()
+        if kind:
+            k = ctypes.c_uint32(0)
+            status = _lib.gibson_poll_event_kind(self.handle, timeout_ms, ctypes.byref(c), ctypes.byref(k))
+        else:
+            status = _lib.gibson_poll_event(self.handle, timeout_ms, ctypes.byref(c))
+        if status != 0:
+            raise self._event_error("poll_event", status)
+        return _event_from_struct(c, k.value if kind else None)
 
     def stats(self):
         s = GibsonStats()
