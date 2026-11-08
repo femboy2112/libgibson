@@ -16,10 +16,10 @@
 //!   that ends `initial_grace` tics later, long enough to bridge the terminal's autorepeat delay.
 //!   Each later observation while the key is held is treated as autorepeat and re-arms the end
 //!   `repeat_timeout` tics after it.
-//! * **The end is inferred, never reported as a release.** A hold ends when its deadline passes
-//!   ([`HoldEnd::Timeout`](crate::hold::HoldEnd::Timeout)) or when the caller ends holds for a
-//!   declared reason ([`HoldEnd::Released`](crate::hold::HoldEnd::Released) — focus lost, input
-//!   disconnected, or an explicit release). No
+//! * **The end is inferred, unless releases are reported (below).** A hold ends when its
+//!   deadline passes ([`HoldEnd::Timeout`](crate::hold::HoldEnd::Timeout)) or when the caller
+//!   ends holds for a declared reason ([`HoldEnd::Released`](crate::hold::HoldEnd::Released) —
+//!   focus lost, input disconnected, or an explicit release). No
 //!   synthetic key-release [`Event`] is ever produced: an ended hold is returned as model output
 //!   ([`EndedHold`](crate::hold::EndedHold)) that says how it ended.
 //!
@@ -31,10 +31,24 @@
 //! missing release event, and it is stated here rather than hidden. An observation that arrives
 //! exactly at `L + T` starts a new hold.
 //!
+//! **Reported releases (#275).** A terminal that speaks the kitty keyboard protocol can report
+//! releases (`TerminalSession::set_key_release_reporting`). Once the tracker is told so
+//! ([`set_releases_reported`](crate::hold::HoldTracker::set_releases_reported), or an
+//! [`Event::KeyReleaseReporting`](crate::input::Event::KeyReleaseReporting) through
+//! [`observe_event`](crate::hold::HoldTracker::observe_event)), nothing is inferred for a key
+//! observed from then on: its hold has no deadline and ends when its release is observed
+//! ([`observe_release`](crate::hold::HoldTracker::observe_release), ending as
+//! [`ReleaseCause::KeyReleased`](crate::hold::ReleaseCause::KeyReleased)) or for a declared
+//! reason. So a tap lasts as long as the key was down, and keys held together stay held
+//! together. A release observed at the tic its hold started ends it one tic later: every press
+//! is held for at least one tic. A hold that started before releases were reported keeps its
+//! deadline until the key is observed again; if reporting stops, every hold that was waiting for
+//! a release falls back to the inferred rule, as if pressed at that tic.
+//!
 //! The tracker is pure: no I/O, no clock, no global state. Memory is one small record per key
 //! currently held; ended holds are returned to the caller, not retained.
 
-use crate::input::{Event, FocusChange, KeyEvent};
+use crate::input::{Event, FocusChange, KeyEvent, KeyReleaseReporting};
 use std::fmt;
 use std::time::Duration;
 
@@ -98,9 +112,11 @@ pub enum ReleaseCause {
     Disconnected,
     /// The application ended the hold for its own reason (a pause, a mode change).
     Explicit,
+    /// The terminal reported the key going up (key-release reporting, #275).
+    KeyReleased,
 }
 
-/// How a hold ended. Neither variant is an observed key release.
+/// How a hold ended. Only [`ReleaseCause::KeyReleased`] is an observed key release.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum HoldEnd {
@@ -119,7 +135,8 @@ pub struct Hold {
     pub last_seen: u64,
     /// Observations folded into this hold (saturating).
     pub observations: u32,
-    /// First tic at which the key is no longer held, absent a further observation.
+    /// First tic at which the key is no longer held, absent a further observation. `u64::MAX`
+    /// while releases are reported: the hold ends when its release is observed.
     pub ends_at: u64,
 }
 
@@ -186,6 +203,11 @@ pub struct HoldTracker<K> {
     /// Invariant: every stored hold has `ends_at > now` — `advance` removes the rest and an
     /// observation always sets `ends_at` past its own tic.
     holds: Vec<(K, Hold)>,
+    /// Whether the terminal reports releases: holds observed now have no deadline.
+    releases_reported: bool,
+    /// Keys whose release was observed at the tic their hold started: each ends at its
+    /// `ends_at` (one tic later) as [`ReleaseCause::KeyReleased`], not as a timeout.
+    released: Vec<K>,
 }
 
 impl<K: Copy + Eq> HoldTracker<K> {
@@ -195,7 +217,32 @@ impl<K: Copy + Eq> HoldTracker<K> {
             config,
             now: 0,
             holds: Vec::new(),
+            releases_reported: false,
+            released: Vec::new(),
         }
+    }
+
+    /// Whether holds observed now end at their reported release instead of a deadline.
+    pub fn releases_reported(&self) -> bool {
+        self.releases_reported
+    }
+
+    /// Declares whether the terminal reports key releases (see the module documentation).
+    /// Turning it on changes holds as they are observed from now on. Turning it off gives every
+    /// hold that was waiting for a release the inferred deadline it would have if pressed at the
+    /// current tic, so none waits for a release that will not come; a hold that still has an
+    /// inferred deadline keeps it.
+    pub fn set_releases_reported(&mut self, on: bool) {
+        if self.releases_reported && !on {
+            // `> now` (grace >= 1) except at the last representable tic.
+            let ends_at = self.now.saturating_add(self.config.initial_grace);
+            for (_, hold) in &mut self.holds {
+                if hold.ends_at == u64::MAX {
+                    hold.ends_at = ends_at;
+                }
+            }
+        }
+        self.releases_reported = on;
     }
 
     /// The model's timeouts.
@@ -226,13 +273,21 @@ impl<K: Copy + Eq> HoldTracker<K> {
         self.check(tic)?;
         self.now = tic;
         let mut ended = Vec::new();
+        let released = &mut self.released;
         self.holds.retain(|&(key, hold)| {
             if hold.ends_at <= tic {
+                let end = match released.iter().position(|k| *k == key) {
+                    Some(i) => {
+                        released.swap_remove(i);
+                        HoldEnd::Released(ReleaseCause::KeyReleased)
+                    }
+                    None => HoldEnd::Timeout,
+                };
                 ended.push(EndedHold {
                     key,
                     hold,
                     ended_at: hold.ends_at,
-                    end: HoldEnd::Timeout,
+                    end,
                 });
                 false
             } else {
@@ -253,20 +308,29 @@ impl<K: Copy + Eq> HoldTracker<K> {
     pub fn observe(&mut self, tic: u64, key: K) -> Result<Vec<EndedHold<K>>, HoldError> {
         let mut ended = self.advance(tic)?;
         let config = self.config;
+        let (grace, repeat) = if self.releases_reported {
+            (u64::MAX, u64::MAX)
+        } else {
+            (config.initial_grace, config.repeat_timeout)
+        };
+        // Observed again after its release at this same tic: the key is down again.
+        if let Some(i) = self.released.iter().position(|k| *k == key) {
+            self.released.swap_remove(i);
+        }
         let index = self.holds.iter().position(|(k, _)| *k == key);
         let hold = match index {
             Some(i) => {
                 let mut hold = self.holds[i].1;
                 hold.last_seen = tic;
                 hold.observations = hold.observations.saturating_add(1);
-                hold.ends_at = tic.saturating_add(config.repeat_timeout);
+                hold.ends_at = tic.saturating_add(repeat);
                 hold
             }
             None => Hold {
                 started: tic,
                 last_seen: tic,
                 observations: 1,
-                ends_at: tic.saturating_add(config.initial_grace),
+                ends_at: tic.saturating_add(grace),
             },
         };
         if hold.ends_at > tic {
@@ -289,8 +353,33 @@ impl<K: Copy + Eq> HoldTracker<K> {
         Ok(ended)
     }
 
+    /// Records that the terminal reported `key` going up at `tic` (#275). First advances to
+    /// `tic`, returning the holds that ended on the way. Then ends `key`'s hold with
+    /// [`ReleaseCause::KeyReleased`]: at `tic`, or at the following tic if the hold started at
+    /// `tic`, so every press is held for at least one tic. A release of a key that is not held
+    /// changes nothing.
+    pub fn observe_release(&mut self, tic: u64, key: K) -> Result<Vec<EndedHold<K>>, HoldError> {
+        let mut ended = self.advance(tic)?;
+        let Some(i) = self.holds.iter().position(|(k, _)| *k == key) else {
+            return Ok(ended);
+        };
+        if self.holds[i].1.started < tic {
+            ended.extend(self.release(key, ReleaseCause::KeyReleased));
+        } else if tic < u64::MAX {
+            self.holds[i].1.ends_at = tic + 1;
+            if !self.released.contains(&key) {
+                self.released.push(key);
+            }
+        } else {
+            // At the end of time there is no next tic to hold it for.
+            ended.extend(self.release(key, ReleaseCause::KeyReleased));
+        }
+        Ok(ended)
+    }
+
     /// Ends every current hold at the current tic for `cause`, in start order.
     pub fn release_all(&mut self, cause: ReleaseCause) -> Vec<EndedHold<K>> {
+        self.released.clear();
         let now = self.now;
         self.holds
             .drain(..)
@@ -305,6 +394,9 @@ impl<K: Copy + Eq> HoldTracker<K> {
 
     /// Ends `key`'s hold at the current tic for `cause`, if it is held.
     pub fn release(&mut self, key: K, cause: ReleaseCause) -> Option<EndedHold<K>> {
+        if let Some(i) = self.released.iter().position(|k| *k == key) {
+            self.released.swap_remove(i);
+        }
         let index = self.holds.iter().position(|(k, _)| *k == key)?;
         let (key, hold) = self.holds.remove(index);
         Some(EndedHold {
@@ -315,10 +407,12 @@ impl<K: Copy + Eq> HoldTracker<K> {
         })
     }
 
-    /// Routes one input event at `tic`: a key event mapped by `key_of` is an observation; a
-    /// focus loss ends every hold ([`ReleaseCause::FocusLost`]); every other event (focus gain,
-    /// resize, paste, mouse, tick, or a key `key_of` ignores) only advances time, so geometry
-    /// changes never touch holds.
+    /// Routes one input event at `tic`: a key event mapped by `key_of` is an observation; a key
+    /// release mapped by `key_of` is a reported release ([`observe_release`](Self::observe_release));
+    /// the answer to a key-release reporting request sets
+    /// [`set_releases_reported`](Self::set_releases_reported); a focus loss ends every hold
+    /// ([`ReleaseCause::FocusLost`]); every other event (focus gain, resize, paste, mouse, tick,
+    /// or a key `key_of` ignores) only advances time, so geometry changes never touch holds.
     pub fn observe_event(
         &mut self,
         tic: u64,
@@ -330,6 +424,15 @@ impl<K: Copy + Eq> HoldTracker<K> {
                 Some(key) => self.observe(tic, key),
                 None => self.advance(tic),
             },
+            Event::KeyRelease(k) => match key_of(k) {
+                Some(key) => self.observe_release(tic, key),
+                None => self.advance(tic),
+            },
+            Event::KeyReleaseReporting(r) => {
+                let ended = self.advance(tic)?;
+                self.set_releases_reported(*r == KeyReleaseReporting::Active);
+                Ok(ended)
+            }
             Event::Focus(FocusChange::Lost) => {
                 let mut ended = self.advance(tic)?;
                 ended.extend(self.release_all(ReleaseCause::FocusLost));

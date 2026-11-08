@@ -185,6 +185,88 @@ stays 1.85.
 - The v0.8 parity slice's Rust consumer now uses `poll_from` alone; it produces the C records
   r02/r03/r04 byte-identically without the manual resize step.
 
+### Added — key-release reporting on kitty-protocol terminals ([#275](https://github.com/femboy2112/libgibson/issues/275))
+- **Opt-in, Rust only for now:** `TerminalSession::set_key_release_reporting(true)` (reached as
+  `ctx.session`) asks the terminal to report key releases through the kitty keyboard protocol.
+  Tested in kitty 0.32.2 (and xterm 390, which answers `Unsupported`); other terminals that
+  implement the protocol (foot, Ghostty, WezTerm with its kitty-keyboard option) are expected to
+  behave the same but are not tested. It pushes keyboard flags 15 on the current screen
+  and asks whether the terminal took them. The answer arrives in input order as the new
+  `Event::KeyReleaseReporting(KeyReleaseReporting::{Active, Unsupported})`; once `Active`, each key
+  that goes up is the new `Event::KeyRelease(KeyEvent)`. Both variants are additions to the
+  `#[non_exhaustive]` `Event`. Off by default: an application that does not opt in writes and
+  receives exactly what it did before, and releases stay undelivered (#285).
+- **A release is named exactly as its press was delivered.** kitty names a key differently on the
+  way up when shift goes up first (a `W` pressed with shift is released as `w`, a `!` as `1`), so
+  the Unix input source records each press by the key's base code and names its repeats and release
+  the same way: a release matches its press by equality.
+- **Restored on every exit path the session owns.** `restore`, `Drop` and the panic hook pop the
+  flags before leaving the alternate screen (the kitty flag stacks are per screen, and a push left
+  on the alternate screen is inherited by the next full-screen program). Moving between the main
+  and alternate screen while enabled pops on the screen being left and asks again on the new one.
+  A process killed outright (SIGKILL) leaves the flags pushed; kitty's reset (Ctrl+Shift+Delete)
+  clears them. While enabled, text typed through an input method may not arrive: the feature is
+  for direct key control, not text entry.
+- **`gibson::hold` uses reported releases.** `HoldTracker::set_releases_reported` (or the answer
+  event through `observe_event`) switches holds observed from then on to "held until released, at
+  least one tic"; `observe_release` and `ReleaseCause::KeyReleased` end them. Keys held together
+  stay held together, which the inferred model cannot do (a terminal autorepeats only the last key
+  pressed). If reporting stops, every hold falls back to the inferred deadline.
+- **DEEP SIGNAL opts in** (`--no-key-releases` opts out), shows `KEYS EXACT` on the HUD once the
+  terminal confirms, and records releases and the answer in its `--record` trace. Its self-check
+  adds a reported-release segment (`exact_keys=519616832bd513f1`); the existing values are
+  unchanged.
+- **Fixed in the ported decoder:** the kitty flags reply `CSI ? flags u` was read from the byte
+  of its first digit (as in crossterm 0.29.0), so kitty's `CSI ? 15 u` read as flags 1 and a
+  confirmed request would have looked unsupported.
+- Evidence: `tests/key_release_reporting_pty.rs` (the bytes written, in order, on a normal exit, a
+  panic, inline and across a screen switch; answers; release naming; no opt-in, no change), replaying
+  bytes captured from kitty 0.32.2; `tests/input_hold_released.rs` (the hold model against an
+  independent reference on 300 seeded traces); and `scripts/dev/kitty_key_release_e2e.sh`, which
+  runs DEEP SIGNAL in real kitty 0.32.2 and xterm 390 on a private Xvfb display with xdotool key
+  events (not in CI).
+- **Review hardening (Codex, 7 P2 + 3 P3, all fixed with a test that fails without the fix):** the
+  pop is claimed once, so a panic followed by the unwinding restore pops once; a restored session
+  cannot enable; a stray device-attributes reply (somebody else's earlier query) cannot be told
+  from a terminal without the protocol and reads as `Unsupported` (final, see below); after a
+  disable, a late answer or release is dropped at delivery; a keypad key never takes over the
+  record of the arrow with the same code; a name recorded before a disable/enable loses to the key's newer press;
+  DEEP SIGNAL keeps holds per physical key, so releasing W while Up is down keeps moving forward;
+  enabling enters raw mode first, so the answer is never echoed. A second pass (4 partial, 2 new
+  P2) moved the toggle handling to delivery: an answer decoded before a disable/enable is dropped
+  when handed out, a press already queued keeps its release name across a toggle (a repeat or
+  release takes the most recent matching record, the legacy fallback only for text keys), and
+  after a caught panic the session reports reporting off and can enable it again. A third pass:
+  a release decoded before a toggle is dropped too (as disabling promises); a legacy record of any
+  key recorded in a later epoch supersedes a stale record of it (ctrl+Enter released unreported,
+  then plain Enter); and re-enabling after a caught panic restores raw mode. A further review: a
+  key already down when reporting began is named by its first kitty autorepeat, and kitty's
+  release matches a legacy capital (`W`, released as `w`) or a legacy symbol kitty autorepeated
+  (`!`, released as `1`), so each such release ends its hold (known limit: a shifted symbol pressed
+  just before the flags take effect, as during a screen switch, and let go without an autorepeat is
+  still released as `1`, so that release does not end its hold,
+  [#312](https://github.com/femboy2112/libgibson/issues/312)); `Active` needs every flag pushed (a
+  terminal that took only some, such as 3, 7 or 11, answers `Unsupported`); **`Unsupported` is
+  final:** once any poll hands it out (a `Context` poll, `input::poll_event`, a `TerminalSource`,
+  whichever context reads it), no release is delivered from then on, including any queued behind the
+  answer, while an answer to an earlier request (one decoded before reporting was last enabled or
+  disabled) is dropped by whichever poll reads it and changes nothing, the check and the end of
+  delivery being one atomic step; the owning session withdraws its push with one pop (never repeated
+  at restore, `Drop` or in the panic hook): at once if its own `Context` poll handed the answer out,
+  otherwise on its next `Context` poll, enable, disable or screen switch, or at restore. The
+  terminal then goes back to legacy keys (one `\r` per Enter). Once the panic hook has popped the
+  flags, even for a caught panic, no release or terminal answer is delivered and `Unsupported` is
+  delivered once, by the next `Context` poll or, if the terminal answers first, just before that
+  answer by whichever poll hands it out, so it comes before the new answer even if reporting was
+  enabled again meanwhile, and a client still waiting for releases switches back to inferred holds;
+  if a `Context` poll fails to re-enter raw mode, the notice waits for the next. While reporting is
+  confirmed, or its answer is still pending, a read ending in a lone ESC waits up to 50 ms for the
+  rest of its sequence (reading what is already waiting before giving up), then is the Esc key. The
+  rustdoc now lists what flags 15 change in delivered keys (a shifted letter has no `SHIFT`, Caps
+  Lock does not change a letter, Ctrl+I/M/[ are Ctrl chords).
+- **The C ABI is unchanged** (64 symbols): a C consumer cannot enable this yet, and never sees the
+  new events.
+
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
 - The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an
   event type with each key (`CSI 97u` press, `CSI 97;1:2u` repeat, `CSI 97;1:3u` release), and
