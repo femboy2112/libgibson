@@ -45,6 +45,10 @@ static void layout_and_constants() {
     CHECK(GIBSON_KEY_ENTER == 0x1001 && GIBSON_KEY_PAGE_DOWN == 0x100D);
     CHECK(GIBSON_EVENT_QUEUE_CAPACITY == 1024);
     // Existing API stays source-compatible: the two-argument poll_event still returns bool.
+    {   // Source compatibility: taking the address of the existing member stays unambiguous.
+        auto legacy_poll = &Context::poll_event;
+        (void)legacy_poll;
+    }
     static_assert(std::is_same<decltype(std::declval<Context&>().poll_event(0u, std::declval<gibson_event_t&>())), bool>::value,
                   "legacy poll_event(timeout, gibson_event_t&) -> bool");
 }
@@ -54,7 +58,7 @@ static void empty_queue() {
     Event e = ctx.poll_event_kind();
     CHECK(e.type == GIBSON_EVENT_NONE && e.has_kind && e.key_kind == GIBSON_KEY_KIND_NONE);
     CHECK(e.key_code == 0 && e.modifiers == 0 && e.cols == 0 && e.rows == 0 && !e.has_paste);
-    Event k = ctx.poll_event(0);
+    Event k = ctx.poll_event_kindless(0);
     CHECK(k.type == GIBSON_EVENT_NONE && !k.has_kind);
     gibson_event_t legacy{};
     CHECK(!ctx.poll_event(0, legacy) && legacy.event_type == GIBSON_EVENT_NONE);
@@ -82,7 +86,7 @@ static void keys() {
 
     ctx.push_event(Event::char_key(0x1001));
     ctx.push_event(Event::special_key(GIBSON_KEY_ENTER));
-    Event k1 = ctx.poll_event(0), k2 = ctx.poll_event(0);
+    Event k1 = ctx.poll_event_kindless(0), k2 = ctx.poll_event_kindless(0);
     CHECK(k1.key_code == 0x1001 && k2.key_code == 0x1001 && !k1.has_kind && !k2.has_kind);  // conflated, per gibson.h
 }
 
@@ -126,14 +130,17 @@ static void resize() {
 
 static void queue_full() {
     Context ctx = headless();
-    for (int i = 0; i < GIBSON_EVENT_QUEUE_CAPACITY; ++i) ctx.push_event(Event::char_key('q'));
-    EXPECT_THROW(ctx.push_event(Event::char_key('q')), QueueFullError, err,
+    // Distinguishable events (U+4E00 + i), so a displaced, reordered or inserted event shows up.
+    std::vector<Event> queued;
+    for (int i = 0; i < GIBSON_EVENT_QUEUE_CAPACITY; ++i) queued.push_back(Event::char_key(0x4E00 + i));
+    for (const Event& e : queued) ctx.push_event(e);
+    EXPECT_THROW(ctx.push_event(Event::char_key('Z')), QueueFullError, err,
                  CHECK(err.status() == GIBSON_ERR_QUEUE_FULL); CHECK(err.last_error().find("full") != std::string::npos));
     // QueueFullError is an Error is a std::runtime_error.
-    EXPECT_THROW(ctx.push_event(Event::char_key('q')), std::runtime_error, re, (void)re);
-    int n = 0;
-    while (ctx.poll_event_kind().type != GIBSON_EVENT_NONE) ++n;
-    CHECK(n == GIBSON_EVENT_QUEUE_CAPACITY);  // the refusals displaced nothing
+    EXPECT_THROW(ctx.push_event(Event::char_key('Z')), std::runtime_error, re, (void)re);
+    std::vector<Event> drained;
+    for (Event e = ctx.poll_event_kind(); e.type != GIBSON_EVENT_NONE; e = ctx.poll_event_kind()) drained.push_back(e);
+    CHECK(drained == queued);  // the refusals displaced nothing: every event, in order, no 'Z'
     ctx.push_event(Event::char_key('r'));
     CHECK(ctx.poll_event_kind().key_code == 'r');
 }
@@ -165,15 +172,15 @@ static void push_back_unchanged() {
     CHECK(first == second);
     CHECK(first[1].key_kind == GIBSON_KEY_KIND_CHAR && first[2].key_kind == GIBSON_KEY_KIND_SPECIAL);
     ctx.push_event(Event::char_key(0x1001));
-    Event a = ctx.poll_event(0);
+    Event a = ctx.poll_event_kindless(0);
     ctx.push_event(a);
-    CHECK(ctx.poll_event(0) == a);  // the kind-less loop too
+    CHECK(ctx.poll_event_kindless(0) == a);  // the kind-less loop too
 }
 
 static void readback_and_capture() {
     Context ctx = headless(20, 4);
     CHECK(ctx.frame_size() == std::pair<uint16_t, uint16_t>(0, 0));  // no frame yet
-    CHECK(ctx.frame_cells().empty());
+    EXPECT_THROW(ctx.frame_cells(), gibson::Error, e, CHECK(e.status() == GIBSON_ERR_INVALID_PARAM));  // no frame yet
     gibson_style_t st{};
     st.fg.color_type = GIBSON_COLOR_RGB; st.fg.r = 10; st.fg.g = 20; st.fg.b = 30; st.bold = 1;
     // a 14-byte-capped inline glyph needs a long grapheme: ZWJ family (25 bytes)
@@ -191,6 +198,10 @@ static void readback_and_capture() {
     CHECK(all.size() == 80);
     CHECK(ctx.frame_cells(0, 3).size() == 20 && ctx.frame_cells(0, 0, 5).size() == 5);
     CHECK(ctx.frame_cells(0, 0, 5)[1].glyph[0] == 'b');
+    CHECK(ctx.frame_cells(0, 0, 0).empty());  // valid coordinates, nothing asked for
+    EXPECT_THROW(ctx.frame_cells(0, 4), gibson::Error, e, CHECK(e.status() == GIBSON_ERR_INVALID_PARAM));
+    EXPECT_THROW(ctx.frame_cells(20, 0), gibson::Error, e, CHECK(e.status() == GIBSON_ERR_INVALID_PARAM));
+    EXPECT_THROW(ctx.frame_cells(25, 0, 0), gibson::Error, e, CHECK(e.status() == GIBSON_ERR_INVALID_PARAM));
     gibson_cell_t z = ctx.frame_cell(0, 1);
     CHECK(z._reserved[0] == 1 && z.glyph_len < zwj.size());  // truncated inline
     CHECK(ctx.frame_cell_glyph(0, 1) == zwj && ctx.full_glyph(z, 0, 1) == zwj);
@@ -200,10 +211,14 @@ static void readback_and_capture() {
     CHECK(!wire.empty() && ctx.rendered_output() == wire);  // copy, not drain
     CHECK(ctx.take_rendered_output() == wire);
     CHECK(ctx.rendered_output().empty() && ctx.take_rendered_output().empty());
-    ctx.request_render();
+    // A changed frame, so the capture has bytes to discard (an unchanged frame writes none).
+    gibson::Node again = gibson::Node::col();
+    again.add_child(gibson::Node::text("cd", nullptr, GIBSON_WRAP_NONE));
+    ctx.set_root(std::move(again));
     ctx.render();
     size_t n = ctx.rendered_output().size();
-    CHECK(ctx.clear_rendered_output() == n && ctx.clear_rendered_output() == 0);
+    CHECK(n > 0);
+    CHECK(ctx.clear_rendered_output() == n && ctx.rendered_output().empty() && ctx.clear_rendered_output() == 0);
 }
 
 static void lifecycle() {

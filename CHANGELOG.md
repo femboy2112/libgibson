@@ -154,10 +154,13 @@ stays 1.85.
   New, all additive; existing members keep their signatures and behavior:
   - `Context::headless(mode, cols, rows)`, `close()` (idempotent), `raw()`.
   - `Event` (`char_key`, `special_key`, `legacy_key`, `paste_text`, `resize`), `Context::push_event`,
-    `Context::poll_event_kind(timeout_ms = 0)` and a kind-less `Context::poll_event(timeout_ms)`
-    (the older `poll_event(timeout_ms, gibson_event_t&)` is unchanged). A polled `Event` keeps the
-    CHAR/SPECIAL key kind, so a typed U+1001 stays distinct from `GIBSON_KEY_ENTER`, and can be
-    pushed back unchanged.
+    `Context::poll_event_kind(timeout_ms = 0)` and a kind-less `Context::poll_event_kindless(timeout_ms = 0)`
+    (a separate name, so `&Context::poll_event` stays unambiguous; the older
+    `poll_event(timeout_ms, gibson_event_t&)` is unchanged). A polled `Event` keeps the CHAR/SPECIAL
+    key kind, so a typed U+1001 stays distinct from `GIBSON_KEY_ENTER`; a polled KEY, PASTE or
+    RESIZE can be pushed back unchanged (an empty-queue NONE cannot: the C ABI refuses NONE).
+  - `frame_cells` throws `Error` for no frame or out-of-bounds coordinates, as `frame_cell` does,
+    even when it would return no cells (the C ABI validates every call).
   - `frame_size`, `frame_cell`, `frame_cells`, `frame_cell_glyph`, `full_glyph`, `rendered_output`,
     `take_rendered_output`, `clear_rendered_output`.
   - Errors are exceptions: `gibson::Error` (a `std::runtime_error` with `status()` and the thread-local

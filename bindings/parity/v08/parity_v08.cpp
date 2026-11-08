@@ -484,7 +484,7 @@ private:
             }
         } else if (op == "poll_legacy") {
             gibson::Event ev;
-            int st = status_of([&] { ev = ctx_->poll_event(0); });  // the kind-less call
+            int st = status_of([&] { ev = ctx_->poll_event_kindless(0); });  // the kind-less call
             emit_event(id, st, ev, "ABSENT");
         } else if (op == "probe") {
             probe(id, arg(0));

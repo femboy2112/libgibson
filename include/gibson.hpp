@@ -269,11 +269,12 @@ public:
 // One input event, as pushed to or polled from a headless context. Fields the type does not use are
 // 0 (poll writes them that way). `key_kind` is meaningful only when `has_kind`: a KEY event polled
 // with poll_event_kind carries GIBSON_KEY_KIND_CHAR / _SPECIAL (a typed U+1001 stays distinct from
-// GIBSON_KEY_ENTER); other types carry GIBSON_KEY_KIND_NONE. A kind-less poll (poll_event(timeout))
+// GIBSON_KEY_ENTER); other types carry GIBSON_KEY_KIND_NONE. A kind-less poll (poll_event_kindless(timeout))
 // leaves has_kind false. push_event uses gibson_push_event_kind iff has_kind, else gibson_push_event
 // (U+1001..U+100D are then always the special keys). `paste` is only read when `has_paste`; an
 // event with has_paste false and type PASTE is pushed with a NULL paste_str (the C ABI refuses it).
-// A polled Event can be pushed back unchanged.
+// A polled KEY, PASTE or RESIZE Event can be pushed back unchanged (an empty-queue NONE cannot:
+// the C ABI refuses to queue NONE).
 struct Event {
     int32_t type = GIBSON_EVENT_NONE;
     uint32_t key_code = 0;
@@ -545,8 +546,9 @@ public:
     }
 
     // Kind-less poll (gibson_poll_event): a typed U+1001 and GIBSON_KEY_ENTER look the same; has_kind
-    // is false. (The older poll_event(timeout, gibson_event_t&) overload is unchanged.)
-    Event poll_event(uint32_t timeout_ms) {
+    // is false. A separate name, not a poll_event overload, so `&Context::poll_event` stays unambiguous
+    // for existing code; the older poll_event(timeout, gibson_event_t&) is unchanged.
+    Event poll_event_kindless(uint32_t timeout_ms = 0) {
         gibson_event_t c{};
         gibson_status_t st = gibson_poll_event(ctx_, timeout_ms, &c);
         if (st != GIBSON_OK) throw Error("poll_event", st);
@@ -572,13 +574,22 @@ public:
     }
 
     // Bulk readback, row-major from (x, y) to the end of the frame (at most max_cells). One ABI call.
+    // Throws Error if there is no frame or (x, y) is out of bounds: the C ABI validates every call,
+    // including one that would return no cells.
     std::vector<gibson_cell_t> frame_cells(uint16_t x = 0, uint16_t y = 0, size_t max_cells = static_cast<size_t>(-1)) const {
         std::pair<uint16_t, uint16_t> sz = frame_size();
         size_t total = static_cast<size_t>(sz.first) * sz.second;
         size_t start = static_cast<size_t>(y) * sz.first + x;
         size_t avail = total > start ? total - start : 0;
         size_t want = max_cells < avail ? max_cells : avail;
-        if (want == 0) return std::vector<gibson_cell_t>();
+        if (want == 0) {
+            // Nothing to copy, but the coordinates are still the C ABI's to judge.
+            gibson_cell_t probe{};
+            size_t none = 0;
+            gibson_status_t st = gibson_get_frame_cells(ctx_, x, y, &probe, 0, &none);
+            if (st != GIBSON_OK) throw Error("frame_cells", st);
+            return std::vector<gibson_cell_t>();
+        }
         std::vector<gibson_cell_t> cells(want);
         size_t written = 0;
         gibson_status_t st = gibson_get_frame_cells(ctx_, x, y, cells.data(), want, &written);
