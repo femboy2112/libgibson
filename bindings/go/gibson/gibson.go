@@ -5,6 +5,17 @@ package gibson
 #cgo pkg-config: libgibson
 #include <gibson.h>
 #include <stdlib.h>
+
+// The last error is thread-local in the native library. Go may move a goroutine to another OS
+// thread between two cgo calls, so reading the message in a second call can return an empty,
+// stale or foreign text. One cgo call runs on one thread: create and read the error here, together.
+static int32_t gibson_go_create_context(int32_t mode, gibson_context_t **out, char *err, size_t err_len) {
+	int32_t status = gibson_create_context(mode, out);
+	if (status != GIBSON_OK) {
+		gibson_last_error_message(err, err_len);
+	}
+	return status;
+}
 */
 import "C"
 import (
@@ -85,10 +96,9 @@ func NewContext(mode RenderMode) (*Context, error) {
 		return nil, err
 	}
 	var ptr *C.gibson_context_t
-	status := C.gibson_create_context(C.int32_t(mode), &ptr)
+	var buf [256]C.char
+	status := C.gibson_go_create_context(C.int32_t(mode), &ptr, &buf[0], 256)
 	if status != C.GIBSON_OK {
-		var buf [256]C.char
-		C.gibson_last_error_message(&buf[0], 256)
 		return nil, errors.New(C.GoString(&buf[0]))
 	}
 	return &Context{ptr: ptr}, nil

@@ -22,6 +22,17 @@ line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 was **released o
 (below); its source-version baseline `9a899e1` is never tagged. `GIBSON_ABI_VERSION` stays 1; MSRV
 stays 1.85.
 
+### Fixed — Go binding (`bindings/go`): a failed `NewContext` reports its own error message
+- **`NewContext` now reads the failure message on the same OS thread as the failing call.**
+  The native last error is thread-local, and the wrapper fetched it with a second cgo call; Go may
+  move a goroutine between the two. Reproduced on gccgo 1.18 by `TestNewContextErrorIsFromItsOwnCall`
+  (64 goroutines, each with its own invalid mode, so its own expected message; GOMAXPROCS 8;
+  unlocked polluter goroutines writing a third text): on the old wrapper **12 of 12 runs** failed,
+  with **4,601 foreign messages of 1,536,000 calls** (another goroutine's mode or the polluters'
+  text). The fixed wrapper: 0 of 1,536,000. The gc toolchain was not run locally. Create and read
+  now happen in one C helper, one cgo call. Go API unchanged.
+  ([`docs/V08_PARITY_SLICE.md`](docs/V08_PARITY_SLICE.md) F6)
+
 ### Release engineering — maintenance-line releases approved ([#287](https://github.com/femboy2112/libgibson/issues/287), #291)
 - **Release Contract §1 gains an approved maintenance-line exception** (owner decision 2026-11-08,
   conditional on its gates): a `v<x.y.z>` tag may name a qualified commit on `release/v<x.y.z>-rc`
