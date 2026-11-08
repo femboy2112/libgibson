@@ -596,9 +596,9 @@ enum KeyId {
 /// every repeat and the release of a key are named exactly as its press was (#275). A terminal
 /// can name them differently: with shift let go first, kitty reports the release of a `W`
 /// pressed with shift as `w`, and of a `!` as `1`.
-/// The first kitty functional-key code in the Unicode private-use area: keypad keys (57399-57454),
-/// media keys and modifier keys are sent from here up.
-const KITTY_PRIVATE_USE_KEYS: u32 = 57344;
+/// The kitty functional-key codes: the Unicode private-use area U+E000-U+F8FF, where kitty sends
+/// keypad keys (57399-57454), media keys and modifier keys. Codes above it are ordinary characters.
+const KITTY_PRIVATE_USE_KEYS: std::ops::RangeInclusive<u32> = 57344..=63743;
 
 /// Each record: the key, its press, a sequence number (recording order) and the key-release epoch
 /// it was recorded in.
@@ -628,14 +628,14 @@ impl PressedKeys {
     /// record of any key it decodes to recorded in a later epoch than its own record (that one
     /// went up unreported while reporting was off, and the key was pressed again since).
     ///
-    /// Only its own identity for a key kitty sends from the private-use area (57344 and up: the
+    /// Only its own identity for a key kitty sends from the private-use area (57344-63743: the
     /// keypad, media and modifier keys): keypad Left decodes as the arrow Left and keypad `1` as the
     /// top-row `1`, so a legacy record of that code belongs to a different physical key (#275
     /// review 4).
     fn find_down(&self, id: KeyId, code: CtKeyCode) -> Option<usize> {
         let legacy = KeyId::Code(code);
         let exact = self.newest(|r| r.0 == id);
-        if matches!(id, KeyId::Base(b) if b >= KITTY_PRIVATE_USE_KEYS) {
+        if matches!(id, KeyId::Base(b) if KITTY_PRIVATE_USE_KEYS.contains(&b)) {
             return exact;
         }
         let text = matches!(code, CtKeyCode::Char(_))
@@ -2084,6 +2084,39 @@ mod tests {
                 (K::Char('1'), M::CONTROL, Kind::Release), // keypad 1: its own name
                 (K::Char('1'), M::NONE, Kind::Release),    // top-row 1
             ]
+        );
+    }
+
+    #[test]
+    fn kitty_272_a_character_above_the_private_use_area_keeps_the_text_fallback() {
+        // #275 review 5: ctrl+`ｶ` (U+FF76, 65398) recorded (epoch 1) and released unreported while
+        // reporting was off; a legacy `ｶ` typed (epoch 2); kitty's release names the newer `ｶ`.
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            s.test_epoch = Some(1);
+            write_all(&master, b"\x1b[65398;5u");
+            let a = s.poll_source(Duration::from_millis(500));
+            s.test_epoch = Some(2);
+            write_all(&master, "ｶ\x1b[65398;1:3u".as_bytes());
+            let mut rest = Vec::new();
+            while let Ok(Some(e)) = s.poll_source(Duration::from_millis(200)) {
+                rest.push(e);
+            }
+            drop(master);
+            (a, rest)
+        });
+        assert_eq!(
+            got.0.unwrap(),
+            Some(SourceEvent::Terminal(kind(
+                K::Char('ｶ'),
+                M::CONTROL,
+                Kind::Press
+            )))
+        );
+        assert_eq!(
+            terminal(got.1),
+            vec![key('ｶ'), kind(K::Char('ｶ'), M::NONE, Kind::Release)]
         );
     }
 }
