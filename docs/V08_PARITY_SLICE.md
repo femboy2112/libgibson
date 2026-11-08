@@ -42,7 +42,7 @@ How each consumer reaches the installed SDK:
 | C++ | `c++ -std=c++17 ...` same pkg-config + rpath | `gibson.hpp`: `gibson::Node` RAII (col/text/add_child/release), `Context::abi_compatible()`. Everything else: the raw C ABI the header includes |
 | Python | a copy of `bindings/python/gibson.py` on `PYTHONPATH` (temp dir), `LIBGIBSON_LIBRARY=<sdk>/lib/libgibson.so` | `gibson.py`: `Context.headless`, `Node`, `GibsonStyle`, `set_root`, `render`, `frame_size`, `frame_cells`, `frame_cell`, `frame_cell_glyph`, `rendered_output`, `close`. Events, probes, `destroy(NULL)`: raw ctypes on the same `.so` (`gibson._lib._name`) |
 | Go | `go build` (cgo, `#cgo pkg-config: libgibson`), `GOFLAGS=-mod=mod GOPROXY=off`, rpath via `CGO_LDFLAGS`; `replace` to `bindings/go` | `bindings/go`: `gibson.CheckABI()` only. Everything else: the consumer's own cgo against the installed `gibson.h` |
-| Rust | `cargo +1.98.1 build --release --example parity_v08` (this worktree's source = the SDK's source) | the native crate API: `Context::headless`, `Node`, `Style`, `InjectedQueue` + `Context::poll_from`, `Context::frame_size`/`frame_cell`/`rendered_bytes`, `TerminalSession::set_terminal_size`. No `gibson::ffi` call |
+| Rust | `cargo +1.98.1 build --release --example parity_v08` (this worktree's source = the SDK's source) | the native crate API: `Context::headless`, `Node`, `Style`, `InjectedQueue` + `Context::poll_from`, `Context::frame_size`/`frame_cell`/`rendered_bytes` (`TerminalSession::set_terminal_size` only in the `unapplied` resize control, since #293). No `gibson::ffi` call |
 
 Toolchains of the recorded run: gcc/g++ 13.3.0, Python 3.12.3, Go `go1.18 gccgo` (GCC 14.2.0),
 Rust 1.98.1, Linux x86_64.
@@ -200,7 +200,7 @@ Each transcript has 76 records. The C reference transcript sha256 is
 
 So every scene, frame-digest, wire-digest, explicit-cell, full-glyph, push, poll and geometry
 record is identical across all five languages, including all nine polls (e09.1-e09.9: eight events,
-then the empty-queue NONE) and the 60x16 re-render. Rust needs one extra explicit step to get there (finding F1).
+then the empty-queue NONE) and the 60x16 re-render. In the recorded run Rust needed one extra explicit step to get there (finding F1); since #293 `poll_from` alone does it.
 
 ### Replay determinism
 
@@ -234,7 +234,7 @@ push/poll calls of `p21` (not profiled).
 |---|---|---|
 | cell, x5 languages | `PARITY_V08_PERTURB=cell`: last byte of step s06's text `!` -> `?` | `r03,s16` (both frame digests) for C, C++, Python, Go, Rust |
 | events, x5 languages | `PARITY_V08_PERTURB=events`: swap steps e01/e02 | `ORDER,e09.1,e09.2` for all five |
-| Rust resize witness | `PARITY_V08_RUST_RESIZE=native`: skip the explicit `set_terminal_size` | `r02,r03,r04`; r02 = `{"cols":40,"id":"r02","k":"geom","rows":12,"st":"OK"}` |
+| Rust resize witness | `PARITY_V08_RUST_RESIZE=unapplied`: put back the geometry `poll_from` applied (the behaviour before #293). In the recorded run this was `=native`, which skipped the consumer's explicit `set_terminal_size`; #293 removed that step | `r02,r03,r04`; r02 = `{"cols":40,"id":"r02","k":"geom","rows":12,"st":"OK"}` |
 | planted leak (resource gate) | `PARITY_V08_PERTURB=leak` (C): d01 drops the context without destroying it | second-half growth 18304 KB > 4096 -> EXCEEDED |
 
 The perturbations are env-gated in the consumers and never on by default. The harness unsets them
@@ -255,7 +255,7 @@ Labels, applied per language per dimension:
 | Dimension | C | C++ | Python | Go | Rust |
 |---|---|---|---|---|---|
 | Event identity & ordering | SUPPORTED: e09.1-e09.9 are the reference; `poll_event_kind` separates e09.2 (U+1001 CHAR) from e09.3 (ENTER SPECIAL) | PARTIAL: byte-identical, but gibson.hpp has no headless Context, push, or `poll_event_kind` (wrapper obs `ctx_has_push_event:0`) | PARTIAL: byte-identical, but gibson.py has no event struct, poll or push (`ctx_has_poll_event:0`, `module_has_event_struct:0`): raw ctypes | PARTIAL: byte-identical via own cgo; bindings/go has no headless ctx, push or poll (`ctx_has_PollEvent:0`) | PARTIAL: e01-e09 byte-identical via `InjectedQueue` + `poll_from`; x01/x03/x04 UNSUPPORTED (no kind-less key path) |
-| Geometry | SUPPORTED: s15 40x12, r02 60x16; a polled RESIZE is the only resize path (no direct resize call, none needed) | PARTIAL: byte-identical; no `frame_size` in gibson.hpp (`ctx_has_frame_size:0`) | PARTIAL: s15/r02 via `Context.frame_size`, but the resize itself needs raw push/poll | PARTIAL: byte-identical via own cgo (`ctx_has_FrameSize:0`) | PARTIAL: r02 matches only with an explicit `ctx.session.set_terminal_size` (examples/parity_v08.rs:521); witness: `poll_from` alone leaves r02 at 40x12 |
+| Geometry | SUPPORTED: s15 40x12, r02 60x16; a polled RESIZE is the only resize path (no direct resize call, none needed) | PARTIAL: byte-identical; no `frame_size` in gibson.hpp (`ctx_has_frame_size:0`) | PARTIAL: s15/r02 via `Context.frame_size`, but the resize itself needs raw push/poll | PARTIAL: byte-identical via own cgo (`ctx_has_FrameSize:0`) | PARTIAL: in the recorded run r02 matched only with an explicit `ctx.session.set_terminal_size`; since #293 `poll_from` alone gives r02 60x16 (the label is unchanged in `expected.json`) |
 | Rendered cells & styles | SUPPORTED: s16/r03 digests (cells + wire), s18 RGB+bold+underline, s19 ANSI256+named+italic, s25/r04 blanks | PARTIAL: scene via `gibson::Node` RAII; readback only raw C (`ctx_has_frame_cells:0`) | SUPPORTED: every CELL record through gibson.py (`Context.headless`, `Node.text`+`GibsonStyle`, `frame_cells`, `frame_cell`, `rendered_output`) | PARTIAL: byte-identical via own cgo; bindings/go has no styled text node or readback | SUPPORTED: s16/r03 and s18/s19/s25/r04 via `frame_cell` + `rendered_bytes` (r03/r04 rely on the GEO step) |
 | Text & Unicode semantics | SUPPORTED: s20/s21 CJK width 2 + continuation, s22 `e`+U+0301 one cell, s23/s26 25-byte ZWJ width 2, s24/r05 U+1001, s27 inline cap = 14-byte prefix, `trunc:1` | PARTIAL: `Node::text` carries the UTF-8; glyph readback only raw C | SUPPORTED: `Node.text(str)`, `frame_cell_glyph`, `GibsonCell.glyph_truncated` | PARTIAL: byte-identical via own cgo | PARTIAL: s17-s26/r05 byte-identical; s27/s28 UNSUPPORTED (Rust always has the full grapheme; the cap is a C artifact) |
 | Failure codes | SUPPORTED: p01-p22 = 21 INVALID_PARAM + 1 QUEUE_FULL; last-error text for 6 | PARTIAL: p01-p22 byte-identical via raw C; `gibson::Node::text` drops the status (`node_text_invalid_utf8_raw_is_null:1`) | PARTIAL: byte-identical via raw ctypes; the wrapper cannot pass NULL or invalid UTF-8 and `Node.*` ignore the status | PARTIAL: byte-identical via own cgo with `LockOSThread` (last error is per thread) | PARTIAL: no status codes: 13 unrepresentable, 7 rejected natively, **2 accepted where C rejects** (p02, p15) |
@@ -273,7 +273,9 @@ dimensions the script does not exercise are listed under [Not claimed](#not-clai
   re-reads the unchanged `headless_size`. The C ABI's poll applies it (`src/ffi.rs:976-981`). The
   `poll_from` doc claim "keeping a scripted resize indistinguishable from a terminal one"
   (`src/context.rs:685`) therefore does not hold for a headless context. Witness r02 =
-  `{"cols":40,...,"rows":12}` vs C `{"cols":60,...,"rows":16}`.
+  `{"cols":40,...,"rows":12}` vs C `{"cols":60,...,"rows":16}`. **Fixed by #293:** `poll_from` applies a
+  delivered resize to a headless context through the same `Context` implementation the C ABI's poll
+  now calls; a zero-dimension resize is delivered but not applied. The consumer's explicit step is gone.
 * **F2 (Rust, observed).** Input validation exists only on the C side. `Context::headless(_, 0, 12)`
   is accepted and renders a 0x12 frame (p02). `InjectedQueue` accepts `Resize(0, 12)` (p15), and a
   consumer that applies it as the C ABI does would set a zero-width headless size.
@@ -290,10 +292,27 @@ dimensions the script does not exercise are listed under [Not claimed](#not-clai
     are unexported, so a wrapper `Node` cannot be mounted on a context created by other cgo code.
     `Line.AddSpan` takes a `*C.gibson_style_t`, a cgo type no other package can construct.
   - All three bindings ignore or flatten the C status of node constructors.
-* **F6 (Go binding, source read, NOT observed).** `bindings/go/gibson/gibson.go:88-91` reads the
-  thread-local `gibson_last_error_message` in a separate cgo call without `runtime.LockOSThread`,
-  so the message can come from another OS thread. The Go consumer pins its thread; the wrapper path
-  was not exercised (it needs a TTY context).
+* **F6 (Go binding, REPRODUCED on gccgo, fixed).** `NewContext` read the thread-local
+  `gibson_last_error_message` in a second cgo call after `gibson_create_context` failed, so the
+  message could come from another OS thread. Observed with `TestNewContextErrorIsFromItsOwnCall`
+  (`bindings/go/gibson/last_error_test.go`). Each of 64 goroutines calls `NewContext` with its own
+  invalid mode (100+i), which fails before touching a terminal with its own text, 2000 times
+  (128,000 calls per run, GOMAXPROCS 8), while 4 unlocked polluter goroutines write a third text
+  into whichever thread they run on.
+  * Old wrapper (`c23bd72`), 12 runs of one compiled binary: **12 of 12 runs failed**, **4,601 of
+    1,536,000 calls** returned a foreign message (another goroutine's mode, or the polluters' text).
+  * Fixed wrapper, same 12 runs: **0 of 1,536,000**.
+  * A first version of the test (one shared mode, polluters locked to their own threads) could only
+    see an empty message. It caught 24 of 3,840,000 (15 of 30 runs; an independent re-run 14 of
+    1,536,000, 8 of 12 runs), all empty. Review (Codex) noted that design could not see foreign
+    text; the current test can.
+  * Toolchain: local gccgo 1.18 only. gc (CI's `setup-go stable`) was **not** run locally, so its
+    failure rate is UNVERIFIED; the test still passes or fails on gc by the same rule.
+  * Detection is probabilistic: the broken wrapper is caught only when the scheduler moves a
+    goroutine between the two calls; the fixed wrapper cannot fail this way.
+  * Fix: create and read the error in one C helper in the cgo preamble, so both run in one cgo call
+    on one thread. It was the only `gibson_last_error_message` call site in the Go binding; the
+    exported API is unchanged.
 * **F7 (header, source read).** `gibson.h` does not state that `gibson_destroy_context(NULL)` /
   `gibson_node_free(NULL)` are no-ops. The implementation null-checks (`src/ffi.rs:583`, `:1623`),
   which is what l02 relies on.
@@ -311,7 +330,8 @@ headless context (`{"cols":60,"id":"r02","k":"geom","rows":16,"st":"OK"}`).
 1. **A delivered `Resize` must resize a headless session on the Rust injected-input path** (or a
    named method must do it), matching `gibson_poll_event`. Failing line (PARITY_V08_RUST_RESIZE=native):
    `{"cols":40,"id":"r02","k":"geom","rows":12,"st":"OK"}`. The shape (apply inside `poll_from`
-   for headless sessions vs. a new method) is a decision, not made here.
+   for headless sessions vs. a new method) is a decision, not made here. **Done in #293:** applied
+   inside `poll_from`, no new method.
 
 **Binding surfaces (not ABI). Each list is forced because the transcript lines could only be produced by
 bypassing the binding:**
@@ -356,5 +376,5 @@ bypassing the binding:**
   one recorded run set.
 * **Resources.** Peak RSS is a high-water mark, so it cannot show memory being freed. The gate detects leaks
   of about 16 KB per rep or more at N=500, not smaller. Wall times are not benchmarks.
-* **Labels are as of `5790f1a`.** F6 and F7 are source reads, not observed failures.
+* **Labels are as of `5790f1a`.** F7 is a source read, not an observed failure; F6 was observed (see its entry).
 * **No claim** that the C ABI needs no additions beyond what this script exercises.

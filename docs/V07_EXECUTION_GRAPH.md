@@ -7,6 +7,8 @@ that contains it — never from the integration branch itself.
 *Update 2026-11-07:* v0.7 work under this plan has since added three additive ABI v1 symbols on
 `main` (59 → 60: `gibson_push_event`, #273; → 62: `gibson_poll_event_kind` /
 `gibson_push_event_kind`, #283). `GIBSON_ABI_VERSION` stays 1; v0.6.0 keeps 59.
+*Update 2026-11-08:* → 64: `gibson_take_rendered_output` / `gibson_clear_rendered_output` bound a
+headless context's capture (#297).
 
 ## What v0.6 already proves (preserved evidence, not re-litigated)
 
@@ -95,11 +97,12 @@ wording below differs, this governs.
   poll before its timeout. Evidence is PTY injection; no emulator here implements the protocol.
   Windows key-kind decoding is unchanged: crossterm 0.29 reports every Windows key-up as a release,
   which LibGibson still delivers as a second press (#292, open; no Windows runner here).
-- **C ABI:** 62 symbols on `main` (59 → 60 by #273 `67c43bd`, → 62 by #283); 59 at `9a899e1` and
+- **C ABI:** 64 symbols on `main` (59 → 60 by #273 `67c43bd`, → 62 by #283, → 64 by the #297
+  capture drain); 59 at `9a899e1` and
   on the v0.6.0 candidate `572e551`. `GIBSON_ABI_VERSION` stays 1.
 - **Node H:** its earlier statement that a handled or ignored SIGHUP can spin in #269 is
   superseded by #282; the row now separates what is tested from what is not.
-- **v0.6.0: not tagged, not released.** HOLD on owner decision #287. The candidate is now
+- **v0.6.0: not tagged, not released** (as of RXIX; *2026-11-08: released as `v0.6.0` → `492d0fe` from `release/v0.6.0-rc`, see #287 and decision 0001*). HOLD on owner decision #287. The candidate is now
   `release/v0.6.0-rc` @ `572e551` = `1b90b48` + the #259 backport (#288, `e6b9c42`) + the #285
   backport (#294, `572e551`), requalified at that exact head: CI 42421627573 (8/8), Release
   Preflight 42421629285 (PASS), `check-maintenance-candidate.sh` PASS (59 symbols, built library

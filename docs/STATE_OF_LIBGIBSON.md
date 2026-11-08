@@ -12,25 +12,33 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
-**v0.6.0 prepared in source (2026-11-05) — not released:** the v0.6 "Instrumental
-Renaissance" integration merged to `main` through #253 (merge `f6cd8c7`, after an
-independent audit approved its exact head `eaa0d1c`), and the manifests read `0.6.0` at `9a899e1`
-(`main` has since opened `0.7.0-dev`).
-That is release state 1 of the Release Contract §1: **not tagged, not released on GitHub,
-not on any registry**; the latest released version, and the one the install instructions
-use, remains v0.5.0. v0.6 adds a live Python↔Rust wire instrument and instrument-driven
+**v0.6.0 released (2026-11-08):** [v0.6.0 — Instrumental Renaissance (maintenance-line
+release)](https://github.com/femboy2112/libgibson/releases/tag/v0.6.0) is a GitHub Engineering Alpha
+prerelease (release state 2 of the Release Contract §1; Linux x86_64; native SDK archive + Python
+wheel/sdist attached; not published to crates.io/PyPI/Go proxy). Tag `v0.6.0` (and
+`bindings/go/v0.6.0`) → `492d0fe` on the maintenance branch `release/v0.6.0-rc`, not on `main`'s
+history: the first release under the maintenance-line exception
+([decision 0001](decisions/0001-v0.6.0-release-line.md)). `main` stays `0.7.0-dev` and was not
+merged with that branch. The source-version baseline `9a899e1` (0.6.0 prepared in source on `main`)
+is never tagged; the released tree adds reviewed backports of the `main` fixes for #264, #269/#15,
+#259 and #285, plus release engineering (the #297 disclosure and the approved policy text and
+checker). The install instructions use v0.6.0. **Known limit (#297):** a headless C context's
+ANSI capture grows for its lifetime and 0.6.0 has no C drain; bound it by replacing the context
+past a byte budget (the additive drain is on `main` for v0.7, unreleased, PR #306).
+The v0.6 "Instrumental Renaissance" integration merged to `main` through #253 (merge `f6cd8c7`,
+after an independent audit approved its exact head `eaa0d1c`). v0.6 adds a live Python↔Rust wire
+instrument and instrument-driven
 cinema (examples), renderer recovery from partial terminal writes (counted write + flush,
 not atomic I/O — Release Contract §9), the text-input glyph-boundary repair, and seven
 additive C ABI functions (52 → 59: headless contexts, rendered-output and cell-grid
 readback, color-depth selection; `GIBSON_ABI_VERSION` stays 1; MSRV 1.85). Per-gate
 evidence and remaining limits: [`V06_QUALIFICATION_LEDGER.md`](V06_QUALIFICATION_LEDGER.md).
-*Update 2026-11-07:* still not tagged or released. A qualified candidate,
-`release/v0.6.0-rc` @ `572e551` (`9a899e1` + the #264, #269, #259 and #285 fixes; still 59 symbols), is on
-HOLD for owner decision [#287](https://github.com/femboy2112/libgibson/issues/287), requalified at
-that exact head (CI 42421627573, Release Preflight 42421629285). `main` (0.7.0-dev) exports 62 C ABI symbols
-(#273, #283), `GIBSON_ABI_VERSION` still 1.
+Records: [qualification](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6721675144),
+[publication](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6721728874);
+exact-head CI run 42480198449 (8/8, first attempt), Release Preflight run 42480200825 (PASS).
+`main` (0.7.0-dev) exports 62 C ABI symbols (#273, #283), `GIBSON_ABI_VERSION` still 1.
 
-**v0.5.0 released (2026-10-24):** **v0.5.0 — Interactive instruments** is released on
+**v0.5.0 released (2026-10-24; the prior release):** **v0.5.0 — Interactive instruments** is released on
 GitHub as an Engineering Alpha (tag → `v0.5.0` at `d8c7b99`, prerelease-flagged, Linux
 x86_64; native SDK archive + Python wheel/sdist attached; not published to
 crates.io/PyPI/Go proxy). It adds an
@@ -481,7 +489,7 @@ through PR #14, with regressions. Issues #7, #8 and #9 are closed. D3/D4 retain 
 | D6 | Release/API/MSRV/distribution contract — RESOLVED / IMPLEMENTED + TESTED (PR #21) | Pre-1.0 release contract ([RELEASE_CONTRACT.md](RELEASE_CONTRACT.md)): declared + tested **MSRV 1.85** on two independently CI-enforced floors — the *resolved-release* floor (committed lock, `cargo +1.85 check/test --locked --lib`) and the *declared-range* floor (fresh unlocked resolution of declared ranges, `scripts/release/msrv-consumer.sh`); CHANGELOG; Rust API stability tiers (CORE vs experimental); C ABI v1 policy + 52-symbol baseline guard; wrapper ABI-compatibility policy — the C++ `Context` now checks `gibson_abi_version()` at construction and throws on mismatch, matching Python/Go. Publication-free release preflight gates clean-room external C/C++/Python/Go/Rust consumers (the Go consumer builds from a module copy staged **outside** the checkout; the Python wheel/sdist and the Go module root carry the dual license), a staged relocatable native SDK, a deterministic bundle, and enforced third-party-notice freshness. **Release status:** `v0.1.0` is released on GitHub (2026-09-25; tag → `a3f1e29`, prerelease-flagged, Linux x86_64 native SDK attached). **Remaining limitations (separate, not blockers):** no ecosystem-registry publication (no crates.io / PyPI / Go module tag); Linux x86_64 artifact only; no stable 1.0 promise; no macOS/Windows package proof. |
 | D7 | Long-session/resource policy — IMPLEMENTED + TESTED (PR #19) | Original finding: the Story trace grew unbounded until completion (measured ~110 MB RSS at 1M ticks under a transition-heavy story). `TraceRetention {All (default)/Bounded(cap)/Disabled}` now bounds **both** the step and beat logs with honest `dropped_steps()`/`dropped_beats()`/`is_complete()`; `drain_trace()` is an external sink; `Bounded(usize::MAX)` arithmetic is saturating-hardened. Resource-retention inventory ([RESOURCE_OWNERSHIP.md](RESOURCE_OWNERSHIP.md)) classifies every structure surveyed; a bounded endurance soak is exercised. Public Surface storage / caller-sized helpers remain caller-owned by contract. Tracked by [issue #10](https://github.com/femboy2112/libgibson/issues/10). |
 | D8 | Embedded lifecycle ownership — IMPLEMENTED + TESTED (PR #19) | Original finding: a global panic hook/stdout + best-effort restore suited a single owner, and concurrent contexts, failed writes and host panic-hook integration lacked a product contract. Now: a process-global exclusive terminal lease (Available/Owned/Restoring) rejects a second interactive owner (`AlreadyExists`); one-shot checked `restore()` reports the first error yet still tears down and releases the lease (tested with fd 1 → `/dev/full`); panic restoration is **owner-thread-scoped** — a non-owner worker panic no longer tears down the owner's terminal (proven on a PTY) — and a pre-existing host panic hook is chained. Drop stays best-effort; SIGKILL/abort/OOM/disconnected-tty remain explicitly unsupported. Tracked by [issue #11](https://github.com/femboy2112/libgibson/issues/11). |
-| D9 | Queued input under resize/backpressure | [Issue #15](https://github.com/femboy2112/libgibson/issues/15): a delayed key is released by a later key. **REPRODUCED / ISOLATED UPSTREAM, NOT FIXED.** [Event Pressure Lab](EVENT_PRESSURE_LAB.md) supplies a bounded independent raw/Crossterm/Context reproducer. Syscalls show a signal-first batch with both tokens, followed by loss of the remaining TTY token; scratch retention restores delivery. [Upstream #1126](https://github.com/crossterm-rs/crossterm/issues/1126). Production dependencies and runtime remain unchanged; explicit collision acceptance stays red. *Update 2026-11-07:* fixed for LibGibson's own Unix terminal source by #282 (`04c0ad2`; the acceptance is enabled on `main` and on the held 0.6.0 candidate). Not fixed for input read through crossterm's Unix reader (no latched controlling terminal; Windows uses another crossterm backend and is untested), for applications calling that reader directly, or in releases through v0.5.0: crossterm#1128 is unmerged, crates.io is still 0.29.0. |
+| D9 | Queued input under resize/backpressure | [Issue #15](https://github.com/femboy2112/libgibson/issues/15): a delayed key is released by a later key. **REPRODUCED / ISOLATED UPSTREAM, NOT FIXED.** [Event Pressure Lab](EVENT_PRESSURE_LAB.md) supplies a bounded independent raw/Crossterm/Context reproducer. Syscalls show a signal-first batch with both tokens, followed by loss of the remaining TTY token; scratch retention restores delivery. [Upstream #1126](https://github.com/crossterm-rs/crossterm/issues/1126). Production dependencies and runtime remain unchanged; explicit collision acceptance stays red. *Update 2026-11-07:* fixed for LibGibson's own Unix terminal source by #282 (`04c0ad2`; the acceptance is enabled on `main`; v0.6.0 carries the reviewed backport). Not fixed for input read through crossterm's Unix reader (no latched controlling terminal; Windows uses another crossterm backend and is untested), for applications calling that reader directly, or in releases through v0.5.0: crossterm#1128 is unmerged, crates.io is still 0.29.0. |
 
 Historical audit reproducer (now fixed by the consolidation regressions):
 
