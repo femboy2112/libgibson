@@ -176,8 +176,8 @@
         "byte-identical, but gibson.hpp has no headless Context, push_event*, or poll_event_kind: the consumer calls the C ABI directly"
       ],
       "py": [
-        "PARTIAL",
-        "byte-identical, but gibson.py has no event struct, poll or push (wrapper obs ctx_has_poll_event=0): raw ctypes"
+        "SUPPORTED",
+        "every e01-e09/x01-x04 record via the wrapper (Context.push_event/poll_event, Event.char vs Event.special key_kind, poll_event(kind=False) for the kind-less x-records; wrapper obs ctx_has_push_event=1, ctx_has_poll_event=1, module_has_event_struct=1)"
       ],
       "go": [
         "PARTIAL",
@@ -198,8 +198,8 @@
         "s15/r02 byte-identical; gibson.hpp has no frame_size: raw C"
       ],
       "py": [
-        "PARTIAL",
-        "s15/r02 byte-identical via Context.frame_size; the resize itself needs raw ctypes push/poll"
+        "SUPPORTED",
+        "s15/r02 byte-identical via Context.frame_size, with the RESIZE pushed and polled through Context.push_event/poll_event"
       ],
       "go": [
         "PARTIAL",
@@ -265,7 +265,7 @@
       ],
       "py": [
         "PARTIAL",
-        "p01-p22 byte-identical via raw ctypes; wrapper cannot pass NULL or invalid UTF-8, Node.* ignore the status"
+        "p01-p22 byte-identical; the 8 event probes (p11-p17, p21) go through Context.push_event/GibsonError, the other 14 still need raw ctypes (NULL pointers, foreign contexts, node/cell calls); Node.* ignore the status"
       ],
       "go": [
         "PARTIAL",
