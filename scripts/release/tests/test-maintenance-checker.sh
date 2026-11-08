@@ -41,6 +41,8 @@
 #   N27 an export through #[export_name]                               -> FAIL exports + surface
 #   N29 the layout oracle (tests/ffi_abi_layout_freeze.rs) edited      -> FAIL layout oracle only
 #   P7 a new non-exporting #[cfg(unix)] module (a legitimate backport)  -> PASS
+#   P8 a #[cfg(test)] module with imports in src/ffi.rs                -> PASS
+#   P9 a Cargo.toml with 20000 comment lines (no reader exits early)    -> PASS
 #   F1-F4 a tool dies after (part of) its output: the header read (both revisions truncated to
 #   one common prefix), header enumeration, nm, branch enumeration    -> FAIL tools (+ that check)
 #
@@ -332,6 +334,18 @@ X="$(perturb "$C" src/lib.rs '$a #[cfg(unix)]\nmod calibration_internal;' 'calib
 on_branch "$X"; a="$(with_extra p7 "$X")" || die "P7 allow"
 REQUIRE_PASS='C ABI: the Rust C-ABI surface of src/ is identical'
 case_ "P7 a new non-exporting #[cfg(unix)] module" 0 - -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
+
+X="$(perturb "$C" src/ffi.rs '$a #[cfg(test)]\nmod calibration_test_only {\n    use std::mem::size_of;\n    #[test]\n    fn size_check() { assert_eq!(size_of::<u32>(), 4); }\n}' 'calibration: a test-only module in the ABI file')" || die "P8 setup"
+on_branch "$X"; a="$(with_extra p8 "$X")" || die "P8 allow"
+REQUIRE_PASS='C ABI: the Rust C-ABI surface of src/ is identical'
+case_ "P8 a #[cfg(test)] module with imports in src/ffi.rs" 0 - -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
+for _ in $(seq 20000); do echo '# calibration padding'; done >"$WORK/padding.toml"
+# The padding goes at the END, after [package]'s version line: a reader that exits once it has the
+# version then abandons a git show that still has ~440 KB to write (the hazard P9 guards).
+X="$(perturb "$C" Cargo.toml "\$r $WORK/padding.toml" 'calibration: 20000 trailing comment lines in Cargo.toml')" || die "P9 setup"
+on_branch "$X"; a="$(with_extra p9 "$X")" || die "P9 allow"
+REQUIRE_PASS='version: candidate Cargo.toml = 0\.6\.0'
+case_ "P9 a Cargo.toml with 20000 comment lines (no early-exit SIGPIPE)" 0 - -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
 
 # Fault injection: each tool dies after (part of) its output; the checker must fail, not pass.
 X="$(perturb "$C" include/gibson.h 's/uint8_t \*buf, size_t cap, size_t \*out_len);$/uint8_t *buf, uint32_t cap, size_t *out_len);/' 'calibration: header declaration change (fault injection)')" || die "F1 setup"

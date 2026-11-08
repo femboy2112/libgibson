@@ -48,13 +48,21 @@ maintenance-line exception (below). `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.8
   lexer (`cc -fpreprocessed -dD -E -P`) and whitespace is collapsed outside string and character
   literals. These fail closed: a header with a line splice or a trigraph introducer, a raw string,
   no compiler, and any failure of a tool feeding a check (git, nm, python3), including a tool that
-  dies after printing part of its output.
-- **`scripts/release/tests/test-maintenance-checker.sh`** calibrates the checker with 45 cases in a
+  dies after printing part of its output. Parsing involves no pipes into early-exiting readers and
+  no here-strings, so it has no IO failure mode of its own.
+- **`scripts/release/tests/test-maintenance-checker.sh`** calibrates the checker with 47 cases in a
   throwaway clone. Every `GIT_*` variable is cleared first, and the clone's git directory is
   verified before any ref is touched.
-  - **7 must pass:** a valid candidate; a comment-only header change; both tags on the candidate; a
-    doc-only `src/ffi.rs` change; a CRLF two-column allow-list; a synthetic library with exactly the
-    baseline's names; and a new non-exporting `#[cfg(unix)]` module, the shape of the #269 backport.
+  - **9 must pass:**
+    - a valid candidate;
+    - a comment-only header change;
+    - both tags on the candidate;
+    - a doc-only `src/ffi.rs` change;
+    - a CRLF two-column allow-list;
+    - a synthetic library with exactly the baseline's names;
+    - a new non-exporting `#[cfg(unix)]` module, the shape of the #269 backport;
+    - a `#[cfg(test)]` module with imports in `src/ffi.rs`;
+    - a `Cargo.toml` with 20,000 comment lines.
   - **38 must fail, each for its intended reason and no other:**
     - candidate identity: a 0.7 development commit; a non-descendant; the baseline itself;
     - ABI baseline and library: a changed ABI baseline; a library from another tree or with an
