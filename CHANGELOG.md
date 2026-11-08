@@ -40,16 +40,16 @@ maintenance-line exception (below). `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.8
   (`cc -fpreprocessed -dD -E -P`) and whitespace is collapsed outside string and character literals;
   a header with a line splice or a trigraph introducer, a raw string, or no compiler fails closed.
 - **`scripts/release/tests/test-maintenance-checker.sh`** calibrates it in a throwaway clone (every
-  `GIT_*` variable cleared, its git directory verified before any ref is touched) with 33 cases:
+  `GIT_*` variable cleared, its git directory verified before any ref is touched) with 34 cases:
   six that must pass (a valid candidate; a comment-only header change; both tags on the
   candidate; a doc-only `src/ffi.rs` change; a CRLF two-column allow-list; a synthetic library with
-  exactly the baseline's names) and 27 that must fail for their intended reason and no other (a
+  exactly the baseline's names) and 28 that must fail for their intended reason and no other (a
   0.7 development commit, a changed ABI baseline, a non-descendant, the baseline itself, a missing,
   extra or misclassified allow-list entry, a library from another tree or with an extra data symbol,
   a manifest or release-version mismatch, either tag on another commit, a header declaration change,
   a macro hidden by line splices or by a trigraph, whitespace inside a string literal, swapped
   `#[repr(C)]` fields, a changed parameter type or constant, a new export or exported static, an
-  MSRV or PCM producer change, and no or a wrongly named release branch). Raw run:
+  MSRV or PCM producer change, no or a wrongly named release branch, and an unreadable `src/` file). Raw run:
   `docs/decisions/0001/calibration-572e551.txt`. An independent review (Codex) found the bypasses
   that the line-splice, string-literal, Rust-surface, data-symbol, baseline, branch-name and
   isolation cases now cover; an earlier count in this PR's description ("20/20") was wrong.
