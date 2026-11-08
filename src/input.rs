@@ -166,10 +166,15 @@ pub enum KeyReleaseReporting {
     /// The terminal confirmed it (it speaks the kitty keyboard protocol): from this event on,
     /// a key that goes up is reported as an [`Event::KeyRelease`].
     Active,
-    /// The terminal answered without confirming it (or reporting ended: the panic hook popped
-    /// the flags): keys stay press-only, and no [`Event::KeyRelease`] will come. Final: once any
-    /// poll hands it out, releases stop and the request is withdrawn (see
+    /// The terminal answered without confirming the current request: keys stay press-only, and
+    /// no [`Event::KeyRelease`] will come for it. Final for that request: once any poll hands it
+    /// out, releases stop and the request is withdrawn (see
     /// `TerminalSession::set_key_release_reporting`).
+    ///
+    /// Also the notice that reporting *ended* because the panic hook popped the flags. That
+    /// notice is news about the earlier request, not a verdict on a later one: if the client
+    /// enabled reporting again after a caught panic, the notice comes first and the new request
+    /// stands, so its own answer (possibly [`Active`](Self::Active)) follows.
     Unsupported,
 }
 
@@ -226,11 +231,15 @@ pub enum Event {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SourceEvent {
     Terminal(CtEvent),
+    // Only the Unix source constructs the two variants below; elsewhere they are matched but
+    // never built.
+    #[cfg_attr(not(unix), allow(dead_code))]
     KeyReleaseReporting(KeyReleaseReporting),
     /// The panic hook ended key-release reporting and nobody has said so yet (#275 review 8).
     /// The Unix source queues it just before the first answer it decodes after the end, so
     /// whichever poll hands that answer out says `Unsupported` first. Delivered as `Unsupported`,
     /// whatever the delivery state, and changes none of it: it is news, not a verdict.
+    #[cfg_attr(not(unix), allow(dead_code))]
     ReportingEnded,
 }
 
