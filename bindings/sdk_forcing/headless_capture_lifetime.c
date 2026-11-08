@@ -104,9 +104,13 @@ static gibson_status_t draw(gibson_context_t *ctx, workload_t *w, unsigned long 
     return gibson_render(ctx);
 }
 
+/* Every size query is checked: a failed query fails the run instead of reading as a size. */
 static size_t cap_len(gibson_context_t *ctx) {
-    size_t len = (size_t)-1;
-    if (gibson_get_rendered_output(ctx, NULL, 0, &len) != GIBSON_OK) return (size_t)-1;
+    size_t len = 0;
+    if (gibson_get_rendered_output(ctx, NULL, 0, &len) != GIBSON_OK) {
+        check(0, "gibson_get_rendered_output size query returned GIBSON_OK", "size query");
+        return 0;
+    }
     return len;
 }
 
@@ -168,7 +172,7 @@ int main(void) {
                 if (changing)
                     check(len >= (size_t)n_ctl * (cells / 2), "capture >= N_ctl * cells/2", ctag);
                 else
-                    check(len > 0 && len != (size_t)-1, "capture non-empty", ctag);
+                    check(len > 0, "capture non-empty", ctag);
                 check(len < ((size_t)64 << 20), "control stays under 64 MiB", ctag);
                 printf("CONTROL   %-14s frames=%u capture_bytes=%zu first_frame_bytes=%zu steady_bytes_per_frame=%.1f rss_growth_kib=%ld\n",
                        tag, n_ctl, len, first, n_ctl > 1 ? (double)(len - first) / (n_ctl - 1) : 0.0, rss1 - rss0);

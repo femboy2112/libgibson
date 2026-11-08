@@ -123,14 +123,16 @@ count() { grep -c . || true; }
 # rust_surface <rev>: the canonical Rust C-ABI surface of src/ at <rev> (see check 3), or a
 # non-zero status if it cannot be parsed (the caller fails closed).
 rust_surface() {
-    local rev="$1" f
+    local rev="$1" files f
+    # Callers use `|| die`, which disables errexit here, so every step checks its own status.
+    files="$(git ls-tree -r --name-only "$rev" -- src)" || return 1
     {
-        git ls-tree -r --name-only "$rev" -- src | grep '\.rs$' | while IFS= read -r f; do
+        printf '%s\n' "$files" | grep '\.rs$' | while IFS= read -r f; do
             printf '//@file %s\n' "$f"
-            git show "$rev:$f"
+            git show "$rev:$f" || exit 1
             printf '\n'
         done
-    } | python3 -I "$SURFACE" rust-abi
+    } | python3 -I "$SURFACE" rust-abi || return 1
 }
 # header_decls <rev> <path>: a public header's declarations: comments removed by the compiler's
 # own lexer (no macro expansion; directives kept), whitespace collapsed outside literals. Fails

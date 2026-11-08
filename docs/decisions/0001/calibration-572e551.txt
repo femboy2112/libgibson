@@ -7,7 +7,7 @@
 calibration: baseline 9a899e1d35025894725c5b14aa8836349fc01825, candidate 572e5519a07f837796838f07717aa6a7ac535232, dev a0a36d170f3924b1be5c3740bc72b194c73bb3d6
 calibration: --so <rc-build> (sha256 cd09a28160d363a8f2082d463197ef0bb00ebb2b1ae7fb98261dc483ede476d6)
 calibration: --foreign-so <other-build> (sha256 d791db93433c4534ffd2807d24d0f7228496a4e924c5d2ede7837584302cb766)
-calibration: checker sha256 260b442f40712e626eceec48e3007700ce56666c37993ff168def59a7736b152, surface sha256 99dd7ad2512699903fdc3328b79a47ca6a75e0dae6bdc6785f8b4098a62dc2d0
+calibration: checker sha256 a483c14f8898d426128e23e18b49a911700f3c462261d41f69b6d2004088b468, surface sha256 99dd7ad2512699903fdc3328b79a47ca6a75e0dae6bdc6785f8b4098a62dc2d0
 ok    P1 valid candidate (exit 0, 0 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -47,9 +47,9 @@ ok    P1 valid candidate (exit 0, 0 FAIL line(s))
       | RESULT: PASS — 572e5519a07f meets the maintenance-line checks against baseline 9a899e1d3502
 ok    P2 comment-only header change (exit 0, 0 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 0b6c3a91b8dd51853450e0987f9cdda9af3e2dc4 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 9c877e8e65d68d218c5867598e39f9e5b18ab2d4 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 0b6c3a9
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 9c877e8
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -62,7 +62,7 @@ ok    P2 comment-only header change (exit 0, 0 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..0b6c3a9:
+      | INFO  commits: 17 in 9a899e1..9c877e8:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -79,9 +79,9 @@ ok    P2 comment-only header change (exit 0, 0 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         0b6c3a9 calibration: comment-only header change
+      |         9c877e8 calibration: comment-only header change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.p2, and it lists nothing else
-      | RESULT: PASS — 0b6c3a91b8dd meets the maintenance-line checks against baseline 9a899e1d3502
+      | RESULT: PASS — 9c877e8e65d6 meets the maintenance-line checks against baseline 9a899e1d3502
 ok    P3 both tags on the candidate (exit 0, 0 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -121,9 +121,9 @@ ok    P3 both tags on the candidate (exit 0, 0 FAIL line(s))
       | RESULT: PASS — 572e5519a07f meets the maintenance-line checks against baseline 9a899e1d3502
 ok    P4 doc-comment-only change in src/ffi.rs (exit 0, 0 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 2642d81c205b06390edbe4299c7b131fdbd54e18 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 96d665d49803567eb92937e4c7a014c194e2cc5f (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 2642d81
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 96d665d
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -136,7 +136,7 @@ ok    P4 doc-comment-only change in src/ffi.rs (exit 0, 0 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..2642d81:
+      | INFO  commits: 17 in 9a899e1..96d665d:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -153,9 +153,9 @@ ok    P4 doc-comment-only change in src/ffi.rs (exit 0, 0 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         2642d81 calibration: doc-only ffi change
+      |         96d665d calibration: doc-only ffi change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.p4, and it lists nothing else
-      | RESULT: PASS — 2642d81c205b meets the maintenance-line checks against baseline 9a899e1d3502
+      | RESULT: PASS — 96d665d49803 meets the maintenance-line checks against baseline 9a899e1d3502
 ok    P5 CRLF two-column allow-list (exit 0, 0 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -398,9 +398,9 @@ ok    N1 development candidate (exit 1, 8 FAIL line(s))
       | RESULT: FAIL — 8 violation(s); a0a36d170f39 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N2 changed ABI symbol baseline (exit 1, 2 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 39994600fc8569115428bddb117bf22498bee47a (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate c399f5b50df6007e4e1a2288607d02c7a926f979 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 3999460
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate c399f5b
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -417,7 +417,7 @@ ok    N2 changed ABI symbol baseline (exit 1, 2 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..3999460:
+      | INFO  commits: 17 in 9a899e1..c399f5b:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -434,14 +434,14 @@ ok    N2 changed ABI symbol baseline (exit 1, 2 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         3999460 calibration: abi baseline change
+      |         c399f5b calibration: abi baseline change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n2, and it lists nothing else
-      | RESULT: FAIL — 2 violation(s); 39994600fc85 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 2 violation(s); c399f5b50df6 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N3 not descended from the baseline (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate eb601a558dc236d833dd1af8b6f0f512449222c8 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 2267589d25713983ddd5bb780713a59b83f42317 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | FAIL  ancestry: baseline 9a899e1 is NOT an ancestor of candidate eb601a5 (merge-base: 7f57047)
+      | FAIL  ancestry: baseline 9a899e1 is NOT an ancestor of candidate 2267589 (merge-base: 7f57047)
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -454,10 +454,10 @@ ok    N3 not descended from the baseline (exit 1, 1 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 1 in 9a899e1..eb601a5:
-      |         eb601a5 calibration: the candidate tree, not descended from the baseline
+      | INFO  commits: 1 in 9a899e1..2267589:
+      |         2267589 calibration: the candidate tree, not descended from the baseline
       | INFO  commits: not checked against a qualification record (pass --allow-commits-file; required to qualify a candidate)
-      | RESULT: FAIL — 1 violation(s); eb601a558dc2 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 2267589d2571 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N4a allow-list missing a commit (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -610,9 +610,9 @@ ok    N5a built library from another tree (exit 1, 1 FAIL line(s))
       | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N5b Cargo.toml version mismatch (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 8fe2472dca19eddcfb3acd69ee25ae76d07c68ea (Cargo.toml 0.6.1)
+      | check-maintenance-candidate: candidate 07ec50b65a43243cbfe79d7859c9a82121030643 (Cargo.toml 0.6.1)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 8fe2472
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 07ec50b
       | FAIL  version: candidate Cargo.toml = '0.6.1', expected 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -625,7 +625,7 @@ ok    N5b Cargo.toml version mismatch (exit 1, 1 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..8fe2472:
+      | INFO  commits: 17 in 9a899e1..07ec50b:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -642,9 +642,9 @@ ok    N5b Cargo.toml version mismatch (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         8fe2472 calibration: manifest version mismatch
+      |         07ec50b calibration: manifest version mismatch
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n5, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 8fe2472dca19 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 07ec50b65a43 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N5c release version mismatch (exit 1, 3 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -755,9 +755,9 @@ ok    N6b bindings/go/v0.6.0 tag on another commit (exit 1, 1 FAIL line(s))
       | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N7 header declaration change (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 1942ad9a34c6b8501dd8d39f6d0b84e4d2be70fd (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 019603b829c45edaf17b523271749c5b3489b37d (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 1942ad9
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 019603b
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -772,7 +772,7 @@ ok    N7 header declaration change (exit 1, 1 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..1942ad9:
+      | INFO  commits: 17 in 9a899e1..019603b:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -789,14 +789,14 @@ ok    N7 header declaration change (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         1942ad9 calibration: header declaration change
+      |         019603b calibration: header declaration change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n7, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 1942ad9a34c6 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 019603b829c4 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N8 MSRV change (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 6d9f591da86b83b815dc5b4c818ee03ca8efc75e (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 966163611054076c22b077e84a03941a14266ed4 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 6d9f591
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 9661636
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -809,7 +809,7 @@ ok    N8 MSRV change (exit 1, 1 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..6d9f591:
+      | INFO  commits: 17 in 9a899e1..9661636:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -826,14 +826,14 @@ ok    N8 MSRV change (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         6d9f591 calibration: MSRV change
+      |         9661636 calibration: MSRV change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n8, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 6d9f591da86b is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 966163611054 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N9 frozen PCM producer change (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 0869757c0a6d071dadc4db2638181f2ea4eb780b (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 383e20f59756be280464dd56e3711870e0abdb84 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 0869757
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 383e20f
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -848,7 +848,7 @@ ok    N9 frozen PCM producer change (exit 1, 1 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..0869757:
+      | INFO  commits: 17 in 9a899e1..383e20f:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -865,14 +865,14 @@ ok    N9 frozen PCM producer change (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         0869757 calibration: PCM producer change
+      |         383e20f calibration: PCM producer change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n9, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 0869757c0a6d is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 383e20f59756 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N10 a new gibson_* export in src/ (exit 1, 2 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 483ab68c71ff6f122f5a1c5a1350e8efd345dce9 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 050dce502b5233094bff7472c98232be0dc6d8c4 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 483ab68
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 050dce5
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -888,7 +888,7 @@ ok    N10 a new gibson_* export in src/ (exit 1, 2 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..483ab68:
+      | INFO  commits: 17 in 9a899e1..050dce5:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -905,9 +905,9 @@ ok    N10 a new gibson_* export in src/ (exit 1, 2 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         483ab68 calibration: new export
+      |         050dce5 calibration: new export
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n10, and it lists nothing else
-      | RESULT: FAIL — 2 violation(s); 483ab68c71ff is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 2 violation(s); 050dce502b52 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N11 candidate on no authorized branch (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -946,9 +946,9 @@ ok    N11 candidate on no authorized branch (exit 1, 1 FAIL line(s))
       | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N12 macro hidden in a comment by line splices (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate eafaa3aba031956f512decadae673a05051749ef (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 952a77a66326d451bcb78ec3c1b3223105f8424d (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate eafaa3a
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 952a77a
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -963,7 +963,7 @@ ok    N12 macro hidden in a comment by line splices (exit 1, 1 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..eafaa3a:
+      | INFO  commits: 17 in 9a899e1..952a77a:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -980,14 +980,14 @@ ok    N12 macro hidden in a comment by line splices (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         eafaa3a calibration: a redefinition hidden by line splices
+      |         952a77a calibration: a redefinition hidden by line splices
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n12, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); eafaa3aba031 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 952a77a66326 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N13 whitespace inside a string literal (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 6035533d5b31dcecb72b2a83b89818aef8473a01 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 6df8d1bd50c10f87943a64858a7e5c4e7eb3080c (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 6035533
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 6df8d1b
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -1002,7 +1002,7 @@ ok    N13 whitespace inside a string literal (exit 1, 1 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..6035533:
+      | INFO  commits: 17 in 9a899e1..6df8d1b:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1019,14 +1019,14 @@ ok    N13 whitespace inside a string literal (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         6035533 calibration: whitespace inside a string literal
+      |         6df8d1b calibration: whitespace inside a string literal
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n13, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 6035533d5b31 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 6df8d1bd50c1 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N14 comment spliced by a trigraph (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate f19c36d56dd1be9cc7c13bd1ac6c11bd7009d594 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate c55c76a39b9d0b4c540a350a8cadaf8691837e7b (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate f19c36d
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate c55c76a
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -1041,7 +1041,7 @@ ok    N14 comment spliced by a trigraph (exit 1, 1 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..f19c36d:
+      | INFO  commits: 17 in 9a899e1..c55c76a:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1058,14 +1058,14 @@ ok    N14 comment spliced by a trigraph (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         f19c36d calibration: a comment spliced by trigraphs
+      |         c55c76a calibration: a comment spliced by trigraphs
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n14, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); f19c36d56dd1 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); c55c76a39b9d is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N15 two #[repr(C)] fields swapped (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 705ac3810a5027a6e7b67a3e8367be4b61bfe481 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 5331de0153b670258042e77fe0f7a194d2819ea8 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 705ac38
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 5331de0
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -1080,7 +1080,7 @@ ok    N15 two #[repr(C)] fields swapped (exit 1, 1 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..705ac38:
+      | INFO  commits: 17 in 9a899e1..5331de0:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1097,14 +1097,14 @@ ok    N15 two #[repr(C)] fields swapped (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         705ac38 calibration: repr(C) fields swapped
+      |         5331de0 calibration: repr(C) fields swapped
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n15, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 705ac3810a50 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 5331de0153b6 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N16 a parameter type changed (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate cc227f358266a9041741135da86c49611dcdadee (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 3b2dc9ece66be17cbe55bb70794a6dd9c6c1c3f1 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate cc227f3
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 3b2dc9e
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -1119,7 +1119,7 @@ ok    N16 a parameter type changed (exit 1, 1 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..cc227f3:
+      | INFO  commits: 17 in 9a899e1..3b2dc9e:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1136,14 +1136,14 @@ ok    N16 a parameter type changed (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         cc227f3 calibration: parameter type change
+      |         3b2dc9e calibration: parameter type change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n16, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); cc227f358266 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 3b2dc9ece66b is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N17 an export whose fn is on the next line (exit 1, 2 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate d363759f59a9e6bfd259b709c5297257f665a998 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 567bed1cf5cc198ec3632de18dba49b2376d75dd (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate d363759
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 567bed1
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -1159,7 +1159,7 @@ ok    N17 an export whose fn is on the next line (exit 1, 2 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..d363759:
+      | INFO  commits: 17 in 9a899e1..567bed1:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1176,14 +1176,14 @@ ok    N17 an export whose fn is on the next line (exit 1, 2 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         d363759 calibration: multi-line export
+      |         567bed1 calibration: multi-line export
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n17, and it lists nothing else
-      | RESULT: FAIL — 2 violation(s); d363759f59a9 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 2 violation(s); 567bed1cf5cc is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N18 a new exported static (exit 1, 2 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate a6952f2bcc2203d1079314d8c3eb695bb3064072 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 24eb27434bbab35523ed28ed5162e9156455d18a (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate a6952f2
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 24eb274
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -1199,7 +1199,7 @@ ok    N18 a new exported static (exit 1, 2 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..a6952f2:
+      | INFO  commits: 17 in 9a899e1..24eb274:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1216,9 +1216,9 @@ ok    N18 a new exported static (exit 1, 2 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         a6952f2 calibration: exported static
+      |         24eb274 calibration: exported static
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n18, and it lists nothing else
-      | RESULT: FAIL — 2 violation(s); a6952f2bcc22 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 2 violation(s); 24eb27434bba is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N19 the baseline itself as the candidate (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
@@ -1277,9 +1277,9 @@ ok    N20 candidate only on feature/release/v0.6.0-rc (exit 1, 1 FAIL line(s))
       | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N21 a GIBSON_* const value changed (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 71d4809d85f223ad0c1dcac6990c7aa36df46cf7 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 7684bd528a4e870ea0249930b96cb304a41cb22a (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 71d4809
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 7684bd5
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -1294,7 +1294,7 @@ ok    N21 a GIBSON_* const value changed (exit 1, 1 FAIL line(s))
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..71d4809:
+      | INFO  commits: 17 in 9a899e1..7684bd5:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1311,9 +1311,9 @@ ok    N21 a GIBSON_* const value changed (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         71d4809 calibration: const value change
+      |         7684bd5 calibration: const value change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n21, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 71d4809d85f2 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 7684bd528a4e is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N22 a library that also exports a gibson_* data symbol (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -1352,6 +1352,103 @@ ok    N22 a library that also exports a gibson_* data symbol (exit 1, 1 FAIL lin
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
       | PASS  commits: all 16 commits are in the allow-list docs/decisions/0001/allow-commits-572e551.txt, and it lists nothing else
       | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N23 an unreadable src/ file fails closed (exit 1, 2 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate d3bcdb21f41c79cdd5b34e3118fc5bf54f06462d (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate d3bcdb2
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | fatal: bad object d3bcdb21f41c79cdd5b34e3118fc5bf54f06462d:src/ffi.rs
+      | FAIL  C ABI: cannot parse the Rust C-ABI surface at the candidate (fail closed)
+      | FAIL  C ABI: src/ at the candidate exports 0 gibson_* symbols, the baseline 59:
+      |         - gibson_abi_version
+      |         - gibson_clear_live_region
+      |         - gibson_commit
+      |         - gibson_commit_node
+      |         - gibson_commit_raw_ansi_unchecked
+      |         - gibson_commit_rich_text
+      |         - gibson_commit_text
+      |         - gibson_create_context
+      |         - gibson_create_headless_context
+      |         - gibson_destroy_context
+      |         - gibson_get_frame_cell
+      |         - gibson_get_frame_cell_glyph
+      |         - gibson_get_frame_cells
+      |         - gibson_get_frame_size
+      |         - gibson_get_rendered_output
+      |         - gibson_get_stats
+      |         - gibson_insert_node_before_live
+      |         - gibson_insert_raw_lines_before_live_unchecked
+      |         - gibson_insert_rich_text_before_live
+      |         - gibson_insert_text_before_live
+      |         - gibson_last_error_message
+      |         - gibson_line_add_span
+      |         - gibson_line_free
+      |         - gibson_line_new
+      |         - gibson_line_set_align
+      |         - gibson_node_add_child
+      |         - gibson_node_border_box
+      |         - gibson_node_box_col
+      |         - gibson_node_box_row
+      |         - gibson_node_dim
+      |         - gibson_node_free
+      |         - gibson_node_rail
+      |         - gibson_node_rich_text
+      |         - gibson_node_rule
+      |         - gibson_node_set_flex_grow
+      |         - gibson_node_set_gap
+      |         - gibson_node_set_height
+      |         - gibson_node_set_max_width
+      |         - gibson_node_set_min_width
+      |         - gibson_node_set_padding
+      |         - gibson_node_set_padding_sides
+      |         - gibson_node_set_percent_width
+      |         - gibson_node_set_width
+      |         - gibson_node_spinner
+      |         - gibson_node_stack
+      |         - gibson_node_text
+      |         - gibson_node_text_input
+      |         - gibson_poll_event
+      |         - gibson_render
+      |         - gibson_render_if_due
+      |         - gibson_request_render
+      |         - gibson_rich_text_add_line
+      |         - gibson_rich_text_free
+      |         - gibson_rich_text_new
+      |         - gibson_set_color_depth
+      |         - gibson_set_max_fps
+      |         - gibson_set_root_node
+      |         - gibson_set_sync_updates
+      |         - gibson_stats_init
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..d3bcdb2:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         d3bcdb2 calibration: unreadable src blob
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n23, and it lists nothing else
+      | RESULT: FAIL — 2 violation(s); d3bcdb21f41c is not a valid maintenance candidate for baseline 9a899e1d3502
 
-CALIBRATION: PASS — 33 of 33 cases met their expected verdict for their intended reason
+CALIBRATION: PASS — 34 of 34 cases met their expected verdict for their intended reason
 exit=0

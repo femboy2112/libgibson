@@ -34,6 +34,7 @@
 #   N19 the baseline itself as the candidate                           -> FAIL ancestry only
 #   N20 the candidate only on feature/release/v0.6.0-rc                -> FAIL branch only
 #   N22 a library that also exports a gibson_* data symbol (synthetic) -> FAIL built library only
+#   N23 a src/ file whose blob is missing from the object store        -> FAIL closed (surface, exports)
 #
 # Usage:
 #   scripts/release/tests/test-maintenance-checker.sh --baseline <rev> --candidate <rev> \
@@ -280,6 +281,16 @@ on_branch "$X"; a="$(with_extra n21 "$X")" || die "N21 allow"
 case_ "N21 a GIBSON_* const value changed" 1 "$SURF_FAIL" -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
 on_branch "$C"; fake_so "$WORK/fake59d.so" 'int gibson_calibration_data = 1;'
 case_ "N22 a library that also exports a gibson_* data symbol" 1 '^FAIL  C ABI: the built library exports 60' -- "${A[@]}" --candidate "$C" --allow-commits-file "$allow" --so "$WORK/fake59d.so"
+
+# N23: src/ffi.rs's blob is absent from the object store (git mktree --missing), so reading it fails.
+src_tree="$(g ls-tree "$C" -- src | awk '{print $3}')" || die "N23 setup"
+missing="$(printf 'e%.0s' $(seq 40))"
+new_src="$(g ls-tree "$src_tree" | sed -E "s/^(100644 blob )[0-9a-f]{40}(\tffi\.rs)$/\1$missing\2/" | g mktree --missing)" || die "N23 setup"
+[ "$new_src" != "$src_tree" ] || die "N23 setup: ffi.rs not replaced"
+new_root="$(g ls-tree "$C" | sed -E "s/^(040000 tree )[0-9a-f]{40}(\tsrc)$/\1$new_src\2/" | g mktree --missing)" || die "N23 setup"
+X="$(g commit-tree "$new_root" -p "$C" -m 'calibration: unreadable src blob')" || die "N23 setup"
+on_branch "$X"; a="$(with_extra n23 "$X")" || die "N23 allow"
+case_ "N23 an unreadable src/ file fails closed" 1 '^FAIL  C ABI: cannot parse the Rust C-ABI surface at the candidate|^FAIL  C ABI: src/ at the candidate exports 0' -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
 
 echo
 total="$(grep -c '^case_ "' "${BASH_SOURCE[0]}")"
