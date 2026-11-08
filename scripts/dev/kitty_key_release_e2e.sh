@@ -23,10 +23,13 @@ done
 GAME="$ROOT/target/release/examples/deep_signal"
 (cd "$ROOT" && cargo build -q --release --example deep_signal)
 
+# kitty's control socket: a Unix socket path must stay under 108 bytes, so not inside OUT.
+SOCK_DIR=$(mktemp -d /tmp/kre2e.XXXXXX)
+SOCK="$SOCK_DIR/k.sock"
 DISP=:$(( 90 + RANDOM % 9 ))
 Xvfb "$DISP" -screen 0 1280x900x24 -nolisten tcp >/dev/null 2>&1 &
 XVFB=$!
-cleanup() { kill "$XVFB" 2>/dev/null || true; }
+cleanup() { kill "$XVFB" 2>/dev/null || true; rm -rf "$SOCK_DIR"; }
 trap cleanup EXIT
 sleep 1
 export DISPLAY=$DISP
@@ -61,7 +64,7 @@ run_in() { # run_in TERMINAL NAME : start the game in TERMINAL, recording NAME.t
     rm -f "$OUT/$name".*
     local cmd="'$GAME' --record '$OUT/$name.trace' --max-seconds 25; python3 -I '$OUT/flags_after.py' '$OUT/$name.flags'; touch '$OUT/$name.done'"
     if [ "$term" = kitty ]; then
-        kitty --config NONE -o allow_remote_control=yes --listen-on "unix:$OUT/kitty.sock" \
+        kitty --config NONE -o allow_remote_control=yes --listen-on "unix:$SOCK" \
             -o initial_window_width=1000 -o initial_window_height=700 \
             sh -c "$cmd" >"$OUT/$name.term.log" 2>&1 &
     else
@@ -80,7 +83,7 @@ key keydown d; sleep 0.5; key keyup d    # chord: d while w stays down
 sleep 0.5; key keyup w; sleep 0.4
 key keydown a; sleep 0.06; key keyup a   # a tap
 sleep 0.6
-kitty @ --to "unix:$OUT/kitty.sock" get-text >"$OUT/kitty.screen" 2>/dev/null || true
+kitty @ --to "unix:$SOCK" get-text >"$OUT/kitty.screen" 2>/dev/null || true
 key key q
 wait_file "$OUT/kitty.done" || { echo "kitty run did not finish" >&2; exit 1; }
 
