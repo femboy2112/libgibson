@@ -448,6 +448,30 @@ fn reenabling_after_a_caught_panic_keeps_the_ended_notice() {
     assert!(out.contains("HELD []"), "the old w hold ended: {out:?}");
 }
 
+#[test]
+fn the_ended_notice_comes_before_a_new_answer_read_by_another_poll() {
+    // #275 review 8 (Codex's order): a caught panic ends reporting, the owner enables again, the
+    // new confirmation is read by `input::poll_event` (not the owner's `Context`), and only then
+    // does the owner poll. The notice must still come first, through whichever poll reads the
+    // answer, and only once: "reporting ended" filed after "reporting active" reads as a death
+    // certificate for a patient who just sat up.
+    let role = "caught-panic-reenable-free";
+    let mut cap = Capture::spawn(child(role), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "REENABLED");
+    send(&mut cap, KITTY_ANSWER);
+    wait_for(&mut cap, "OWNER");
+    send(&mut cap, b"q");
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, role);
+    assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
+    assert_eq!(
+        events(&cap),
+        ["reporting:Unsupported", "reporting:Active", "key:q:0"],
+        "{:?}",
+        String::from_utf8_lossy(cap.raw())
+    );
+}
+
 /// Where the `caught-panic-hangup` child writes its findings: after the hangup its terminal is
 /// gone, so it cannot print them.
 const LOG_ENV: &str = "GIBSON_275_LOG";
@@ -643,6 +667,43 @@ fn key_release_reporting_child() {
                     say("REENABLED");
                 }
                 _ => {}
+            }
+        }
+        ctx.restore().unwrap();
+        say("DONE");
+        return;
+    }
+    if role == "caught-panic-reenable-free" {
+        ctx.session.set_key_release_reporting(true).unwrap();
+        let caught = std::panic::catch_unwind(|| panic!("caught, on the owner thread"));
+        assert!(caught.is_err());
+        ctx.session.set_key_release_reporting(true).unwrap();
+        say("REENABLED");
+        // The free function reads until the new answer; the owner's `Context` polls after.
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            let Some(e) = gibson::input::poll_event(Duration::from_millis(100)).unwrap() else {
+                continue;
+            };
+            if matches!(e, Event::Resize(..) | Event::Focus(_)) {
+                continue;
+            }
+            say(&format!("EV {}", desc(&e)));
+            if e == Event::KeyReleaseReporting(KeyReleaseReporting::Active) {
+                break;
+            }
+        }
+        say("OWNER");
+        while Instant::now() < deadline {
+            let Some(e) = ctx.poll_event(Duration::from_millis(100)).unwrap() else {
+                continue;
+            };
+            if matches!(e, Event::Resize(..) | Event::Focus(_)) {
+                continue;
+            }
+            say(&format!("EV {}", desc(&e)));
+            if matches!(&e, Event::Key(k) if k.code == KeyCode::Char('q')) {
+                break;
             }
         }
         ctx.restore().unwrap();

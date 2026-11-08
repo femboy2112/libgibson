@@ -136,21 +136,38 @@ impl TtySource {
     /// The next queued event to hand out. An answer or a key release decoded before reporting was
     /// last turned off or on is dropped (#275 review): the answer is to a request no one is waiting
     /// for, and disabling drops undelivered releases (an application then falls back to inferred
-    /// holds). Presses and everything else are handed out whatever the epoch: they happened.
-    fn next_pending(&mut self) -> Option<SourceEvent> {
+    /// holds). Presses and everything else are handed out whatever the epoch: they happened. So is
+    /// the notice that reporting ended. Each comes with the epoch it was decoded in, which ties an
+    /// answer to its request at hand-out (#275 review 8).
+    fn next_pending(&mut self) -> Option<(u64, SourceEvent)> {
         let now = self.epoch();
         while let Some((epoch, ev)) = self.pending.pop_front() {
             let stale = epoch != now
                 && match &ev {
                     SourceEvent::KeyReleaseReporting(_) => true,
                     SourceEvent::Terminal(CtEvent::Key(k)) => k.kind == KeyEventKind::Release,
-                    SourceEvent::Terminal(_) => false,
+                    SourceEvent::Terminal(_) | SourceEvent::ReportingEnded => false,
                 };
             if !stale {
-                return Some(ev);
+                return Some((epoch, ev));
             }
         }
         None
+    }
+
+    /// Queues an answer decoded in `epoch`, after the notice that reporting ended if the panic
+    /// hook left one (#275 review 8): taken here or by the owner's next `Context` poll, whichever
+    /// comes first, so it is said once, and never after the answer that follows the end.
+    /// (Takes the queue, not `self`: it runs while the parser is being drained.)
+    fn queue_answer(
+        pending: &mut VecDeque<(u64, SourceEvent)>,
+        epoch: u64,
+        answer: KeyReleaseReporting,
+    ) {
+        if crate::session::take_key_releases_ended_notice() {
+            pending.push_back((epoch, SourceEvent::ReportingEnded));
+        }
+        pending.push_back((epoch, SourceEvent::KeyReleaseReporting(answer)));
     }
 }
 
@@ -223,8 +240,18 @@ impl TtySource {
         }))
     }
 
-    /// See the module documentation for the contract.
+    /// [`poll_tagged`](Self::poll_tagged) without the epochs.
+    #[cfg(test)]
     pub(crate) fn poll_source(&mut self, timeout: Duration) -> io::Result<Option<SourceEvent>> {
+        Ok(self.poll_tagged(timeout)?.map(|(_, e)| e))
+    }
+
+    /// See the module documentation for the contract. Each event comes with the key-release
+    /// epoch it was decoded in.
+    pub(crate) fn poll_tagged(
+        &mut self,
+        timeout: Duration,
+    ) -> io::Result<Option<(u64, SourceEvent)>> {
         let deadline = deadline_after(timeout);
         if self.hung_up {
             return Err(hung_up());
@@ -368,7 +395,7 @@ impl TtySource {
 
     /// Reports the hangup, after any event decoded before it was seen. Once reported it is
     /// sticky: see `hung_up`.
-    fn report_hangup(&mut self) -> io::Result<Option<SourceEvent>> {
+    fn report_hangup(&mut self) -> io::Result<Option<(u64, SourceEvent)>> {
         if let Some(event) = self.next_pending() {
             return Ok(Some(event));
         }
@@ -450,16 +477,16 @@ impl TtySource {
                 InternalEvent::KittyKey(k, _) => CtEvent::Key(k),
                 // The answers to a key-release reporting request (#275): see `KEYBOARD_QUERIES`.
                 InternalEvent::KeyboardEnhancementFlags(flags) => {
-                    if let Some(r) = lock_queries().flags_reply(flags, delivered) {
-                        self.pending
-                            .push_back((epoch, SourceEvent::KeyReleaseReporting(r)));
+                    let answer = lock_queries().flags_reply(flags, delivered);
+                    if let Some(r) = answer {
+                        Self::queue_answer(&mut self.pending, epoch, r);
                     }
                     continue;
                 }
                 InternalEvent::PrimaryDeviceAttributes => {
-                    if let Some(r) = lock_queries().device_attributes_reply() {
-                        self.pending
-                            .push_back((epoch, SourceEvent::KeyReleaseReporting(r)));
+                    let answer = lock_queries().device_attributes_reply();
+                    if let Some(r) = answer {
+                        Self::queue_answer(&mut self.pending, epoch, r);
                     }
                     continue;
                 }
@@ -880,7 +907,10 @@ pub(crate) fn forget_keyboard_replies() {
 ///
 /// Waiting for another thread's poll counts against `timeout`: with the source busy past the
 /// deadline this returns `Ok(None)` rather than queueing behind it.
-pub(crate) fn poll(timeout: Duration, stdin_is_terminal: bool) -> io::Result<Option<SourceEvent>> {
+pub(crate) fn poll(
+    timeout: Duration,
+    stdin_is_terminal: bool,
+) -> io::Result<Option<(u64, SourceEvent)>> {
     use std::sync::atomic::Ordering;
     let deadline = deadline_after(timeout);
     let mut guard = loop {
@@ -916,7 +946,7 @@ pub(crate) fn poll(timeout: Duration, stdin_is_terminal: bool) -> io::Result<Opt
         .as_mut()
         .expect("initialised above")
         .1
-        .poll_source(left)
+        .poll_tagged(left)
 }
 
 /// Retires the terminal source: called when the session gives the terminal up, so a later

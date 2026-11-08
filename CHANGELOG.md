@@ -82,22 +82,26 @@ decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed p
   release matches a legacy capital (`W`, released as `w`) or a legacy symbol kitty autorepeated
   (`!`, released as `1`), so each such release ends its hold (known limit: a shifted symbol pressed
   just before the flags take effect, as during a screen switch, and let go without an autorepeat is
-  still released as `1`, so that release does not end its hold); `Active` needs every flag pushed (a
+  still released as `1`, so that release does not end its hold,
+  [#312](https://github.com/femboy2112/libgibson/issues/312)); `Active` needs every flag pushed (a
   terminal that took only some, such as 3, 7 or 11, answers `Unsupported`); **`Unsupported` is
   final:** once any poll hands it out (a `Context` poll, `input::poll_event`, a `TerminalSource`,
   whichever context reads it), no release is delivered from then on, including any queued behind the
-  answer, and the owning session withdraws its push with one pop (never repeated at restore, `Drop`
-  or in the panic hook): at once if its own `Context` poll handed the answer out, otherwise on its
-  next `Context` poll, enable, disable or screen switch, or at restore. The terminal then goes back
-  to legacy keys (one `\r` per Enter). Once the panic hook has popped the flags, even for a caught
-  panic, no release or terminal answer is delivered and the next `Context` poll delivers
-  `Unsupported` once, even if reporting was enabled again meanwhile (then before the new answer), so
-  a client still waiting for releases switches back to inferred holds; if that poll fails to
-  re-enter raw mode, the notice waits for the next one. While reporting is confirmed, or its answer
-  is still pending, a read ending in a lone ESC waits up to 50 ms for the rest of its sequence
-  (reading what is already waiting before giving up), then is the Esc key. The rustdoc now lists
-  what flags 15 change in delivered keys (a shifted letter has no `SHIFT`, Caps Lock does not change
-  a letter, Ctrl+I/M/[ are Ctrl chords).
+  answer, while an answer to an earlier request (one decoded before reporting was last enabled or
+  disabled) is dropped by whichever poll reads it and changes nothing, the check and the end of
+  delivery being one atomic step; the owning session withdraws its push with one pop (never repeated
+  at restore, `Drop` or in the panic hook): at once if its own `Context` poll handed the answer out,
+  otherwise on its next `Context` poll, enable, disable or screen switch, or at restore. The
+  terminal then goes back to legacy keys (one `\r` per Enter). Once the panic hook has popped the
+  flags, even for a caught panic, no release or terminal answer is delivered and `Unsupported` is
+  delivered once, by the next `Context` poll or, if the terminal answers first, just before that
+  answer by whichever poll hands it out, so it comes before the new answer even if reporting was
+  enabled again meanwhile, and a client still waiting for releases switches back to inferred holds;
+  if a `Context` poll fails to re-enter raw mode, the notice waits for the next. While reporting is
+  confirmed, or its answer is still pending, a read ending in a lone ESC waits up to 50 ms for the
+  rest of its sequence (reading what is already waiting before giving up), then is the Esc key. The
+  rustdoc now lists what flags 15 change in delivered keys (a shifted letter has no `SHIFT`, Caps
+  Lock does not change a letter, Ctrl+I/M/[ are Ctrl chords).
 - **The C ABI is unchanged** (62 symbols): a C consumer cannot enable this yet, and never sees the
   new events.
 
