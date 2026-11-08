@@ -106,7 +106,7 @@ if [ -n "${FB_DEMO:-}" ]; then
     sleep 0.4; key keyup Right; sleep 0.3
     key keydown a; sleep 0.06; key keyup a
     sleep 0.6
-    kitty @ --to "unix:$OUT/kitty.sock" get-text >"$OUT/demo.screen" 2>/dev/null || true
+    kitty @ --to "unix:$SOCK" get-text >"$OUT/demo.screen" 2>/dev/null || true
     key key q
     wait_file "$OUT/demo.done" || { echo "demo run did not finish" >&2; exit 1; }
 fi
