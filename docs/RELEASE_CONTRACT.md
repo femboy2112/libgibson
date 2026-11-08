@@ -508,8 +508,9 @@ path is as stated in `SECURITY.md`.
   0.7.0-dev, LibGibson no longer reads a Unix controlling terminal through that reader: its
   own terminal source (`src/tty_source.rs`, issue #269) takes the key and the resize in the
   same pass, and the [Event Pressure Lab](EVENT_PRESSURE_LAB.md)'s delivery acceptance for
-  the `Context` path is enabled and passing. Released versions up to 0.5.0, the 0.6.0 source,
-  and an application that reads crossterm's event reader directly still have the stall.
+  the `Context` path is enabled and passing. The 0.6.0 release candidate (`release/v0.6.0-rc`)
+  carries the same fix (#269 backported). Released versions up to 0.5.0, the 0.6.0 source baseline
+  `9a899e1`, and an application that reads crossterm's event reader directly still have the stall.
   RXIV (2026-11-05) re-measured it on a real PTY isolated from LibGibson: stock 0.29.0
   delivered 0/30 resize-then-key collisions, the #1128 fork 30/30
   ([`research/issue15_crossterm_ab`](research/issue15_crossterm_ab/README.md)); it remains
@@ -532,12 +533,16 @@ The v0.6 integration — merged to `main` through #253 as `f6cd8c7`, and v0.6.0 
   Interactive parity across C++/Go/Python is not claimed beyond the existing parity harnesses.
 - **A headless C context's ANSI capture grows for the context's lifetime**
   ([#297](https://github.com/femboy2112/libgibson/issues/297)). Every rendered frame's bytes are
-  appended; `gibson_get_rendered_output` copies them and never drains, and 0.6.0 has no C drain
-  (Rust has `Context::take_output`). A C program that renders indefinitely must bound the context's
-  lifetime: query the capture size (a size query never drains) and, past a byte budget, destroy the
-  context and create a new one. That procedure is tested against the installed SDK by the 0.6.0
-  release's clean-room consumer `bindings/sdk_forcing/headless_capture_lifetime.c`; unbounded
-  rendering on one context is not a supported 0.6.0 use. The additive drain is v0.7 work.
+  appended; `gibson_get_rendered_output` (and the Python wrapper's `rendered_output()`) copies them
+  and never drains, and 0.6.0 has no C drain (Rust has `Context::take_output`). Measured on the
+  release candidate: a frame whose every cell changes adds about 657 bytes at 40×15, 1,995 at 80×24
+  and 19,387 at 240×80; an unchanged frame adds nothing. A C program that renders indefinitely must
+  bound the context's lifetime: query the capture size (a size query never drains) and, past a byte
+  budget, destroy the context and create a new one. That procedure is tested against the installed
+  SDK by the clean-room consumer `bindings/sdk_forcing/headless_capture_lifetime.c` (capture never
+  above budget plus one frame, rendering continues after each replacement, resident memory flat
+  across replacements); unbounded rendering on one context is not a supported 0.6.0 use. The
+  additive drain is v0.7 work.
 - **The cinematic effect contract is single-quantity.** `field_cinema` judges the peak sample
   against the requested amplitude with a declared tolerance; it claims consistency with a request,
   never mechanism, and causal attribution only where a matched counterfactual exists.
