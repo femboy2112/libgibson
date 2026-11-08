@@ -25,12 +25,13 @@ stays 1.85.
 ### Fixed — Go binding (`bindings/go`): a failed `NewContext` reports its own error message
 - **`NewContext` now reads the failure message on the same OS thread as the failing call.**
   The native last error is thread-local, and the wrapper fetched it with a second cgo call; Go may
-  move a goroutine between the two. A concurrency test (`TestNewContextErrorIsFromItsOwnCall`,
-  64 goroutines, GOMAXPROCS 8, locked-thread polluters) reproduced an empty message on gccgo 1.18
-  (24 wrong of 3,840,000 trials, 15 of 30 runs; an independent re-run from separately compiled
-  binaries: 14 of 1,536,000, 8 of 12 runs); the fixed wrapper had 0 in both. The gc
-  toolchain was not run locally. Create and read now happen in one C helper, one cgo call. Go API
-  unchanged. ([`docs/V08_PARITY_SLICE.md`](docs/V08_PARITY_SLICE.md) F6)
+  move a goroutine between the two. Reproduced on gccgo 1.18 by `TestNewContextErrorIsFromItsOwnCall`
+  (64 goroutines, each with its own invalid mode, so its own expected message; GOMAXPROCS 8;
+  unlocked polluter goroutines writing a third text): on the old wrapper **12 of 12 runs** failed,
+  with **4,601 foreign messages of 1,536,000 calls** (another goroutine's mode or the polluters'
+  text). The fixed wrapper: 0 of 1,536,000. The gc toolchain was not run locally. Create and read
+  now happen in one C helper, one cgo call. Go API unchanged.
+  ([`docs/V08_PARITY_SLICE.md`](docs/V08_PARITY_SLICE.md) F6)
 
 ### Release engineering — maintenance-line releases approved ([#287](https://github.com/femboy2112/libgibson/issues/287), #291)
 - **Release Contract §1 gains an approved maintenance-line exception** (owner decision 2026-11-08,
