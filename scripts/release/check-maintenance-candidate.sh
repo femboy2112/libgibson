@@ -3,8 +3,8 @@
 # check-maintenance-candidate.sh — read-only gate for a maintenance-line release candidate.
 #
 # Checks a candidate commit against the maintenance-line exception to
-# docs/RELEASE_CONTRACT.md §1 (PROPOSED, owner decision #287; procedure in
-# docs/RELEASING.md "Maintenance-line release"). A maintenance release may carry
+# docs/RELEASE_CONTRACT.md §1 (approved 2026-11-08, decision #287; procedure in
+# docs/RELEASING.md §7 "Maintenance-line release"). A maintenance release may carry
 # backported fixes; it must not quietly import later development.
 #
 # Usage:
@@ -26,9 +26,12 @@
 #   1. ancestry   the baseline is an ancestor of the candidate
 #   2. version    the release version is a plain x.y.z; the candidate's Cargo.toml,
 #                 Cargo.lock (libgibson entry) and bindings/python/pyproject.toml carry it
-#   3. C ABI      abi/ and include/ are byte-identical to the baseline; the gibson_*
-#                 exports defined in src/ equal the baseline's abi/gibson-abi-v1.symbols
-#                 (the extractor is first calibrated against that file at the baseline)
+#   3. C ABI      abi/ is byte-identical to the baseline; include/ is byte-identical or
+#                 differs only in comments (compared with the compiler's own comment
+#                 stripping, `cc -fpreprocessed -dD -E -P`; no compiler = fail closed); the
+#                 gibson_* exports defined in src/ equal the baseline's
+#                 abi/gibson-abi-v1.symbols (the extractor is first calibrated against that
+#                 file at the baseline)
 #   4. MSRV       Cargo.toml rust-version is unchanged
 #   5. PCM golden src/audio/ and tests/audio_pocket_voice.rs (the frozen PCM
 #                 fingerprint) are unchanged
@@ -125,6 +128,19 @@ src_exports() {
         done
     } | sort -u
 }
+# header_decls <rev> <path>: a public header with its C/C++ comments removed by the compiler's
+# own lexer (no macro expansion; directives kept) and whitespace collapsed, so two revisions
+# compare equal iff they differ only in comments or layout. Returns non-zero when no compiler is
+# available or the file is absent, and the caller then counts the header as changed (fail closed).
+header_decls() {
+    local lang=c out
+    case "$2" in *.hpp|*.hh|*.hxx) lang="c++" ;; esac
+    command -v "${CC:-cc}" >/dev/null 2>&1 || return 1
+    git cat-file -e "$1:$2" 2>/dev/null || return 1
+    out="$(show "$1" "$2" | "${CC:-cc}" -fpreprocessed -dD -E -P -x "$lang" - 2>/dev/null)" || return 1
+    [ -n "$out" ] || return 1
+    printf '%s' "$out" | tr -s '[:space:]' ' '
+}
 # set_delta <expected> <actual>: the symbols missing from (-) and added to (+) <actual>.
 set_delta() {
     comm -23 <(printf '%s\n' "$1") <(printf '%s\n' "$2") | sed '/^$/d; s/^/        - /'
@@ -179,14 +195,32 @@ else
         set_delta "$b_decl" "$c_decl"
     fi
 fi
-for path in abi include; do
-    if git diff --quiet "$B" "$C" -- "$path/"; then
-        pass "C ABI: $path/ is byte-identical to the baseline"
+if git diff --quiet "$B" "$C" -- abi/; then
+    pass "C ABI: abi/ is byte-identical to the baseline"
+else
+    fail "C ABI: abi/ differs from the baseline:"
+    git diff --stat "$B" "$C" -- abi/ | sed 's/^/       /'
+fi
+# include/: byte-identical, or differing only in comments (a disclosed limitation in a doc
+# comment is release engineering; a declaration, macro or layout change is not).
+if git diff --quiet "$B" "$C" -- include/; then
+    pass "C ABI: include/ is byte-identical to the baseline"
+else
+    comment_only=() decl_changed=()
+    while IFS=$'\t' read -r st p _; do
+        [ -n "${st:-}" ] || continue
+        if [ "$st" != "M" ]; then decl_changed+=("$p($st)"); continue; fi
+        bd="$(header_decls "$B" "$p")" || { decl_changed+=("$p(comment stripper failed)"); continue; }
+        cd_="$(header_decls "$C" "$p")" || { decl_changed+=("$p(comment stripper failed)"); continue; }
+        if [ -n "$bd" ] && [ "$bd" = "$cd_" ]; then comment_only+=("$p"); else decl_changed+=("$p"); fi
+    done < <(git diff --name-status "$B" "$C" -- include/)
+    if [ ${#decl_changed[@]} -eq 0 ]; then
+        pass "C ABI: include/ declarations are identical to the baseline; only comments changed in ${comment_only[*]} (review the text)"
     else
-        fail "C ABI: $path/ differs from the baseline:"
-        git diff --stat "$B" "$C" -- "$path/" | sed 's/^/       /'
+        fail "C ABI: include/ declarations differ from the baseline in: ${decl_changed[*]}"
+        git diff --stat "$B" "$C" -- include/ | sed 's/^/       /'
     fi
-done
+fi
 if [ -n "$so" ]; then
     built="$(nm -D --defined-only "$so" 2>/dev/null | awk '$2=="T"{print $3}' | grep '^gibson_' | sort -u || true)"
     so_id="$so, sha256 $(sha256sum "$so" | cut -d' ' -f1)"
