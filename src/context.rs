@@ -105,7 +105,7 @@ impl Context {
     /// A headless context renders into an in-memory buffer instead of the process
     /// stdout, so no escape codes reach a real terminal. Read the captured bytes
     /// back with [`Context::rendered_bytes`] or drain them with
-    /// [`Context::take_output`]:
+    /// [`Context::take_rendered_bytes`] (or the lossy-UTF-8 [`Context::take_output`]):
     ///
     /// ```
     /// use gibson::cell::Style;
@@ -307,8 +307,8 @@ impl Context {
     }
 
     /// Bytes captured by a buffer-backed (headless) context since the last
-    /// [`Context::take_output`]. Always empty for an interactive context, whose
-    /// output goes straight to the process stdout.
+    /// [`Context::take_output`] or [`Context::take_rendered_bytes`]. Always empty
+    /// for an interactive context, whose output goes straight to the process stdout.
     pub fn rendered_bytes(&self) -> &[u8] {
         match &self.output {
             OutputSink::Buffer(b) => b.as_slice(),
@@ -326,6 +326,17 @@ impl Context {
                 String::from_utf8_lossy(&bytes).into_owned()
             }
             OutputSink::Stdout => String::new(),
+        }
+    }
+
+    /// Drains the capture buffer and returns its bytes unchanged (binary-safe,
+    /// unlike the lossy [`Context::take_output`]). Empty for an interactive,
+    /// stdout-backed context. After this call the buffer is empty until the next
+    /// render, and its allocation is released.
+    pub fn take_rendered_bytes(&mut self) -> Vec<u8> {
+        match &mut self.output {
+            OutputSink::Buffer(b) => std::mem::take(b),
+            OutputSink::Stdout => Vec::new(),
         }
     }
 
@@ -734,5 +745,22 @@ impl Context {
 
     pub fn restore(&mut self) -> io::Result<()> {
         self.session.restore()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn take_rendered_bytes_round_trips_non_utf8_bytes() {
+        let mut ctx = Context::headless(RenderMode::Inline, 20, 4);
+        // A lone continuation byte, an overlong lead and 0xFF: `take_output` would replace these.
+        let raw: &[u8] = b"\x80\xC0\xAF\xFFok";
+        ctx.output.write_all(raw).unwrap();
+        assert_eq!(ctx.rendered_bytes(), raw);
+        assert_eq!(ctx.take_rendered_bytes(), raw);
+        assert!(ctx.rendered_bytes().is_empty());
+        assert!(ctx.take_rendered_bytes().is_empty());
     }
 }

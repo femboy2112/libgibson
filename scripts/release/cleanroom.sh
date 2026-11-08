@@ -99,6 +99,16 @@ flog="$(mktemp)"
 if ( cd "$fdir" && cc -std=c11 -Wall -Wextra main.c $(pkg-config --cflags --libs libgibson) -o forcing_app && ./forcing_app | grep -q '^doom_forcing_consumer: OK' ) >"$flog" 2>&1; then pass "C forcing consumer"; else bad "C forcing consumer"; dump "$flog"; fi
 rm -f "$flog"
 
+echo "### C headless capture drain (#297: one context, bounded capture, pkg-config) ###"
+# Every frame is drained (take) or discarded (clear) on ONE context; the consumer asserts the
+# capture is 0 after each drain, the per-frame bytes equal an undrained control's growth, and VmRSS
+# stays bounded over 20x the frames that grew the control to 1 MiB. Pass needs exit 0 AND the OK line.
+ddir="$WORK/drain"; mkdir -p "$ddir"
+cp bindings/sdk_forcing/headless_capture_drain.c "$ddir/main.c"
+dlog="$(mktemp)"
+if ( cd "$ddir" && cc -std=c11 -Wall -Wextra main.c $(pkg-config --cflags --libs libgibson) -o drain_app && ./drain_app </dev/null >out.txt && grep -q '^headless_capture_drain: OK$' out.txt && cat out.txt ) >"$dlog" 2>&1; then pass "C headless capture drain"; else bad "C headless capture drain"; dump "$dlog"; fi
+rm -f "$dlog"
+
 echo "### C++ consumer (pkg-config) ###"
 xdir="$WORK/cpp"; mkdir -p "$xdir"
 cat > "$xdir/main.cpp" <<'EOF'

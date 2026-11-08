@@ -30,7 +30,8 @@ procedural audio.
 >
 > **Known 0.6.0 limit ([#297](https://github.com/femboy2112/libgibson/issues/297)):** a headless
 > C context's ANSI capture grows for its lifetime and 0.6.0 has no C drain; bound it by replacing
-> the context once it passes a byte budget. An additive drain is v0.7 work (PR
+> the context once it passes a byte budget. The additive drain (`gibson_take_rendered_output`,
+> `gibson_clear_rendered_output`) is on `main` for v0.7 and unreleased (PR
 > [#306](https://github.com/femboy2112/libgibson/pull/306)).
 
 > **Engineering alpha.** Linux x86_64 is the best-tested environment. The core

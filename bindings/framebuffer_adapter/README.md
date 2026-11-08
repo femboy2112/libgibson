@@ -4,8 +4,9 @@
 framebuffer (a Doom-shaped 320x200 palette-indexed frame, or 32-bit pixels) onto a terminal through
 LibGibson's **public C ABI only**, plus a rights-safe synthetic producer, an interactive demo, and
 the evidence that the adapter keeps its contract. It names no game: nothing here is
-Doom-specific, and nothing in LibGibson changed (no `src/`, ABI or build change; ABI v1 stays 62
-symbols). It is MIT OR Apache-2.0, like the repository. A GPL engine port lives **outside** this
+Doom-specific, and the slice that added it changed nothing in LibGibson (no `src/`, ABI or build
+change; ABI v1 was 62 symbols). Since #297 it bounds its headless capture with
+`gibson_clear_rendered_output` (ABI v1, 64 symbols). It is MIT OR Apache-2.0, like the repository. A GPL engine port lives **outside** this
 repository and links this adapter in (see "The engine-port contract").
 
 | File | Role |
@@ -158,7 +159,7 @@ and the demo's report file) for P3, P5, P6 and P7, and adds a wire check for P2.
 | `p6-retry-io` | P6 | mutant adapter: `GIBSON_ERR_IO` from a poll ignored | kept looping 1.44 s after the hangup (1.51 s CPU), then exited `error` through the loop's render-error limit, never `hangup` |
 | `p6-sticky-signal` | P6 | mutant adapter: a handled signal also ends every later adapter (the old global flag) | the second adapter exits `signal` after 0 tics, exit code 1 (headless check and PTY) |
 | `p7-leak` | P7 | mutant adapter: 64 KiB leaked per present | second-half VmHWM +67,384 KiB at 80x24 |
-| `p7-no-rotation` | P7 | headless capture never rotated (finding F1) | second-half VmHWM +34,572 KiB at 80x24 |
+| `p7-no-rotation` | P7 | headless capture never cleared (`headless_capture_limit = 0`; finding F1) | second-half VmHWM +34,572 KiB at 80x24 |
 | `p7-slow-present` | P7 | mutant adapter: every 35th present stalls 400 ms | headless p99 401,700 us; PTY bench p99 401,991 us, and real clock 141 frames in 5,519 ms = 25.5 fps with 16 dropped tics: the p99, fps and dropped-tic gates fail (the creep and memory gates can pass: every 500-frame window holds the same 15 stalls) |
 
 ### Frame cost and memory (P7)
@@ -183,9 +184,13 @@ and p99 in microseconds over frames 200-1999.
 The thresholds were set from margins measured before the gate existed: p99 at most 13.9 ms,
 34.9-35.0 fps, 0 dropped tics, second-half growth at most 100 KiB.
 
-Headless (`--selfcheck`, fresh process per size, capture rotated at 4 MiB):
+Headless (`--selfcheck`, fresh process per size, capture bounded at 4 MiB). This table was measured
+when the adapter bounded the capture by replacing the context. Since #297 it clears the capture
+instead (`gibson_clear_rendered_output`), and the counter, still named `capture_rotations`, counts
+clears: a re-run after the change cleared 18 / 60 / 166 times, as many as the rotations below, and
+every P7 gate passed (second-half VmHWM +16 / +0 / +0 KiB).
 
-| Grid | lower mean / p99 | render mean / p99 | total mean / p99 | VmHWM at frames 200 / 1100 / 2000 (second half) | capture rotations |
+| Grid | lower mean / p99 | render mean / p99 | total mean / p99 | VmHWM at frames 200 / 1100 / 2000 (second half) | capture rotations (context replacements) |
 |---|---|---|---|---|---|
 | 80x24 | 72 / 124 | 624 / 1,063 | 695 / 1,185 | 8,712 / 9,216 / 9,372 KiB (+156) | 18 |
 | 160x50 | 234 / 320 | 2,032 / 2,281 | 2,266 / 2,559 | 15,340 / 15,340 / 15,340 KiB (+0) | 60 |
@@ -216,10 +221,13 @@ no equivalent). Memory therefore grows by every frame's bytes, without bound. Me
 adapter's rotation turned off (`p7-no-rotation`), 2000 frames: 80x24 +69 MB VmHWM from frame 200 to 2000
 (capture 79 MB);
 in an earlier run of the same check over all three sizes, 160x50 +227 MB and 320x100 +636 MB
-(capture 724 MB). The adapter works around it by replacing the headless
-context once its capture passes 4 MiB (`headless_capture_limit`), carrying undelivered injected
-events over; a terminal context is not affected (its output goes to stdout). Exact repro against
-the staged SDK:
+(capture 724 MB). The adapter first worked around it by replacing the headless context once its
+capture passed 4 MiB (`headless_capture_limit`), carrying undelivered injected events over. #297
+added `gibson_take_rendered_output` / `gibson_clear_rendered_output`; the adapter reads cells, not
+the ANSI, so it now calls `gibson_clear_rendered_output` at the same limit and keeps its context.
+A terminal context is not affected (its output goes to stdout). Exact repro against the staged SDK
+(before the fix; with it, a `gibson_take_rendered_output` after each render keeps the capture at
+one frame):
 
 ```c
 /* f1_capture_growth.c */
@@ -261,8 +269,8 @@ frame  100: capture 199506 bytes
 frame 1000: capture 1995006 bytes
 ```
 
-A domain-neutral fix would be one additive symbol that drains (or caps) the capture, e.g. a
-`gibson_take_rendered_output`; nothing here needs it beyond the workaround.
+The fix is the additive pair above (#297); `bindings/sdk_forcing/headless_capture_drain.c` checks
+that one drained context stays bounded.
 
 **F2 (gap, worked around through the ABI).** C ABI v1 has no terminal-size query; a `RESIZE`
 event arrives only on a change. The adapter learns the starting grid by rendering an empty frame

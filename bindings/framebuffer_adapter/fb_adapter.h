@@ -104,8 +104,8 @@ typedef struct fb_adapter_config {
     uint32_t hold_repeat_tics;       /* an autorepeat re-arms the hold this many tics (default 4) */
     uint32_t quit_char;              /* typed char that requests quit (default 'q'; 0 = none). Ctrl-C always does. */
     int32_t color_depth;             /* GIBSON_COLOR_DEPTH_*, or -1 (default) to keep the context's own */
-    size_t headless_capture_limit;   /* headless only: replace the context once its ANSI capture exceeds
-                                        this many bytes (default 4 MiB; 0 = never). See README, finding F1. */
+    size_t headless_capture_limit;   /* headless only: bound the ANSI capture at this many bytes: once it
+                                        exceeds them, clear it (default 4 MiB; 0 = never). See README, F1. */
     int install_signal_handlers;     /* terminal only: SIGINT/SIGTERM set the quit flag (default 1) */
     fb_key_map_fn map_key;           /* NULL = default map (ASCII letters lowercased, everything else as is) */
     void *map_key_user;
@@ -127,8 +127,8 @@ fb_status fb_adapter_open_headless(const fb_adapter_config *cfg, uint16_t cols, 
                                    fb_adapter **out);
 /* gibson_destroy_context (which restores a terminal), uninstalls the signal handlers, frees. */
 void fb_adapter_close(fb_adapter *ad);
-/* The context the adapter currently renders into (headless: may be replaced on present, see
-   headless_capture_limit -- fetch it again after each present). */
+/* The context the adapter renders into. It is the same context for the adapter's lifetime (before
+   #297 a headless one was replaced at headless_capture_limit; it is now cleared instead). */
 gibson_context_t *fb_adapter_context(const fb_adapter *ad);
 /* Thread-local-free last error text (a static buffer; diagnostic only). */
 const char *fb_adapter_last_error(void);
@@ -147,7 +147,7 @@ fb_status fb_adapter_set_status(fb_adapter *ad, const char *ascii);
    that hung up is reported by the next fb_adapter_pump as FB_TERMINAL_GONE. On a terminal the
    rendered frame size is read back (gibson_get_frame_size) and, if it differs from the grid the
    map was built for, the map is rebuilt for the next frame. On a headless context whose capture
-   exceeds headless_capture_limit, the context is replaced first (undelivered events carried over). */
+   exceeds headless_capture_limit, the capture is cleared first (gibson_clear_rendered_output). */
 fb_status fb_adapter_present(fb_adapter *ad);
 
 typedef struct fb_geometry {
@@ -240,7 +240,8 @@ fb_status fb_adapter_run(fb_adapter *ad, const fb_producer *p, const fb_run_opti
 /* ---- counters ---- */
 typedef struct fb_adapter_counters {
     uint64_t keys_observed, keys_dropped, resizes, capture_rotations, presents;
-} fb_adapter_counters;
+} fb_adapter_counters; /* capture_rotations counts headless capture clears (it counted context
+                          replacements before #297; the name is kept for source compatibility) */
 void fb_adapter_counters_get(const fb_adapter *ad, fb_adapter_counters *out);
 
 /* ---- test-only mutants (negative controls). Never set outside a test. ---- */
