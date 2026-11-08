@@ -680,18 +680,40 @@ impl Context {
     /// so a headless, scripted, or recorded context can be driven through the same
     /// event path as a live TTY (the general injected-input path — SmartChem
     /// #131/G). Unlike [`poll_event`](Self::poll_event) this does **not** require a
-    /// TTY: the injected source is the authority on event availability. An injected
-    /// `Resize` still marks the scheduler dirty so the next render re-observes
-    /// geometry, keeping a scripted resize indistinguishable from a terminal one.
+    /// TTY: the injected source is the authority on event availability.
+    ///
+    /// A delivered `Resize(cols, rows)` marks the scheduler dirty, so the next render
+    /// re-observes geometry. Where that geometry comes from depends on the session:
+    ///
+    /// * **Headless** ([`Context::headless`]): the session is virtual, so the delivered
+    ///   resize *is* its new geometry. It is applied before this returns and the next
+    ///   render lays out at `cols`×`rows`, exactly as the C ABI's `gibson_poll_event`
+    ///   does (both call the same implementation; #293). A resize with a zero
+    ///   dimension is still returned but is **not applied**: the geometry stays as it
+    ///   was. The C ABI refuses to queue such a resize (`GIBSON_ERR_INVALID_PARAM`), so
+    ///   on either side a headless context never takes a zero geometry from a resize.
+    /// * **Terminal**: the geometry stays observed from the terminal itself; an injected
+    ///   resize schedules a render but does not override what the terminal reports.
     pub fn poll_from<S>(&mut self, source: &mut S, timeout: Duration) -> io::Result<Option<Event>>
     where
         S: crate::event_source::EventSource + ?Sized,
     {
         let ev = source.poll_event(timeout)?;
-        if let Some(Event::Resize(_, _)) = ev {
-            self.scheduler.mark_dirty();
+        if let Some(Event::Resize(cols, rows)) = ev {
+            self.deliver_resize(cols, rows);
         }
         Ok(ev)
+    }
+
+    /// The effect of a delivered `Resize` on an injected-input path: on a headless
+    /// session, a non-zero geometry becomes the virtual terminal's size; on any session
+    /// the next render is scheduled. Shared by [`poll_from`](Self::poll_from) and the
+    /// C ABI's poll, so both apply a resize the same way (#293).
+    fn deliver_resize(&mut self, cols: u16, rows: u16) {
+        if self.session.is_headless() && cols != 0 && rows != 0 {
+            self.session.set_terminal_size(cols, rows);
+        }
+        self.scheduler.mark_dirty();
     }
 
     /// Returns a snapshot of render statistics.

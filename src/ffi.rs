@@ -973,13 +973,9 @@ unsafe fn poll_event_impl(
         // A headless context delivers what was pushed (gibson_push_event), never the process
         // terminal (#259); its queue never waits, so the timeout does not delay it.
         let polled = if c.inner.session.is_headless() {
-            let ev = c.inner.poll_from(&mut c.injected, timeout);
-            if let Ok(Some(Event::Resize(cols, rows))) = &ev {
-                // A delivered resize takes effect as a terminal's does: the next render lays out
-                // at the new geometry.
-                c.inner.session.set_terminal_size(*cols, *rows);
-            }
-            ev
+            // A delivered resize takes effect inside poll_from, the same implementation the Rust
+            // API uses (#293): the next render lays out at the new geometry.
+            c.inner.poll_from(&mut c.injected, timeout)
         } else {
             c.inner.poll_event(timeout)
         };

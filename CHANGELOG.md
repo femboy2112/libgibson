@@ -23,6 +23,19 @@ whether a `v0.6.0` tag names the corrected candidate `release/v0.6.0-rc` @ `572e
 decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed policy in #291).
 `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
 
+### Fixed — Rust library (`gibson::Context`): a delivered resize resizes a headless context ([#293](https://github.com/femboy2112/libgibson/issues/293))
+- `Context::poll_from` on a **headless** context now applies a delivered `Event::Resize(cols, rows)`
+  before it returns, so the next render lays out at the new geometry. It used to only schedule a
+  render, which then re-read the old size, while the C ABI's `gibson_poll_event` applied it: a
+  Rust consumer had to call `ctx.session.set_terminal_size` itself to match C. Both now call one
+  implementation in `Context`; the copy in `src/ffi.rs` is gone.
+- **Zero sizes:** a resize with a zero width or height is still delivered but is not applied (the
+  geometry stays). The C ABI already refuses to queue one (`GIBSON_ERR_INVALID_PARAM`), so neither
+  side ever gives a headless context a zero geometry through a resize.
+- A terminal (non-headless) context is unchanged: its geometry is observed from the terminal.
+- The v0.8 parity slice's Rust consumer now uses `poll_from` alone; it produces the C records
+  r02/r03/r04 byte-identically without the manual resize step.
+
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
 - The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an
   event type with each key (`CSI 97u` press, `CSI 97;1:2u` repeat, `CSI 97;1:3u` release), and
