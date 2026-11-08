@@ -40,7 +40,7 @@ const REPORT_KEY_RELEASE: u8 = 0b100;
 /// codes (8). Measured on kitty 0.32.2: without 8, Enter, Tab, Backspace and Esc report their
 /// release as their legacy byte, which reads as a second press; without 4, shift+1 reads as `1`
 /// with shift, not `!`.
-const KEY_RELEASE_FLAGS: u8 = 15;
+pub(crate) const KEY_RELEASE_FLAGS: u8 = 15;
 
 /// Pushes [`KEY_RELEASE_FLAGS`] onto the kitty keyboard stack of the current screen, then asks
 /// for the flags now in force (`CSI ? u`) and the primary device attributes (`CSI c`). Every
@@ -306,6 +306,9 @@ impl TerminalSession {
                         // Before leaving the alternate screen: the push is on its stack. Claimed,
                         // so the restore that unwinding runs next does not pop again.
                         let _ = pop_key_releases(&mut out);
+                        // No release will be reported now: stop delivering them (and late
+                        // answers) even if the panic is caught and the caller keeps polling.
+                        crate::input::set_key_releases_delivered(false);
                     }
                     let modes = REPORTING_MODES.load(Ordering::SeqCst);
                     if modes & REPORT_FOCUS != 0 {
@@ -463,18 +466,28 @@ impl TerminalSession {
     /// [`Event::KeyReleaseReporting`](crate::input::Event::KeyReleaseReporting): `Active`, after
     /// which every key that goes up is reported as an
     /// [`Event::KeyRelease`](crate::input::Event::KeyRelease), or `Unsupported`. A terminal that
-    /// answers neither query leaves the session press-only with no answer at all.
+    /// took only some of the flags is `Unsupported` too (without them all, Enter, Tab, Backspace
+    /// and Esc report their release as a second press); the flags it took stay pushed until
+    /// reporting is disabled or the session restored. A terminal that answers neither query leaves
+    /// the session press-only with no answer at all.
     ///
-    /// While enabled the terminal sends every key as an escape sequence, which LibGibson decodes
-    /// into the same [`Event::Key`](crate::input::Event::Key)s as before (`Esc`, `Enter`, Ctrl and
-    /// Alt chords, shifted characters), and reports modifier keys alone, which are not
-    /// delivered. Text typed through an input method may not arrive: enable this for direct key
-    /// control (a game), not for text entry.
+    /// While enabled the terminal sends every key as an escape sequence. LibGibson decodes most
+    /// into the same [`Event::Key`](crate::input::Event::Key)s as before (`Esc`, `Enter`, `Tab`,
+    /// `Backspace`, Ctrl and Alt chords, shifted symbols such as `!`), with these differences: a
+    /// shifted letter is its capital without `SHIFT` (Ctrl+Shift+W is `W` with Ctrl, not `w`);
+    /// Caps Lock does not change a letter (`a`, not `A`); and Ctrl+I, Ctrl+M and Ctrl+[ are Ctrl
+    /// chords of `i`, `m` and `[`, not `Tab`, `Enter` and `Esc`. Modifier keys alone are reported,
+    /// and not delivered. Text typed through an input method may not arrive: enable this for
+    /// direct key control (a game), not for text entry.
     ///
     /// Enabling enters interactive (raw) mode first ([`enter_interactive`](Self::enter_interactive)),
     /// so the terminal's answer is never echoed. Tracked and unwound like
     /// [`set_mouse_capture`](TerminalSession::set_mouse_capture):
-    /// `restore`, `Drop` and the panic hook pop the flags. A process killed outright (SIGKILL)
+    /// `restore`, `Drop` and the panic hook pop the flags. Once the panic hook has popped them,
+    /// even for a panic that is caught, no release or answer is delivered and
+    /// [`key_release_reporting_enabled`](Self::key_release_reporting_enabled) is false; an
+    /// application tracking holds then stops expecting releases itself, as after disabling.
+    /// A process killed outright (SIGKILL)
     /// leaves them pushed and the shell then receives escape sequences for Enter; kitty's reset
     /// (Ctrl+Shift+Delete) clears them. Moving between the main and alternate screen while enabled
     /// pops the flags on the screen being left and asks again on the new one, so a second answer
@@ -530,8 +543,8 @@ impl TerminalSession {
     }
 
     /// Whether reporting is still on, after noticing that the panic hook popped the flags (a
-    /// caught panic): then it is off, delivery stops, and enabling again pushes anew (#275
-    /// re-review).
+    /// caught panic; the hook already stopped delivery): then it is off, and enabling again pushes
+    /// anew (#275 re-review).
     fn key_release_reporting_live(&mut self) -> bool {
         if self.key_release_reporting_enabled && !key_releases_pushed() {
             self.key_release_reporting_enabled = false;

@@ -196,8 +196,9 @@ pub enum Event {
     /// The key is named exactly as its press was delivered, the same code and modifiers, even
     /// when the terminal names it differently on the way up (shift let go first turns a released
     /// `W` into `w`), so a release matches its press by equality. A key that was already down
-    /// when reporting began has no recorded press; its release names the key as the terminal
-    /// reports it. An autorepeat of a held key is an [`Event::Key`], as on any terminal.
+    /// when reporting began has no recorded press: its release is named as its first autorepeat
+    /// since then was delivered, or, with none, as the terminal reports it. An autorepeat of a
+    /// held key is an [`Event::Key`], as on any terminal.
     KeyRelease(KeyEvent),
     /// The terminal's answer to a key-release reporting request, in input order: every event
     /// after it was produced under that answer.

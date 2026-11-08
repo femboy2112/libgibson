@@ -301,6 +301,30 @@ fn after_a_caught_panic_reporting_is_off_and_can_be_enabled_again() {
 }
 
 #[test]
+fn after_a_caught_panic_no_release_is_delivered() {
+    // #275 review: the panic hook pops the flags; a client that catches the panic and keeps
+    // polling, without calling into the session, must not receive releases from then on (it
+    // would hold every key whose release it waits for). The release here is one kitty sent
+    // before the pop took effect.
+    let mut cap = Capture::spawn(child("caught-panic-poll"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "READY");
+    wait_bytes(&mut cap, PUSH_AND_ASK);
+    send(&mut cap, KITTY_ANSWER);
+    wait_for(&mut cap, "EV reporting:Active");
+    send(&mut cap, b"\x1b[33u"); // `!`: the child panics and catches it
+    wait_for(&mut cap, "CAUGHT");
+    send(&mut cap, b"\x1b[119u\x1b[119;1:3u\x1b[113u");
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, "caught-panic-poll");
+    assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
+    assert_eq!(
+        events(&cap),
+        ["reporting:Active", "key:!:0", "key:w:0", "key:q:0"]
+    );
+    assert_eq!(count(cap.raw(), POP), 1, "the hook's pop only");
+}
+
+#[test]
 fn a_restored_session_cannot_enable_reporting() {
     // #275 review: after restore the session no longer holds the terminal.
     let mut cap = Capture::spawn(child("restored"), 80, 24, Duration::from_secs(40));
@@ -445,6 +469,14 @@ fn key_release_reporting_child() {
             Event::Key(k) if k.code == KeyCode::Char('q') => break,
             Event::Key(k) if k.code == KeyCode::Char('!') && role == "panic" => {
                 panic!("injected panic with key-release reporting on")
+            }
+            Event::Key(k) if k.code == KeyCode::Char('!') && role == "caught-panic-poll" => {
+                let caught = std::panic::catch_unwind(|| panic!("caught, on the owner thread"));
+                assert!(caught.is_err());
+                // The hook left raw mode; take it back without touching the session's reporting
+                // state, so the bytes typed next arrive as they are sent.
+                crossterm::terminal::enable_raw_mode().unwrap();
+                say("CAUGHT");
             }
             Event::Key(k) if k.code == KeyCode::Char('a') && role == "inline" => {
                 ctx.session.enter_alternate_screen().unwrap();

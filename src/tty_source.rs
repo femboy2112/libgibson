@@ -66,7 +66,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// One read's worth of terminal bytes; crossterm uses the same size. A full buffer
-/// tells the decoder more bytes may follow (a lone `ESC` then waits for them).
+/// tells the decoder more bytes may follow (a lone `ESC` then waits for them), as does a read
+/// ending in `ESC` while key-release reporting is confirmed (the Esc key is then `CSI 27u`).
 const READ_BUF: usize = 1024;
 
 /// The error a hung-up terminal reports. Same kind and message as before #269.
@@ -343,7 +344,10 @@ impl TtySource {
         let n = unsafe { libc::read(self.fd, buf.as_mut_ptr().cast(), READ_BUF) };
         if n > 0 {
             let n = n as usize;
-            self.parser.advance(&buf[..n], n == READ_BUF);
+            // While the flags are confirmed the Esc key is `CSI 27u`, so a read ending in a lone
+            // ESC is a sequence split across reads: it waits for the rest.
+            let split = buf[n - 1] == 0x1B && self.reporting_confirmed();
+            self.parser.advance(&buf[..n], n == READ_BUF || split);
             return Ok(ReadOutcome::Bytes);
         }
         if n == 0 {
@@ -359,6 +363,15 @@ impl TtySource {
         }
         let e = io::Error::last_os_error();
         read_error_outcome(e, fd_reports_hangup(self.fd))
+    }
+
+    /// Whether key releases are delivered and the terminal's latest answer is `Active`.
+    fn reporting_confirmed(&self) -> bool {
+        #[cfg(test)]
+        let on = self.track_keys || crate::input::key_releases_delivered();
+        #[cfg(not(test))]
+        let on = crate::input::key_releases_delivered();
+        on && lock_queries().last == Some(KeyReleaseReporting::Active)
     }
 
     /// Moves every event the parser completed into the hand-out queue.
@@ -624,9 +637,11 @@ impl PressedKeys {
     }
 
     /// The record a repeat or release of `id` (decoded as `code`) belongs to, the most recently
-    /// recorded of: its own identity; a legacy record of the text key it decodes to; and a legacy
-    /// record of any key it decodes to recorded in a later epoch than its own record (that one
-    /// went up unreported while reporting was off, and the key was pressed again since).
+    /// recorded of: its own identity; a legacy record of the text key it decodes to, or of a
+    /// character whose lowercase is its kitty base key (a legacy `W` is the key kitty releases as
+    /// `w`); and a legacy record of any key it decodes to recorded in a later epoch than its own
+    /// record (that one went up unreported while reporting was off, and the key was pressed again
+    /// since).
     ///
     /// Only its own identity for a key kitty sends from the private-use area (57344-63743: the
     /// keypad, media and modifier keys): keypad Left decodes as the arrow Left and keypad `1` as the
@@ -638,8 +653,16 @@ impl PressedKeys {
         if matches!(id, KeyId::Base(b) if KITTY_PRIVATE_USE_KEYS.contains(&b)) {
             return exact;
         }
+        let base = match id {
+            KeyId::Base(b) => char::from_u32(b),
+            KeyId::Code(_) => None,
+        };
+        let folds_to_base = |r: &(KeyId, CtKeyEvent, u64, u64)| match (r.0, base) {
+            (KeyId::Code(CtKeyCode::Char(c)), Some(b)) => c.to_lowercase().eq([b]),
+            _ => false,
+        };
         let text = matches!(code, CtKeyCode::Char(_))
-            .then(|| self.newest(|r| r.0 == legacy))
+            .then(|| self.newest(|r| r.0 == legacy || folds_to_base(r)))
             .flatten();
         let superseding = exact.and_then(|e| {
             let epoch = self.0[e].3;
@@ -653,8 +676,11 @@ impl PressedKeys {
 
     /// `k` as the event to deliver: a press is recorded (replacing an earlier record of the same
     /// key); a repeat or release of a recorded key takes the recorded press's code and modifiers,
-    /// and a release forgets it. A key with no record (already down when reporting began) is
-    /// delivered as decoded.
+    /// and a release forgets it. A repeat of a key with no record (already down when reporting
+    /// began) is delivered as decoded and recorded like a press, so its release takes that name; a
+    /// release with no record is delivered as decoded. A kitty repeat that matched a legacy record
+    /// moves the record to its own identity, so the release finds it whatever kitty names it then
+    /// (a legacy `!`, released as `1`).
     ///
     /// A press is matched by its own identity only. A repeat or release also matches a legacy
     /// record of the text key it decodes to (a `w` typed before the flags were pushed, released as
@@ -674,7 +700,7 @@ impl PressedKeys {
                 self.0[i] = (id, k, seq, epoch);
                 k
             }
-            (KeyEventKind::Press, None) => {
+            (KeyEventKind::Press | KeyEventKind::Repeat, None) => {
                 if self.0.len() == Self::CAP {
                     if let Some(oldest) = (0..self.0.len()).min_by_key(|&n| self.0[n].2) {
                         self.0.remove(oldest);
@@ -685,13 +711,20 @@ impl PressedKeys {
             }
             (KeyEventKind::Repeat, Some(i)) => {
                 let p = self.0[i].1;
+                if self.0[i].0 != id {
+                    // One record per key: any other record of `id` went up unreported.
+                    let mut r = self.0.remove(i);
+                    self.0.retain(|o| o.0 != id);
+                    r.0 = id;
+                    self.0.push(r);
+                }
                 CtKeyEvent::new_with_kind_and_state(p.code, p.modifiers, k.kind, k.state)
             }
             (KeyEventKind::Release, Some(i)) => {
                 let (_, p, _, _) = self.0.remove(i);
                 CtKeyEvent::new_with_kind_and_state(p.code, p.modifiers, k.kind, k.state)
             }
-            (_, None) => k,
+            (KeyEventKind::Release, None) => k,
         }
     }
 }
@@ -699,8 +732,9 @@ impl PressedKeys {
 /// Outstanding key-release reporting requests (#275). Each request is written as push flags,
 /// `CSI ? u` (query the flags) and `CSI c` (primary device attributes). Every terminal answers the
 /// last; only a kitty-protocol terminal answers the second, and it answers first. So per request:
-/// a flags reply with event types => `Active`; one without => `Unsupported`; the attributes reply
-/// with no flags reply before it => `Unsupported`.
+/// a flags reply with every flag pushed (`KEY_RELEASE_FLAGS`) => `Active`; one without them all
+/// => `Unsupported` (with fewer flags, Enter, Tab, Backspace and Esc release as a second press,
+/// and shift+1 reads as `1`); the attributes reply with no flags reply before it => `Unsupported`.
 ///
 /// A device attributes reply cannot be told from one to somebody else's earlier query, and a
 /// stray one arriving first reads as `Unsupported`. A flags reply, though, states the flags in
@@ -724,7 +758,9 @@ impl KeyboardQueries {
         flags: KeyboardEnhancementFlags,
         enabled: bool,
     ) -> Option<KeyReleaseReporting> {
-        let r = if flags.contains(KeyboardEnhancementFlags::REPORT_EVENT_TYPES) {
+        let pushed =
+            KeyboardEnhancementFlags::from_bits_truncate(crate::session::KEY_RELEASE_FLAGS);
+        let r = if flags.contains(pushed) {
             KeyReleaseReporting::Active
         } else {
             KeyReleaseReporting::Unsupported
@@ -1807,7 +1843,8 @@ mod tests {
 
     #[test]
     fn kitty_272_the_answer_is_delivered_in_input_order() {
-        // The only test that touches the process-global request record.
+        // Touches the process-global request record: see `QUERIES_LOCK`.
+        let _serial = queries_lock();
         forget_keyboard_replies();
         // An answer decoded before a toggle is dropped when handed out after it (#275 re-review).
         expect_keyboard_reply();
@@ -2117,6 +2154,235 @@ mod tests {
         assert_eq!(
             terminal(got.1),
             vec![key('ｶ'), kind(K::Char('ｶ'), M::NONE, Kind::Release)]
+        );
+    }
+
+    /// Serialises the tests that touch the process-global request record (`KEYBOARD_QUERIES`).
+    static QUERIES_LOCK: Mutex<()> = Mutex::new(());
+
+    fn queries_lock() -> std::sync::MutexGuard<'static, ()> {
+        QUERIES_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// The keys a hold tracker keyed by code and modifiers (a release matches its press by
+    /// equality) still holds after `events`, one tic each, with releases reported throughout.
+    /// Modifier keys alone are skipped: they are never delivered.
+    fn still_held(events: &[CtEvent]) -> Vec<(K, M)> {
+        use crate::hold::{HoldConfig, HoldTracker};
+        let mut holds = HoldTracker::new(HoldConfig::new(1, 1));
+        holds.set_releases_reported(true);
+        for (tic, e) in events.iter().enumerate() {
+            let CtEvent::Key(k) = e else { continue };
+            if matches!(k.code, K::Modifier(_)) {
+                continue;
+            }
+            let (tic, key) = (tic as u64, (k.code, k.modifiers));
+            match k.kind {
+                Kind::Release => holds.observe_release(tic, key),
+                _ => holds.observe(tic, key),
+            }
+            .unwrap();
+        }
+        holds.advance(1_000_000).unwrap();
+        holds.held().map(|(k, _)| k).collect()
+    }
+
+    #[test]
+    fn kitty_272_a_repeat_with_no_record_names_its_release() {
+        // Shift+w already down when reporting began (or across a disable/enable, which forgets
+        // every record): kitty's autorepeat is the first thing seen of it. Shift goes up, then w,
+        // which kitty names `w`. The release must end the hold the repeat started.
+        let got = terminal(decode_all(
+            b"\x1b[119:87;2:2u\x1b[57441;1:3u\x1b[119;1:3u",
+            true,
+        ));
+        assert_eq!(
+            got,
+            vec![
+                kind(K::Char('W'), M::NONE, Kind::Repeat),
+                kind(
+                    K::Modifier(ModifierKeyCode::LeftShift),
+                    M::SHIFT,
+                    Kind::Release
+                ),
+                kind(K::Char('W'), M::NONE, Kind::Release),
+            ]
+        );
+        assert_eq!(still_held(&got), vec![]);
+        // Ctrl+w likewise: ctrl goes up first, and kitty names the release plain `w`.
+        let got = terminal(decode_all(
+            b"\x1b[119;5:2u\x1b[57442;1:3u\x1b[119;1:3u",
+            true,
+        ));
+        assert_eq!(got[0], kind(K::Char('w'), M::CONTROL, Kind::Repeat));
+        assert_eq!(got[2], kind(K::Char('w'), M::CONTROL, Kind::Release));
+        assert_eq!(still_held(&got), vec![]);
+    }
+
+    #[test]
+    fn kitty_272_a_legacy_shifted_or_control_press_names_its_release() {
+        // Typed while delivery was on but before the push took effect: a legacy `W` (shift+w), then
+        // shift up and kitty's release of w, named `w`; again with a kitty autorepeat in between.
+        // A legacy ctrl+w (0x17) released after ctrl already matched; it must still.
+        let got = terminal(decode_all(
+            b"W\x1b[57441;1:3u\x1b[119;1:3u\
+              W\x1b[119:87;2:2u\x1b[57441;1:3u\x1b[119;1:3u\
+              \x17\x1b[57442;1:3u\x1b[119;1:3u",
+            true,
+        ));
+        let names: Vec<(K, M, Kind)> = got
+            .iter()
+            .filter_map(|e| match e {
+                CtEvent::Key(k) if !matches!(k.code, K::Modifier(_)) => {
+                    Some((k.code, k.modifiers, k.kind))
+                }
+                CtEvent::Key(_) => None,
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                (K::Char('W'), M::SHIFT, Kind::Press),
+                (K::Char('W'), M::SHIFT, Kind::Release),
+                (K::Char('W'), M::SHIFT, Kind::Press),
+                (K::Char('W'), M::SHIFT, Kind::Repeat),
+                (K::Char('W'), M::SHIFT, Kind::Release),
+                (K::Char('w'), M::CONTROL, Kind::Press),
+                (K::Char('w'), M::CONTROL, Kind::Release),
+            ]
+        );
+        assert_eq!(still_held(&got), vec![]);
+    }
+
+    #[test]
+    fn kitty_272_a_legacy_shifted_symbol_repeated_by_kitty_names_its_release() {
+        // A legacy `!` (shift+1) recorded before the push took effect, autorepeated by kitty as
+        // `CSI 49:33;2:2u`, then shift up and kitty's release of the key, named `1`.
+        let got = terminal(decode_all(
+            b"!\x1b[49:33;2:2u\x1b[57441;1:3u\x1b[49;1:3u",
+            true,
+        ));
+        assert_eq!(got[1], kind(K::Char('!'), M::NONE, Kind::Repeat));
+        assert_eq!(got[3], kind(K::Char('!'), M::NONE, Kind::Release));
+        assert_eq!(still_held(&got), vec![]);
+    }
+
+    #[test]
+    fn kitty_272_active_needs_every_flag_pushed() {
+        // LibGibson pushes 15. Without 8, Enter/Tab/Backspace/Esc release as their legacy byte (a
+        // second press); without 4, shift+1 reads as `1` with shift. A reply missing any of them is
+        // not the protocol LibGibson decodes. 16 (associated text) only appends a field the
+        // decoder ignores, so a superset is Active.
+        for (bits, want) in [
+            (2, KeyReleaseReporting::Unsupported),
+            (3, KeyReleaseReporting::Unsupported),
+            (7, KeyReleaseReporting::Unsupported),
+            (11, KeyReleaseReporting::Unsupported),
+            (14, KeyReleaseReporting::Unsupported),
+            (15, KeyReleaseReporting::Active),
+            (31, KeyReleaseReporting::Active),
+        ] {
+            let mut q = KeyboardQueries::default();
+            q.outstanding += 1;
+            assert_eq!(
+                q.flags_reply(F::from_bits_truncate(bits), true),
+                Some(want),
+                "flags reply {bits}"
+            );
+        }
+    }
+
+    #[test]
+    fn kitty_272_a_read_split_after_esc_while_active_keeps_the_sequence() {
+        // While the flags are confirmed, kitty sends the Esc key as `CSI 27u`: a read that ends
+        // in a lone ESC is a sequence split across reads, not the Esc key.
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        expect_keyboard_reply();
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            let mut out = Vec::new();
+            let drain = |s: &mut TtySource, out: &mut Vec<SourceEvent>| {
+                while let Ok(Some(e)) = s.poll_source(Duration::from_millis(200)) {
+                    out.push(e);
+                }
+            };
+            write_all(&master, b"\x1b[?15u\x1b[?62;c\x1b[119u");
+            drain(s, &mut out);
+            write_all(&master, b"\x1b");
+            drain(s, &mut out);
+            write_all(&master, b"[119;1:3u");
+            drain(s, &mut out);
+            drop(master);
+            out
+        });
+        forget_keyboard_replies();
+        assert_eq!(
+            got,
+            vec![
+                SourceEvent::KeyReleaseReporting(KeyReleaseReporting::Active),
+                SourceEvent::Terminal(key('w')),
+                SourceEvent::Terminal(kind(K::Char('w'), M::NONE, Kind::Release)),
+            ]
+        );
+        // Not confirmed: a read ending in a lone ESC is the Esc key, at once, as before.
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            write_all(&master, b"\x1b");
+            let esc = s.poll_source(Duration::from_millis(200)).unwrap();
+            drop(master);
+            esc
+        });
+        assert_eq!(
+            got,
+            Some(SourceEvent::Terminal(CtEvent::Key(K::Esc.into())))
+        );
+    }
+
+    #[test]
+    fn kitty_272_what_flags_15_change_in_decoded_keys() {
+        // The rustdoc of `set_key_release_reporting` states what reporting changes in the keys
+        // delivered. Each pair: what kitty sends with flags 15, and the legacy bytes for the same
+        // keystroke without them.
+        let names = |bytes: &'static [u8]| -> Vec<(K, M)> {
+            terminal(decode_all(bytes, false))
+                .into_iter()
+                .map(|e| match e {
+                    CtEvent::Key(k) => (k.code, k.modifiers),
+                    other => panic!("{other:?}"),
+                })
+                .collect()
+        };
+        // The same: Esc, Enter, Tab, Backspace, ctrl and alt chords, shifted symbols.
+        assert_eq!(
+            names(b"\x1b[13u\x1b[9u\x1b[127u\x1b[97;5u\x1b[97;3u\x1b[49:33;2u\x1b[9;2u\x1b[27u"),
+            names(b"\r\t\x7f\x01\x1ba!\x1b[Z\x1b"),
+        );
+        // Different: a shifted letter carries no SHIFT; Caps Lock does not change the letter;
+        // ctrl+i, ctrl+m and ctrl+[ are ctrl chords, not Tab, Enter and Esc.
+        assert_eq!(
+            names(b"\x1b[97:65;2u\x1b[119:87;6u\x1b[97;65u\x1b[105;5u\x1b[109;5u\x1b[91;5u"),
+            vec![
+                (K::Char('A'), M::NONE),
+                (K::Char('W'), M::CONTROL),
+                (K::Char('a'), M::NONE),
+                (K::Char('i'), M::CONTROL),
+                (K::Char('m'), M::CONTROL),
+                (K::Char('['), M::CONTROL),
+            ]
+        );
+        assert_eq!(
+            names(b"A\x17A\t\r"),
+            vec![
+                (K::Char('A'), M::SHIFT),
+                (K::Char('w'), M::CONTROL),
+                (K::Char('A'), M::SHIFT),
+                (K::Tab, M::NONE),
+                (K::Enter, M::NONE),
+            ]
         );
     }
 }

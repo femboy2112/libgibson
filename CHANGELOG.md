@@ -77,7 +77,15 @@ decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed p
   after a caught panic the session reports reporting off and can enable it again. A third pass:
   a release decoded before a toggle is dropped too (as disabling promises); a legacy record of any
   key recorded in a later epoch supersedes a stale record of it (ctrl+Enter released unreported,
-  then plain Enter); and re-enabling after a caught panic restores raw mode.
+  then plain Enter); and re-enabling after a caught panic restores raw mode. A further review: a
+  key already down when reporting began is named by its first kitty autorepeat, and kitty's
+  release matches a legacy capital (`W`, released as `w`) or a legacy symbol kitty autorepeated
+  (`!`, released as `1`), so each such release ends its hold; `Active` needs every flag pushed (a
+  terminal that took only some, such as 3, 7 or 11, answers `Unsupported`); once the panic hook
+  has popped the flags, even for a caught panic, no release or answer is delivered; and while
+  reporting is confirmed, a read ending in a lone ESC waits for the rest of its sequence. The
+  rustdoc now lists what flags 15 change in delivered keys (a shifted letter has no `SHIFT`, Caps
+  Lock does not change a letter, Ctrl+I/M/[ are Ctrl chords).
 - **The C ABI is unchanged** (62 symbols): a C consumer cannot enable this yet, and never sees the
   new events.
 
