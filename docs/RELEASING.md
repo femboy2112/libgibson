@@ -87,12 +87,12 @@ to publish this specific version.
    (the module lives under `bindings/go`; the exact tag form is documented in
    `bindings/go/README.md`). Verify the tag form before pushing it.
 
-## 7. Maintenance-line release — *Proposed (owner decision #287); not in force*
+## 7. Maintenance-line release — *Approved 2026-11-08 (owner decision #287)*
 
 The procedure for the gated exception in
-[Release Contract §1](RELEASE_CONTRACT.md#1-versioning-model). Until the owner approves that
-exception, never tag from a maintenance branch. Every step acts on one **exact candidate SHA**,
-never on a branch name; any new commit on the branch is a new candidate and restarts at step 3.
+[Release Contract §1](RELEASE_CONTRACT.md#1-versioning-model). Every step acts on one **exact
+candidate SHA**, never on a branch name; any new commit on the branch is a new candidate and
+restarts at step 3, with no green run inherited from an earlier SHA.
 
 1. **Branch** `release/v<x.y.z>-rc` (or `release/<x.y>`) from the baseline: the commit at which
    the version was prepared in source (0.6.0: `9a899e1`), or the line's previous release tag.
@@ -109,9 +109,16 @@ never on a branch name; any new commit on the branch is a new candidate and rest
    ```
 
    It must print `RESULT: PASS`: ancestry; `Cargo.toml`, `Cargo.lock` and `pyproject.toml` at the
-   release version; `abi/`, `include/` and the `gibson_*` exports in `src/` equal to the
-   baseline's; `rust-version` unchanged; `src/audio/` and `tests/audio_pocket_voice.rs` (the frozen
-   PCM golden) unchanged; the candidate on an authorized branch; every commit listed.
+   release version; `abi/` and the `gibson_*` exports in `src/` equal to the baseline's, and
+   `include/` equal or different only in comments; `rust-version` unchanged; `src/audio/` and
+   `tests/audio_pocket_voice.rs` (the frozen PCM golden) unchanged; the candidate on an authorized
+   branch; every commit listed. Calibrate the checker on the same candidate first:
+   `scripts/release/tests/test-maintenance-checker.sh --baseline <baseline> --candidate <sha>
+   --allow-commits-file <list> --so <built library> --foreign-so <a library built from another
+   tree> --dev-candidate <a main commit>` must print `CALIBRATION: PASS` (a valid candidate passes;
+   a development candidate, a changed ABI baseline, a non-descendant, a wrong allow-list, a wrong
+   library or version, a misplaced tag, a header declaration, MSRV, PCM or export change, and a
+   candidate on no authorized branch each fail for that reason alone).
 5. **Qualify the same SHA**: full CI at exactly that SHA (every job), the publication-free Release
    Preflight at that SHA printing `RELEASE PREFLIGHT: PASS` (both MSRV floors, cleanroom
    consumers, package audit), the hangup PTY tests passing on their first attempt (§3), and an
@@ -122,7 +129,9 @@ never on a branch name; any new commit on the branch is a new candidate and rest
    the release carries.
 7. **Owner approval.** The owner approves that record in writing, naming the version, the exact
    candidate SHA, the baseline and the branch, and stating that the maintenance-line exception
-   applies. An approval covers that one SHA. Without it, stop.
+   applies; or the owner's advance conditional approval (Release Contract §1 condition 5) applies
+   and the record shows every gate of steps 4–6 passed on that SHA. An approval covers that one
+   SHA. Without it, stop.
 8. **Tag** the approved SHA, not the branch: an annotated `v<x.y.z>` whose message names the
    baseline, the branch and the qualification record, and `bindings/go/v<x.y.z>` on the same
    commit. Before pushing, `git rev-parse 'v<x.y.z>^{commit}' 'bindings/go/v<x.y.z>^{commit}'`

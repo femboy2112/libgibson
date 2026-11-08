@@ -19,9 +19,29 @@ Development toward **0.7.0** — a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)). This is the working development
 line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 remains **prepared in source at
 `9a899e1`** (release state 1 — not tagged, not released). It is never tagged on a later `main`;
-whether a `v0.6.0` tag names the corrected candidate `release/v0.6.0-rc` @ `572e551` is the owner's
-decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed policy in #291).
-`GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
+it is released, once a candidate qualifies, from `release/v0.6.0-rc` under the approved
+maintenance-line exception (below). `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
+
+### Release engineering — maintenance-line releases approved ([#287](https://github.com/femboy2112/libgibson/issues/287), #291)
+- **Release Contract §1 gains an approved maintenance-line exception** (owner decision 2026-11-08,
+  conditional on its gates): a `v<x.y.z>` tag may name a qualified commit on `release/v<x.y.z>-rc`
+  or `release/<x.y>` that descends from the version's source baseline and adds only listed
+  backports and release engineering, with the C ABI symbol set, header declarations, MSRV and
+  frozen PCM golden unchanged. Procedure: `docs/RELEASING.md` §7. Decision record:
+  `docs/decisions/0001-v0.6.0-release-line.md` (option A, 0.6.0 from `release/v0.6.0-rc`).
+- **`scripts/release/check-maintenance-candidate.sh`** checks a candidate structurally (ancestry,
+  version, ABI, header declarations, MSRV, PCM golden, branch, tags, allow-listed commits). A header
+  change passes only if it is comment-only, judged by the compiler's own comment stripping
+  (`cc -fpreprocessed -dD -E -P`), and fails closed without a compiler.
+- **`scripts/release/tests/test-maintenance-checker.sh`** calibrates it: a valid candidate and a
+  comment-only header change pass; 17 negative candidates (a 0.7 development commit, a changed ABI
+  baseline, a non-descendant, a missing, extra or misclassified allow-list entry, a library built
+  from another tree, a manifest or release-version mismatch, either tag on another commit, a header
+  declaration, MSRV, PCM producer or new-export change, and no authorized branch) each fail for
+  their intended reason and no other. Raw run: `docs/decisions/0001/calibration-572e551.txt`.
+- **The 0.6 limitations in Release Contract §9** now state that a headless C context's capture grows
+  for its lifetime (#297) and how a C program must bound it, and that 0.6.0's `gibson_poll_event`
+  on a headless context reports no input (#259).
 
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
 - The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an

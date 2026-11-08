@@ -83,10 +83,10 @@ surface is versioned as a minor to signal its scope — not because anything bro
 - **0.6.0** is the latest such milestone and is **prepared in source only** (state 1): the
   manifests read `0.6.0` at `9a899e1` (its source-version baseline; `main` has since opened
   `0.7.0-dev`), but nothing is tagged, released on GitHub or published to a registry, and
-  the latest *released* version remains 0.5.0. Which commit, if any, a `v0.6.0` tag names is the
-  pending owner decision [#287](https://github.com/femboy2112/libgibson/issues/287): `9a899e1`
-  itself carries #264 and #269, and a qualified candidate on `release/v0.6.0-rc` could be tagged
-  only under the proposed maintenance-line exception below. It integrates the v0.6
+  the latest *released* version remains 0.5.0. `9a899e1` itself carries #264 and #269 and is
+  never tagged. The owner chose (2026-11-08, [#287](https://github.com/femboy2112/libgibson/issues/287),
+  [decision 0001](decisions/0001-v0.6.0-release-line.md)) to release 0.6.0, if a candidate
+  qualifies, from `release/v0.6.0-rc` under the maintenance-line exception below. It integrates the v0.6
   "Instrumental Renaissance": a live Python↔Rust wire instrument and instrument-driven
   cinema (examples), renderer recovery from partial terminal writes (§9), the text-input
   glyph-boundary repair, and **seven additive C ABI functions (52 → 59; headless contexts,
@@ -103,18 +103,18 @@ that names a version says which one it has reached:
    release; README install instructions keep pointing at the latest *released* version.
 2. **Tagged and released on GitHub** — a `v<version>` tag (plus the Go module tag
    `bindings/go/v<version>`) names a `main` commit, and a GitHub prerelease attaches the
-   artifacts of §7. Install instructions move to this version. (`main` is the default and, unless
-   the proposed maintenance-line exception below is approved, the only rule.)
+   artifacts of §7. Install instructions move to this version. (`main` is the default; the
+   maintenance-line exception below is the only other route.)
 3. **Published through registries** — crates.io, PyPI or the Go module proxy. No
    LibGibson version has reached this state.
 
 Each transition is a separate, explicitly approved step ([`RELEASING.md`](RELEASING.md)); a
 version bump alone never implies a tag, a release or a registry upload.
 
-**Maintenance-line exception — *Proposed (owner decision
-[#287](https://github.com/femboy2112/libgibson/issues/287)); not in force*.** Until the owner
-approves this text, state 2's `main`-commit rule is the only rule. Once approved, a `v<version>`
-tag may instead name a qualified commit on a maintenance branch, under **all** of these conditions:
+**Maintenance-line exception — *Approved 2026-11-08* (owner decision
+[#287](https://github.com/femboy2112/libgibson/issues/287), conditional on the gates below; recorded in
+[decision 0001](decisions/0001-v0.6.0-release-line.md)).** A `v<version>` tag may name a qualified
+commit on a maintenance branch instead of a `main` commit, under **all** of these conditions:
 
 1. **Authorized branch, exact SHA.** The branch is named `release/v<x.y.z>-rc` or
    `release/<x.y>`. It is protected by immutable exact-SHA qualification: what is qualified,
@@ -125,16 +125,23 @@ tag may instead name a qualified commit on a maintenance branch, under **all** o
    previous release tag — and the candidate descends from it
    (`git merge-base --is-ancestor <baseline> <candidate>`).
 3. **No imported development.** Against the baseline, the exported C ABI symbol set (the
-   committed `abi/` baseline and what the built library exports), the public headers
-   (`include/`), the MSRV (`rust-version`) and the frozen PCM golden (`src/audio/`,
+   committed `abi/` baseline and what the built library exports), the declarations of the public
+   headers (`include/`; a comment-only change, such as a disclosed limitation, is release
+   engineering), the MSRV (`rust-version`) and the frozen PCM golden (`src/audio/`,
    `tests/audio_pocket_voice.rs`) are unchanged, and every later commit is a listed backport of a
-   fix (citing its `main` counterpart) or a release-engineering commit (version, changelog, test
-   or CI adaptation). `scripts/release/check-maintenance-candidate.sh` checks these.
+   fix (citing its `main` counterpart) or a release-engineering commit (version, changelog,
+   documentation, test or CI adaptation). `scripts/release/check-maintenance-candidate.sh` checks
+   these structurally, calibrated by `scripts/release/tests/test-maintenance-checker.sh`; it does
+   not judge whether a listed commit is a legitimate backport, which is the independent review's
+   job (condition 5).
 4. **Exact tree.** The version tag names the exact commit whose tree the §7 artifacts were built
    from, and `bindings/go/v<x.y.z>` resolves to that same commit.
 5. **Owner approval per release.** Each maintenance-line release needs the owner's explicit
-   approval, naming the version, the exact candidate SHA and the baseline, before any tag or
-   publication. Approving this exception approves no release.
+   approval, naming the version and the baseline, of one exact candidate SHA that has passed every
+   gate of [`RELEASING.md`](RELEASING.md) §7, including an independent review of every backport,
+   before any tag or publication. The owner may give that approval in advance, conditional on those
+   gates (as for 0.6.0); a failed gate then voids it for that candidate. Approving this exception
+   approves no release.
 6. **`main` is never downgraded.** The release does not change `main`'s version. Merging the
    maintenance branch back into `main` is optional and accepted separately: the merge keeps
    `main`'s version strings, C ABI symbol set and green CI, and is a merge commit, so the tagged
@@ -519,9 +526,18 @@ The v0.6 integration — merged to `main` through #253 as `f6cd8c7`, and v0.6.0 
   (`Renderer::physical_state_uncertain()`) and re-establishes the screen on the next frame —
   exactly in fullscreen mode; in inline mode the torn region is abandoned to scrollback, not
   repaired. A failure that delivered no bytes is certain and retried in place.
-- **The C ABI's headless context is output-only.** `gibson_poll_event` reads a real TTY; there is no
-  event-injection entry point and no sub-cell pixel raster. Interactive parity across C++/Go/Python
-  is not claimed beyond the existing parity harnesses.
+- **The C ABI's headless context is output-only.** In the 0.6.0 release (`release/v0.6.0-rc`, #259
+  backported) `gibson_poll_event` on a headless context reports no input and never reads the
+  process terminal; there is no event-injection entry point and no sub-cell pixel raster.
+  Interactive parity across C++/Go/Python is not claimed beyond the existing parity harnesses.
+- **A headless C context's ANSI capture grows for the context's lifetime**
+  ([#297](https://github.com/femboy2112/libgibson/issues/297)). Every rendered frame's bytes are
+  appended; `gibson_get_rendered_output` copies them and never drains, and 0.6.0 has no C drain
+  (Rust has `Context::take_output`). A C program that renders indefinitely must bound the context's
+  lifetime: query the capture size (a size query never drains) and, past a byte budget, destroy the
+  context and create a new one. That procedure is tested against the installed SDK by the 0.6.0
+  release's clean-room consumer `bindings/sdk_forcing/headless_capture_lifetime.c`; unbounded
+  rendering on one context is not a supported 0.6.0 use. The additive drain is v0.7 work.
 - **The cinematic effect contract is single-quantity.** `field_cinema` judges the peak sample
   against the requested amplitude with a declared tolerance; it claims consistency with a request,
   never mechanism, and causal attribution only where a matched counterfactual exists.
