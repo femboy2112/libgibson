@@ -192,6 +192,12 @@ jobs:
           LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
         run: python3 bindings/python/test_capture_drain.py
 
+      - name: Python events push/poll (v0.8 parity F5)
+        env:
+          PYTHONPATH: bindings/python
+          LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
+        run: python3 bindings/python/test_events.py
+
       - name: FFI behavioral stats parity (C vs Python vs native golden)
         # Drive one non-TTY plain-scrollback op-script through the C ABI and the Python ctypes
         # binding, and require byte-identical engine accounting + committed wire stream across
