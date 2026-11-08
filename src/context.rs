@@ -105,7 +105,7 @@ impl Context {
     /// A headless context renders into an in-memory buffer instead of the process
     /// stdout, so no escape codes reach a real terminal. Read the captured bytes
     /// back with [`Context::rendered_bytes`] or drain them with
-    /// [`Context::take_output`]:
+    /// [`Context::take_rendered_bytes`] (or the lossy-UTF-8 [`Context::take_output`]):
     ///
     /// ```
     /// use gibson::cell::Style;
@@ -307,8 +307,8 @@ impl Context {
     }
 
     /// Bytes captured by a buffer-backed (headless) context since the last
-    /// [`Context::take_output`]. Always empty for an interactive context, whose
-    /// output goes straight to the process stdout.
+    /// [`Context::take_output`] or [`Context::take_rendered_bytes`]. Always empty
+    /// for an interactive context, whose output goes straight to the process stdout.
     pub fn rendered_bytes(&self) -> &[u8] {
         match &self.output {
             OutputSink::Buffer(b) => b.as_slice(),
@@ -326,6 +326,17 @@ impl Context {
                 String::from_utf8_lossy(&bytes).into_owned()
             }
             OutputSink::Stdout => String::new(),
+        }
+    }
+
+    /// Drains the capture buffer and returns its bytes unchanged (binary-safe,
+    /// unlike the lossy [`Context::take_output`]). Empty for an interactive,
+    /// stdout-backed context. After this call the buffer is empty until the next
+    /// render, and its allocation is released.
+    pub fn take_rendered_bytes(&mut self) -> Vec<u8> {
+        match &mut self.output {
+            OutputSink::Buffer(b) => std::mem::take(b),
+            OutputSink::Stdout => Vec::new(),
         }
     }
 
@@ -728,18 +739,43 @@ impl Context {
     /// so a headless, scripted, or recorded context can be driven through the same
     /// event path as a live TTY (the general injected-input path — SmartChem
     /// #131/G). Unlike [`poll_event`](Self::poll_event) this does **not** require a
-    /// TTY: the injected source is the authority on event availability. An injected
-    /// `Resize` still marks the scheduler dirty so the next render re-observes
-    /// geometry, keeping a scripted resize indistinguishable from a terminal one.
+    /// TTY: the injected source is the authority on event availability.
+    ///
+    /// A delivered `Resize(cols, rows)` marks the scheduler dirty, so the next render
+    /// re-observes geometry. Where that geometry comes from depends on the session:
+    ///
+    /// * **Headless** ([`Context::headless`]): the session is virtual, so the delivered
+    ///   resize *is* its new terminal size. It is applied before this returns, exactly
+    ///   as the C ABI's `gibson_poll_event` does (both call the same implementation;
+    ///   #293), and the next render lays out against it as against a real terminal: a
+    ///   [`RenderMode::Fullscreen`] frame is `cols`×`rows`; an
+    ///   [`Inline`](crate::RenderMode::Inline) frame is `cols` wide and as tall as its
+    ///   content, at least 1 and at most `max(rows - 1, 1)` rows. A resize with a zero
+    ///   dimension is still returned but is **not applied**: the geometry stays as it
+    ///   was. The C ABI refuses to queue such a resize (`GIBSON_ERR_INVALID_PARAM`), so
+    ///   on either side a headless context never takes a zero geometry from a resize.
+    /// * **Terminal**: the geometry stays observed from the terminal itself; an injected
+    ///   resize schedules a render but does not override what the terminal reports.
     pub fn poll_from<S>(&mut self, source: &mut S, timeout: Duration) -> io::Result<Option<Event>>
     where
         S: crate::event_source::EventSource + ?Sized,
     {
         let ev = source.poll_event(timeout)?;
-        if let Some(Event::Resize(_, _)) = ev {
-            self.scheduler.mark_dirty();
+        if let Some(Event::Resize(cols, rows)) = ev {
+            self.deliver_resize(cols, rows);
         }
         Ok(ev)
+    }
+
+    /// The effect of a delivered `Resize` on an injected-input path: on a headless
+    /// session, a non-zero geometry becomes the virtual terminal's size; on any session
+    /// the next render is scheduled. Shared by [`poll_from`](Self::poll_from) and the
+    /// C ABI's poll, so both apply a resize the same way (#293).
+    fn deliver_resize(&mut self, cols: u16, rows: u16) {
+        if self.session.is_headless() && cols != 0 && rows != 0 {
+            self.session.set_terminal_size(cols, rows);
+        }
+        self.scheduler.mark_dirty();
     }
 
     /// Returns a snapshot of render statistics.
@@ -756,5 +792,22 @@ impl Context {
 
     pub fn restore(&mut self) -> io::Result<()> {
         self.session.restore()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn take_rendered_bytes_round_trips_non_utf8_bytes() {
+        let mut ctx = Context::headless(RenderMode::Inline, 20, 4);
+        // A lone continuation byte, an overlong lead and 0xFF: `take_output` would replace these.
+        let raw: &[u8] = b"\x80\xC0\xAF\xFFok";
+        ctx.output.write_all(raw).unwrap();
+        assert_eq!(ctx.rendered_bytes(), raw);
+        assert_eq!(ctx.take_rendered_bytes(), raw);
+        assert!(ctx.rendered_bytes().is_empty());
+        assert!(ctx.take_rendered_bytes().is_empty());
     }
 }

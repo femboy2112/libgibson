@@ -5,6 +5,7 @@
 # binary-compatibility proof. Verify/regenerate with scripts/release/check-abi.sh.
 gibson_abi_version
 gibson_clear_live_region
+gibson_clear_rendered_output
 gibson_commit
 gibson_commit_node
 gibson_commit_raw_ansi_unchecked
@@ -65,3 +66,4 @@ gibson_set_max_fps
 gibson_set_root_node
 gibson_set_sync_updates
 gibson_stats_init
+gibson_take_rendered_output

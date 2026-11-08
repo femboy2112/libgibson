@@ -71,6 +71,9 @@ harnesses ([`docs/SDK_DOOM_HORIZON.md`](docs/SDK_DOOM_HORIZON.md)).
 `gibson_poll_event_kind` / `gibson_push_event_kind`, which tell a typed U+1001–U+100D from a
 `GIBSON_KEY_*` (#274 addressed; legacy `gibson_poll_event` keeps the ambiguity, documented in
 `gibson.h`). v0.6.0 stays at 59; `GIBSON_ABI_VERSION` stays 1.
+*Update 2026-11-08:* **64**: `gibson_take_rendered_output` / `gibson_clear_rendered_output` let a
+C consumer drain or discard a headless context's ANSI capture, which otherwise grows by every
+frame (#297).
 
 ### R6.4 — Extended graphics / media — **explicitly deferred by design**
 `gibson::media` (#186) and `media-deflate` (#188) stay open drafts, promoted only for a concrete

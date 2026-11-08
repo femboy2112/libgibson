@@ -117,6 +117,21 @@ stays 1.85.
   typed at READY is five characters and one Enter with no kernel echo; without it (the old
   behaviour, held so the race is not a race) the same probe fails with an echo and Ctrl+J.
 
+### Fixed — Rust library (`gibson::Context`): a delivered resize resizes a headless context ([#293](https://github.com/femboy2112/libgibson/issues/293))
+- `Context::poll_from` on a **headless** context now applies a delivered `Event::Resize(cols, rows)`
+  before it returns, so the next render lays out against the new terminal size (a fullscreen frame
+  is `cols`×`rows`; an inline frame is `cols` wide and as tall as its content, at most
+  `max(rows - 1, 1)` rows, as on a terminal). It used to only schedule a
+  render, which then re-read the old size, while the C ABI's `gibson_poll_event` applied it: a
+  Rust consumer had to call `ctx.session.set_terminal_size` itself to match C. Both now call one
+  implementation in `Context`; the copy in `src/ffi.rs` is gone.
+- **Zero sizes:** a resize with a zero width or height is still delivered but is not applied (the
+  geometry stays). The C ABI already refuses to queue one (`GIBSON_ERR_INVALID_PARAM`), so neither
+  side ever gives a headless context a zero geometry through a resize.
+- A terminal (non-headless) context is unchanged: its geometry is observed from the terminal.
+- The v0.8 parity slice's Rust consumer now uses `poll_from` alone; it produces the C records
+  r02/r03/r04 byte-identically without the manual resize step.
+
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
 - The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an
   event type with each key (`CSI 97u` press, `CSI 97;1:2u` repeat, `CSI 97;1:3u` release), and
@@ -169,6 +184,26 @@ stays 1.85.
   `THIRD-PARTY-NOTICES.md`. `signal-hook` (already a dependency through crossterm, same version)
   is now a direct Unix dependency for `SIGWINCH`. Off Unix, and when stdin is not a terminal,
   input still goes through crossterm.
+### Added — C ABI v1 (additive, 62 → 64 symbols): drain a headless capture ([#297](https://github.com/femboy2112/libgibson/issues/297))
+- **`gibson_take_rendered_output(ctx, buf, cap, out_len)`** copies the whole headless ANSI capture
+  into `buf` and, only then, empties it. `*out_len` is always the size before the call; a size
+  query (`buf == NULL`) or an undersized buffer copies nothing and removes nothing (still
+  `GIBSON_OK`, so check `*out_len <= cap`). The take is all-or-nothing, so a drain never splits an
+  escape sequence. Until now a headless context's capture grew by every frame's bytes for the
+  context's lifetime, because `gibson_get_rendered_output` only copies: a long-running headless C
+  consumer grew without bound (+636 MB after 2000 frames at 320x100 in the node J adapter).
+- **`gibson_clear_rendered_output(ctx, out_discarded)`** discards the capture without copying it,
+  for a consumer that reads cells, not ANSI; `out_discarded` (may be `NULL`) receives the count.
+- **`gibson_get_rendered_output` is unchanged**: it copies and never drains. Rust gains
+  `Context::take_rendered_bytes`, the binary-safe drain (`take_output` stays lossy UTF-8). The
+  Python binding adds `take_rendered_output()` and `clear_rendered_output()`.
+- `bindings/sdk_forcing/headless_capture_drain.c`, an installed-SDK consumer run by the release
+  cleanroom, drains (and, in a second variant, clears) every frame of one context at 40x15, 80x24
+  and 240x80 and checks the capture and the resident memory stay bounded; its no-drain control
+  fails.
+- The framebuffer adapter now clears its headless capture at `headless_capture_limit` instead of
+  replacing the context; `capture_rotations` counts those clears.
+
 ### Added — C ABI v1 (additive, 60 → 62 symbols): key kinds ([#274](https://github.com/femboy2112/libgibson/issues/274))
 - **`gibson_poll_event_kind(ctx, timeout_ms, out_event, out_key_kind)`** polls like
   `gibson_poll_event` and also reports `GIBSON_KEY_KIND_CHAR` or `GIBSON_KEY_KIND_SPECIAL` for a key

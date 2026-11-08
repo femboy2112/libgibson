@@ -100,7 +100,9 @@ record exists so the freeze is taken with the Doom horizon mapped rather than as
 > `gibson_poll_event` delivers them (ABI v1, additive, 59 → 60 symbols). The installed-SDK forcing
 > consumer now moves its marker only by pushed-and-polled input, with identical frames. The record
 > above stays as written for v0.6.0. *Update 2026-11-07:* 62 symbols on `main` since #283
-> (`da2be76`) added `gibson_poll_event_kind` / `gibson_push_event_kind` (#274).
+> (`da2be76`) added `gibson_poll_event_kind` / `gibson_push_event_kind` (#274). *Update
+> 2026-11-08:* 64 symbols: `gibson_take_rendered_output` / `gibson_clear_rendered_output` bound a
+> headless context's capture (#297).
 
 > **Node J design note (2026-11-06, RXVIII). Investigation only: nothing is built, and no
 > repository is created.** v0.7 node J is a Doom-compatible adapter. It **cannot live in this
