@@ -652,6 +652,54 @@ impl Context {
         Ok(())
     }
 
+    /// Puts the terminal into interactive mode now: raw mode and bracketed paste, exactly what
+    /// the first [`poll_event`](Self::poll_event) (or [`run_once`](Self::run_once)) does.
+    ///
+    /// [`Context::inline`] and [`Context::fullscreen`] leave this to the first poll. Output shown
+    /// before that poll (a READY line, a first frame) is therefore on a **cooked** tty: the kernel
+    /// echoes anything typed in that window, and its ICRNL turns Enter (`\r`) into `\n`, which raw
+    /// decoding then reads as Ctrl+J, so a line typed at "ready" is never submitted (#296). Call
+    /// this before the first output so that "the screen says ready" implies "the terminal is
+    /// interactive":
+    ///
+    /// ```no_run
+    /// use gibson::cell::Style;
+    /// use gibson::context::Context;
+    /// use gibson::node::Node;
+    ///
+    /// let mut ctx = Context::inline()?;
+    /// ctx.enter_interactive()?;
+    /// ctx.set_root(Node::text("READY", Style::default()));
+    /// ctx.render()?;
+    /// # Ok::<(), std::io::Error>(())
+    /// ```
+    ///
+    /// This replaces the workaround of calling `poll_event(Duration::ZERO)` before the first
+    /// output, which also consumed (and could drop) an event.
+    ///
+    /// * **Idempotent.** A second call, and every later poll, finds raw mode and bracketed paste
+    ///   already on and writes nothing.
+    /// * **No-op returning `Ok`** on a headless context and when stdout is not a terminal.
+    /// * **Restoration is unchanged.** What it enables is tracked by the session exactly as when
+    ///   the first poll enables it, so [`restore`](Self::restore), `Drop` and the panic hook undo
+    ///   it. If raw mode cannot be entered, the error is returned and nothing is left enabled; the
+    ///   first poll fails the same way.
+    /// * **After [`restore`](Self::restore)** the context has handed the terminal back and released
+    ///   its ownership lease, so this returns an error and does not touch the terminal: raw mode
+    ///   re-entered then would never be undone.
+    pub fn enter_interactive(&mut self) -> io::Result<()> {
+        if !self.session.is_tty || self.session.is_headless() {
+            return Ok(());
+        }
+        if self.session.restore_attempted() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "enter_interactive after restore: this context has released the terminal",
+            ));
+        }
+        self.session.enter_interactive()
+    }
+
     /// Polls the controlling terminal for structured input events.
     ///
     /// Returns `Ok(None)` at once, without touching the process terminal, when there is no

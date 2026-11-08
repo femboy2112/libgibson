@@ -230,6 +230,12 @@ impl TerminalSession {
         self.headless
     }
 
+    /// True once [`restore`](TerminalSession::restore) has begun on this session (explicitly or
+    /// from `Drop`): it has handed the terminal back and released its lease.
+    pub(crate) fn restore_attempted(&self) -> bool {
+        self.restore_attempted
+    }
+
     /// Installs the process-global panic hook that best-effort restores the
     /// terminal on panic. Host-integration contract (issue #11, B4/B5):
     ///

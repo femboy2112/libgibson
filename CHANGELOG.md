@@ -23,6 +23,23 @@ whether a `v0.6.0` tag names the corrected candidate `release/v0.6.0-rc` @ `572e
 decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed policy in #291).
 `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
 
+### Added — Rust library (`gibson::Context`): `Context::enter_interactive` ([#296](https://github.com/femboy2112/libgibson/issues/296))
+- `pub fn enter_interactive(&mut self) -> io::Result<()>` enables raw mode and bracketed paste now,
+  exactly as the first `poll_event` / `run_once` does. `Context::inline()` and `fullscreen()` still
+  leave it to the first poll, so output shown before that poll (a READY line, a first frame) was on
+  a cooked tty: the kernel echoed type-ahead, and ICRNL turned Enter into `\n`, which raw decoding
+  reads as Ctrl+J, so a line typed at "ready" was never submitted. Call it before the first output
+  and "the screen says ready" implies "the terminal is interactive".
+- Idempotent (a second call and later polls write nothing more); a no-op returning `Ok` on a
+  headless context and on a non-TTY stdout. `restore()`, `Drop` and the panic hook undo it as they
+  undo the first poll's. After `restore()` it returns an error (`ErrorKind::NotConnected`) instead
+  of re-entering raw mode on a terminal the context no longer owns.
+- The downstream workaround, `poll_event(Duration::ZERO)` before the first output, is no longer
+  needed.
+- `tests/enter_interactive_pty.rs` is a deterministic real-PTY probe: with the call, `hello\r`
+  typed at READY is five characters and one Enter with no kernel echo; without it (the old
+  behaviour, held so the race is not a race) the same probe fails with an echo and Ctrl+J.
+
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
 - The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an
   event type with each key (`CSI 97u` press, `CSI 97;1:2u` repeat, `CSI 97;1:3u` release), and
