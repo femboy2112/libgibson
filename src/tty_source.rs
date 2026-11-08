@@ -84,12 +84,11 @@ pub(crate) struct TtySource {
     /// Keeps an opened `/dev/tty` open for the source's lifetime (`None` for stdin).
     _owned: Option<std::os::fd::OwnedFd>,
     parser: Parser,
-    /// Decoded events not yet handed out, oldest first.
-    pending: VecDeque<SourceEvent>,
+    /// Decoded events not yet handed out, oldest first, each with the key-release epoch it was
+    /// decoded in (an answer from an earlier epoch is dropped when handed out).
+    pending: VecDeque<(u64, SourceEvent)>,
     /// Keys currently down, as their presses were decoded (#275): see [`PressedKeys`].
     pressed: PressedKeys,
-    /// The key-release epoch `pressed` was recorded under; a new epoch clears it.
-    pressed_epoch: u64,
     /// Read end of the `SIGWINCH` self-pipe (non-blocking), if resizes are watched.
     winch: Option<UnixStream>,
     size: SizeFn,
@@ -106,6 +105,36 @@ pub(crate) struct TtySource {
     /// Tests: an epoch to use instead of the process-global one.
     #[cfg(test)]
     test_epoch: Option<u64>,
+}
+
+impl TtySource {
+    /// The key-release epoch now (see `crate::input::key_release_epoch`).
+    fn epoch(&self) -> u64 {
+        #[cfg(test)]
+        if let Some(e) = self.test_epoch {
+            return e;
+        }
+        crate::input::key_release_epoch()
+    }
+
+    fn queue(&mut self, ev: SourceEvent) {
+        let epoch = self.epoch();
+        self.pending.push_back((epoch, ev));
+    }
+
+    /// The next queued event to hand out. An answer to a key-release request decoded before
+    /// reporting was last turned off or on answers a request no one is waiting for: dropped
+    /// (#275 review). Keys are handed out whatever the epoch: they happened.
+    fn next_pending(&mut self) -> Option<SourceEvent> {
+        let now = self.epoch();
+        while let Some((epoch, ev)) = self.pending.pop_front() {
+            if epoch != now && matches!(ev, SourceEvent::KeyReleaseReporting(_)) {
+                continue;
+            }
+            return Some(ev);
+        }
+        None
+    }
 }
 
 impl Drop for TtySource {
@@ -143,7 +172,6 @@ impl TtySource {
             parser: Parser::default(),
             pending: VecDeque::new(),
             pressed: PressedKeys::default(),
-            pressed_epoch: crate::input::key_release_epoch(),
             winch,
             size,
             dropped_partial_bytes: 0,
@@ -184,7 +212,7 @@ impl TtySource {
             return Err(hung_up());
         }
         loop {
-            if let Some(event) = self.pending.pop_front() {
+            if let Some(event) = self.next_pending() {
                 return Ok(Some(event));
             }
             let left = match deadline {
@@ -288,7 +316,7 @@ impl TtySource {
     /// Reports the hangup, after any event decoded before it was seen. Once reported it is
     /// sticky: see `hung_up`.
     fn report_hangup(&mut self) -> io::Result<Option<SourceEvent>> {
-        if let Some(event) = self.pending.pop_front() {
+        if let Some(event) = self.next_pending() {
             return Ok(Some(event));
         }
         self.hung_up = true;
@@ -330,19 +358,14 @@ impl TtySource {
     /// Moves every event the parser completed into the hand-out queue.
     fn decode(&mut self) {
         let delivered = crate::input::key_releases_delivered();
+        let epoch = self.epoch();
         #[cfg(test)]
-        let (track, epoch) = (
-            self.track_keys || delivered,
-            self.test_epoch
-                .unwrap_or_else(crate::input::key_release_epoch),
-        );
+        let track = self.track_keys || delivered;
         #[cfg(not(test))]
-        let (track, epoch) = (delivered, crate::input::key_release_epoch());
-        // Reporting was turned off or on since the last decode: nothing recorded under the old
-        // setting may name a key now (#275 review).
-        if !track || epoch != self.pressed_epoch {
+        let track = delivered;
+        // Off, no release is reported, so no record can be trusted to still be down.
+        if !track {
             self.pressed.clear();
-            self.pressed_epoch = epoch;
         }
         for internal in self.parser.by_ref() {
             let event = match internal {
@@ -357,13 +380,15 @@ impl TtySource {
                 // The answers to a key-release reporting request (#275): see `KEYBOARD_QUERIES`.
                 InternalEvent::KeyboardEnhancementFlags(flags) => {
                     if let Some(r) = lock_queries().flags_reply(flags, delivered) {
-                        self.pending.push_back(SourceEvent::KeyReleaseReporting(r));
+                        self.pending
+                            .push_back((epoch, SourceEvent::KeyReleaseReporting(r)));
                     }
                     continue;
                 }
                 InternalEvent::PrimaryDeviceAttributes => {
                     if let Some(r) = lock_queries().device_attributes_reply() {
-                        self.pending.push_back(SourceEvent::KeyReleaseReporting(r));
+                        self.pending
+                            .push_back((epoch, SourceEvent::KeyReleaseReporting(r)));
                     }
                     continue;
                 }
@@ -371,7 +396,8 @@ impl TtySource {
                 // dropped: LibGibson does not send that query on this path.
                 InternalEvent::CursorPosition(..) => continue,
             };
-            self.pending.push_back(SourceEvent::Terminal(event));
+            self.pending
+                .push_back((epoch, SourceEvent::Terminal(event)));
         }
     }
 
@@ -386,8 +412,7 @@ impl TtySource {
         // A size that cannot be read (the terminal is going away) yields no event; the
         // hangup itself is reported by the read.
         if let Ok((cols, rows)) = (self.size)() {
-            self.pending
-                .push_back(SourceEvent::Terminal(CtEvent::Resize(cols, rows)));
+            self.queue(SourceEvent::Terminal(CtEvent::Resize(cols, rows)));
         }
     }
 }
@@ -566,7 +591,7 @@ enum KeyId {
 /// can name them differently: with shift let go first, kitty reports the release of a `W`
 /// pressed with shift as `w`, and of a `!` as `1`.
 #[derive(Debug, Default)]
-struct PressedKeys(Vec<(KeyId, CtKeyEvent)>);
+struct PressedKeys(Vec<(KeyId, CtKeyEvent, u64)>, u64);
 
 impl PressedKeys {
     /// More keys than any keyboard holds at once; the oldest is forgotten beyond it.
@@ -576,34 +601,48 @@ impl PressedKeys {
         self.0.clear();
     }
 
+    /// The record a repeat or release of `id` (decoded as `code`) belongs to: its own identity,
+    /// or a legacy record of the text key it decodes to; the most recently recorded if both.
+    fn find_down(&self, id: KeyId, code: CtKeyCode) -> Option<usize> {
+        let legacy = matches!(code, CtKeyCode::Char(_)).then_some(KeyId::Code(code));
+        self.0
+            .iter()
+            .enumerate()
+            .filter(|(_, (i, _, _))| *i == id || Some(*i) == legacy)
+            .max_by_key(|(_, (_, _, seq))| *seq)
+            .map(|(n, _)| n)
+    }
+
     /// `k` as the event to deliver: a press is recorded (replacing an earlier record of the same
     /// key); a repeat or release of a recorded key takes the recorded press's code and modifiers,
     /// and a release forgets it. A key with no record (already down when reporting began) is
     /// delivered as decoded.
     ///
-    /// A press is matched by its own identity only. A repeat or release with no record under its
-    /// identity falls back to a legacy record under its decoded code: a `w` typed before the
-    /// flags were pushed, released as kitty's `CSI 119;1:3u`. A kitty key never takes over a
-    /// record of another key that decodes to the same code (keypad Left and the arrow Left).
+    /// A press is matched by its own identity only. A repeat or release also matches a legacy
+    /// record of the text key it decodes to (a `w` typed before the flags were pushed, released as
+    /// kitty's `CSI 119;1:3u`), taking the most recently recorded candidate, so a record left
+    /// behind by a key that went up while reporting was off loses to the key's newer press. A
+    /// non-text key never matches another key's record: keypad Left (kitty 57417) and the arrow
+    /// Left decode to the same code.
     fn name(&mut self, id: KeyId, k: CtKeyEvent) -> CtKeyEvent {
-        let exact = self.0.iter().position(|(i, _)| *i == id);
+        self.1 += 1;
+        let seq = self.1;
         let found = match k.kind {
-            KeyEventKind::Press => exact,
-            _ => exact.or_else(|| {
-                let legacy = KeyId::Code(k.code);
-                self.0.iter().position(|(i, _)| *i == legacy)
-            }),
+            KeyEventKind::Press => self.0.iter().position(|(i, _, _)| *i == id),
+            _ => self.find_down(id, k.code),
         };
         match (k.kind, found) {
             (KeyEventKind::Press, Some(i)) => {
-                self.0[i] = (id, k);
+                self.0[i] = (id, k, seq);
                 k
             }
             (KeyEventKind::Press, None) => {
                 if self.0.len() == Self::CAP {
-                    self.0.remove(0);
+                    if let Some(oldest) = (0..self.0.len()).min_by_key(|&n| self.0[n].2) {
+                        self.0.remove(oldest);
+                    }
                 }
-                self.0.push((id, k));
+                self.0.push((id, k, seq));
                 k
             }
             (KeyEventKind::Repeat, Some(i)) => {
@@ -611,7 +650,7 @@ impl PressedKeys {
                 CtKeyEvent::new_with_kind_and_state(p.code, p.modifiers, k.kind, k.state)
             }
             (KeyEventKind::Release, Some(i)) => {
-                let (_, p) = self.0.remove(i);
+                let (_, p, _) = self.0.remove(i);
                 CtKeyEvent::new_with_kind_and_state(p.code, p.modifiers, k.kind, k.state)
             }
             (_, None) => k,
@@ -1730,6 +1769,20 @@ mod tests {
     fn kitty_272_the_answer_is_delivered_in_input_order() {
         // The only test that touches the process-global request record.
         forget_keyboard_replies();
+        // An answer decoded before a toggle is dropped when handed out after it (#275 re-review).
+        expect_keyboard_reply();
+        let (master, slave) = pty();
+        let stale = on_worker(slave, None, move |s| {
+            s.test_epoch = Some(1);
+            write_all(&master, b"a\x1b[?15u\x1b[?62;c");
+            let a = s.poll_source(Duration::from_millis(500)).unwrap();
+            s.test_epoch = Some(2);
+            let next = s.poll_source(Duration::from_millis(200)).unwrap();
+            drop(master);
+            (a, next)
+        });
+        assert_eq!(stale, (Some(SourceEvent::Terminal(key('a'))), None));
+        forget_keyboard_replies();
         expect_keyboard_reply();
         let got = decode_all(b"a\x1b[?15u\x1b[?62;cb\x1b[?15u\x1b[?62;c", false);
         forget_keyboard_replies();
@@ -1799,9 +1852,10 @@ mod tests {
     }
 
     #[test]
-    fn kitty_272_a_new_epoch_forgets_names_recorded_under_the_old_one() {
-        // #275 review: W pressed with shift while reporting was on; reporting toggled; then a
-        // legacy `w` and kitty's release of it. The release names `w`, not the stale `W`.
+    fn kitty_272_a_newer_legacy_press_wins_over_a_stale_record() {
+        // #275 review: W pressed with shift while reporting was on; reporting toggled (W went up
+        // unreported); then a legacy `w` and kitty's release of it. The release names the newer
+        // `w`, not the stale `W`.
         let (master, slave) = pty();
         let got = on_worker(slave, None, move |s| {
             s.track_keys = true;
@@ -1828,6 +1882,64 @@ mod tests {
         assert_eq!(
             terminal(got.1),
             vec![key('w'), kind(K::Char('w'), M::NONE, Kind::Release)]
+        );
+    }
+
+    #[test]
+    fn kitty_272_a_press_queued_across_a_toggle_keeps_its_release_name() {
+        // #275 re-review: one read decodes `x` and shifted W; only `x` is handed out; reporting is
+        // turned off and on; W is handed out, then its release (shift up first) must name W.
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            s.test_epoch = Some(1);
+            write_all(&master, b"x\x1b[119:87;2u");
+            let mut out = vec![s.poll_source(Duration::from_millis(500))];
+            s.test_epoch = Some(3);
+            out.push(s.poll_source(Duration::from_millis(500)));
+            write_all(&master, b"\x1b[119;1:3u");
+            out.push(s.poll_source(Duration::from_millis(500)));
+            drop(master);
+            out
+        });
+        let got: Vec<_> = got.into_iter().map(|r| r.unwrap()).collect();
+        assert_eq!(
+            got,
+            vec![
+                Some(SourceEvent::Terminal(key('x'))),
+                Some(SourceEvent::Terminal(kind(
+                    K::Char('W'),
+                    M::NONE,
+                    Kind::Press
+                ))),
+                Some(SourceEvent::Terminal(kind(
+                    K::Char('W'),
+                    M::NONE,
+                    Kind::Release
+                ))),
+            ]
+        );
+    }
+
+    #[test]
+    fn kitty_272_an_unrecorded_keypad_release_leaves_the_arrow_alone() {
+        // #275 re-review: keypad Left went down before reporting began (no record); shift+Left is
+        // pressed after; the keypad release must not take the arrow's record.
+        let got = terminal(decode_all(b"\x1b[1;2D\x1b[57417;1:3u\x1b[1;1:3D", true));
+        let names: Vec<(K, M, Kind)> = got
+            .iter()
+            .map(|e| match e {
+                CtEvent::Key(k) => (k.code, k.modifiers, k.kind),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                (K::Left, M::SHIFT, Kind::Press),
+                (K::Left, M::NONE, Kind::Release), // as decoded: no record of its own
+                (K::Left, M::SHIFT, Kind::Release), // the arrow's own name
+            ]
         );
     }
 }

@@ -368,7 +368,7 @@ impl TerminalSession {
 
         let mut out = stdout();
         // Key-release reporting follows the screen: the kitty flag stacks are per screen.
-        let follow = self.key_release_reporting_enabled && key_releases_pushed();
+        let follow = self.key_release_reporting_live();
         if follow {
             pop_key_releases(&mut out)?;
         }
@@ -387,7 +387,7 @@ impl TerminalSession {
         }
 
         let mut out = stdout();
-        let follow = self.key_release_reporting_enabled && key_releases_pushed();
+        let follow = self.key_release_reporting_live();
         if follow {
             pop_key_releases(&mut out)?;
         }
@@ -485,6 +485,7 @@ impl TerminalSession {
     /// Idempotent; a no-op off Unix, on a non-TTY or headless session, and on a session that has
     /// been restored (it no longer holds the terminal).
     pub fn set_key_release_reporting(&mut self, enable: bool) -> io::Result<()> {
+        self.key_release_reporting_live();
         if !cfg!(unix)
             || !self.is_tty
             || self.headless
@@ -522,8 +523,20 @@ impl TerminalSession {
     }
 
     /// Whether session-owned key-release reporting is currently enabled (requested; whether the
-    /// terminal confirmed it is the answer event's business).
+    /// terminal confirmed it is the answer event's business). False once the panic hook has popped
+    /// the flags, even if the panic was caught.
     pub fn key_release_reporting_enabled(&self) -> bool {
+        self.key_release_reporting_enabled && key_releases_pushed()
+    }
+
+    /// Whether reporting is still on, after noticing that the panic hook popped the flags (a
+    /// caught panic): then it is off, delivery stops, and enabling again pushes anew (#275
+    /// re-review).
+    fn key_release_reporting_live(&mut self) -> bool {
+        if self.key_release_reporting_enabled && !key_releases_pushed() {
+            self.key_release_reporting_enabled = false;
+            crate::input::set_key_releases_delivered(false);
+        }
         self.key_release_reporting_enabled
     }
 

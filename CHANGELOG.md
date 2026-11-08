@@ -68,9 +68,13 @@ decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed p
   cannot enable; a stray device-attributes reply (somebody else's earlier query) that reads as
   `Unsupported` is corrected by kitty's flags reply, which states the flags in force; after a
   disable, a late answer or release is dropped at delivery; a keypad key never takes over the
-  record of the arrow with the same code; names recorded before a disable/enable are forgotten;
+  record of the arrow with the same code; a name recorded before a disable/enable loses to the key's newer press;
   DEEP SIGNAL keeps holds per physical key, so releasing W while Up is down keeps moving forward;
-  enabling enters raw mode first, so the answer is never echoed.
+  enabling enters raw mode first, so the answer is never echoed. A second pass (4 partial, 2 new
+  P2) moved the toggle handling to delivery: an answer decoded before a disable/enable is dropped
+  when handed out, a press already queued keeps its release name across a toggle (a repeat or
+  release takes the most recent matching record, the legacy fallback only for text keys), and
+  after a caught panic the session reports reporting off and can enable it again.
 - **The C ABI is unchanged** (62 symbols): a C consumer cannot enable this yet, and never sees the
   new events.
 

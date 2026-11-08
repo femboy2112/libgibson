@@ -89,8 +89,11 @@ fn finish(mut cap: Capture, role: &str) -> (Capture, portable_pty::ExitStatus) {
         }
         assert!(Instant::now() < deadline, "[{role}] child did not exit");
     };
-    // An exited child may have written more than was read: read to the end of the PTY.
-    cap.collect_all().unwrap();
+    // An exited child may have written more than was read. The test harness's own summary is
+    // the child's last output, after every terminal write; wait for it rather than for a deadline
+    // (#275 re-review).
+    cap.collect_until(|o| String::from_utf8_lossy(o).contains("test result:"))
+        .unwrap_or_else(|e| panic!("[{role}] the child's output never ended: {e}"));
     (cap, status)
 }
 
@@ -272,6 +275,26 @@ fn after_disabling_a_late_answer_and_releases_are_dropped() {
 }
 
 #[test]
+fn after_a_caught_panic_reporting_is_off_and_can_be_enabled_again() {
+    // #275 re-review: the panic hook pops the flags even when the panic is caught; the session
+    // must then say it is off, and enabling again must push again.
+    let mut cap = Capture::spawn(child("caught-panic"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, "caught-panic");
+    assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
+    let out = String::from_utf8_lossy(cap.raw()).into_owned();
+    assert!(out.contains("AFTER-PANIC enabled=false"), "{out:?}");
+    assert!(out.contains("REENABLED enabled=true"), "{out:?}");
+    let raw = cap.raw();
+    assert_eq!(
+        count(raw, PUSH_AND_ASK),
+        2,
+        "pushed again after the caught panic"
+    );
+    assert_eq!(count(raw, POP), 2, "the hook's pop and the final restore's");
+}
+
+#[test]
 fn a_restored_session_cannot_enable_reporting() {
     // #275 review: after restore the session no longer holds the terminal.
     let mut cap = Capture::spawn(child("restored"), 80, 24, Duration::from_secs(40));
@@ -366,6 +389,21 @@ fn key_release_reporting_child() {
         return;
     }
     ctx.session.enter_interactive().unwrap();
+    if role == "caught-panic" {
+        ctx.session.set_key_release_reporting(true).unwrap();
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            panic!("caught, on the owner thread");
+        }));
+        assert!(caught.is_err());
+        let on = ctx.session.key_release_reporting_enabled();
+        say(&format!("AFTER-PANIC enabled={on}"));
+        ctx.session.set_key_release_reporting(true).unwrap();
+        let on = ctx.session.key_release_reporting_enabled();
+        say(&format!("REENABLED enabled={on}"));
+        ctx.restore().unwrap();
+        say("DONE");
+        return;
+    }
     if role == "disable" {
         ctx.session.set_key_release_reporting(true).unwrap();
         ctx.session.set_key_release_reporting(false).unwrap();
