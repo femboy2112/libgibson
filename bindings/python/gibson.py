@@ -207,6 +207,12 @@ _lib.gibson_create_headless_context.restype = ctypes.c_int32
 _lib.gibson_get_rendered_output.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
 _lib.gibson_get_rendered_output.restype = ctypes.c_int32
 
+_lib.gibson_take_rendered_output.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+_lib.gibson_take_rendered_output.restype = ctypes.c_int32
+
+_lib.gibson_clear_rendered_output.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_size_t)]
+_lib.gibson_clear_rendered_output.restype = ctypes.c_int32
+
 _lib.gibson_get_frame_size.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint16), ctypes.POINTER(ctypes.c_uint16)]
 _lib.gibson_get_frame_size.restype = ctypes.c_int32
 
@@ -585,7 +591,8 @@ class Context:
     def headless(cls, mode=RenderMode.INLINE, cols=80, rows=24):
         """Create a headless context that renders into an in-memory buffer with deterministic,
         TTY-independent semantics (fixed cols x rows, truecolor, no terminal lease). Read the
-        painted ANSI frame back with rendered_output(). (ABI v1, additive.)"""
+        painted ANSI frame back with rendered_output(). The capture keeps every frame until
+        take_rendered_output() or clear_rendered_output() empties it. (ABI v1, additive.)"""
         self = cls.__new__(cls)
         self.handle = ctypes.c_void_p()
         status = _lib.gibson_create_headless_context(mode, cols, rows, ctypes.byref(self.handle))
@@ -640,7 +647,8 @@ class Context:
 
     def rendered_output(self) -> bytes:
         """The raw ANSI frame bytes captured by a headless context since creation or the last
-        drain (binary-safe; mirrors Context::rendered_bytes). Empty for an interactive context."""
+        take_rendered_output() / clear_rendered_output() (binary-safe; mirrors
+        Context::rendered_bytes). Copies only, never drains. Empty for an interactive context."""
         need = ctypes.c_size_t(0)
         status = _lib.gibson_get_rendered_output(self.handle, None, 0, ctypes.byref(need))
         if status != 0:
@@ -653,6 +661,34 @@ class Context:
         if status != 0:
             raise RuntimeError(f"rendered_output copy failed: status {status}")
         return bytes(buf[: got.value])
+
+    def take_rendered_output(self) -> bytes:
+        """Drains the headless capture: returns its bytes and empties it (binary-safe; mirrors
+        Context::take_rendered_bytes). Empty for an interactive context. (ABI v1, additive, #297.)"""
+        while True:
+            need = ctypes.c_size_t(0)
+            status = _lib.gibson_take_rendered_output(self.handle, None, 0, ctypes.byref(need))
+            if status != 0:
+                raise RuntimeError(f"take_rendered_output size query failed: status {status}")
+            if need.value == 0:
+                return b""
+            buf = (ctypes.c_uint8 * need.value)()
+            got = ctypes.c_size_t(0)
+            status = _lib.gibson_take_rendered_output(self.handle, buf, need.value, ctypes.byref(got))
+            if status != 0:
+                raise RuntimeError(f"take_rendered_output failed: status {status}")
+            if got.value <= need.value:
+                return bytes(buf[: got.value])
+            # The capture grew between the two calls; nothing was taken, so size it again.
+
+    def clear_rendered_output(self) -> int:
+        """Discards the headless capture without copying it; returns the number of bytes removed
+        (0 for an interactive context). (ABI v1, additive, #297.)"""
+        n = ctypes.c_size_t(0)
+        status = _lib.gibson_clear_rendered_output(self.handle, ctypes.byref(n))
+        if status != 0:
+            raise RuntimeError(f"clear_rendered_output failed: status {status}")
+        return n.value
 
     def frame_size(self):
         """(cols, rows) of the most recently rendered frame, or (0, 0) if there is no frame yet."""

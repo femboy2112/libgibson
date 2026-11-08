@@ -75,6 +75,24 @@ decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed p
   `THIRD-PARTY-NOTICES.md`. `signal-hook` (already a dependency through crossterm, same version)
   is now a direct Unix dependency for `SIGWINCH`. Off Unix, and when stdin is not a terminal,
   input still goes through crossterm.
+### Added — C ABI v1 (additive, 62 → 64 symbols): drain a headless capture ([#297](https://github.com/femboy2112/libgibson/issues/297))
+- **`gibson_take_rendered_output(ctx, buf, cap, out_len)`** copies the whole headless ANSI capture
+  into `buf` and, only then, empties it. `*out_len` is always the size before the call; a size
+  query (`buf == NULL`) or an undersized buffer copies nothing and removes nothing (still
+  `GIBSON_OK`, so check `*out_len <= cap`). The take is all-or-nothing, so a drain never splits an
+  escape sequence. Until now a headless context's capture grew by every frame's bytes for the
+  context's lifetime, because `gibson_get_rendered_output` only copies: a long-running headless C
+  consumer grew without bound (+636 MB after 2000 frames at 320x100 in the node J adapter).
+- **`gibson_clear_rendered_output(ctx, out_discarded)`** discards the capture without copying it,
+  for a consumer that reads cells, not ANSI; `out_discarded` (may be `NULL`) receives the count.
+- **`gibson_get_rendered_output` is unchanged**: it copies and never drains. Rust gains
+  `Context::take_rendered_bytes`, the binary-safe drain (`take_output` stays lossy UTF-8). The
+  Python binding adds `take_rendered_output()` and `clear_rendered_output()`.
+- `bindings/sdk_forcing/headless_capture_drain.c`, an installed-SDK consumer run by the release
+  cleanroom, drains (and, in a second variant, clears) every frame of one context at 40x15, 80x24
+  and 240x80 and checks the capture and the resident memory stay bounded; its no-drain control
+  fails.
+
 ### Added — C ABI v1 (additive, 60 → 62 symbols): key kinds ([#274](https://github.com/femboy2112/libgibson/issues/274))
 - **`gibson_poll_event_kind(ctx, timeout_ms, out_event, out_key_kind)`** polls like
   `gibson_poll_event` and also reports `GIBSON_KEY_KIND_CHAR` or `GIBSON_KEY_KIND_SPECIAL` for a key
