@@ -78,8 +78,21 @@ decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed p
   a release decoded before a toggle is dropped too (as disabling promises); a legacy record of any
   key recorded in a later epoch supersedes a stale record of it (ctrl+Enter released unreported,
   then plain Enter); and re-enabling after a caught panic restores raw mode.
-- **The C ABI is unchanged** (62 symbols): a C consumer cannot enable this yet, and never sees the
-  new events.
+- **C ABI v1, additive (62 → 63 symbols):** `gibson_set_key_release_reporting(ctx, enabled)` and
+  the event types `GIBSON_EVENT_KEY_RELEASE` (4; `key_code`, `modifiers` and the key kind exactly
+  as the press was delivered, also through `gibson_poll_event_kind`),
+  `GIBSON_EVENT_KEY_RELEASES_ACTIVE` (5) and `GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED` (6), all
+  pushable on a headless context. A consumer that never calls the new function never sees the new
+  types; existing values are unchanged. `tests/ffi_key_release.rs`; the real-PTY test drives the
+  same kitty bytes through the C ABI (role `c`).
+- **`fb_adapter` (node J) uses reported releases:** `fb_adapter_config.key_releases` (default on)
+  requests them on a terminal; once confirmed a key is held exactly while it is down, at least one
+  tic, and a terminal without the protocol keeps the grace. `fb_adapter_releases_reported`;
+  releases and the answer are recorded in the input trace (`FB_OBSERVED_*`), so a session replays
+  exactly; the demo's status row shows `keys exact`. The selfcheck's P3 adds a reported-release leg
+  (w held across a d chord, a one-tic tap) against the rule written out by hand, with the control
+  `p3-ignore-releases` (24 controls). `scripts/dev/kitty_key_release_e2e.sh` with `FB_DEMO=` runs the
+  demo in real kitty: the trace of the live session replays headless to the same hash.
 
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
 - The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an

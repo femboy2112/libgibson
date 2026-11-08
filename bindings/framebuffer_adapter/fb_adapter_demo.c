@@ -155,11 +155,13 @@ static fb_status demo_draw(void *u, fb_adapter *ad) {
     fb_adapter_geometry(ad, &g);
     char s[256];
     unsigned long long tic = d->prod->s.tic, drop = d->stats ? d->stats->tics_dropped : 0;
+    /* first, so a narrow status row never cuts it off */
+    const char *exact = fb_adapter_releases_reported(ad) ? " | keys exact" : "";
     if (g.cols >= 100)
-        snprintf(s, sizeof s, " LIBGIBSON fb_adapter | tic %llu | %.1f fps | dropped %llu | %ux%u | arrows/WASD steer  space pulse  q quit",
-                 tic, d->fps, drop, (unsigned)g.cols, (unsigned)g.rows);
+        snprintf(s, sizeof s, " LIBGIBSON fb_adapter%s | tic %llu | %.1f fps | dropped %llu | %ux%u | arrows/WASD steer  space pulse  q quit",
+                 exact, tic, d->fps, drop, (unsigned)g.cols, (unsigned)g.rows);
     else if (g.cols >= 60)
-        snprintf(s, sizeof s, " fb_adapter | tic %llu | %.1f fps | drop %llu | arrows/WASD  space  q", tic, d->fps, drop);
+        snprintf(s, sizeof s, " fb_adapter%s | tic %llu | %.1f fps | drop %llu | arrows/WASD  space  q", exact, tic, d->fps, drop);
     else
         snprintf(s, sizeof s, " tic %llu %.0f fps  q quit", tic, d->fps);
     return fb_adapter_set_status(ad, s);
@@ -408,11 +410,16 @@ static void inject_pre_tic(void *u, fb_adapter *ad, uint64_t tic) {
             e.cols = t->cols;
             e.rows = t->rows;
             if (gibson_push_event(fb_adapter_context(ad), &e) != GIBSON_OK) in->pushed_fail++;
+        } else if (t->kind == FB_OBSERVED_RELEASES_ACTIVE || t->kind == FB_OBSERVED_RELEASES_UNSUPPORTED) {
+            /* the terminal's answer to the key-release request (#275) */
+            e.event_type = t->kind == FB_OBSERVED_RELEASES_ACTIVE ? GIBSON_EVENT_KEY_RELEASES_ACTIVE
+                                                                   : GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED;
+            if (gibson_push_event(fb_adapter_context(ad), &e) != GIBSON_OK) in->pushed_fail++;
         } else {
-            e.event_type = GIBSON_EVENT_KEY;
+            e.event_type = (t->kind & FB_OBSERVED_RELEASE) ? GIBSON_EVENT_KEY_RELEASE : GIBSON_EVENT_KEY;
             e.key_code = t->code;
             e.modifiers = t->mods;
-            if (gibson_push_event_kind(fb_adapter_context(ad), &e, t->kind) != GIBSON_OK) in->pushed_fail++;
+            if (gibson_push_event_kind(fb_adapter_context(ad), &e, t->kind & 0xFFu) != GIBSON_OK) in->pushed_fail++;
         }
     }
 }
@@ -515,6 +522,7 @@ enum {
     C_P2_EDGE_SAMPLING,
     C_P2_NO_LETTERBOX,
     C_P3_IGNORE_INPUT,
+    C_P3_IGNORE_RELEASES,
     C_P4_FRAME_LOCKED,
     C_P5_STALE_MAP,
     C_P5_RESIZE_STEPS,
@@ -538,6 +546,7 @@ static const struct {
     {"p2-edge-sampling", 2, "the reference samples pixel edges, not centres"},
     {"p2-no-letterbox", 2, "the reference stretches to the whole grid (no bars)"},
     {"p3-ignore-input", 3, "the producer ignores every key"},
+    {"p3-ignore-releases", 3, "mutant adapter: reported key releases are ignored (holds keep the grace)"},
     {"p4-frame-locked", 4, "mutant adapter: one tic per presented frame"},
     {"p5-stale-map", 5, "mutant adapter: the map is not rebuilt on resize"},
     {"p5-resize-steps", 5, "mutant adapter: a resize runs an extra producer tic"},
@@ -1023,6 +1032,23 @@ static const tev S3[] = {
     {100, CH, 'a', 0, 0, 0},             {101, CH, 'a', 0, 0, 0},
 };
 
+/* Reported releases (#275): the terminal confirms, then w is held 10..100 while d is pressed at 20,
+   autorepeats and is released at 40 (the chord an autorepeat-only terminal cannot hold); a tap of
+   a pressed and released inside tic 120; Right held 150..155. */
+#define REL FB_OBSERVED_RELEASE
+static const tev S3R[] = {
+    {0, FB_OBSERVED_RELEASES_ACTIVE, 0, 0, 0, 0},
+    {10, CH, 'w', 0, 0, 0},       {20, CH, 'd', 0, 0, 0},        {34, CH, 'd', 0, 0, 0},
+    {35, CH, 'd', 0, 0, 0},       {40, CH | REL, 'd', 0, 0, 0},  {100, CH | REL, 'w', 0, 0, 0},
+    {120, CH, 'a', 0, 0, 0},      {120, CH | REL, 'a', 0, 0, 0}, {150, SP, GIBSON_KEY_RIGHT, 0, 0, 0},
+    {155, SP | REL, GIBSON_KEY_RIGHT, 0, 0, 0},
+};
+/* The producer key log the rule gives, written out by hand. */
+static const logent S3R_WANT[] = {
+    {10, 'w', 1}, {20, 'd', 1}, {40, 'd', 0}, {100, 'w', 0}, {120, 'a', 1}, {121, 'a', 0},
+    {150, FB_KEY_BASE + (GIBSON_KEY_RIGHT - 0x1000u), 1}, {155, FB_KEY_BASE + (GIBSON_KEY_RIGHT - 0x1000u), 0},
+};
+
 static int prop3(char *ev) {
     fclock a, b;
     memset(&a, 0, sizeof a);
@@ -1038,14 +1064,32 @@ static int prop3(char *ev) {
     qsort(got, keyed.nlog, sizeof *got, cmp_log);
     int log_ok = nw == keyed.nlog;
     for (size_t i = 0; log_ok && i < nw; i++) log_ok = cmp_log(&want[i], &got[i]) == 0;
-    const int pass = ok && keyed.hash != quiet.hash && log_ok && keyed.tics == 200 && quiet.tics == 200;
+    /* Reported releases, pushed as the terminal's answer and GIBSON_EVENT_KEY_RELEASE events. */
+    static runres rel;
+    fclock c;
+    memset(&c, 0, sizeof c);
+    const unsigned rfault = ctl(C_P3_IGNORE_RELEASES) ? FB_FAULT_IGNORE_RELEASES : 0;
+    ok = headless_run(&rel, S3R, sizeof S3R / sizeof S3R[0], 80, 24, 1, &c, 1, 200, 0, rfault, 0, 0) && ok;
+    const size_t nr = sizeof S3R_WANT / sizeof S3R_WANT[0];
+    static logent rgot[SYNTH_LOG];
+    for (unsigned i = 0; i < rel.nlog; i++) rgot[i] = (logent){rel.log[i].tic, rel.log[i].code, rel.log[i].pressed};
+    qsort(rgot, rel.nlog, sizeof *rgot, cmp_log);
+    int rel_ok = rel.nlog == nr;
+    for (size_t i = 0; rel_ok && i < nr; i++) rel_ok = cmp_log(&S3R_WANT[i], &rgot[i]) == 0;
+    const int pass = ok && keyed.hash != quiet.hash && log_ok && keyed.tics == 200 && quiet.tics == 200 && rel_ok;
     ev_append(ev, "keys pushed with gibson_push_event_kind, polled by the adapter (gibson_poll_event_kind): keyed hash=%016llx %s "
                   "unkeyed hash=%016llx (200 tics each); producer key log %u events %s independent hold model (grace 25, repeat 4): ",
               (unsigned long long)keyed.hash, keyed.hash != quiet.hash ? "!=" : "==", (unsigned long long)quiet.hash,
               keyed.nlog, log_ok ? "==" : "!=");
     for (size_t i = 0; i < nw && i < 8; i++)
         ev_append(ev, "%s%s@%llu", i ? " " : "", want[i].pressed ? "press" : "release", (unsigned long long)want[i].tic);
+    ev_append(ev, "; reported releases (KEY_RELEASES_ACTIVE, then KEY_RELEASE events): producer key log %u events %s "
+                  "the rule (w held 10..100 across a d chord 20..40, a tap at 120 held one tic, Right 150..155):",
+              rel.nlog, rel_ok ? "==" : "!=");
+    for (unsigned i = 0; i < rel.nlog && i < 10; i++)
+        ev_append(ev, " %s@%llu", rgot[i].pressed ? "press" : "release", (unsigned long long)rgot[i].tic);
     if (ign) ev_append(ev, " [control: producer ignores input]");
+    if (rfault) ev_append(ev, " [control: reported releases ignored]");
     return pass;
 }
 

@@ -12,7 +12,7 @@ repository and links this adapter in (see "The engine-port contract").
 |---|---|
 | `fb_adapter.h` / `fb_adapter.c` | the adapter: scaling + half-block lowering, input + hold grace, fixed-tic loop, resize, lifecycle |
 | `synthetic_producer.h` / `.c` | own procedural art: a steerable tunnel, star dust and a ship marker, 320x200 indexed, deterministic state + FNV-1a 64 hash |
-| `fb_adapter_demo.c` | interactive demo, headless replay, and `--selfcheck` (7 properties, 14 negative controls) |
+| `fb_adapter_demo.c` | interactive demo, headless replay, and `--selfcheck` (7 properties, 15 negative controls) |
 | `pty_harness.py` | an independent real-PTY harness: P2 on the wire (needs pyte), P3, P5, P6, P7 through a pty; 9 negative controls |
 | `../../scripts/dev/fb_adapter_consumer.sh` | builds all of it from a temp dir against a staged SDK and runs everything |
 
@@ -78,6 +78,16 @@ press starts a hold that ends `hold_grace_tics` (25) later, an autorepeat while 
 at the end tic (`fb_adapter_next_key`). `quit_char` (default `q`) and Ctrl-C request quit. A
 `RESIZE` rebuilds the map; it never reaches the producer.
 
+**Reported releases (#275).** With `cfg.key_releases` (default 1) a terminal adapter calls
+`gibson_set_key_release_reporting`. A terminal speaking the kitty keyboard protocol answers
+`GIBSON_EVENT_KEY_RELEASES_ACTIVE`; from then on a key observed is held until its
+`GIBSON_EVENT_KEY_RELEASE` (the producer receives a release with `synthesized = 0`), at least one tic,
+so a tap is as short as the finger and keys held together stay held (a terminal autorepeats only the
+last key pressed, so the grace model drops the first key of a chord). A terminal without the protocol
+keeps the grace above. `fb_adapter_releases_reported(ad)` says which is in force. The observer sees a
+release as `kind | FB_OBSERVED_RELEASE` and the answer as `FB_OBSERVED_RELEASES_ACTIVE` /
+`_UNSUPPORTED`, so the demo's `--trace` replays a kitty session exactly.
+
 ### Time
 
 `fb_adapter_run(ad, &producer, &opts, &stats)` owns a fixed-tic loop: tics owed =
@@ -140,8 +150,8 @@ and the demo's report file) for P3, P5, P6 and P7, and adds a wire check for P2.
 
 ### Negative controls (each must FAIL)
 
-`fb_adapter_demo --selfcheck --list-controls` lists the 14 selfcheck controls; `pty_harness.py
---control NAME` runs the 9 PTY ones. The consumer script runs all 23 and requires each to fail.
+`fb_adapter_demo --selfcheck --list-controls` lists the 15 selfcheck controls; `pty_harness.py
+--control NAME` runs the 9 PTY ones. The consumer script runs all 24 and requires each to fail.
 
 | Control | Property | Defect injected | Observed |
 |---|---|---|---|

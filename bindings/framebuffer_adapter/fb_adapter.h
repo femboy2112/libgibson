@@ -88,7 +88,12 @@ typedef enum {
 typedef uint32_t (*fb_key_map_fn)(void *user, uint32_t fb_code, uint8_t mods);
 
 /* Observes every key event the adapter polls, before mapping (kind = GIBSON_KEY_KIND_*), stamped
-   with the tic it is observed at. Used to record replayable input traces. */
+   with the tic it is observed at. Used to record replayable input traces. A key release is
+   observed with kind | FB_OBSERVED_RELEASE; the terminal's answer to the key-release request as
+   kind FB_OBSERVED_RELEASES_ACTIVE or FB_OBSERVED_RELEASES_UNSUPPORTED (key_code 0). */
+#define FB_OBSERVED_RELEASE              0x100u
+#define FB_OBSERVED_RELEASES_ACTIVE      0x200u
+#define FB_OBSERVED_RELEASES_UNSUPPORTED 0x201u
 typedef void (*fb_input_observer_fn)(void *user, uint64_t tic, uint32_t key_kind, uint32_t key_code,
                                      uint8_t mods);
 
@@ -107,6 +112,8 @@ typedef struct fb_adapter_config {
     size_t headless_capture_limit;   /* headless only: replace the context once its ANSI capture exceeds
                                         this many bytes (default 4 MiB; 0 = never). See README, finding F1. */
     int install_signal_handlers;     /* terminal only: SIGINT/SIGTERM set the quit flag (default 1) */
+    int key_releases;                /* terminal only: ask the terminal for key releases (default 1; #275):
+                                        once it confirms, a key is held exactly while it is down */
     fb_key_map_fn map_key;           /* NULL = default map (ASCII letters lowercased, everything else as is) */
     void *map_key_user;
     fb_input_observer_fn observer;   /* optional */
@@ -166,18 +173,24 @@ void fb_adapter_last_present_ns(const fb_adapter *ad, uint64_t *lower_ns, uint64
 typedef struct fb_key_event {
     uint32_t code;        /* producer key code (after map_key) */
     uint8_t pressed;      /* 1 = press, 0 = release */
-    uint8_t synthesized;  /* 1 for a release inferred by the hold grace (always, today) */
+    uint8_t synthesized;  /* release only: 1 = inferred by the hold grace, 0 = reported by the terminal */
     uint64_t tic;         /* tic the event takes effect at */
 } fb_key_event;
 
 /* Polls the terminal: waits up to timeout_ms for the first event, then drains what is ready.
    Key presses are observed at `tic` (a new press starts a hold that ends hold_grace_tics later;
-   a repeat of a held key re-arms it hold_repeat_tics later). RESIZE rebuilds the sampling map.
+   a repeat of a held key re-arms it hold_repeat_tics later). Once the terminal has confirmed key
+   releases (GIBSON_EVENT_KEY_RELEASES_ACTIVE), a key observed from then on is held until its
+   GIBSON_EVENT_KEY_RELEASE, at least one tic (the release takes effect at `tic`, or at tic + 1 if
+   the hold started at `tic`); if the terminal later answers UNSUPPORTED, every hold falls back to
+   the grace as if pressed at `tic`. RESIZE rebuilds the sampling map.
    Returns FB_TERMINAL_GONE on GIBSON_ERR_IO -- the caller must stop polling. */
 fb_status fb_adapter_pump(fb_adapter *ad, uint64_t tic, uint32_t timeout_ms);
-/* Pops the next key event due at or before `tic`: synthesized releases of holds that ended at or
-   before `tic` (in end order) are queued ahead of presses observed later. 1 = written, 0 = none. */
+/* Pops the next key event due at or before `tic`: releases of holds that ended at or before `tic`
+   (in end order) are queued ahead of presses observed later. 1 = written, 0 = none. */
 int fb_adapter_next_key(fb_adapter *ad, uint64_t tic, fb_key_event *out);
+/* 1 once the terminal has confirmed key releases (and not withdrawn it), else 0. */
+int fb_adapter_releases_reported(const fb_adapter *ad);
 /* Quit requested by quit_char, Ctrl-C, or a SIGINT/SIGTERM received since this adapter opened. */
 int fb_adapter_quit_requested(const fb_adapter *ad);
 /* The SIGINT/SIGTERM received since `ad` was opened (0 if none). A signal that ended an earlier
@@ -250,6 +263,7 @@ void fb_adapter_counters_get(const fb_adapter *ad, fb_adapter_counters *out);
 #define FB_FAULT_LEAK_PER_FRAME        0x08u /* each present leaks 64 KiB */
 #define FB_FAULT_RETRY_ON_IO           0x10u /* GIBSON_ERR_IO from a poll is ignored (spins on hangup) */
 #define FB_FAULT_STICKY_SIGNAL         0x20u /* any signal ever received ends every later adapter too */
+#define FB_FAULT_IGNORE_RELEASES       0x80u /* reported releases are ignored: holds keep their grace */
 #define FB_FAULT_SLOW_PRESENT          0x40u /* every 35th present stalls 400 ms (inside the timing; longer than
                                                 the 10-tic catch-up cap, so a real-clock loop drops tics) */
 void fb_adapter_set_faults(fb_adapter *ad, unsigned faults);

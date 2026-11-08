@@ -17,6 +17,7 @@
 mod pty_capture;
 
 use gibson::context::{Context, RenderMode};
+use gibson::ffi::*;
 use gibson::{Event, KeyCode, KeyReleaseReporting};
 use portable_pty::CommandBuilder;
 use pty_capture::Capture;
@@ -167,6 +168,34 @@ fn a_kitty_terminal_reports_releases_named_as_their_presses() {
         "popped on the alternate screen, before leaving it"
     );
     assert_eq!(count(raw, POP), 1, "popped exactly once");
+}
+
+#[test]
+fn the_c_abi_reports_the_same_releases() {
+    // The same bytes through gibson_set_key_release_reporting and gibson_poll_event_kind.
+    let mut cap = Capture::spawn(child("c"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "READY");
+    wait_bytes(&mut cap, PUSH_AND_ASK);
+    let raw = cap.raw().to_vec();
+    let push = find(&raw, PUSH_AND_ASK, 0).unwrap();
+    assert!(find(&raw, ENTER_ALT, 0).unwrap() < push);
+    send(&mut cap, KITTY_ANSWER);
+    wait_for(&mut cap, "EV reporting:Active");
+    for keys in KITTY_KEYS {
+        send(&mut cap, keys);
+    }
+    send(&mut cap, b"\x1b[113u");
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, "c");
+    assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
+    let mut want = vec!["reporting:Active".to_string()];
+    want.extend(KITTY_EVENTS.iter().map(|s| s.to_string()));
+    want.push("key:q:0".into());
+    assert_eq!(events(&cap), want);
+    let raw = cap.raw();
+    let pop = find(raw, POP, push).expect("gibson_destroy_context pops the flags");
+    assert!(pop < find(raw, LEAVE_ALT, push).unwrap());
+    assert_eq!(count(raw, POP), 1);
 }
 
 #[test]
@@ -374,6 +403,61 @@ fn say(s: &str) {
     std::io::stdout().flush().unwrap();
 }
 
+/// The C child: the same protocol through the C ABI only.
+fn c_child() {
+    unsafe {
+        let mut h: *mut GibsonContextOpaque = std::ptr::null_mut();
+        assert_eq!(
+            gibson_create_context(GIBSON_MODE_FULLSCREEN, &mut h),
+            GibsonStatus::Ok
+        );
+        assert_eq!(gibson_set_key_release_reporting(h, 1), GibsonStatus::Ok);
+        say("READY");
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            let mut ev = GibsonEvent {
+                event_type: -1,
+                key_code: 0,
+                modifiers: 0,
+                _pad: [0; 3],
+                cols: 0,
+                rows: 0,
+                paste_str: std::ptr::null(),
+            };
+            let mut kind = 99u32;
+            assert_eq!(
+                gibson_poll_event_kind(h, 100, &mut ev, &mut kind),
+                GibsonStatus::Ok
+            );
+            let name = || {
+                let code = if kind == GIBSON_KEY_KIND_CHAR {
+                    char::from_u32(ev.key_code).unwrap().to_string()
+                } else {
+                    match ev.key_code {
+                        GIBSON_KEY_LEFT => "Left".into(),
+                        GIBSON_KEY_ENTER => "Enter".into(),
+                        other => format!("special:{other:#x}"),
+                    }
+                };
+                format!("{code}:{}", ev.modifiers)
+            };
+            let line = match ev.event_type {
+                GIBSON_EVENT_KEY => format!("key:{}", name()),
+                GIBSON_EVENT_KEY_RELEASE => format!("release:{}", name()),
+                GIBSON_EVENT_KEY_RELEASES_ACTIVE => "reporting:Active".into(),
+                GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED => "reporting:Unsupported".into(),
+                _ => continue,
+            };
+            say(&format!("EV {line}"));
+            if ev.event_type == GIBSON_EVENT_KEY && ev.key_code == u32::from('q') {
+                break;
+            }
+        }
+        gibson_destroy_context(h);
+    }
+    say("DONE");
+}
+
 /// Child for the tests above; a no-op in a normal run.
 #[test]
 fn key_release_reporting_child() {
@@ -381,6 +465,9 @@ fn key_release_reporting_child() {
         return;
     };
     let role = role.to_string_lossy().into_owned();
+    if role == "c" {
+        return c_child();
+    }
     let mode = if role == "inline" {
         RenderMode::Inline
     } else {

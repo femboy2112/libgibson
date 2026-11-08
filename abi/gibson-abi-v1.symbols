@@ -61,6 +61,7 @@ gibson_rich_text_add_line
 gibson_rich_text_free
 gibson_rich_text_new
 gibson_set_color_depth
+gibson_set_key_release_reporting
 gibson_set_max_fps
 gibson_set_root_node
 gibson_set_sync_updates

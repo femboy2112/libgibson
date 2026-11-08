@@ -25,7 +25,9 @@
 typedef struct hold_slot {
     uint32_t code;
     uint8_t used;
-    uint64_t ends_at; /* first tic at which the key is no longer held */
+    uint8_t released; /* the terminal reported the release: the end is not inferred */
+    uint64_t started; /* tic of the press that started the hold */
+    uint64_t ends_at; /* first tic at which the key is no longer held (UINT64_MAX: at its release) */
 } hold_slot;
 
 struct fb_adapter {
@@ -58,6 +60,7 @@ struct fb_adapter {
     fb_key_event q[FB_KEYQ];
     unsigned qhead, qlen;
     int quit, gone, resized_flag;
+    int releases; /* the terminal confirmed key releases (#275) */
     unsigned sig_gen_at_open; /* g_signal_gen when this adapter opened */
 
     uint64_t t_open_ns;
@@ -174,6 +177,7 @@ void fb_adapter_config_defaults(fb_adapter_config *cfg, uint16_t src_w, uint16_t
     cfg->color_depth = -1;
     cfg->headless_capture_limit = 4u * 1024u * 1024u;
     cfg->install_signal_handlers = 1;
+    cfg->key_releases = 1;
 }
 
 void fb_run_options_defaults(fb_run_options *o) {
@@ -380,6 +384,9 @@ fb_status fb_adapter_open_terminal(const fb_adapter_config *cfg, fb_adapter **ou
         return FB_ERR_GIBSON;
     }
     if (cfg->color_depth >= 0) (void)gibson_set_color_depth(ad->ctx, cfg->color_depth);
+    /* Key releases (#275): the answer arrives through the pump; until then holds are inferred.
+       A failed write leaves the adapter press-only, as on a terminal without the protocol. */
+    if (cfg->key_releases) (void)gibson_set_key_release_reporting(ad->ctx, 1);
     /* The grid: render an empty frame and read its size back (pure ABI). */
     uint16_t cols = 0, rows = 0;
     gibson_node_t *empty = NULL;
@@ -668,18 +675,26 @@ static void expire_holds(fb_adapter *ad, uint64_t tic) {
                 (best < 0 || ad->holds[i].ends_at < ad->holds[best].ends_at))
                 best = i;
         if (best < 0) return;
-        fb_key_event e = {ad->holds[best].code, 0, 1, ad->holds[best].ends_at};
+        fb_key_event e = {ad->holds[best].code, 0, ad->holds[best].released ? 0 : 1, ad->holds[best].ends_at};
         if (!q_push(ad, &e)) return; /* queue full: keep the hold; release it on a later call */
         ad->holds[best].used = 0;
     }
 }
 
+static int releases_on(const fb_adapter *ad) {
+    return ad->releases && !(ad->faults & FB_FAULT_IGNORE_RELEASES);
+}
+
 static void observe_key(fb_adapter *ad, uint64_t tic, uint32_t code) {
     expire_holds(ad, tic);
+    const int exact = releases_on(ad);
     int free_slot = -1;
     for (int i = 0; i < FB_HOLD_SLOTS; i++) {
         if (ad->holds[i].used && ad->holds[i].code == code) {
-            ad->holds[i].ends_at = tic + ad->cfg.hold_repeat_tics; /* autorepeat re-arms */
+            /* an autorepeat re-arms; with reported releases the key is held until its release
+               (pressed again in the tic it was released: down again) */
+            ad->holds[i].released = 0;
+            ad->holds[i].ends_at = exact ? UINT64_MAX : tic + ad->cfg.hold_repeat_tics;
             return;
         }
         if (!ad->holds[i].used && free_slot < 0) free_slot = i;
@@ -690,9 +705,36 @@ static void observe_key(fb_adapter *ad, uint64_t tic, uint32_t code) {
         return;
     }
     ad->holds[free_slot].used = 1;
+    ad->holds[free_slot].released = 0;
     ad->holds[free_slot].code = code;
-    ad->holds[free_slot].ends_at = tic + ad->cfg.hold_grace_tics;
+    ad->holds[free_slot].started = tic;
+    ad->holds[free_slot].ends_at = exact ? UINT64_MAX : tic + ad->cfg.hold_grace_tics;
 }
+
+/* The terminal reported `code` going up at `tic` (#275): its hold ends at `tic`, or at tic + 1 if
+   it started at `tic`, so every press is held at least one tic. Not held: nothing. */
+static void release_key(fb_adapter *ad, uint64_t tic, uint32_t code) {
+    expire_holds(ad, tic);
+    if (ad->faults & FB_FAULT_IGNORE_RELEASES) return;
+    for (int i = 0; i < FB_HOLD_SLOTS; i++) {
+        if (ad->holds[i].used && ad->holds[i].code == code) {
+            ad->holds[i].released = 1;
+            ad->holds[i].ends_at = ad->holds[i].started < tic ? tic : tic + 1;
+            return;
+        }
+    }
+}
+
+/* The terminal stopped reporting releases: no hold may wait for one. */
+static void releases_withdrawn(fb_adapter *ad, uint64_t tic) {
+    for (int i = 0; i < FB_HOLD_SLOTS; i++) {
+        hold_slot *h = &ad->holds[i];
+        if (h->used && !h->released && h->ends_at > tic + ad->cfg.hold_grace_tics)
+            h->ends_at = tic + ad->cfg.hold_grace_tics;
+    }
+}
+
+int fb_adapter_releases_reported(const fb_adapter *ad) { return ad && releases_on(ad); }
 
 static uint32_t default_map(uint32_t code) {
     if (code >= 'A' && code <= 'Z') return code + ('a' - 'A');
@@ -726,6 +768,25 @@ fb_status fb_adapter_pump(fb_adapter *ad, uint64_t tic, uint32_t timeout_ms) {
                 ad->ctr.resizes++;
                 ad->resized_flag = 1;
             }
+            continue;
+        }
+        if (ev.event_type == GIBSON_EVENT_KEY_RELEASES_ACTIVE ||
+            ev.event_type == GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED) {
+            const int active = ev.event_type == GIBSON_EVENT_KEY_RELEASES_ACTIVE;
+            if (ad->cfg.observer)
+                ad->cfg.observer(ad->cfg.observer_user, tic,
+                                 active ? FB_OBSERVED_RELEASES_ACTIVE : FB_OBSERVED_RELEASES_UNSUPPORTED, 0, 0);
+            if (!active && ad->releases) releases_withdrawn(ad, tic);
+            ad->releases = active;
+            continue;
+        }
+        if (ev.event_type == GIBSON_EVENT_KEY_RELEASE) {
+            if (ad->cfg.observer)
+                ad->cfg.observer(ad->cfg.observer_user, tic, kind | FB_OBSERVED_RELEASE, ev.key_code, ev.modifiers);
+            uint32_t fb_code = (kind == GIBSON_KEY_KIND_SPECIAL) ? FB_KEY_BASE + (ev.key_code - 0x1000u) : ev.key_code;
+            uint32_t code = ad->cfg.map_key ? ad->cfg.map_key(ad->cfg.map_key_user, fb_code, ev.modifiers)
+                                            : default_map(fb_code);
+            if (code) release_key(ad, tic, code);
             continue;
         }
         if (ev.event_type != GIBSON_EVENT_KEY) continue; /* paste: not a key */
