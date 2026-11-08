@@ -279,6 +279,12 @@ fn after_a_caught_panic_reporting_is_off_and_can_be_enabled_again() {
     // #275 re-review: the panic hook pops the flags even when the panic is caught; the session
     // must then say it is off, and enabling again must push again.
     let mut cap = Capture::spawn(child("caught-panic"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "REENABLED");
+    // The terminal answers; raw mode must be back on, or a cooked terminal echoes the answer and
+    // holds it back (#275 re-review 3).
+    send(&mut cap, KITTY_ANSWER);
+    wait_for(&mut cap, "EV reporting:Active");
+    send(&mut cap, b"\x1b[113u");
     wait_for(&mut cap, "DONE");
     let (cap, status) = finish(cap, "caught-panic");
     assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
@@ -400,6 +406,19 @@ fn key_release_reporting_child() {
         ctx.session.set_key_release_reporting(true).unwrap();
         let on = ctx.session.key_release_reporting_enabled();
         say(&format!("REENABLED enabled={on}"));
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            let Some(e) = ctx.poll_event(Duration::from_millis(100)).unwrap() else {
+                continue;
+            };
+            if matches!(e, Event::Resize(..) | Event::Focus(_)) {
+                continue;
+            }
+            say(&format!("EV {}", desc(&e)));
+            if matches!(&e, Event::Key(k) if k.code == KeyCode::Char('q')) {
+                break;
+            }
+        }
         ctx.restore().unwrap();
         say("DONE");
         return;

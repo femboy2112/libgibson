@@ -536,6 +536,9 @@ impl TerminalSession {
         if self.key_release_reporting_enabled && !key_releases_pushed() {
             self.key_release_reporting_enabled = false;
             crate::input::set_key_releases_delivered(false);
+            // The hook pops only after disabling raw mode: say so, so that enabling again (which
+            // enters interactive mode first) restores raw mode rather than trusting a stale flag.
+            self.raw_mode_enabled = false;
         }
         self.key_release_reporting_enabled
     }

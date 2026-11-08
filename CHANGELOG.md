@@ -74,7 +74,10 @@ decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed p
   P2) moved the toggle handling to delivery: an answer decoded before a disable/enable is dropped
   when handed out, a press already queued keeps its release name across a toggle (a repeat or
   release takes the most recent matching record, the legacy fallback only for text keys), and
-  after a caught panic the session reports reporting off and can enable it again.
+  after a caught panic the session reports reporting off and can enable it again. A third pass:
+  a release decoded before a toggle is dropped too (as disabling promises); a legacy record of any
+  key recorded in a later epoch supersedes a stale record of it (ctrl+Enter released unreported,
+  then plain Enter); and re-enabling after a caught panic restores raw mode.
 - **The C ABI is unchanged** (62 symbols): a C consumer cannot enable this yet, and never sees the
   new events.
 

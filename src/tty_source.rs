@@ -122,16 +122,22 @@ impl TtySource {
         self.pending.push_back((epoch, ev));
     }
 
-    /// The next queued event to hand out. An answer to a key-release request decoded before
-    /// reporting was last turned off or on answers a request no one is waiting for: dropped
-    /// (#275 review). Keys are handed out whatever the epoch: they happened.
+    /// The next queued event to hand out. An answer or a key release decoded before reporting was
+    /// last turned off or on is dropped (#275 review): the answer is to a request no one is waiting
+    /// for, and disabling drops undelivered releases (an application then falls back to inferred
+    /// holds). Presses and everything else are handed out whatever the epoch: they happened.
     fn next_pending(&mut self) -> Option<SourceEvent> {
         let now = self.epoch();
         while let Some((epoch, ev)) = self.pending.pop_front() {
-            if epoch != now && matches!(ev, SourceEvent::KeyReleaseReporting(_)) {
-                continue;
+            let stale = epoch != now
+                && match &ev {
+                    SourceEvent::KeyReleaseReporting(_) => true,
+                    SourceEvent::Terminal(CtEvent::Key(k)) => k.kind == KeyEventKind::Release,
+                    SourceEvent::Terminal(_) => false,
+                };
+            if !stale {
+                return Some(ev);
             }
-            return Some(ev);
         }
         None
     }
@@ -370,10 +376,10 @@ impl TtySource {
         for internal in self.parser.by_ref() {
             let event = match internal {
                 InternalEvent::Event(CtEvent::Key(k)) if track => {
-                    CtEvent::Key(self.pressed.name(KeyId::Code(k.code), k))
+                    CtEvent::Key(self.pressed.name(KeyId::Code(k.code), k, epoch))
                 }
                 InternalEvent::KittyKey(k, base) if track => {
-                    CtEvent::Key(self.pressed.name(KeyId::Base(base), k))
+                    CtEvent::Key(self.pressed.name(KeyId::Base(base), k, epoch))
                 }
                 InternalEvent::Event(event) => event,
                 InternalEvent::KittyKey(k, _) => CtEvent::Key(k),
@@ -590,8 +596,10 @@ enum KeyId {
 /// every repeat and the release of a key are named exactly as its press was (#275). A terminal
 /// can name them differently: with shift let go first, kitty reports the release of a `W`
 /// pressed with shift as `w`, and of a `!` as `1`.
+/// Each record: the key, its press, a sequence number (recording order) and the key-release epoch
+/// it was recorded in.
 #[derive(Debug, Default)]
-struct PressedKeys(Vec<(KeyId, CtKeyEvent, u64)>, u64);
+struct PressedKeys(Vec<(KeyId, CtKeyEvent, u64, u64)>, u64);
 
 impl PressedKeys {
     /// More keys than any keyboard holds at once; the oldest is forgotten beyond it.
@@ -601,16 +609,34 @@ impl PressedKeys {
         self.0.clear();
     }
 
-    /// The record a repeat or release of `id` (decoded as `code`) belongs to: its own identity,
-    /// or a legacy record of the text key it decodes to; the most recently recorded if both.
-    fn find_down(&self, id: KeyId, code: CtKeyCode) -> Option<usize> {
-        let legacy = matches!(code, CtKeyCode::Char(_)).then_some(KeyId::Code(code));
+    /// The newest record (by sequence) that `want` accepts.
+    fn newest(&self, want: impl Fn(&(KeyId, CtKeyEvent, u64, u64)) -> bool) -> Option<usize> {
         self.0
             .iter()
             .enumerate()
-            .filter(|(_, (i, _, _))| *i == id || Some(*i) == legacy)
-            .max_by_key(|(_, (_, _, seq))| *seq)
+            .filter(|(_, r)| want(r))
+            .max_by_key(|(_, r)| r.2)
             .map(|(n, _)| n)
+    }
+
+    /// The record a repeat or release of `id` (decoded as `code`) belongs to, the most recently
+    /// recorded of: its own identity; a legacy record of the text key it decodes to; and a legacy
+    /// record of any key it decodes to recorded in a later epoch than its own record (that one
+    /// went up unreported while reporting was off, and the key was pressed again since).
+    fn find_down(&self, id: KeyId, code: CtKeyCode) -> Option<usize> {
+        let legacy = KeyId::Code(code);
+        let exact = self.newest(|r| r.0 == id);
+        let text = matches!(code, CtKeyCode::Char(_))
+            .then(|| self.newest(|r| r.0 == legacy))
+            .flatten();
+        let superseding = exact.and_then(|e| {
+            let epoch = self.0[e].3;
+            self.newest(|r| r.0 == legacy && r.3 > epoch)
+        });
+        [exact, text, superseding]
+            .into_iter()
+            .flatten()
+            .max_by_key(|&n| self.0[n].2)
     }
 
     /// `k` as the event to deliver: a press is recorded (replacing an earlier record of the same
@@ -624,16 +650,16 @@ impl PressedKeys {
     /// behind by a key that went up while reporting was off loses to the key's newer press. A
     /// non-text key never matches another key's record: keypad Left (kitty 57417) and the arrow
     /// Left decode to the same code.
-    fn name(&mut self, id: KeyId, k: CtKeyEvent) -> CtKeyEvent {
+    fn name(&mut self, id: KeyId, k: CtKeyEvent, epoch: u64) -> CtKeyEvent {
         self.1 += 1;
         let seq = self.1;
         let found = match k.kind {
-            KeyEventKind::Press => self.0.iter().position(|(i, _, _)| *i == id),
+            KeyEventKind::Press => self.0.iter().position(|r| r.0 == id),
             _ => self.find_down(id, k.code),
         };
         match (k.kind, found) {
             (KeyEventKind::Press, Some(i)) => {
-                self.0[i] = (id, k, seq);
+                self.0[i] = (id, k, seq, epoch);
                 k
             }
             (KeyEventKind::Press, None) => {
@@ -642,7 +668,7 @@ impl PressedKeys {
                         self.0.remove(oldest);
                     }
                 }
-                self.0.push((id, k, seq));
+                self.0.push((id, k, seq, epoch));
                 k
             }
             (KeyEventKind::Repeat, Some(i)) => {
@@ -650,7 +676,7 @@ impl PressedKeys {
                 CtKeyEvent::new_with_kind_and_state(p.code, p.modifiers, k.kind, k.state)
             }
             (KeyEventKind::Release, Some(i)) => {
-                let (_, p, _) = self.0.remove(i);
+                let (_, p, _, _) = self.0.remove(i);
                 CtKeyEvent::new_with_kind_and_state(p.code, p.modifiers, k.kind, k.state)
             }
             (_, None) => k,
@@ -1702,18 +1728,20 @@ mod tests {
         let mut p = PressedKeys::default();
         for cp in 0..1000u32 {
             let c = char::from_u32(0x4e00 + cp).unwrap();
-            p.name(KeyId::Base(cp), KeyEvent::new(K::Char(c), M::NONE));
+            p.name(KeyId::Base(cp), KeyEvent::new(K::Char(c), M::NONE), 0);
         }
         assert_eq!(p.0.len(), PressedKeys::CAP);
         // The newest is still named; the oldest was forgotten and is released as reported.
         let newest = p.name(
             KeyId::Base(999),
             KeyEvent::new_with_kind(K::Char('x'), M::NONE, Kind::Release),
+            0,
         );
         assert_eq!(newest.code, K::Char(char::from_u32(0x4e00 + 999).unwrap()));
         let oldest = p.name(
             KeyId::Base(0),
             KeyEvent::new_with_kind(K::Char('x'), M::NONE, Kind::Release),
+            0,
         );
         assert_eq!(oldest.code, K::Char('x'));
     }
@@ -1941,5 +1969,61 @@ mod tests {
                 (K::Left, M::SHIFT, Kind::Release), // the arrow's own name
             ]
         );
+    }
+
+    #[test]
+    fn kitty_272_a_newer_legacy_special_key_supersedes_a_stale_record() {
+        // #275 re-review 3: ctrl+Enter recorded (epoch 1), released unreported while reporting was
+        // off, a legacy Enter pressed (epoch 2), then kitty's release of Enter: it names the plain
+        // Enter, not the stale ctrl+Enter.
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            s.test_epoch = Some(1);
+            write_all(&master, b"\x1b[13;5u");
+            let a = s.poll_source(Duration::from_millis(500));
+            s.test_epoch = Some(2);
+            write_all(&master, b"\r\x1b[13;1:3u");
+            let mut rest = Vec::new();
+            while let Ok(Some(e)) = s.poll_source(Duration::from_millis(200)) {
+                rest.push(e);
+            }
+            drop(master);
+            (a, rest)
+        });
+        assert_eq!(
+            got.0.unwrap(),
+            Some(SourceEvent::Terminal(kind(
+                K::Enter,
+                M::CONTROL,
+                Kind::Press
+            )))
+        );
+        assert_eq!(
+            terminal(got.1),
+            vec![
+                CtEvent::Key(K::Enter.into()),
+                kind(K::Enter, M::NONE, Kind::Release)
+            ]
+        );
+    }
+
+    #[test]
+    fn kitty_272_a_release_queued_across_a_toggle_is_dropped() {
+        // #275 re-review 3: a press and its release decoded together; only the press handed out;
+        // reporting turned off and on; the old release is dropped, as disabling promises.
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            s.test_epoch = Some(1);
+            write_all(&master, b"\x1b[119u\x1b[119;1:3u");
+            let a = s.poll_source(Duration::from_millis(500)).unwrap();
+            s.test_epoch = Some(3);
+            let b = s.poll_source(Duration::from_millis(200)).unwrap();
+            drop(master);
+            (a, b)
+        });
+        assert_eq!(got.0, Some(SourceEvent::Terminal(key('w'))));
+        assert_eq!(got.1, None);
     }
 }
