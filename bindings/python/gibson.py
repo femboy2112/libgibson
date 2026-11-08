@@ -639,8 +639,10 @@ class Context:
         return rendered.value != 0
 
     def rendered_output(self) -> bytes:
-        """The raw ANSI frame bytes captured by a headless context since creation or the last
-        drain (binary-safe; mirrors Context::rendered_bytes). Empty for an interactive context."""
+        """The raw ANSI frame bytes captured by a headless context since its creation
+        (binary-safe; mirrors Context::rendered_bytes). Empty for an interactive context.
+        The capture is never drained (0.6 has no drain, #297), so it grows with every changing
+        frame: a long-running program must replace the context once the capture passes a budget."""
         need = ctypes.c_size_t(0)
         status = _lib.gibson_get_rendered_output(self.handle, None, 0, ctypes.byref(need))
         if status != 0:

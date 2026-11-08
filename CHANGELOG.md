@@ -32,8 +32,10 @@ audit approval of exactly `eaa0d1c`). `GIBSON_ABI_VERSION` stays 1 — the C ABI
 The `9a899e1` source was held back from tagging because of defects found after it. This branch is
 `9a899e1` plus their fixes and tests, backported from `main` and nothing else (no 0.7 API, ABI or
 example). The C ABI stays at the 59 symbols of `9a899e1`, MSRV stays 1.85, and the PCM golden is
-unchanged. Tagging it needs the owner's decision on releasing from a branch that is not `main`'s
-first-parent history (Release Contract §1); until then it is a candidate, not a release.
+unchanged. The owner approved releasing 0.6.0 from this branch under the maintenance-line exception
+to Release Contract §1 (2026-11-08, decision 0001); a `v0.6.0` tag names one commit of it that has
+passed every gate of `docs/RELEASING.md` §7, and until such a tag exists it is a candidate, not a
+release.
 
 - **Fixed — a terminal hangup during a poll no longer spins forever**
   ([#269](https://github.com/femboy2112/libgibson/issues/269)). On Unix, when the terminal is the
@@ -74,6 +76,26 @@ first-parent history (Release Contract §1); until then it is a candidate, not a
     `gibson_poll_event_kind`.
   - Off Unix, or with stdin not a terminal and no controlling terminal, input still goes through
     crossterm.
+  - [#297](https://github.com/femboy2112/libgibson/issues/297) (RXX): a headless C context's ANSI
+    capture keeps every frame for the context's lifetime. `gibson_get_rendered_output` (and Python's
+    `rendered_output()`) copies and never drains, and 0.6.0 has no C drain, so a program rendering
+    changing frames indefinitely grows without bound (about 2 KB per changing 80×24 frame). The
+    documented procedure bounds it without a new API: size-query the capture and, past a budget,
+    destroy the context and create a new one. Stated in `include/gibson.h`, the FFI and Python docs
+    (which had said "since its creation or the last drain") and Release Contract §9; tested against
+    the installed SDK by the new clean-room consumer `bindings/sdk_forcing/headless_capture_lifetime.c`
+    (40×15, 80×24 and 240×80; fixed and changing frames; ten replacements per changing case; a
+    no-replacement negative control must fail). The drain itself is additive v0.7 work.
+
+### Release engineering — the maintenance-line release policy, RXX ([#287](https://github.com/femboy2112/libgibson/issues/287), #291)
+- **This tree states the rule it is released under.** The owner-approved maintenance-line exception
+  to Release Contract §1 (a `v<x.y.z>` tag may name a qualified commit on `release/v<x.y.z>-rc` that
+  descends from the version's source baseline and adds only listed backports and release
+  engineering), `docs/RELEASING.md` §7 (the procedure), decision record
+  `docs/decisions/0001-v0.6.0-release-line.md`, the structural checker
+  `scripts/release/check-maintenance-candidate.sh` and its calibration
+  `scripts/release/tests/test-maintenance-checker.sh` are carried here from `main`'s #291 unchanged.
+  Documentation and release tooling only: no library, ABI, header declaration or behaviour change.
 
 ### Release engineering — source version 0.6.0, RXVII
 - **Version prepared in source:** `Cargo.toml`, `Cargo.lock` (the `libgibson` entry only),

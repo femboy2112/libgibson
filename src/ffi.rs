@@ -1559,9 +1559,12 @@ pub unsafe extern "C" fn gibson_last_error_message(buf: *mut c_char, buf_len: us
 }
 
 /// Copies the ANSI byte stream captured by a headless context (see
-/// [`gibson_create_headless_context`]) since its creation or the last drain, into the
-/// caller-provided `buf`. This is the binary-safe readback that makes cross-language *frame*
-/// parity possible; it mirrors `Context::rendered_bytes` and is **not** NUL-terminated.
+/// [`gibson_create_headless_context`]) since its creation, into the caller-provided `buf`. It
+/// copies and never drains, and the C ABI has no drain (#297; Rust drains with
+/// `Context::take_output`): a C program that renders changing frames indefinitely must bound the
+/// context's lifetime, replacing the context once the size query passes a byte budget. This is
+/// the binary-safe readback that makes cross-language *frame* parity possible; it mirrors
+/// `Context::rendered_bytes` and is **not** NUL-terminated.
 ///
 /// `out_len` (required, non-null) always receives the number of bytes available. If `buf` is null
 /// or `cap` is smaller than that length, nothing is copied and `GIBSON_OK` is still returned — the
