@@ -112,7 +112,8 @@ restarts at step 3, with no green run inherited from an earlier SHA.
    release version; `abi/`, the `gibson_*` exports and the Rust C-ABI surface of `src/`
    (signatures, `#[repr]` layouts, `GIBSON_*` constants) equal to the baseline's, and `include/`
    equal or different only in comments; `rust-version` unchanged; `src/audio/` and
-   `tests/audio_pocket_voice.rs` (the frozen PCM golden) unchanged; the candidate not the baseline,
+   `tests/audio_pocket_voice.rs` (the frozen PCM golden) and `tests/ffi_abi_layout_freeze.rs` (the
+   layout oracle) unchanged; no tool failure behind any check; the candidate not the baseline,
    and on a branch named exactly `release/v<x.y.z>-rc` or `release/<x.y>`; every commit listed.
    Calibrate the checker on the same candidate first:
    `scripts/release/tests/test-maintenance-checker.sh --baseline <baseline> --candidate <sha>
@@ -120,8 +121,10 @@ restarts at step 3, with no green run inherited from an earlier SHA.
    tree> --dev-candidate <a main commit>` must print `CALIBRATION: PASS`: the valid candidate and
    its comment-only and doc-only variants pass, and every negative case (development commit, ABI
    baseline, ancestry, the baseline itself, allow-list, library, version, tags, header declarations,
-   splice and trigraph tricks, string literals, Rust layouts, signatures, constants, exports, MSRV,
-   PCM, branch) fails for that reason alone.
+   splice and trigraph tricks, string literals, Rust layouts, signatures, constants, attributes,
+   aliases, exports, the layout oracle, MSRV, PCM, branch, an unreadable source, and four injected
+   tool failures) fails for that reason alone. The final run of this step uses `--so` with a library
+   built from the candidate (step 9 repeats it on the tagged tree's build).
 5. **Qualify the same SHA**: full CI at exactly that SHA (every job), the publication-free Release
    Preflight at that SHA printing `RELEASE PREFLIGHT: PASS` (both MSRV floors, cleanroom
    consumers, package audit), the hangup PTY tests passing on their first attempt (§3), and an

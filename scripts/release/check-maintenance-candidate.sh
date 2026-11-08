@@ -43,7 +43,8 @@
 #                 equal that set.
 #   4. MSRV       Cargo.toml rust-version is unchanged
 #   5. PCM golden src/audio/ and tests/audio_pocket_voice.rs (the frozen PCM
-#                 fingerprint) are unchanged
+#                 fingerprint) are unchanged; tests/ffi_abi_layout_freeze.rs (the C ABI layout
+#                 oracle CI runs) is unchanged
 #   6. branch     a local branch refs/heads/release/v<x.y.z>-rc or refs/heads/release/<x.y>, or
 #                 the same name under a configured remote (refs/remotes/<remote>/...), contains
 #                 the candidate
@@ -57,7 +58,10 @@
 # exists only on the remote is invisible here, so RELEASING §7 checks the remote separately.
 # The checker is structural: it does not judge whether a listed commit is a legitimate
 # backport (the independent review does), and it does not see a behaviour change inside an
-# unchanged signature (CI and the review do). Requires git, python3, and cc for include/ diffs.
+# unchanged signature (CI and the review do). Its Rust surface is a parser of the constructs this
+# crate's C ABI uses; the export set is settled by --so (required to qualify), struct layouts by
+# the frozen layout oracle in CI, and anything the parser cannot see by the independent review.
+# Any tool failure feeding a check fails the run. Requires git, python3, and cc for include/.
 # Exit status: 0 PASS, 1 one or more violations, 2 usage or input error.
 
 set -euo pipefail
@@ -68,6 +72,7 @@ cd "$REPO_ROOT"
 ABI_FILE="abi/gibson-abi-v1.symbols"
 PCM_GOLDEN_TEST="tests/audio_pocket_voice.rs"
 PCM_GOLDEN_PATHS=(src/audio "$PCM_GOLDEN_TEST")
+LAYOUT_ORACLE="tests/ffi_abi_layout_freeze.rs"
 
 die() { echo "check-maintenance-candidate: $*" >&2; exit 2; }
 usage() { sed -n '3,/^$/s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"; }
@@ -103,12 +108,27 @@ SURFACE="$REPO_ROOT/scripts/release/maintenance_surface.py"
 [ -f "$SURFACE" ] || die "missing $SURFACE"
 
 violations=0
+# Tool failures inside command substitutions and pipelines cannot stop the script (errexit does
+# not reach them), so every tool call that feeds a check records its failure here, and the run
+# fails if anything was recorded: a check never passes on partial or missing tool output.
+ERRLOG="$(mktemp "${TMPDIR:-/tmp}/check-maintenance-candidate.err.XXXXXX")"
+trap 'rm -f "$ERRLOG"' EXIT
+err() { printf '%s\n' "$*" >>"$ERRLOG"; }
 pass() { printf 'PASS  %s\n' "$*"; }
 fail() { printf 'FAIL  %s\n' "$*"; violations=$((violations + 1)); }
 info() { printf 'INFO  %s\n' "$*"; }
 
-# show <rev> <path>: a file at a revision, or nothing if it does not exist there.
-show() { git show "$1:$2" 2>/dev/null || true; }
+# show <rev> <path>: a file at a revision, or nothing if it does not exist there. A path that
+# exists but cannot be read is recorded as a tool failure.
+show() {
+    local rc=0
+    git cat-file -e "$1:$2" 2>/dev/null || rc=$?
+    case "$rc" in
+        0) git show "$1:$2" || err "git show $1:$2 failed" ;;
+        1|128) git rev-parse --verify --quiet "$1^{commit}" >/dev/null || err "cannot resolve $1" ;;
+        *) err "git cat-file -e $1:$2 exited $rc" ;;
+    esac
+}
 # package_field <rev> <key>: a key of Cargo.toml's [package] table.
 package_field() {
     show "$1" Cargo.toml | awk -v k="$2" '
@@ -117,7 +137,7 @@ package_field() {
 }
 lock_version() { show "$1" Cargo.lock | sed -n '/^name = "libgibson"$/{n;s/^version = "\(.*\)"/\1/p;}' | head -1; }
 pyproject_version() { show "$1" bindings/python/pyproject.toml | sed -n 's/^version = "\(.*\)"/\1/p' | head -1; }
-declared_symbols() { show "$1" "$ABI_FILE" | grep -v '^#' | grep -v '^[[:space:]]*$' | sort -u || true; }
+declared_symbols() { show "$1" "$ABI_FILE" | sed -e '/^#/d' -e '/^[[:space:]]*$/d' | sort -u; }
 count() { grep -c . || true; }
 
 # rust_surface <rev>: the canonical Rust C-ABI surface of src/ at <rev> (see check 3), or a
@@ -125,11 +145,11 @@ count() { grep -c . || true; }
 rust_surface() {
     local rev="$1" files f
     # Callers use `|| die`, which disables errexit here, so every step checks its own status.
-    files="$(git ls-tree -r --name-only "$rev" -- src)" || return 1
+    files="$(git ls-tree -r --name-only "$rev" -- src)" || { err "git ls-tree $rev src failed"; return 1; }
     {
         printf '%s\n' "$files" | grep '\.rs$' | while IFS= read -r f; do
             printf '//@file %s\n' "$f"
-            git show "$rev:$f" || exit 1
+            git show "$rev:$f" || { err "git show $rev:$f failed"; exit 1; }
             printf '\n'
         done
     } | python3 -I "$SURFACE" rust-abi || return 1
@@ -143,8 +163,14 @@ header_decls() {
     case "$2" in *.hpp|*.hh|*.hxx) lang="c++" ;; esac
     command -v "${CC:-cc}" >/dev/null 2>&1 || return 1
     git cat-file -e "$1:$2" 2>/dev/null || return 1
-    raw="$(git show "$1:$2" | tr -d '\r')"
-    if printf '%s\n' "$raw" | grep -q -E '\\$|\?\?'; then return 1; fi
+    raw="$(git show "$1:$2")" || { err "git show $1:$2 failed"; return 1; }
+    raw="${raw//$'\r'/}"
+    # Exit 1 (no splice, no trigraph) is the only way on; a match (0) or an error (2) fails closed.
+    # A here-string, not a pipe: grep -q exits at the first match, and a writer into a pipe would
+    # then die of SIGPIPE, whose status pipefail would report as the condition's.
+    local rc=0
+    grep -q -E '\\$|\?\?' <<<"$raw" || rc=$?
+    [ "$rc" -eq 1 ] || return 1
     out="$(printf '%s\n' "$raw" | "${CC:-cc}" -fpreprocessed -dD -E -P -x "$lang" - 2>/dev/null)" || return 1
     [ -n "$out" ] || return 1
     printf '%s' "$out" | python3 -I "$SURFACE" header
@@ -227,13 +253,15 @@ if git diff --quiet "$B" "$C" -- include/; then
     pass "C ABI: include/ is byte-identical to the baseline"
 else
     comment_only=() decl_changed=()
+    changed="$(git diff --name-status "$B" "$C" -- include/)" || { err "git diff --name-status include/ failed"; changed=""; }
+    [ -n "$changed" ] || decl_changed+=("(no changed header could be listed)")
     while IFS=$'\t' read -r st p _; do
         [ -n "${st:-}" ] || continue
         if [ "$st" != "M" ]; then decl_changed+=("$p($st)"); continue; fi
         bd="$(header_decls "$B" "$p")" || { decl_changed+=("$p(comment stripper failed)"); continue; }
         cd_="$(header_decls "$C" "$p")" || { decl_changed+=("$p(comment stripper failed)"); continue; }
         if [ -n "$bd" ] && [ "$bd" = "$cd_" ]; then comment_only+=("$p"); else decl_changed+=("$p"); fi
-    done < <(git diff --name-status "$B" "$C" -- include/)
+    done <<<"$changed"
     if [ ${#decl_changed[@]} -eq 0 ]; then
         pass "C ABI: include/ declarations are identical to the baseline; only comments changed in ${comment_only[*]} (review the text)"
     else
@@ -242,7 +270,8 @@ else
     fi
 fi
 if [ -n "$so" ]; then
-    built="$(nm -D --defined-only "$so" 2>/dev/null | awk 'NF>=3{print $3}' | sed 's/@.*//' | grep '^gibson_' | sort -u || true)"
+    nm_out="$(nm -D --defined-only "$so")" || { err "nm -D --defined-only $so failed"; nm_out=""; }
+    built="$(printf '%s\n' "$nm_out" | awk 'NF>=3{print $3}' | sed 's/@.*//' | sed -n '/^gibson_/p' | sort -u)"
     so_id="$so, sha256 $(sha256sum "$so" | cut -d' ' -f1)"
     if [ -n "$b_decl" ] && [ "$built" = "$b_decl" ]; then
         pass "C ABI: the built library exports the baseline's $n_base gibson_* symbols exactly ($so_id)"
@@ -271,15 +300,27 @@ else
     git diff --stat "$B" "$C" -- "${PCM_GOLDEN_PATHS[@]}" | sed 's/^/       /'
 fi
 
+# 5b. the C ABI layout oracle (the test that freezes struct sizes and field offsets) is unchanged,
+# so CI keeps checking the baseline's layouts at the candidate.
+if ! git cat-file -e "$B:$LAYOUT_ORACLE" 2>/dev/null; then
+    info "layout oracle: $LAYOUT_ORACLE does not exist at the baseline"
+elif git diff --quiet "$B" "$C" -- "$LAYOUT_ORACLE"; then
+    pass "layout oracle: $LAYOUT_ORACLE unchanged (CI runs it at the candidate)"
+else
+    fail "layout oracle: $LAYOUT_ORACLE changed since the baseline"
+fi
+
 # 6. branch
 mm="${release_version%.*}"
 names_re="release/(v${release_version//./\\.}-rc|${mm//./\\.})"
+remotes="$(git remote)" || { err "git remote failed"; remotes=""; }
 # shellcheck disable=SC2016 # a literal sed script
-remotes_re="$(git remote | sed 's/[.[\*^$()+?{|]/\\&/g' | paste -sd'|' -)"
+remotes_re="$(printf '%s\n' "$remotes" | sed '/^$/d; s/[.[\*^$()+?{|]/\\&/g' | paste -sd'|' -)"
 branch_re="^refs/heads/${names_re}\$"
 [ -z "$remotes_re" ] || branch_re="${branch_re}|^refs/remotes/(${remotes_re})/${names_re}\$"
-branches="$(git for-each-ref --contains "$C" --format='%(refname)' refs/heads refs/remotes \
-    | grep -E "$branch_re" | sed 's#^refs/heads/##; s#^refs/remotes/##' | tr '\n' ' ' || true)"
+refs="$(git for-each-ref --contains "$C" --format='%(refname)' refs/heads refs/remotes)" \
+    || { err "git for-each-ref --contains failed"; refs=""; }
+branches="$(printf '%s\n' "$refs" | sed -n -E "/${branch_re//\//\\/}/p" | sed 's#^refs/heads/##; s#^refs/remotes/##' | tr '\n' ' ')"
 if [ -n "$branches" ]; then
     pass "branch: candidate is on ${branches% }"
 else
@@ -288,8 +329,12 @@ fi
 
 # 7. tags (local refs only)
 for tag in "v$release_version" "bindings/go/v$release_version"; do
-    if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
-        target="$(git rev-parse "refs/tags/$tag^{commit}")"
+    rc=0
+    git show-ref --verify --quiet "refs/tags/$tag" || rc=$?
+    if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
+        err "git show-ref refs/tags/$tag exited $rc"
+    elif [ "$rc" -eq 0 ]; then
+        target="$(git rev-parse --verify "refs/tags/$tag^{commit}")" || { err "cannot peel refs/tags/$tag"; target=""; }
         if [ "$target" = "$C" ]; then
             pass "tag: $tag peels to the candidate"
         else
@@ -301,7 +346,7 @@ for tag in "v$release_version" "bindings/go/v$release_version"; do
 done
 
 # 8. commits
-range="$(git rev-list --reverse "$B..$C")"
+range="$(git rev-list --reverse "$B..$C")" || { err "git rev-list $B..$C failed"; range=""; }
 n_range="$(printf '%s\n' "$range" | count)"
 echo "INFO  commits: $n_range in ${B:0:7}..${C:0:7}:"
 # shellcheck disable=SC2086 # one commit id per word
@@ -330,6 +375,10 @@ else
     info "commits: not checked against a qualification record (pass --allow-commits-file; required to qualify a candidate)"
 fi
 
+if [ -s "$ERRLOG" ]; then
+    fail "tools: a git, nm or other command failed, so a check above may rest on partial output:"
+    sed 's/^/        /' "$ERRLOG"
+fi
 if [ "$violations" -eq 0 ]; then
     echo "RESULT: PASS — ${C:0:12} meets the maintenance-line checks against baseline ${B:0:12}"
     exit 0
