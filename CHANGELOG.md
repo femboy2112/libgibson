@@ -102,7 +102,9 @@ stays 1.85.
 
 ### Fixed — Rust library (`gibson::Context`): a delivered resize resizes a headless context ([#293](https://github.com/femboy2112/libgibson/issues/293))
 - `Context::poll_from` on a **headless** context now applies a delivered `Event::Resize(cols, rows)`
-  before it returns, so the next render lays out at the new geometry. It used to only schedule a
+  before it returns, so the next render lays out against the new terminal size (a fullscreen frame
+  is `cols`×`rows`; an inline frame is `cols` wide and as tall as its content, at most
+  `max(rows - 1, 1)` rows, as on a terminal). It used to only schedule a
   render, which then re-read the old size, while the C ABI's `gibson_poll_event` applied it: a
   Rust consumer had to call `ctx.session.set_terminal_size` itself to match C. Both now call one
   implementation in `Context`; the copy in `src/ffi.rs` is gone.
