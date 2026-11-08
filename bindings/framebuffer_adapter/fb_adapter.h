@@ -114,7 +114,8 @@ typedef struct fb_adapter_config {
     int install_signal_handlers;     /* terminal only: SIGINT/SIGTERM set the quit flag (default 1) */
     int key_releases;                /* opt in to reported key releases (#275; default 0 = off). 0: holds are
                                         inferred (hold grace) and GIBSON_EVENT_KEY_RELEASE / _RELEASES_ACTIVE /
-                                        _RELEASES_UNSUPPORTED are ignored, as before #275. 1: a terminal adapter
+                                        _RELEASES_UNSUPPORTED are ignored, as before #275 (see README for the one
+                                        full-queue difference). 1: a terminal adapter
                                         calls gibson_set_key_release_reporting at open, and any adapter acts on
                                         those events: once the terminal confirms, a key is held exactly while it
                                         is down. Not for ordinary consoles; for direct key control. */
@@ -183,11 +184,15 @@ typedef struct fb_key_event {
 
 /* Polls the terminal: waits up to timeout_ms for the first event, then drains what is ready.
    Key presses are observed at `tic` (a new press starts a hold that ends hold_grace_tics later;
-   a repeat of a held key re-arms it hold_repeat_tics later). Once the terminal has confirmed key
-   releases (GIBSON_EVENT_KEY_RELEASES_ACTIVE), a key observed from then on is held until its
+   a repeat of a held key re-arms it hold_repeat_tics later). Holds are per producer key (after
+   map_key): with inferred holds, any key mapped to a held producer key re-arms it as a repeat.
+   With key_releases set, once the terminal has confirmed key releases
+   (GIBSON_EVENT_KEY_RELEASES_ACTIVE), a key observed from then on is held until its
    GIBSON_EVENT_KEY_RELEASE, at least one tic (the release takes effect at `tic`, or at tic + 1 if
-   the hold started at `tic`); if the terminal later answers UNSUPPORTED, every hold falls back to
-   the grace as if pressed at `tic`. RESIZE rebuilds the sampling map.
+   the hold started at `tic`); a producer key that several keys map to stays held until the last
+   of them goes up (up to 8 such keys are tracked per producer key). If the terminal later answers
+   UNSUPPORTED, a hold still waiting for a release gets the grace as if pressed at `tic`; a hold
+   that still has an inferred deadline keeps it. RESIZE rebuilds the sampling map.
    Returns FB_TERMINAL_GONE on GIBSON_ERR_IO -- the caller must stop polling. */
 fb_status fb_adapter_pump(fb_adapter *ad, uint64_t tic, uint32_t timeout_ms);
 /* Pops the next key event due at or before `tic`: releases of holds that ended at or before `tic`
@@ -270,6 +275,7 @@ void fb_adapter_counters_get(const fb_adapter *ad, fb_adapter_counters *out);
 #define FB_FAULT_STICKY_SIGNAL         0x20u /* any signal ever received ends every later adapter too */
 #define FB_FAULT_IGNORE_RELEASES       0x80u /* reported releases are ignored: holds keep their grace */
 #define FB_FAULT_REARM_PENDING         0x100u /* a re-press re-arms a hold whose release waits for a full queue */
+#define FB_FAULT_SHARED_ALIAS_HOLD     0x200u /* keys mapped to one producer key share one release (the first ends it) */
 #define FB_FAULT_SLOW_PRESENT          0x40u /* every 35th present stalls 400 ms (inside the timing; longer than
                                                 the 10-tic catch-up cap, so a real-clock loop drops tics) */
 void fb_adapter_set_faults(fb_adapter *ad, unsigned faults);

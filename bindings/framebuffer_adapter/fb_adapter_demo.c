@@ -527,6 +527,7 @@ enum {
     C_P3_IGNORE_INPUT,
     C_P3_IGNORE_RELEASES,
     C_P3_REARM_LOSES_RELEASE,
+    C_P3_SHARED_ALIAS_HOLD,
     C_P4_FRAME_LOCKED,
     C_P5_STALE_MAP,
     C_P5_RESIZE_STEPS,
@@ -552,6 +553,7 @@ static const struct {
     {"p3-ignore-input", 3, "the producer ignores every key"},
     {"p3-ignore-releases", 3, "mutant adapter: reported key releases are ignored (holds keep the grace)"},
     {"p3-rearm-loses-release", 3, "mutant adapter: a re-press re-arms a hold whose release is waiting for a full queue"},
+    {"p3-shared-alias-hold", 3, "mutant adapter: keys mapped to one producer key share one release (the first ends it)"},
     {"p4-frame-locked", 4, "mutant adapter: one tic per presented frame"},
     {"p5-stale-map", 5, "mutant adapter: the map is not rebuilt on resize"},
     {"p5-resize-steps", 5, "mutant adapter: a resize runs an extra producer tic"},
@@ -1055,6 +1057,14 @@ static const logent S3R_WANT[] = {
     {150, FB_KEY_BASE + (GIBSON_KEY_RIGHT - 0x1000u), 1}, {155, FB_KEY_BASE + (GIBSON_KEY_RIGHT - 0x1000u), 0},
 };
 
+/* The same script through an adapter left at the default (not opted in, #275): the answer and every
+   release are ignored, so each hold is the grace model's (grace 25, repeat 4): w 10..35; d 20, re-armed
+   at 34 and 35, ..39; a 120..145; Right 150..175. Written out by hand. */
+static const logent S3R_OFF_WANT[] = {
+    {10, 'w', 1}, {20, 'd', 1}, {35, 'w', 0}, {39, 'd', 0}, {120, 'a', 1}, {145, 'a', 0},
+    {150, FB_KEY_BASE + (GIBSON_KEY_RIGHT - 0x1000u), 1}, {175, FB_KEY_BASE + (GIBSON_KEY_RIGHT - 0x1000u), 0},
+};
+
 /* Queue pressure with reported releases (#275 review): the caller pumps without draining until the
    256-entry key queue is full; `a` is released then (its release cannot be queued) and pressed
    again. The release must still reach the producer once there is room, and the second press is
@@ -1144,6 +1154,60 @@ static int withdrawal_keeps_inferred_deadlines(uint64_t *a_end, uint64_t *b_end)
     return *a_end == 102 && *b_end == 29;
 }
 
+/* Aliases (#275 review): map_key sends both w and Up to producer key 7. */
+static uint32_t alias_map(void *user, uint32_t fb_code, uint8_t mods) {
+    (void)user;
+    (void)mods;
+    return fb_code == 'w' || fb_code == FB_KEY_BASE + (GIBSON_KEY_UP - 0x1000u) ? 7u : fb_code;
+}
+
+/* w pressed at 10, Up at 20, w released at 30, Up at 40, both mapped to 7. With reported releases
+   (`exact`: opted in and confirmed) 7 is held 10..40: w going up while Up is still down must not
+   end it. Not opted in, holds are per producer key as before #275 (an alias cannot be told from an
+   autorepeat): Up re-arms 7 at 20 + 4, so it ends at 24, inferred. Returns 1 when the producer
+   receives exactly press 7 at 10 and that one release; *end and *synth get the release. */
+static int alias_hold(int exact, unsigned faults, uint64_t *end, int *synth) {
+    fb_adapter_config cfg;
+    fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+    cfg.map_key = alias_map;
+    cfg.key_releases = exact;
+    fb_adapter *ad = NULL;
+    if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+    fb_adapter_set_faults(ad, faults);
+    gibson_context_t *ctx = fb_adapter_context(ad);
+    static const struct { uint64_t tic; int32_t type; uint32_t code; uint32_t kind; } S[] = {
+        {1, GIBSON_EVENT_KEY_RELEASES_ACTIVE, 0, 0},  {10, GIBSON_EVENT_KEY, 'w', CH},
+        {20, GIBSON_EVENT_KEY, GIBSON_KEY_UP, SP},    {30, GIBSON_EVENT_KEY_RELEASE, 'w', CH},
+        {40, GIBSON_EVENT_KEY_RELEASE, GIBSON_KEY_UP, SP},
+    };
+    for (size_t i = 0; i < sizeof S / sizeof S[0]; i++) {
+        gibson_event_t e;
+        memset(&e, 0, sizeof e);
+        e.event_type = S[i].type;
+        e.key_code = S[i].code;
+        if (S[i].kind) gibson_push_event_kind(ctx, &e, S[i].kind);
+        else gibson_push_event(ctx, &e);
+        fb_adapter_pump(ad, S[i].tic, 0);
+    }
+    int presses = 0, releases = 0, others = 0;
+    fb_key_event k;
+    *end = 0;
+    *synth = -1;
+    for (uint64_t t = 1; t < 200; t++)
+        while (fb_adapter_next_key(ad, t, &k)) {
+            if (k.code != 7) others++;
+            else if (k.pressed) presses += k.tic == 10;
+            else {
+                releases++;
+                *end = k.tic;
+                *synth = k.synthesized;
+            }
+        }
+    fb_adapter_close(ad);
+    return presses == 1 && releases == 1 && others == 0 &&
+           (exact ? *end == 40 && *synth == 0 : *end == 24 && *synth == 1);
+}
+
 static int prop3(char *ev) {
     fclock a, b;
     memset(&a, 0, sizeof a);
@@ -1182,12 +1246,19 @@ static int prop3(char *ev) {
     fclock doff;
     memset(&doff, 0, sizeof doff);
     ok = headless_run(&off, S3R, sizeof S3R / sizeof S3R[0], 80, 24, 1, &doff, 1, 200, 0, 0, 0, 0, 0) && ok;
-    uint64_t off_w = 0;
-    for (unsigned i = 0; i < off.nlog; i++)
-        if (off.log[i].code == 'w' && !off.log[i].pressed) off_w = off.log[i].tic;
-    const int off_ok = off_w == 35;
+    const size_t no = sizeof S3R_OFF_WANT / sizeof S3R_OFF_WANT[0];
+    static logent ogot[SYNTH_LOG];
+    for (unsigned i = 0; i < off.nlog; i++) ogot[i] = (logent){off.log[i].tic, off.log[i].code, off.log[i].pressed};
+    qsort(ogot, off.nlog, sizeof *ogot, cmp_log);
+    int off_ok = off.nlog == no;
+    for (size_t i = 0; off_ok && i < no; i++) off_ok = cmp_log(&S3R_OFF_WANT[i], &ogot[i]) == 0;
+    uint64_t ax_end = 0, ai_end = 0;
+    int ax_syn = -1, ai_syn = -1;
+    const unsigned afault = ctl(C_P3_SHARED_ALIAS_HOLD) ? FB_FAULT_SHARED_ALIAS_HOLD : 0;
+    const int ax_ok = alias_hold(1, afault, &ax_end, &ax_syn);
+    const int ai_ok = alias_hold(0, 0, &ai_end, &ai_syn);
     const int pass = ok && keyed.hash != quiet.hash && log_ok && keyed.tics == 200 && quiet.tics == 200 && rel_ok && qok && wok &&
-                     off_ok;
+                     off_ok && ax_ok && ai_ok;
     ev_append(ev, "keys pushed with gibson_push_event_kind, polled by the adapter (gibson_poll_event_kind): keyed hash=%016llx %s "
                   "unkeyed hash=%016llx (200 tics each); producer key log %u events %s independent hold model (grace 25, repeat 4): ",
               (unsigned long long)keyed.hash, keyed.hash != quiet.hash ? "!=" : "==", (unsigned long long)quiet.hash,
@@ -1202,8 +1273,16 @@ static int prop3(char *ev) {
     ev_append(ev, "; a full key queue keeps a reported release (a's release delivered once there is room, its re-press dropped: "
                   "%s, keys_dropped=%llu); a withdrawal re-times only holds waiting for a release (a ends at %llu, want 102; "
                   "b at %llu, want 29)", qok ? "yes" : "NO", qdropped, (unsigned long long)wa, (unsigned long long)wb);
-    ev_append(ev, "; not opted in (the default), the same script keeps inferred holds: w released at %llu, want 35",
-              (unsigned long long)off_w);
+    ev_append(ev, "; not opted in (the default), the same script keeps inferred holds: producer key log %u events %s "
+                  "the grace model written out by hand (w 10..35, d 20..39, a 120..145, Right 150..175):",
+              off.nlog, off_ok ? "==" : "!=");
+    for (unsigned i = 0; i < off.nlog && i < 10; i++)
+        ev_append(ev, " %s@%llu", ogot[i].pressed ? "press" : "release", (unsigned long long)ogot[i].tic);
+    ev_append(ev, "; w and Up both mapped to 7: reported releases hold 7 until the last goes up (released at %llu "
+                  "synthesized=%d, want 40 and 0), inferred holds treat Up as a repeat of 7 (released at %llu "
+                  "synthesized=%d, want 24 and 1)",
+              (unsigned long long)ax_end, ax_syn, (unsigned long long)ai_end, ai_syn);
+    if (afault) ev_append(ev, " [control: aliases share one release]");
     if (ign) ev_append(ev, " [control: producer ignores input]");
     if (rfault) ev_append(ev, " [control: reported releases ignored]");
     return pass;

@@ -17,17 +17,28 @@
 #include <unistd.h>
 
 #define FB_HOLD_SLOTS 64
+#define FB_HOLD_SRCS 8 /* source keys tracked per producer key while releases are reported */
 #define FB_KEYQ 256
 #define FB_STATUS_CAP 512
 #define FB_LEAK_BYTES (64u * 1024u)
 #define U2580 "\xe2\x96\x80"
 
+/* One producer key's hold. With inferred holds a slot is per producer key, as before #275: any
+   key mapped to it re-arms it, since without releases an alias cannot be told from an
+   autorepeat. With reported releases (#275 review) it also records which SOURCE keys (codes before
+   map_key) are down, so two keys mapped to one producer key keep it held until the last of them
+   goes up. A hold can have both parts: an inferred deadline from observations made before the
+   terminal confirmed, and source keys reported down since. */
 typedef struct hold_slot {
     uint32_t code;
     uint8_t used;
-    uint8_t released; /* the terminal reported the release: the end is not inferred */
-    uint64_t started; /* tic of the press that started the hold */
-    uint64_t ends_at; /* first tic at which the key is no longer held (UINT64_MAX: at its release) */
+    uint8_t released; /* the end came from a reported release: not inferred */
+    uint8_t nsrc;     /* source keys reported down (exact part) */
+    uint32_t src[FB_HOLD_SRCS];
+    uint32_t inferred_src; /* source of the last inferred observation */
+    uint64_t inferred_end; /* first tic the inferred part no longer holds (0: none) */
+    uint64_t started;      /* tic of the press that started the hold */
+    uint64_t ends_at; /* first tic at which the key is no longer held (UINT64_MAX: while a source is down) */
 } hold_slot;
 
 struct fb_adapter {
@@ -675,13 +686,24 @@ static int releases_on(const fb_adapter *ad) {
     return ad->releases && !(ad->faults & FB_FAULT_IGNORE_RELEASES);
 }
 
-static void observe_key(fb_adapter *ad, uint64_t tic, uint32_t code) {
+/* Records source key `src` as down in `h` (reported releases). A ninth source key mapped to the
+   same producer key is not recorded: the code is held anyway, but its release cannot keep it so. */
+static void hold_add_src(hold_slot *h, uint32_t src) {
+    for (unsigned j = 0; j < h->nsrc; j++)
+        if (h->src[j] == src) return;
+    /* the key that made the inferred part is now reported exactly: that part was this key's */
+    if (h->inferred_end && h->inferred_src == src) h->inferred_end = 0;
+    if (h->nsrc < FB_HOLD_SRCS) h->src[h->nsrc++] = src;
+}
+
+static void observe_key(fb_adapter *ad, uint64_t tic, uint32_t code, uint32_t src) {
     expire_holds(ad, tic);
     const int exact = releases_on(ad);
     int free_slot = -1;
     for (int i = 0; i < FB_HOLD_SLOTS; i++) {
-        if (ad->holds[i].used && ad->holds[i].code == code) {
-            if (ad->holds[i].ends_at <= tic && !(ad->faults & FB_FAULT_REARM_PENDING)) {
+        hold_slot *h = &ad->holds[i];
+        if (h->used && h->code == code) {
+            if (h->ends_at <= tic && !(ad->faults & FB_FAULT_REARM_PENDING)) {
                 /* the hold has ended but its release is still waiting for room in a full queue:
                    re-arming would lose that release, so this press is the one dropped (#275 review) */
                 ad->ctr.keys_dropped++;
@@ -689,35 +711,64 @@ static void observe_key(fb_adapter *ad, uint64_t tic, uint32_t code) {
             }
             /* an autorepeat re-arms; with reported releases the key is held until its release
                (pressed again in the tic it was released: down again) */
-            ad->holds[i].released = 0;
-            ad->holds[i].ends_at = exact ? UINT64_MAX : tic + ad->cfg.hold_repeat_tics;
+            h->released = 0;
+            if (exact) {
+                hold_add_src(h, src);
+                h->ends_at = UINT64_MAX;
+            } else {
+                h->inferred_src = src;
+                h->inferred_end = tic + ad->cfg.hold_repeat_tics;
+                h->ends_at = h->nsrc ? UINT64_MAX : h->inferred_end;
+            }
             return;
         }
-        if (!ad->holds[i].used && free_slot < 0) free_slot = i;
+        if (!h->used && free_slot < 0) free_slot = i;
     }
     fb_key_event e = {code, 1, 0, tic};
     if (free_slot < 0 || !q_push(ad, &e)) {
         ad->ctr.keys_dropped++;
         return;
     }
-    ad->holds[free_slot].used = 1;
-    ad->holds[free_slot].released = 0;
-    ad->holds[free_slot].code = code;
-    ad->holds[free_slot].started = tic;
-    ad->holds[free_slot].ends_at = exact ? UINT64_MAX : tic + ad->cfg.hold_grace_tics;
+    hold_slot *h = &ad->holds[free_slot];
+    memset(h, 0, sizeof *h);
+    h->used = 1;
+    h->code = code;
+    h->started = tic;
+    if (exact) {
+        hold_add_src(h, src);
+        h->ends_at = UINT64_MAX;
+    } else {
+        h->inferred_src = src;
+        h->inferred_end = tic + ad->cfg.hold_grace_tics;
+        h->ends_at = h->inferred_end;
+    }
 }
 
-/* The terminal reported `code` going up at `tic` (#275): its hold ends at `tic`, or at tic + 1 if
-   it started at `tic`, so every press is held at least one tic. Not held: nothing. */
-static void release_key(fb_adapter *ad, uint64_t tic, uint32_t code) {
+/* The terminal reported source key `src` (mapped to `code`) going up at `tic` (#275). If it was
+   recorded down, it no longer holds the code; otherwise (pressed before the terminal confirmed)
+   it ends the hold's inferred part. The code stays held while another source key mapped to it is
+   still down (#275 review); else the hold ends at `tic`, or at tic + 1 if it started at `tic`, so
+   every press is held at least one tic, or later if an inferred part still runs. Not held: nothing. */
+static void release_key(fb_adapter *ad, uint64_t tic, uint32_t code, uint32_t src) {
     expire_holds(ad, tic);
     if (ad->faults & FB_FAULT_IGNORE_RELEASES) return;
     for (int i = 0; i < FB_HOLD_SLOTS; i++) {
-        if (ad->holds[i].used && ad->holds[i].code == code) {
-            ad->holds[i].released = 1;
-            ad->holds[i].ends_at = (ad->holds[i].started < tic || tic == UINT64_MAX) ? tic : tic + 1;
-            return;
-        }
+        hold_slot *h = &ad->holds[i];
+        if (!h->used || h->code != code) continue;
+        const uint64_t end = (h->started < tic || tic == UINT64_MAX) ? tic : tic + 1;
+        int found = 0;
+        if (ad->faults & FB_FAULT_SHARED_ALIAS_HOLD) h->nsrc = 0; /* mutant: the first release ends it */
+        for (unsigned j = 0; j < h->nsrc; j++)
+            if (h->src[j] == src) {
+                h->src[j] = h->src[--h->nsrc];
+                found = 1;
+                break;
+            }
+        if (!found && h->inferred_end) h->inferred_end = end;
+        if (h->nsrc) return; /* another key mapped to this code is still down */
+        h->released = end >= h->inferred_end;
+        h->ends_at = h->released ? end : h->inferred_end;
+        return;
     }
 }
 
@@ -728,7 +779,11 @@ static void releases_withdrawn(fb_adapter *ad, uint64_t tic) {
     const uint64_t ends = tic > UINT64_MAX - g ? UINT64_MAX : tic + g;
     for (int i = 0; i < FB_HOLD_SLOTS; i++) {
         hold_slot *h = &ad->holds[i];
-        if (h->used && !h->released && h->ends_at == UINT64_MAX) h->ends_at = ends;
+        if (h->used && !h->released && h->ends_at == UINT64_MAX) {
+            h->nsrc = 0; /* no release will come for them: the hold is inferred from here */
+            if (h->inferred_end < ends) h->inferred_end = ends;
+            h->ends_at = h->inferred_end;
+        }
     }
 }
 
@@ -789,7 +844,7 @@ fb_status fb_adapter_pump(fb_adapter *ad, uint64_t tic, uint32_t timeout_ms) {
             uint32_t fb_code = (kind == GIBSON_KEY_KIND_SPECIAL) ? FB_KEY_BASE + (ev.key_code - 0x1000u) : ev.key_code;
             uint32_t code = ad->cfg.map_key ? ad->cfg.map_key(ad->cfg.map_key_user, fb_code, ev.modifiers)
                                             : default_map(fb_code);
-            if (code) release_key(ad, tic, code);
+            if (code) release_key(ad, tic, code, fb_code);
             continue;
         }
         if (ev.event_type != GIBSON_EVENT_KEY) continue; /* paste: not a key */
@@ -807,7 +862,7 @@ fb_status fb_adapter_pump(fb_adapter *ad, uint64_t tic, uint32_t timeout_ms) {
         }
         uint32_t fb_code = (kind == GIBSON_KEY_KIND_SPECIAL) ? FB_KEY_BASE + (ev.key_code - 0x1000u) : ev.key_code;
         uint32_t code = ad->cfg.map_key ? ad->cfg.map_key(ad->cfg.map_key_user, fb_code, ev.modifiers) : default_map(fb_code);
-        if (code) observe_key(ad, tic, code);
+        if (code) observe_key(ad, tic, code, fb_code);
     }
     return FB_OK;
 }

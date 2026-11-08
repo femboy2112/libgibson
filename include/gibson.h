@@ -264,9 +264,13 @@ gibson_status_t gibson_set_max_fps(gibson_context_t *ctx, uint32_t fps);
    answer counts only for the request it answers: one decoded before reporting was last enabled
    or disabled is dropped and changes nothing.
 
-   Disabling (enabled == 0) pops the flags this context pushed, so the terminal goes back to
-   legacy keys, and drops whatever was not yet polled: a late answer, a release. A client tracking
-   holds then goes back to inferring them itself. Enabling again pushes and asks anew.
+   Disabling (enabled == 0) does two separate things. It stops delivery: whatever was not yet
+   polled is dropped (a late answer, a release), and no KEY_RELEASE or answer follows; a client
+   tracking holds then goes back to inferring them itself. And it pops the one entry this context
+   pushed onto the kitty keyboard stack, which restores the flags in force before that push, not
+   necessarily none: legacy keys only if nothing else had pushed flags (an inline context shares
+   its screen with the host program, which may have; see the kitty protocol's progressive
+   enhancement stack). Enabling again pushes and asks anew.
    gibson_destroy_context pops the flags (before leaving the alternate screen); so does the panic
    hook. A panic on the thread that owns the terminal, even one a gibson_* call caught and
    returned as GIBSON_ERR_PANIC, ends reporting: no release or answer is delivered after it, and
