@@ -1,13 +1,13 @@
 # Raw output of scripts/release/tests/test-maintenance-checker.sh, 2026-11-08 (host paths normalized:
 # <rc-build> = a release build of 572e551 in its own target; <other-build> = a 63-symbol library built
-# from the 0.7 key-release C-ABI branch (#303) in its own target, source SHA not recorded, identified by
-# sha256; <tmp> = the harness's throwaway clone).
+# from the 0.7 key-release C-ABI branch (#303), source SHA not recorded, identified by sha256; <tmp> =
+# the harness's throwaway clone).
 # Command: test-maintenance-checker.sh --baseline 9a899e1 --candidate 572e5519a07f837796838f07717aa6a7ac535232 \
 #   --allow-commits-file docs/decisions/0001/allow-commits-572e551.txt --so <rc-build> --foreign-so <other-build> --dev-candidate a0a36d1
 calibration: baseline 9a899e1d35025894725c5b14aa8836349fc01825, candidate 572e5519a07f837796838f07717aa6a7ac535232, dev a0a36d170f3924b1be5c3740bc72b194c73bb3d6
 calibration: --so <rc-build> (sha256 cd09a28160d363a8f2082d463197ef0bb00ebb2b1ae7fb98261dc483ede476d6)
 calibration: --foreign-so <other-build> (sha256 d791db93433c4534ffd2807d24d0f7228496a4e924c5d2ede7837584302cb766)
-calibration: checker sha256 a483c14f8898d426128e23e18b49a911700f3c462261d41f69b6d2004088b468, surface sha256 99dd7ad2512699903fdc3328b79a47ca6a75e0dae6bdc6785f8b4098a62dc2d0
+calibration: checker sha256 d9d49abf271b24e0d2fcddfdac94d16e47bec314f3ad8fc397580c50dd2cbcca, surface sha256 7b9a730b72ec8eb07dfe696c52a6252b0967ad6cfe96b3a28e574b83437a3d4a
 ok    P1 valid candidate (exit 0, 0 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -17,12 +17,13 @@ ok    P1 valid candidate (exit 0, 0 FAIL line(s))
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  C ABI: the built library exports the baseline's 59 gibson_* symbols exactly (<rc-build>, sha256 cd09a28160d363a8f2082d463197ef0bb00ebb2b1ae7fb98261dc483ede476d6)
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
@@ -47,22 +48,23 @@ ok    P1 valid candidate (exit 0, 0 FAIL line(s))
       | RESULT: PASS — 572e5519a07f meets the maintenance-line checks against baseline 9a899e1d3502
 ok    P2 comment-only header change (exit 0, 0 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 9c877e8e65d68d218c5867598e39f9e5b18ab2d4 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate e6c40341f1f83aadb5e524f827f58f9d5ebdd921 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 9c877e8
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate e6c4034
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ declarations are identical to the baseline; only comments changed in include/gibson.h (review the text)
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..9c877e8:
+      | INFO  commits: 17 in 9a899e1..e6c4034:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -79,9 +81,9 @@ ok    P2 comment-only header change (exit 0, 0 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         9c877e8 calibration: comment-only header change
+      |         e6c4034 calibration: comment-only header change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.p2, and it lists nothing else
-      | RESULT: PASS — 9c877e8e65d6 meets the maintenance-line checks against baseline 9a899e1d3502
+      | RESULT: PASS — e6c40341f1f8 meets the maintenance-line checks against baseline 9a899e1d3502
 ok    P3 both tags on the candidate (exit 0, 0 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -91,12 +93,13 @@ ok    P3 both tags on the candidate (exit 0, 0 FAIL line(s))
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  C ABI: the built library exports the baseline's 59 gibson_* symbols exactly (<rc-build>, sha256 cd09a28160d363a8f2082d463197ef0bb00ebb2b1ae7fb98261dc483ede476d6)
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | PASS  tag: v0.6.0 peels to the candidate
       | PASS  tag: bindings/go/v0.6.0 peels to the candidate
@@ -121,22 +124,23 @@ ok    P3 both tags on the candidate (exit 0, 0 FAIL line(s))
       | RESULT: PASS — 572e5519a07f meets the maintenance-line checks against baseline 9a899e1d3502
 ok    P4 doc-comment-only change in src/ffi.rs (exit 0, 0 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 96d665d49803567eb92937e4c7a014c194e2cc5f (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 0c603a977a279e85c6b6f136b274afb472c5998e (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 96d665d
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 0c603a9
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..96d665d:
+      | INFO  commits: 17 in 9a899e1..0c603a9:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -153,9 +157,9 @@ ok    P4 doc-comment-only change in src/ffi.rs (exit 0, 0 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         96d665d calibration: doc-only ffi change
+      |         0c603a9 calibration: doc-only ffi change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.p4, and it lists nothing else
-      | RESULT: PASS — 96d665d49803 meets the maintenance-line checks against baseline 9a899e1d3502
+      | RESULT: PASS — 0c603a977a27 meets the maintenance-line checks against baseline 9a899e1d3502
 ok    P5 CRLF two-column allow-list (exit 0, 0 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -165,11 +169,12 @@ ok    P5 CRLF two-column allow-list (exit 0, 0 FAIL line(s))
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
@@ -201,12 +206,13 @@ ok    P6 synthetic library with exactly the baseline's names (exit 0, 0 FAIL lin
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  C ABI: the built library exports the baseline's 59 gibson_* symbols exactly (<tmp>/fake59.so, sha256 36ba420de716f3862352c14af985778290292619a6e2c12da2ded7662ec1d47c)
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
@@ -229,7 +235,7 @@ ok    P6 synthetic library with exactly the baseline's names (exit 0, 0 FAIL lin
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
       | PASS  commits: all 16 commits are in the allow-list docs/decisions/0001/allow-commits-572e551.txt, and it lists nothing else
       | RESULT: PASS — 572e5519a07f meets the maintenance-line checks against baseline 9a899e1d3502
-ok    N1 development candidate (exit 1, 8 FAIL line(s))
+ok    N1 development candidate (exit 1, 9 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate a0a36d170f3924b1be5c3740bc72b194c73bb3d6 (Cargo.toml 0.7.0-dev)
       | check-maintenance-candidate: release version 0.6.0
@@ -253,11 +259,14 @@ ok    N1 development candidate (exit 1, 8 FAIL line(s))
       |         + export gibson_poll_event_kind
       |         + export gibson_push_event
       |         + export gibson_push_event_kind
-      |         + fn #[no_mangle] gibson_poll_event_kind( ctx: *mut GibsonContextOpaque, timeout_ms: u32, out_event: *mut GibsonEvent, out_key_kind: *mut u32, ) -> GibsonStatus
-      |         + fn #[no_mangle] gibson_push_event( ctx: *mut GibsonContextOpaque, event: *const GibsonEvent, ) -> GibsonStatus
-      |         + fn #[no_mangle] gibson_push_event_kind( ctx: *mut GibsonContextOpaque, event: *const GibsonEvent, key_kind: u32, ) -> GibsonStatus
+      |         + fn src/ffi.rs #[no_mangle] gibson_poll_event_kind ( ctx: *mut GibsonContextOpaque, timeout_ms: u32, out_event: *mut GibsonEvent, out_key_kind: *mut u32, ) -> GibsonStatus
+      |         + fn src/ffi.rs #[no_mangle] gibson_push_event ( ctx: *mut GibsonContextOpaque, event: *const GibsonEvent, ) -> GibsonStatus
+      |         + fn src/ffi.rs #[no_mangle] gibson_push_event_kind ( ctx: *mut GibsonContextOpaque, event: *const GibsonEvent, key_kind: u32, ) -> GibsonStatus
       |         - type src/ffi.rs: #[repr(C)] enum GibsonStatus { Ok = 0, ErrInvalidParam = -1, ErrIo = -2, ErrPanic = -3, ErrNotInitialized = -4, }
       |         + type src/ffi.rs: #[repr(C)] enum GibsonStatus { Ok = 0, ErrInvalidParam = -1, ErrIo = -2, ErrPanic = -3, ErrNotInitialized = -4, ErrQueueFull = -5, }
+      |         - use src/ffi.rs: crate::input::{Event, KeyCode}
+      |         + use src/ffi.rs: crate::event_source::InjectedQueue
+      |         + use src/ffi.rs: crate::input::{Event, KeyCode, KeyEvent, KeyModifiers}
       | FAIL  C ABI: abi/ differs from the baseline:
       |         abi/gibson-abi-v1.symbols | 3 +++
       |         1 file changed, 3 insertions(+)
@@ -266,6 +275,7 @@ ok    N1 development candidate (exit 1, 8 FAIL line(s))
       |         1 file changed, 48 insertions(+), 1 deletion(-)
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | FAIL  layout oracle: tests/ffi_abi_layout_freeze.rs changed since the baseline
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
@@ -395,29 +405,30 @@ ok    N1 development candidate (exit 1, 8 FAIL line(s))
       |         102ece1 docs(v0.7): node J's in-repo adapter is merged by this PR (#299); 23 controls; real-clock gate scope
       |         a0a36d1 Merge pull request #299 from femboy2112/feat/v0.7-node-j-framebuffer-adapter
       | INFO  commits: not checked against a qualification record (pass --allow-commits-file; required to qualify a candidate)
-      | RESULT: FAIL — 8 violation(s); a0a36d170f39 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 9 violation(s); a0a36d170f39 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N2 changed ABI symbol baseline (exit 1, 2 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate c399f5b50df6007e4e1a2288607d02c7a926f979 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate f8abb578f39bd8ef306d053007874165e22a64eb (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate c399f5b
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate f8abb57
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
       | FAIL  C ABI: abi/gibson-abi-v1.symbols lists 60 symbols at the candidate, 59 at the baseline:
       |         + gibson_calibration_extra
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | FAIL  C ABI: abi/ differs from the baseline:
       |         abi/gibson-abi-v1.symbols | 1 +
       |         1 file changed, 1 insertion(+)
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..c399f5b:
+      | INFO  commits: 17 in 9a899e1..f8abb57:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -434,30 +445,31 @@ ok    N2 changed ABI symbol baseline (exit 1, 2 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         c399f5b calibration: abi baseline change
+      |         f8abb57 calibration: abi baseline change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n2, and it lists nothing else
-      | RESULT: FAIL — 2 violation(s); c399f5b50df6 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 2 violation(s); f8abb578f39b is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N3 not descended from the baseline (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 2267589d25713983ddd5bb780713a59b83f42317 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate be83ccaf022b6e69e23350812b4a755c82018c6a (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | FAIL  ancestry: baseline 9a899e1 is NOT an ancestor of candidate 2267589 (merge-base: 7f57047)
+      | FAIL  ancestry: baseline 9a899e1 is NOT an ancestor of candidate be83cca (merge-base: 7f57047)
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 1 in 9a899e1..2267589:
-      |         2267589 calibration: the candidate tree, not descended from the baseline
+      | INFO  commits: 1 in 9a899e1..be83cca:
+      |         be83cca calibration: the candidate tree, not descended from the baseline
       | INFO  commits: not checked against a qualification record (pass --allow-commits-file; required to qualify a candidate)
-      | RESULT: FAIL — 1 violation(s); 2267589d2571 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); be83ccaf022b is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N4a allow-list missing a commit (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -467,11 +479,12 @@ ok    N4a allow-list missing a commit (exit 1, 1 FAIL line(s))
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
@@ -503,11 +516,12 @@ ok    N4b allow-list with an extra commit (exit 1, 1 FAIL line(s))
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
@@ -539,11 +553,12 @@ ok    N4c allow-list with a bad class (exit 1, 1 FAIL line(s))
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
@@ -576,7 +591,7 @@ ok    N5a built library from another tree (exit 1, 1 FAIL line(s))
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | FAIL  C ABI: the built library exports 63 gibson_* symbols, the baseline 59 (<other-build>, sha256 d791db93433c4534ffd2807d24d0f7228496a4e924c5d2ede7837584302cb766):
@@ -586,6 +601,7 @@ ok    N5a built library from another tree (exit 1, 1 FAIL line(s))
       |         + gibson_set_key_release_reporting
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
@@ -610,22 +626,23 @@ ok    N5a built library from another tree (exit 1, 1 FAIL line(s))
       | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N5b Cargo.toml version mismatch (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 07ec50b65a43243cbfe79d7859c9a82121030643 (Cargo.toml 0.6.1)
+      | check-maintenance-candidate: candidate 3aa3c16b3c7c779ceb79fb8d6969d4c57c994bcf (Cargo.toml 0.6.1)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 07ec50b
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 3aa3c16
       | FAIL  version: candidate Cargo.toml = '0.6.1', expected 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..07ec50b:
+      | INFO  commits: 17 in 9a899e1..3aa3c16:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -642,9 +659,9 @@ ok    N5b Cargo.toml version mismatch (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         07ec50b calibration: manifest version mismatch
+      |         3aa3c16 calibration: manifest version mismatch
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n5, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 07ec50b65a43 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 3aa3c16b3c7c is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N5c release version mismatch (exit 1, 3 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -654,11 +671,12 @@ ok    N5c release version mismatch (exit 1, 3 FAIL line(s))
       | FAIL  version: candidate Cargo.lock libgibson = '0.6.0', expected 0.6.1
       | FAIL  version: candidate bindings/python/pyproject.toml = '0.6.0', expected 0.6.1
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.1-rc
       | INFO  tag: v0.6.1 does not exist locally
       | INFO  tag: bindings/go/v0.6.1 does not exist locally
@@ -690,11 +708,12 @@ ok    N6a v0.6.0 tag on another commit (exit 1, 1 FAIL line(s))
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | FAIL  tag: v0.6.0 exists and peels to 9a899e1d3502, not the candidate
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
@@ -726,11 +745,12 @@ ok    N6b bindings/go/v0.6.0 tag on another commit (exit 1, 1 FAIL line(s))
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | FAIL  tag: bindings/go/v0.6.0 exists and peels to 9a899e1d3502, not the candidate
@@ -755,24 +775,25 @@ ok    N6b bindings/go/v0.6.0 tag on another commit (exit 1, 1 FAIL line(s))
       | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N7 header declaration change (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 019603b829c45edaf17b523271749c5b3489b37d (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 2bbb0db5c8a60bb8e524205ad5fb23485ebfd8d3 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 019603b
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 2bbb0db
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | FAIL  C ABI: include/ declarations differ from the baseline in: include/gibson.h
       |         include/gibson.h | 4 ++--
       |         1 file changed, 2 insertions(+), 2 deletions(-)
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..019603b:
+      | INFO  commits: 17 in 9a899e1..2bbb0db:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -789,27 +810,28 @@ ok    N7 header declaration change (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         019603b calibration: header declaration change
+      |         2bbb0db calibration: header declaration change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n7, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 019603b829c4 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 2bbb0db5c8a6 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N8 MSRV change (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 966163611054076c22b077e84a03941a14266ed4 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate e3603413f82c63ccbd30d2a924c2392038ae74e5 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 9661636
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate e360341
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | FAIL  MSRV: rust-version '1.85' at the baseline, '1.86' at the candidate
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..9661636:
+      | INFO  commits: 17 in 9a899e1..e360341:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -826,29 +848,30 @@ ok    N8 MSRV change (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         9661636 calibration: MSRV change
+      |         e360341 calibration: MSRV change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n8, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 966163611054 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); e3603413f82c is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N9 frozen PCM producer change (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 383e20f59756be280464dd56e3711870e0abdb84 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate bef9c8ab1e6cc29c9b028fc66246916b6baeb262 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 383e20f
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate bef9c8a
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | FAIL  PCM golden: the producer or the frozen golden changed since the baseline:
       |         src/audio/buffer.rs | 1 +
       |         1 file changed, 1 insertion(+)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..383e20f:
+      | INFO  commits: 17 in 9a899e1..bef9c8a:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -865,14 +888,14 @@ ok    N9 frozen PCM producer change (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         383e20f calibration: PCM producer change
+      |         bef9c8a calibration: PCM producer change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n9, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 383e20f59756 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); bef9c8ab1e6c is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N10 a new gibson_* export in src/ (exit 1, 2 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 050dce502b5233094bff7472c98232be0dc6d8c4 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 53b7e36775ceb8511a12958cc2c53b86beba7120 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 050dce5
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 53b7e36
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -880,15 +903,16 @@ ok    N10 a new gibson_* export in src/ (exit 1, 2 FAIL line(s))
       |         + gibson_calibration_extra
       | FAIL  C ABI: the Rust C-ABI surface of src/ differs from the baseline:
       |         + export gibson_calibration_extra
-      |         + fn #[no_mangle] gibson_calibration_extra() 
+      |         + fn src/ffi.rs #[no_mangle] gibson_calibration_extra () 
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..050dce5:
+      | INFO  commits: 17 in 9a899e1..53b7e36:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -905,9 +929,9 @@ ok    N10 a new gibson_* export in src/ (exit 1, 2 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         050dce5 calibration: new export
+      |         53b7e36 calibration: new export
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n10, and it lists nothing else
-      | RESULT: FAIL — 2 violation(s); 050dce502b52 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 2 violation(s); 53b7e36775ce is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N11 candidate on no authorized branch (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -917,11 +941,12 @@ ok    N11 candidate on no authorized branch (exit 1, 1 FAIL line(s))
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | FAIL  branch: no branch release/v0.6.0-rc or release/0.6 (local, or of a configured remote) contains the candidate
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
@@ -946,24 +971,25 @@ ok    N11 candidate on no authorized branch (exit 1, 1 FAIL line(s))
       | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N12 macro hidden in a comment by line splices (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 952a77a66326d451bcb78ec3c1b3223105f8424d (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 9d97e57e4556a97d3cc4775f43f3a0117ea38db3 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 952a77a
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 9d97e57
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | FAIL  C ABI: include/ declarations differ from the baseline in: include/gibson.h(comment stripper failed)
       |         include/gibson.h | 7 ++++++-
       |         1 file changed, 6 insertions(+), 1 deletion(-)
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..952a77a:
+      | INFO  commits: 17 in 9a899e1..9d97e57:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -980,29 +1006,30 @@ ok    N12 macro hidden in a comment by line splices (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         952a77a calibration: a redefinition hidden by line splices
+      |         9d97e57 calibration: a redefinition hidden by line splices
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n12, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 952a77a66326 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 9d97e57e4556 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N13 whitespace inside a string literal (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 6df8d1bd50c10f87943a64858a7e5c4e7eb3080c (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 09668f9cba24a0d5462d25299746220f6352add1 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 6df8d1b
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 09668f9
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | FAIL  C ABI: include/ declarations differ from the baseline in: include/gibson.hpp
       |         include/gibson.hpp | 2 +-
       |         1 file changed, 1 insertion(+), 1 deletion(-)
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..6df8d1b:
+      | INFO  commits: 17 in 9a899e1..09668f9:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1019,29 +1046,30 @@ ok    N13 whitespace inside a string literal (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         6df8d1b calibration: whitespace inside a string literal
+      |         09668f9 calibration: whitespace inside a string literal
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n13, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 6df8d1bd50c1 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 09668f9cba24 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N14 comment spliced by a trigraph (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate c55c76a39b9d0b4c540a350a8cadaf8691837e7b (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 388e53e4b70f7c8d8e0cc4f96a376d04972e508d (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate c55c76a
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 388e53e
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | FAIL  C ABI: include/ declarations differ from the baseline in: include/gibson.h(comment stripper failed)
       |         include/gibson.h | 6 +++++-
       |         1 file changed, 5 insertions(+), 1 deletion(-)
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..c55c76a:
+      | INFO  commits: 17 in 9a899e1..388e53e:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1058,14 +1086,14 @@ ok    N14 comment spliced by a trigraph (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         c55c76a calibration: a comment spliced by trigraphs
+      |         388e53e calibration: a comment spliced by trigraphs
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n14, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); c55c76a39b9d is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 388e53e4b70f is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N15 two #[repr(C)] fields swapped (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 5331de0153b670258042e77fe0f7a194d2819ea8 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 0318ab43e511db943527194901c9a778320521aa (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 5331de0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 0318ab4
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -1077,10 +1105,11 @@ ok    N15 two #[repr(C)] fields swapped (exit 1, 1 FAIL line(s))
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..5331de0:
+      | INFO  commits: 17 in 9a899e1..0318ab4:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1097,29 +1126,30 @@ ok    N15 two #[repr(C)] fields swapped (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         5331de0 calibration: repr(C) fields swapped
+      |         0318ab4 calibration: repr(C) fields swapped
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n15, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 5331de0153b6 is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 0318ab43e511 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N16 a parameter type changed (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 3b2dc9ece66be17cbe55bb70794a6dd9c6c1c3f1 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 7593e5664934437e37bfed9665f415688d608e68 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 3b2dc9e
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 7593e56
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
       | FAIL  C ABI: the Rust C-ABI surface of src/ differs from the baseline:
-      |         - fn #[no_mangle] gibson_set_max_fps( ctx: *mut GibsonContextOpaque, fps: u32, ) -> GibsonStatus
-      |         + fn #[no_mangle] gibson_set_max_fps( ctx: *mut GibsonContextOpaque, fps: u64, ) -> GibsonStatus
+      |         - fn src/ffi.rs #[no_mangle] gibson_set_max_fps ( ctx: *mut GibsonContextOpaque, fps: u32, ) -> GibsonStatus
+      |         + fn src/ffi.rs #[no_mangle] gibson_set_max_fps ( ctx: *mut GibsonContextOpaque, fps: u64, ) -> GibsonStatus
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..3b2dc9e:
+      | INFO  commits: 17 in 9a899e1..7593e56:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1136,14 +1166,14 @@ ok    N16 a parameter type changed (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         3b2dc9e calibration: parameter type change
+      |         7593e56 calibration: parameter type change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n16, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 3b2dc9ece66b is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 7593e5664934 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N17 an export whose fn is on the next line (exit 1, 2 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 567bed1cf5cc198ec3632de18dba49b2376d75dd (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 64046d1dddb02b11d43e00098d1f5f9989f7733f (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 567bed1
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 64046d1
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -1151,15 +1181,16 @@ ok    N17 an export whose fn is on the next line (exit 1, 2 FAIL line(s))
       |         + gibson_calibration_multiline
       | FAIL  C ABI: the Rust C-ABI surface of src/ differs from the baseline:
       |         + export gibson_calibration_multiline
-      |         + fn #[no_mangle] gibson_calibration_multiline() 
+      |         + fn src/ffi.rs #[no_mangle] gibson_calibration_multiline () 
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..567bed1:
+      | INFO  commits: 17 in 9a899e1..64046d1:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1176,14 +1207,14 @@ ok    N17 an export whose fn is on the next line (exit 1, 2 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         567bed1 calibration: multi-line export
+      |         64046d1 calibration: multi-line export
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n17, and it lists nothing else
-      | RESULT: FAIL — 2 violation(s); 567bed1cf5cc is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 2 violation(s); 64046d1dddb0 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N18 a new exported static (exit 1, 2 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 24eb27434bbab35523ed28ed5162e9156455d18a (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 47398280be6ed7465f689daef15e5aeb28c4796e (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 24eb274
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 4739828
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -1196,10 +1227,11 @@ ok    N18 a new exported static (exit 1, 2 FAIL line(s))
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..24eb274:
+      | INFO  commits: 17 in 9a899e1..4739828:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1216,9 +1248,9 @@ ok    N18 a new exported static (exit 1, 2 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         24eb274 calibration: exported static
+      |         4739828 calibration: exported static
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n18, and it lists nothing else
-      | RESULT: FAIL — 2 violation(s); 24eb27434bba is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 2 violation(s); 47398280be6e is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N19 the baseline itself as the candidate (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
@@ -1228,11 +1260,12 @@ ok    N19 the baseline itself as the candidate (exit 1, 1 FAIL line(s))
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
@@ -1248,11 +1281,12 @@ ok    N20 candidate only on feature/release/v0.6.0-rc (exit 1, 1 FAIL line(s))
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | FAIL  branch: no branch release/v0.6.0-rc or release/0.6 (local, or of a configured remote) contains the candidate
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
@@ -1277,9 +1311,9 @@ ok    N20 candidate only on feature/release/v0.6.0-rc (exit 1, 1 FAIL line(s))
       | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N21 a GIBSON_* const value changed (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate 7684bd528a4e870ea0249930b96cb304a41cb22a (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 7c7af95d9da02a1de8489d5770ae3aa0bca6a7e1 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 7684bd5
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 7c7af95
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
@@ -1291,10 +1325,11 @@ ok    N21 a GIBSON_* const value changed (exit 1, 1 FAIL line(s))
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..7684bd5:
+      | INFO  commits: 17 in 9a899e1..7c7af95:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1311,9 +1346,9 @@ ok    N21 a GIBSON_* const value changed (exit 1, 1 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         7684bd5 calibration: const value change
+      |         7c7af95 calibration: const value change
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n21, and it lists nothing else
-      | RESULT: FAIL — 1 violation(s); 7684bd528a4e is not a valid maintenance candidate for baseline 9a899e1d3502
+      | RESULT: FAIL — 1 violation(s); 7c7af95d9da0 is not a valid maintenance candidate for baseline 9a899e1d3502
 ok    N22 a library that also exports a gibson_* data symbol (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
@@ -1323,13 +1358,14 @@ ok    N22 a library that also exports a gibson_* data symbol (exit 1, 1 FAIL lin
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
       | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
-      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (181 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
       | PASS  C ABI: abi/ is byte-identical to the baseline
       | PASS  C ABI: include/ is byte-identical to the baseline
       | FAIL  C ABI: the built library exports 60 gibson_* symbols, the baseline 59 (<tmp>/fake59d.so, sha256 319d81882d2f4ebb2b4d4881404ec12105f4e5645182b362c3001ed63b408892):
       |         + gibson_calibration_data
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
@@ -1352,15 +1388,513 @@ ok    N22 a library that also exports a gibson_* data symbol (exit 1, 1 FAIL lin
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
       | PASS  commits: all 16 commits are in the allow-list docs/decisions/0001/allow-commits-572e551.txt, and it lists nothing else
       | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
-ok    N23 an unreadable src/ file fails closed (exit 1, 2 FAIL line(s))
+ok    N24 a splice followed by 6000 padding comments (84 KB, past a 64 KB pipe buffer) (exit 1, 1 FAIL line(s))
       | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
-      | check-maintenance-candidate: candidate d3bcdb21f41c79cdd5b34e3118fc5bf54f06462d (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 2be089de1b0a5f65fcda14598f344acdfa69c4c0 (Cargo.toml 0.6.0)
       | check-maintenance-candidate: release version 0.6.0
-      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate d3bcdb2
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 2be089d
       | PASS  version: candidate Cargo.toml = 0.6.0
       | PASS  version: candidate Cargo.lock libgibson = 0.6.0
       | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
-      | fatal: bad object d3bcdb21f41c79cdd5b34e3118fc5bf54f06462d:src/ffi.rs
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | FAIL  C ABI: include/ declarations differ from the baseline in: include/gibson.h(comment stripper failed)
+      |         include/gibson.h | 6007 +++++++++++++++++++++++++++++++++++++++++++++++++++++-
+      |         1 file changed, 6006 insertions(+), 1 deletion(-)
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..2be089d:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         2be089d calibration: a splice followed by padding (SIGPIPE probe)
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n24, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); 2be089de1b0a is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N25 a cfg attribute on an export (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 6bcdc2dd1788c271cec930b4b24ec97eb00de1d7 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 6bcdc2d
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | FAIL  C ABI: the Rust C-ABI surface of src/ differs from the baseline:
+      |         + fn src/ffi.rs #[cfg(any())] #[no_mangle] gibson_abi_version () -> u32
+      |         - fn src/ffi.rs #[no_mangle] gibson_abi_version () -> u32
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..6bcdc2d:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         6bcdc2d calibration: cfg on an export
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n25, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); 6bcdc2dd1788 is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N26 generic parameters on an export (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 12e9e0a7020fd9063ed337219129a9959223d9c7 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 12e9e0a
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | FAIL  C ABI: the Rust C-ABI surface of src/ differs from the baseline:
+      |         - fn src/ffi.rs #[no_mangle] gibson_abi_version () -> u32
+      |         + fn src/ffi.rs #[no_mangle] gibson_abi_version<T> () -> u32
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..12e9e0a:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         12e9e0a calibration: generic export
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n26, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); 12e9e0a7020f is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N27 an export through #[export_name] (exit 1, 2 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate c5becde21f1d9375bffe812f25685ddfa6c5afdb (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate c5becde
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | FAIL  C ABI: src/ at the candidate exports 60 gibson_* symbols, the baseline 59:
+      |         + gibson_calibration_named
+      | FAIL  C ABI: the Rust C-ABI surface of src/ differs from the baseline:
+      |         + export gibson_calibration_named
+      |         + fn src/ffi.rs #[export_name = "gibson_calibration_named"] calibration_named () 
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..c5becde:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         c5becde calibration: export_name
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n27, and it lists nothing else
+      | RESULT: FAIL — 2 violation(s); c5becde21f1d is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N28 a type alias added to the ABI module (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 6bee2b583e5937a7fde8cf5251cbb6a4d43719c9 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 6bee2b5
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | FAIL  C ABI: the Rust C-ABI surface of src/ differs from the baseline:
+      |         + alias src/ffi.rs: GibsonCalibrationAlias = u32
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..6bee2b5:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         6bee2b5 calibration: type alias in the ABI module
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n28, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); 6bee2b583e59 is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N29 the layout oracle edited (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate cf6a367a9f41e98964a22dfa812c22bc9a9b98ad (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate cf6a367
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | FAIL  layout oracle: tests/ffi_abi_layout_freeze.rs changed since the baseline
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..cf6a367:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         cf6a367 calibration: layout oracle edit
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n29, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); cf6a367a9f41 is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    P7 a new non-exporting #[cfg(unix)] module (exit 0, 0 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 49789897fad689d6f0611a0f64bbe8dec090cf03 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 4978989
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..4978989:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         4978989 calibration: a non-exporting module (a legitimate backport shape)
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.p7, and it lists nothing else
+      | RESULT: PASS — 49789897fad6 meets the maintenance-line checks against baseline 9a899e1d3502
+ok    F1 the header read dies after a common prefix (exit 1, 2 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 331bfd383603ba18aa61bdf9448bf100b72b33f8 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 331bfd3
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | FAIL  C ABI: include/ declarations differ from the baseline in: include/gibson.h(comment stripper failed)
+      |         include/gibson.h | 4 ++--
+      |         1 file changed, 2 insertions(+), 2 deletions(-)
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..331bfd3:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         331bfd3 calibration: header declaration change (fault injection)
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.f1, and it lists nothing else
+      | FAIL  tools: a git, nm or other command failed, so a check above may rest on partial output:
+      |         git show 9a899e1d35025894725c5b14aa8836349fc01825:include/gibson.h failed
+      | RESULT: FAIL — 2 violation(s); 331bfd383603 is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    F2 header enumeration fails (exit 1, 2 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 4e96795cc43216f6c588eea9575b7974c5d0968c (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 4e96795
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | FAIL  C ABI: include/ declarations differ from the baseline in: (no changed header could be listed)
+      |         include/gibson.h | 1 +
+      |         1 file changed, 1 insertion(+)
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..4e96795:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         4e96795 calibration: comment-only header change (fault injection)
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.f2, and it lists nothing else
+      | FAIL  tools: a git, nm or other command failed, so a check above may rest on partial output:
+      |         git diff --name-status include/ failed
+      | RESULT: FAIL — 2 violation(s); 4e96795cc432 is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    F3 nm dies after printing every symbol (exit 1, 2 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 572e551
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | FAIL  C ABI: the built library exports 0 gibson_* symbols, the baseline 59 (<rc-build>, sha256 cd09a28160d363a8f2082d463197ef0bb00ebb2b1ae7fb98261dc483ede476d6):
+      |         - gibson_abi_version
+      |         - gibson_clear_live_region
+      |         - gibson_commit
+      |         - gibson_commit_node
+      |         - gibson_commit_raw_ansi_unchecked
+      |         - gibson_commit_rich_text
+      |         - gibson_commit_text
+      |         - gibson_create_context
+      |         - gibson_create_headless_context
+      |         - gibson_destroy_context
+      |         - gibson_get_frame_cell
+      |         - gibson_get_frame_cell_glyph
+      |         - gibson_get_frame_cells
+      |         - gibson_get_frame_size
+      |         - gibson_get_rendered_output
+      |         - gibson_get_stats
+      |         - gibson_insert_node_before_live
+      |         - gibson_insert_raw_lines_before_live_unchecked
+      |         - gibson_insert_rich_text_before_live
+      |         - gibson_insert_text_before_live
+      |         - gibson_last_error_message
+      |         - gibson_line_add_span
+      |         - gibson_line_free
+      |         - gibson_line_new
+      |         - gibson_line_set_align
+      |         - gibson_node_add_child
+      |         - gibson_node_border_box
+      |         - gibson_node_box_col
+      |         - gibson_node_box_row
+      |         - gibson_node_dim
+      |         - gibson_node_free
+      |         - gibson_node_rail
+      |         - gibson_node_rich_text
+      |         - gibson_node_rule
+      |         - gibson_node_set_flex_grow
+      |         - gibson_node_set_gap
+      |         - gibson_node_set_height
+      |         - gibson_node_set_max_width
+      |         - gibson_node_set_min_width
+      |         - gibson_node_set_padding
+      |         - gibson_node_set_padding_sides
+      |         - gibson_node_set_percent_width
+      |         - gibson_node_set_width
+      |         - gibson_node_spinner
+      |         - gibson_node_stack
+      |         - gibson_node_text
+      |         - gibson_node_text_input
+      |         - gibson_poll_event
+      |         - gibson_render
+      |         - gibson_render_if_due
+      |         - gibson_request_render
+      |         - gibson_rich_text_add_line
+      |         - gibson_rich_text_free
+      |         - gibson_rich_text_new
+      |         - gibson_set_color_depth
+      |         - gibson_set_max_fps
+      |         - gibson_set_root_node
+      |         - gibson_set_sync_updates
+      |         - gibson_stats_init
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 16 in 9a899e1..572e551:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      | PASS  commits: all 16 commits are in the allow-list docs/decisions/0001/allow-commits-572e551.txt, and it lists nothing else
+      | FAIL  tools: a git, nm or other command failed, so a check above may rest on partial output:
+      |         nm -D --defined-only <rc-build> failed
+      | RESULT: FAIL — 2 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    F4 branch enumeration dies after printing (exit 1, 2 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 572e551
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: the Rust C-ABI surface of src/ is identical to the baseline (196 items: signatures, #[repr] layouts, GIBSON_* consts, exporting macros)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
+      | FAIL  branch: no branch release/v0.6.0-rc or release/0.6 (local, or of a configured remote) contains the candidate
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 16 in 9a899e1..572e551:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      | PASS  commits: all 16 commits are in the allow-list docs/decisions/0001/allow-commits-572e551.txt, and it lists nothing else
+      | FAIL  tools: a git, nm or other command failed, so a check above may rest on partial output:
+      |         git for-each-ref --contains failed
+      | RESULT: FAIL — 2 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N23 an unreadable src/ file fails closed (exit 1, 3 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 161969cc6596b6cae49d54ba6271b0ea1baa54db (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 161969c
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | fatal: bad object 161969cc6596b6cae49d54ba6271b0ea1baa54db:src/ffi.rs
       | FAIL  C ABI: cannot parse the Rust C-ABI surface at the candidate (fail closed)
       | FAIL  C ABI: src/ at the candidate exports 0 gibson_* symbols, the baseline 59:
       |         - gibson_abi_version
@@ -1426,10 +1960,11 @@ ok    N23 an unreadable src/ file fails closed (exit 1, 2 FAIL line(s))
       | PASS  C ABI: include/ is byte-identical to the baseline
       | PASS  MSRV: rust-version 1.85, unchanged
       | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  layout oracle: tests/ffi_abi_layout_freeze.rs unchanged (CI runs it at the candidate)
       | PASS  branch: candidate is on release/v0.6.0-rc
       | INFO  tag: v0.6.0 does not exist locally
       | INFO  tag: bindings/go/v0.6.0 does not exist locally
-      | INFO  commits: 17 in 9a899e1..d3bcdb2:
+      | INFO  commits: 17 in 9a899e1..161969c:
       |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
       |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
       |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
@@ -1446,9 +1981,11 @@ ok    N23 an unreadable src/ file fails closed (exit 1, 2 FAIL line(s))
       |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
       |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
       |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
-      |         d3bcdb2 calibration: unreadable src blob
+      |         161969c calibration: unreadable src blob
       | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n23, and it lists nothing else
-      | RESULT: FAIL — 2 violation(s); d3bcdb21f41c is not a valid maintenance candidate for baseline 9a899e1d3502
+      | FAIL  tools: a git, nm or other command failed, so a check above may rest on partial output:
+      |         git show 161969cc6596b6cae49d54ba6271b0ea1baa54db:src/ffi.rs failed
+      | RESULT: FAIL — 3 violation(s); 161969cc6596 is not a valid maintenance candidate for baseline 9a899e1d3502
 
-CALIBRATION: PASS — 34 of 34 cases met their expected verdict for their intended reason
+CALIBRATION: PASS — 45 of 45 cases met their expected verdict for their intended reason
 exit=0

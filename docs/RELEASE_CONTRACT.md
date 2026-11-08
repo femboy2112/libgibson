@@ -128,8 +128,9 @@ commit on a maintenance branch instead of a `main` commit, under **all** of thes
    committed `abi/` baseline and what the built library exports) and its Rust definitions
    (signatures, `#[repr]` layouts, `GIBSON_*` constants), the declarations of the public
    headers (`include/`; a comment-only change, such as a disclosed limitation, is release
-   engineering), the MSRV (`rust-version`) and the frozen PCM golden (`src/audio/`,
-   `tests/audio_pocket_voice.rs`) are unchanged, and every later commit is a listed backport of a
+   engineering), the MSRV (`rust-version`), the frozen PCM golden (`src/audio/`,
+   `tests/audio_pocket_voice.rs`) and the C ABI layout oracle (`tests/ffi_abi_layout_freeze.rs`) are
+   unchanged, and every later commit is a listed backport of a
    fix (citing its `main` counterpart) or a release-engineering commit (version, changelog,
    documentation, test or CI adaptation). `scripts/release/check-maintenance-candidate.sh` checks
    these structurally, calibrated by `scripts/release/tests/test-maintenance-checker.sh`; it does

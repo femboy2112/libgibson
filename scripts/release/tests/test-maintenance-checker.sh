@@ -35,6 +35,14 @@
 #   N20 the candidate only on feature/release/v0.6.0-rc                -> FAIL branch only
 #   N22 a library that also exports a gibson_* data symbol (synthetic) -> FAIL built library only
 #   N23 a src/ file whose blob is missing from the object store        -> FAIL closed (surface, exports)
+#   N24 a splice followed by 6000 padding comments (a SIGPIPE probe)   -> FAIL include/ only
+#   N25 #[cfg] on an export; N26 generics on an export; N28 a type alias in the ABI module
+#                                                                      -> FAIL Rust surface only
+#   N27 an export through #[export_name]                               -> FAIL exports + surface
+#   N29 the layout oracle (tests/ffi_abi_layout_freeze.rs) edited      -> FAIL layout oracle only
+#   P7 a new non-exporting #[cfg(unix)] module (a legitimate backport)  -> PASS
+#   F1-F4 a tool dies after (part of) its output: the header read (both revisions truncated to
+#   one common prefix), header enumeration, nm, branch enumeration    -> FAIL tools (+ that check)
 #
 # Usage:
 #   scripts/release/tests/test-maintenance-checker.sh --baseline <rev> --candidate <rev> \
@@ -117,14 +125,14 @@ sys.stdout.write(s.replace(old, new))' "$3" "$4" | g hash-object -w --stdin)" ||
 }
 with_extra() { cp "$allow" "$WORK/allow.$1" && echo "$2 release-engineering calibration perturbation" >>"$WORK/allow.$1" && echo "$WORK/allow.$1"; }
 
-failures=0 REQUIRE_PASS=""
+failures=0 REQUIRE_PASS="" CASE_ENV=()
 # case_ <name> <expected-exit> <expected-FAIL-regexes, '|'-joined or '-' for none> -- <checker args>
 # The patterns are split on '|', so a single pattern must not use alternation. REQUIRE_PASS, if
 # set, is a '|'-joined list of PASS-line regexes the output must also contain.
 case_() {
     local name="$1" want_exit="$2" want_fails="$3"; shift 4
     local out got_exit fails n_fail ok=1 re line matched
-    out="$(cd "$R" && scripts/release/check-maintenance-candidate.sh "$@" 2>&1)"; got_exit=$?
+    out="$(cd "$R" && env "${CASE_ENV[@]}" scripts/release/check-maintenance-candidate.sh "$@" 2>&1)"; got_exit=$?
     fails="$(printf '%s\n' "$out" | grep '^FAIL' || true)"
     n_fail="$(printf '%s\n' "$fails" | grep -c . || true)"
     [ "$got_exit" = "$want_exit" ] || ok=0
@@ -148,7 +156,7 @@ case_() {
             printf '%s\n' "$out" | grep -qE "^PASS  $re" || { ok=0; echo "   missing required PASS /$re/"; }
         done
     fi
-    REQUIRE_PASS=""
+    REQUIRE_PASS="" CASE_ENV=()
     if [ "$ok" = 1 ]; then echo "ok    $name (exit $got_exit, $n_fail FAIL line(s))"; else
         echo "WRONG $name (exit $got_exit, want $want_exit)"; failures=$((failures + 1)); fi
     printf '%s\n' "$out" | sed 's/^/      | /'
@@ -163,6 +171,26 @@ fake_so() {
     { g show "$B:abi/gibson-abi-v1.symbols" | grep -v '^#' | grep . | sed 's/.*/void &(void) {}/'; printf '%s\n' "${2:-}"; } >"$WORK/fake.c"
     cc -shared -fPIC -o "$1" "$WORK/fake.c" || die "cannot build $1"
 }
+
+# Fault-injection shims: when the command line matches SHIM_*_MATCH, the real tool's output is
+# passed through (truncated to SHIM_KEEP_BYTES, if set) and the shim then fails, the way a tool
+# that dies mid-output looks to the checker.
+REAL_GIT="$(command -v git)" REAL_NM="$(command -v nm)"
+mkdir -p "$WORK/shim"
+for tool in git nm; do
+    real="$REAL_GIT"; [ "$tool" = nm ] && real="$REAL_NM"
+    var="SHIM_${tool^^}_MATCH"
+    cat >"$WORK/shim/$tool" <<SHIM
+#!/usr/bin/env bash
+if [ -n "\${$var:-}" ] && [[ "\$*" =~ \$$var ]]; then
+    if [ -n "\${SHIM_KEEP_BYTES:-}" ]; then "$real" "\$@" | head -c "\$SHIM_KEEP_BYTES"; else "$real" "\$@"; fi
+    exit 128
+fi
+exec "$real" "\$@"
+SHIM
+    chmod +x "$WORK/shim/$tool"
+done
+SHIMPATH="$WORK/shim:$PATH"
 
 echo "calibration: baseline $B, candidate $C, dev $D"
 echo "calibration: --so $so (sha256 $(sha256sum "$so" | cut -d' ' -f1))"
@@ -201,7 +229,7 @@ REQUIRE_PASS="C ABI: the built library exports the baseline's"
 case_ "P6 synthetic library with exactly the baseline's names" 0 - -- "${A[@]}" --candidate "$C" --allow-commits-file "$allow" --so "$WORK/fake59.so"
 
 on_branch "$D"
-case_ "N1 development candidate" 1 "^FAIL  version: |$EXP_FAIL|$SURF_FAIL|^FAIL  C ABI: abi/gibson-abi-v1.symbols lists|^FAIL  C ABI: abi/ differs|$HDR_FAIL" -- "${A[@]}" --candidate "$D"
+case_ "N1 development candidate" 1 "^FAIL  version: |$EXP_FAIL|$SURF_FAIL|^FAIL  C ABI: abi/gibson-abi-v1.symbols lists|^FAIL  C ABI: abi/ differs|$HDR_FAIL|^FAIL  layout oracle: " -- "${A[@]}" --candidate "$D"
 
 X="$(perturb "$C" abi/gibson-abi-v1.symbols '$a gibson_calibration_extra' 'calibration: abi baseline change')" || die "N2 setup"
 on_branch "$X"; a="$(with_extra n2 "$X")" || die "N2 allow"
@@ -282,6 +310,44 @@ case_ "N21 a GIBSON_* const value changed" 1 "$SURF_FAIL" -- "${A[@]}" --candida
 on_branch "$C"; fake_so "$WORK/fake59d.so" 'int gibson_calibration_data = 1;'
 case_ "N22 a library that also exports a gibson_* data symbol" 1 '^FAIL  C ABI: the built library exports 60' -- "${A[@]}" --candidate "$C" --allow-commits-file "$allow" --so "$WORK/fake59d.so"
 
+X="$(replace "$C" include/gibson.h '/* Status codes */' "$(printf '/* Status codes *\\\n/\n#undef GIBSON_ABI_VERSION\n#define GIBSON_ABI_VERSION 2u\n/\\\n* hidden */'; for _ in $(seq 6000); do printf '\n/* padding */'; done)" 'calibration: a splice followed by padding (SIGPIPE probe)')" || die "N24 setup"
+on_branch "$X"; a="$(with_extra n24 "$X")" || die "N24 allow"
+case_ "N24 a splice followed by 6000 padding comments (84 KB, past a 64 KB pipe buffer)" 1 "$HDR_FAIL" -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
+X="$(replace "$C" src/ffi.rs $'#[no_mangle]\npub extern "C" fn gibson_abi_version()' $'#[no_mangle]\n#[cfg(any())]\npub extern "C" fn gibson_abi_version()' 'calibration: cfg on an export')" || die "N25 setup"
+on_branch "$X"; a="$(with_extra n25 "$X")" || die "N25 allow"
+case_ "N25 a cfg attribute on an export" 1 "$SURF_FAIL" -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
+X="$(replace "$C" src/ffi.rs 'pub extern "C" fn gibson_abi_version()' 'pub extern "C" fn gibson_abi_version<T>()' 'calibration: generic export')" || die "N26 setup"
+on_branch "$X"; a="$(with_extra n26 "$X")" || die "N26 allow"
+case_ "N26 generic parameters on an export" 1 "$SURF_FAIL" -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
+X="$(perturb "$C" src/ffi.rs '$a #[export_name = "gibson_calibration_named"]\npub extern "C" fn calibration_named() {}' 'calibration: export_name')" || die "N27 setup"
+on_branch "$X"; a="$(with_extra n27 "$X")" || die "N27 allow"
+case_ "N27 an export through #[export_name]" 1 "$EXP_FAIL|$SURF_FAIL" -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
+X="$(perturb "$C" src/ffi.rs '$a pub type GibsonCalibrationAlias = u32;' 'calibration: type alias in the ABI module')" || die "N28 setup"
+on_branch "$X"; a="$(with_extra n28 "$X")" || die "N28 allow"
+case_ "N28 a type alias added to the ABI module" 1 "$SURF_FAIL" -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
+X="$(perturb "$C" tests/ffi_abi_layout_freeze.rs '$a // calibration' 'calibration: layout oracle edit')" || die "N29 setup"
+on_branch "$X"; a="$(with_extra n29 "$X")" || die "N29 allow"
+case_ "N29 the layout oracle edited" 1 '^FAIL  layout oracle: ' -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
+X="$(perturb "$C" src/lib.rs '$a #[cfg(unix)]\nmod calibration_internal;' 'calibration: a non-exporting module (a legitimate backport shape)')" || die "P7 setup"
+on_branch "$X"; a="$(with_extra p7 "$X")" || die "P7 allow"
+REQUIRE_PASS='C ABI: the Rust C-ABI surface of src/ is identical'
+case_ "P7 a new non-exporting #[cfg(unix)] module" 0 - -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
+
+# Fault injection: each tool dies after (part of) its output; the checker must fail, not pass.
+X="$(perturb "$C" include/gibson.h 's/uint8_t \*buf, size_t cap, size_t \*out_len);$/uint8_t *buf, uint32_t cap, size_t *out_len);/' 'calibration: header declaration change (fault injection)')" || die "F1 setup"
+on_branch "$X"; a="$(with_extra f1 "$X")" || die "F1 allow"
+CASE_ENV=(PATH="$SHIMPATH" SHIM_GIT_MATCH='^show [0-9a-f]{40}:include/gibson\.h$' SHIM_KEEP_BYTES=200)
+case_ "F1 the header read dies after a common prefix" 1 '^FAIL  tools: |'"$HDR_FAIL" -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
+X="$(perturb "$C" include/gibson.h '0,/^\/\*/s//\/* calibration: a comment-only edit. *\/\n\/*/' 'calibration: comment-only header change (fault injection)')" || die "F2 setup"
+on_branch "$X"; a="$(with_extra f2 "$X")" || die "F2 allow"
+CASE_ENV=(PATH="$SHIMPATH" SHIM_GIT_MATCH='^diff --name-status')
+case_ "F2 header enumeration fails" 1 '^FAIL  tools: |'"$HDR_FAIL" -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
+on_branch "$C"
+CASE_ENV=(PATH="$SHIMPATH" SHIM_NM_MATCH='^-D --defined-only')
+case_ "F3 nm dies after printing every symbol" 1 '^FAIL  tools: |^FAIL  C ABI: the built library exports' -- "${A[@]}" --candidate "$C" --allow-commits-file "$allow" --so "$so"
+CASE_ENV=(PATH="$SHIMPATH" SHIM_GIT_MATCH='^for-each-ref --contains')
+case_ "F4 branch enumeration dies after printing" 1 '^FAIL  tools: |^FAIL  branch: ' -- "${A[@]}" --candidate "$C" --allow-commits-file "$allow"
+
 # N23: src/ffi.rs's blob is absent from the object store (git mktree --missing), so reading it fails.
 src_tree="$(g ls-tree "$C" -- src | awk '{print $3}')" || die "N23 setup"
 missing="$(printf 'e%.0s' $(seq 40))"
@@ -290,7 +356,7 @@ new_src="$(g ls-tree "$src_tree" | sed -E "s/^(100644 blob )[0-9a-f]{40}(\tffi\.
 new_root="$(g ls-tree "$C" | sed -E "s/^(040000 tree )[0-9a-f]{40}(\tsrc)$/\1$new_src\2/" | g mktree --missing)" || die "N23 setup"
 X="$(g commit-tree "$new_root" -p "$C" -m 'calibration: unreadable src blob')" || die "N23 setup"
 on_branch "$X"; a="$(with_extra n23 "$X")" || die "N23 allow"
-case_ "N23 an unreadable src/ file fails closed" 1 '^FAIL  C ABI: cannot parse the Rust C-ABI surface at the candidate|^FAIL  C ABI: src/ at the candidate exports 0' -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
+case_ "N23 an unreadable src/ file fails closed" 1 '^FAIL  C ABI: cannot parse the Rust C-ABI surface at the candidate|^FAIL  C ABI: src/ at the candidate exports 0|^FAIL  tools: ' -- "${A[@]}" --candidate "$X" --allow-commits-file "$a"
 
 echo
 total="$(grep -c '^case_ "' "${BASH_SOURCE[0]}")"

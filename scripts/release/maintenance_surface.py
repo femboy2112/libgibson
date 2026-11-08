@@ -9,7 +9,11 @@
             `//@file <path>`). stdout: one sorted line per C-ABI-relevant item, comments and
             layout whitespace removed:
               export <name>                  every gibson_* symbol the sources define
-              fn <attrs> <name>(<params>) -> <ret>   every extern "C" fn gibson_* (attrs: no_mangle)
+              fn <path> <attrs> <name><generics>(<params>) -> <ret>   every extern "C" fn
+                                             (attrs: every non-doc attribute, e.g. no_mangle, cfg)
+              alias / use <path>: ...        type aliases and imports of every file that exports
+              mod <attrs> <name>             src/lib.rs declarations of the modules that export
+            (fn, alias and use lines are recorded for files that contain no_mangle/export_name)
               static <attrs> <name>: <type>  every static gibson_*
               macro <name> { <body> }        every macro_rules! whose body defines an extern "C" fn
               invoke <macro>!(<args>)        every invocation of such a macro
@@ -176,6 +180,14 @@ def rust_abi(stdin):
     sources = list(zip(files[1::2], files[2::2]))
     fn_macros = set()
     stripped = [(path, strip_rust_comments(src)) for path, src in sources]
+    # Files that define exported symbols: their extern "C" fns, aliases and imports are recorded,
+    # and so is the src/lib.rs declaration of their module.
+    export_files = {path for path, text in stripped if re.search(r"\bno_mangle\b|\bexport_name\b", text)}
+    export_mods = set()
+    for path in export_files:
+        m = re.match(r"src/([A-Za-z0-9_]+)(?:\.rs|/mod\.rs)$", path)
+        if m:
+            export_mods.add(m.group(1))
     for path, text in stripped:
         for m in re.finditer(r"macro_rules!\s*([A-Za-z0-9_]+)\s*\{", text):
             end = balanced(text, m.end() - 1, "{", "}")
@@ -183,18 +195,33 @@ def rust_abi(stdin):
             if re.search(r'extern\s*"C"\s*fn', body):
                 fn_macros.add(m.group(1))
                 records.add("macro %s %s" % (m.group(1), norm(body)))
-        for m in re.finditer(r'extern\s*"C"\s*fn\s+(gibson_[A-Za-z0-9_]+)\s*(<[^>{(]*>)?\s*\(', text):
+        exports_here = path in export_files
+        for m in re.finditer(r'extern\s*"C"\s*fn\s+([A-Za-z0-9_$]+)\s*(<[^>{(]*>)?\s*\(', text):
             close = balanced(text, m.end() - 1, "(", ")")
             rest = text[close:]
             ret = re.match(r"\s*(->\s*[^{;]*?)?\s*(where\b[^{;]*)?[{;]", rest)
             if not ret:
                 raise ValueError("cannot parse signature of " + m.group(1))
-            attrs = [a for a in attrs_before(text, m.start()) if "no_mangle" in a or "export_name" in a]
+            attrs = [a for a in attrs_before(text, m.start()) if not re.match(r"#\s*\[\s*doc\b", a)]
             name = m.group(1)
-            records.add("fn %s %s%s %s" % (" ".join(attrs), name, norm(text[m.end() - 1 : close]),
-                                            norm(ret.group(1) or "")))
-            if attrs:
+            if not exports_here:
+                continue
+            records.add("fn %s %s %s%s %s %s" % (path, " ".join(sorted(attrs)), name, norm(m.group(2) or ""),
+                                               norm(text[m.end() - 1 : close]),
+                                               norm((ret.group(1) or "") + " " + (ret.group(2) or ""))))
+            if name.startswith("gibson_") and any("no_mangle" in a for a in attrs):
                 records.add("export " + name)
+        if exports_here:
+            for m in re.finditer(r"(?<![A-Za-z0-9_])type\s+([A-Za-z0-9_]+)\s*(<[^=;]*>)?\s*=\s*([^;]+);", text):
+                records.add("alias %s: %s%s = %s" % (path, m.group(1), norm(m.group(2) or ""), norm(m.group(3))))
+            for m in re.finditer(r"(?<![A-Za-z0-9_])use\s+([^;]+);", text):
+                records.add("use %s: %s" % (path, norm(m.group(1))))
+        if path == "src/lib.rs":
+            for m in re.finditer(r"(?<![A-Za-z0-9_])mod\s+([A-Za-z0-9_]+)\s*;", text):
+                if m.group(1) not in export_mods:
+                    continue
+                attrs = [a for a in attrs_before(text, m.start()) if not re.match(r"#\s*\[\s*doc\b", a)]
+                records.add("mod %s %s" % (" ".join(sorted(attrs)), m.group(1)))
         for m in re.finditer(r"static\s+(mut\s+)?(gibson_[A-Za-z0-9_]+)\s*:\s*([^=;]+)", text):
             attrs = [a for a in attrs_before(text, m.start()) if "no_mangle" in a or "export_name" in a]
             records.add("static %s %s%s: %s" % (" ".join(attrs), m.group(1) or "", m.group(2), norm(m.group(3))))
@@ -216,7 +243,8 @@ def rust_abi(stdin):
                 body = text[start : balanced(text, start, "(", ")")]
             else:
                 body = ";"
-            records.add("type %s: #[repr(%s)] %s %s %s" % (path, norm(m.group(1)), t.group(4), t.group(5), norm(body)))
+            records.add("type %s: #[repr(%s)] %s %s%s %s" % (path, norm(m.group(1)), t.group(4), t.group(5),
+                                                         norm(t.group(6) or ""), norm(body)))
     for path, text in stripped:
         for mac in fn_macros:
             for m in re.finditer(r"(?<![A-Za-z0-9_])%s!\s*\(" % re.escape(mac), text):
