@@ -81,8 +81,13 @@ surface is versioned as a minor to signal its scope — not because anything bro
   "a prepared release candidate, not yet tagged" — the wording of its version-bump commit,
   not reconciled after the tag.)*
 - **0.6.0** is the latest such milestone and is **prepared in source only** (state 1): the
-  manifests read `0.6.0`, but nothing is tagged, released on GitHub or published to a
-  registry, and the latest *released* version remains 0.5.0. It integrates the v0.6
+  manifests read `0.6.0` at `9a899e1` (its source-version baseline), but nothing is tagged,
+  released on GitHub or published to a registry, and the latest *released* version remains 0.5.0.
+  `9a899e1` itself carries #264 and #269 and is never tagged. The owner chose (2026-11-08,
+  [#287](https://github.com/femboy2112/libgibson/issues/287),
+  [decision 0001](decisions/0001-v0.6.0-release-line.md)) to release 0.6.0, if a candidate
+  qualifies, from this branch, `release/v0.6.0-rc`, under the maintenance-line exception below:
+  `9a899e1` plus listed backports and release engineering. It integrates the v0.6
   "Instrumental Renaissance": a live Python↔Rust wire instrument and instrument-driven
   cinema (examples), renderer recovery from partial terminal writes (§9), the text-input
   glyph-boundary repair, and **seven additive C ABI functions (52 → 59; headless contexts,
@@ -99,12 +104,59 @@ that names a version says which one it has reached:
    release; README install instructions keep pointing at the latest *released* version.
 2. **Tagged and released on GitHub** — a `v<version>` tag (plus the Go module tag
    `bindings/go/v<version>`) names a `main` commit, and a GitHub prerelease attaches the
-   artifacts of §7. Install instructions move to this version.
+   artifacts of §7. Install instructions move to this version. (`main` is the default; the
+   maintenance-line exception below is the only other route.)
 3. **Published through registries** — crates.io, PyPI or the Go module proxy. No
    LibGibson version has reached this state.
 
 Each transition is a separate, explicitly approved step ([`RELEASING.md`](RELEASING.md)); a
 version bump alone never implies a tag, a release or a registry upload.
+
+**Maintenance-line exception — *Approved 2026-11-08* (owner decision
+[#287](https://github.com/femboy2112/libgibson/issues/287), conditional on the gates below; recorded in
+[decision 0001](decisions/0001-v0.6.0-release-line.md)).** A `v<version>` tag may name a qualified
+commit on a maintenance branch instead of a `main` commit, under **all** of these conditions:
+
+1. **Authorized branch, exact SHA.** The branch is named `release/v<x.y.z>-rc` or
+   `release/<x.y>`. It is protected by immutable exact-SHA qualification: what is qualified,
+   approved and tagged is one commit, never a branch name, and any further commit is a new
+   candidate that is qualified again from the start.
+2. **Declared baseline.** The release names its source-version baseline — the commit at which the
+   version was prepared in source (0.6.0: `9a899e1`), or, for a later patch on the line, the line's
+   previous release tag — and the candidate descends from it
+   (`git merge-base --is-ancestor <baseline> <candidate>`).
+3. **No imported development.** Against the baseline, the exported C ABI symbol set (the
+   committed `abi/` baseline and what the built library exports), the declarations of the public
+   headers (`include/`; a comment-only change, such as a disclosed limitation, is release
+   engineering), the MSRV (`rust-version`) and the frozen PCM golden (`src/audio/`,
+   `tests/audio_pocket_voice.rs`) are unchanged, and every later commit is a listed backport of a
+   fix (citing its `main` counterpart) or a release-engineering commit (version, changelog,
+   documentation, test or CI adaptation). `scripts/release/check-maintenance-candidate.sh` checks
+   these structurally, calibrated by `scripts/release/tests/test-maintenance-checker.sh`; it does
+   not judge whether a listed commit is a legitimate backport, which is the independent review's
+   job (condition 5).
+4. **Exact tree.** The version tag names the exact commit whose tree the §7 artifacts were built
+   from, and `bindings/go/v<x.y.z>` resolves to that same commit.
+5. **Owner approval per release.** Each maintenance-line release needs the owner's explicit
+   approval, naming the version and the baseline, of one exact candidate SHA that has passed every
+   gate of [`RELEASING.md`](RELEASING.md) §7, including an independent review of every backport,
+   before any tag or publication. The owner may give that approval in advance, conditional on those
+   gates (as for 0.6.0); a failed gate then voids it for that candidate. Approving this exception
+   approves no release.
+6. **`main` is never downgraded.** The release does not change `main`'s version. Merging the
+   maintenance branch back into `main` is optional and accepted separately: the merge keeps
+   `main`'s version strings, C ABI symbol set and green CI, and is a merge commit, so the tagged
+   commit becomes reachable from `main` without rewriting either line.
+7. **Reconstructible provenance.** The annotated tag records the baseline, the branch and the
+   qualification record; with git ancestry (baseline → tag) and the release records (CHANGELOG,
+   the milestone entry above, the decision record) the release's origin stays reconstructible
+   whether or not it is merged back.
+
+A maintenance version other than the baseline's own (e.g. a later `0.6.1`) is prepared in source on
+its authorized branch by a listed release-engineering commit; for that version state 1 means "on
+that branch". The exception permits a release; it does not widen the security support of §8.
+Procedure: [`RELEASING.md`](RELEASING.md) §7. Decision record:
+[`decisions/0001-v0.6.0-release-line.md`](decisions/0001-v0.6.0-release-line.md).
 
 The conceptual progression: `0.1.x` established the framebuffer / renderer / terminal
 substrate; `0.2.x` adds the semantic UI / design-system layer; `0.3.x` adds the

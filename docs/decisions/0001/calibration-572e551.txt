@@ -1,0 +1,804 @@
+# Raw output of scripts/release/tests/test-maintenance-checker.sh, 2026-11-08 (host paths normalized:
+# <rc-build> = a release build of 572e551 in its own target, <dev-build> = a 62-symbol library
+# built from the 0.7 development line on 2026-11-07, source SHA not recorded; identified by sha256).
+# Command: test-maintenance-checker.sh --baseline 9a899e1 --candidate 572e5519a07f837796838f07717aa6a7ac535232 \
+#   --allow-commits-file docs/decisions/0001/allow-commits-572e551.txt --so <rc-build> --foreign-so <dev-build> --dev-candidate a0a36d1
+# Exit status: 0
+calibration: baseline 9a899e1d35025894725c5b14aa8836349fc01825, candidate 572e5519a07f837796838f07717aa6a7ac535232, dev a0a36d170f3924b1be5c3740bc72b194c73bb3d6
+calibration: --so <rc-build> (sha256 cd09a28160d363a8f2082d463197ef0bb00ebb2b1ae7fb98261dc483ede476d6)
+calibration: --foreign-so <dev-build> (sha256 ae2e7edf5a07675f949803ba176c299bc8fcd9459506d1833c9e89f987261186)
+calibration: checker sha256 23d204724ad118eb955fe393720af109675e8641875c5f02a813876584c3ca08
+ok    P1 valid candidate (exit 0, 0 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 572e551
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  C ABI: the built library exports the baseline's 59 gibson_* symbols exactly (<rc-build>, sha256 cd09a28160d363a8f2082d463197ef0bb00ebb2b1ae7fb98261dc483ede476d6)
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 16 in 9a899e1..572e551:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      | PASS  commits: all 16 commits are in the allow-list docs/decisions/0001/allow-commits-572e551.txt, and it lists nothing else
+      | RESULT: PASS — 572e5519a07f meets the maintenance-line checks against baseline 9a899e1d3502
+ok    P2 comment-only header change (exit 0, 0 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 9274d6bbefaa3db13a33f42b0f086bc00ce07e54 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 9274d6b
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ declarations are identical to the baseline; only comments changed in include/gibson.h (review the text)
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..9274d6b:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         9274d6b calibration: comment-only header change
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.p2, and it lists nothing else
+      | RESULT: PASS — 9274d6bbefaa meets the maintenance-line checks against baseline 9a899e1d3502
+ok    N1 development candidate (exit 1, 7 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate a0a36d170f3924b1be5c3740bc72b194c73bb3d6 (Cargo.toml 0.7.0-dev)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate a0a36d1
+      | FAIL  version: candidate Cargo.toml = '0.7.0-dev', expected 0.6.0
+      | FAIL  version: candidate Cargo.lock libgibson = '0.7.0-dev', expected 0.6.0
+      | FAIL  version: candidate bindings/python/pyproject.toml = '0.7.0-dev', expected 0.6.0
+      | FAIL  C ABI: src/ at the candidate exports 62 gibson_* symbols, the baseline 59:
+      |         + gibson_poll_event_kind
+      |         + gibson_push_event
+      |         + gibson_push_event_kind
+      | FAIL  C ABI: abi/gibson-abi-v1.symbols lists 62 symbols at the candidate, 59 at the baseline:
+      |         + gibson_poll_event_kind
+      |         + gibson_push_event
+      |         + gibson_push_event_kind
+      | FAIL  C ABI: abi/ differs from the baseline:
+      |         abi/gibson-abi-v1.symbols | 3 +++
+      |         1 file changed, 3 insertions(+)
+      | FAIL  C ABI: include/ declarations differ from the baseline in: include/gibson.h
+      |         include/gibson.h | 49 ++++++++++++++++++++++++++++++++++++++++++++++++-
+      |         1 file changed, 48 insertions(+), 1 deletion(-)
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 124 in 9a899e1..a0a36d1:
+      |         e221599 feat(bench): v0.7 baseline + raster-ingest measurement with a correctness oracle (nodes A, B)
+      |         1ee9f90 chore: open the 0.7.0-dev development line; pin v0.6.0's source commit (9a899e1)
+      |         36ba1c7 perf(renderer): exact O(1) xterm-256 quantization (#260)
+      |         75d7395 docs(changelog): record the exact O(1) 256-colour quantizer (#260)
+      |         f43844e test(bench): oracle drives fit_box and parses every timed configuration (review of #262)
+      |         82236f4 test(bench): drop two needless borrows (clippy -D warnings)
+      |         63e1a9e Merge feat/v0.7-baseline-raster-bench (#262 review fixes) into the #260 branch
+      |         3aba40d fix(context): a headless Context takes no terminal input (#259)
+      |         5cb52c6 feat(input): held-key inference and bounded headless injection (v0.7 nodes C, D)
+      |         7e2804f feat(examples): DEEP SIGNAL - an original playable terminal raycaster (v0.7 node E)
+      |         51c01b3 docs(changelog): record #259 and the v0.7 node C/D library additions
+      |         d50bc66 docs(changelog): record DEEP SIGNAL (v0.7 node E)
+      |         f5d510b docs(hold): qualify module-doc links so rustdoc -D warnings resolves them
+      |         5784908 fix(examples): DEEP SIGNAL keeps wall-clock pace under a slow terminal (v0.7 node F)
+      |         fb9b6f5 Merge pull request #262 from femboy2112/feat/v0.7-baseline-raster-bench
+      |         71cad5b Merge main (#262 merged as fb9b6f5) into the #260 branch
+      |         3383363 Merge main (#262 merged as fb9b6f5) into the v0.7 input branch
+      |         9a8a840 Merge the updated v0.7 input branch into the DEEP SIGNAL branch
+      |         beab41a fix(hold): an observation at the last representable tic holds nothing (review of #265)
+      |         2690934 Merge the reviewed v0.7 input branch into the DEEP SIGNAL branch
+      |         d5ab2bc fix(examples): DEEP SIGNAL's HUD follows the real geometry on resize (v0.7 node G)
+      |         7888d4a Merge pull request #263 from femboy2112/perf/v0.7-nearest256-exact-o1-260
+      |         291ddbb test(context): drop a wall-clock assertion that could flake (re-review of #265)
+      |         fb7250d Merge main (#263 merged as 7888d4a) into the v0.7 input branch
+      |         4b52a47 Merge the reviewed v0.7 input branch (with main through #263) into DEEP SIGNAL
+      |         f64815b fix(examples): DEEP SIGNAL review fixes - winnable sectors, replayable traces, Ctrl-C (#266)
+      |         a172723 Merge pull request #265 from femboy2112/feat/v0.7-input-hold-injection
+      |         ef02492 Merge main (#265 merged as a172723) into DEEP SIGNAL
+      |         33baff2 fix(examples): verify DEEP SIGNAL's chord claim; refuse unordered traces (re-review nits)
+      |         771534b docs(v0.7): progress ledger in the execution graph
+      |         89261ba docs(v0.7): correct three ledger figures (fact-check of #270)
+      |         af1498c Merge pull request #266 from femboy2112/feat/v0.7-deep-signal
+      |         2b510d0 Merge remote-tracking branch 'origin/main' into docs/v0.7-graph-progress
+      |         260175a docs(v0.7): ledger records #266 merged; H states what is tested
+      |         d8a47c3 Merge pull request #270 from femboy2112/docs/v0.7-graph-progress
+      |         959f4a3 feat(examples): DEEP SIGNAL restores the terminal on every ending (v0.7 node H)
+      |         d83cdc8 Merge remote-tracking branch 'origin/main' into feat/v0.7-lifecycle
+      |         a228274 docs(v0.7): ledger node H row for #271, with the #269 limit
+      |         dbb4297 feat(examples): DEEP SIGNAL releases held keys on a real focus loss
+      |         fbe22e4 fix(examples): a caught stop signal always ends DEEP SIGNAL (review of #271)
+      |         f57d889 Merge remote-tracking branch 'origin/feat/v0.7-lifecycle' into feat/v0.7-deep-signal-focus
+      |         16d09d5 fix(examples): watchdog ordering, cooked-mode fallback (re-review of #271)
+      |         89a603a feat(ffi): gibson_push_event — injected input for a headless context (v0.7 node C)
+      |         b7f56b1 docs(v0.7): ledger node C row for #273
+      |         330ef11 fix(examples): restore the terminal crossterm uses; startup errors keep a signal's cause (#271 pass 3)
+      |         c703641 test(examples): a /proc access failure fails the stall test at once (#271 pass 4)
+      |         bd3901f fix(ffi): read only the fields a pushed event uses; pin the consumer's frames (review of #273)
+      |         9bb90b3 Merge remote-tracking branch 'origin/feat/v0.7-lifecycle' into feat/v0.7-deep-signal-focus
+      |         f2a8b70 fix(ffi): INLINE resize height is between 1 and max(rows - 1, 1) (re-review of #273)
+      |         67c43bd Merge pull request #273 from femboy2112/feat/v0.7-c-push-event
+      |         148b006 Merge remote-tracking branch 'origin/main' into feat/v0.7-lifecycle
+      |         82aaae7 Merge pull request #271 from femboy2112/feat/v0.7-lifecycle
+      |         e034a73 Merge remote-tracking branch 'origin/main' into feat/v0.7-deep-signal-focus
+      |         70c8a02 test(examples): the focus discriminator checks its own precondition (review of #276)
+      |         355eb5c test(pty): collect_until fails when its predicate never held (#272)
+      |         dc64f60 test(examples): check focus-reporting enable/disable on every session (#276 re-review)
+      |         d5095a0 test(pty): marker-then-exit and timeout-tail controls for strict collect_until (#277 review)
+      |         72845b3 Merge pull request #276 from femboy2112/feat/v0.7-deep-signal-focus
+      |         259217b Merge remote-tracking branch 'origin/main' into fix/test-infra-collect-until-272
+      |         713d519 feat(bindings): installed consumer drives a C-side raster through the ABI (v0.7 node I)
+      |         77c96ab fix(bindings): node I checks every frame's injected key; cleanup and clock checks (review of #278)
+      |         9a83dfd fix(bindings): node I reads the end time only after a successful clock call (#278 re-review)
+      |         e6c79c3 docs(v0.7): node I timing as the observed range, not one run
+      |         ff75600 Merge pull request #277 from femboy2112/fix/test-infra-collect-until-272
+      |         c0a2bcd Merge remote-tracking branch 'origin/main' into feat/v0.7-node-i-c-raster
+      |         b43bf57 test(context): the resize contract a raster consumer relies on (v0.7 node G, library level)
+      |         abd06f3 test(context): tighten the resize contract test (review of #279)
+      |         667cef5 Merge pull request #278 from femboy2112/feat/v0.7-node-i-c-raster
+      |         21eda0a Merge remote-tracking branch 'origin/main' into test/v0.7-resize-contract
+      |         914008d docs(v0.7): ledger records #278 merged; node G row shows #279 in review
+      |         47a216a Merge pull request #279 from femboy2112/test/v0.7-resize-contract
+      |         eb8aa4b docs(v0.7): ledger as of 2026-11-06 — D and G merged; #269 root-caused
+      |         082d324 Merge pull request #280 from femboy2112/docs/v0.7-ledger-2026-11-06
+      |         f57e441 fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         de4f864 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         4b7e140 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         95f55a1 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         27ace9e feat(ffi): gibson_poll_event_kind / gibson_push_event_kind tell typed U+1001-U+100D from GIBSON_KEY_* (#274)
+      |         a5e7765 fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0472dff fix(ffi): #274 review fixes: panic-guarded NULL path, poisoned-output parity, lockstep PTY test
+      |         6a0b491 test(ffi): name the polled-output tuple (clippy type_complexity)
+      |         8bf1b48 feat(examples): DEEP SIGNAL's hold grace from key timelines measured in a real terminal (#275)
+      |         1a9c0f5 Merge pull request #281 from femboy2112/fix/264-idle-run-once
+      |         881d3fb fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         ccc35fe Merge remote-tracking branch 'origin/main' into fix/269-owned-tty-source
+      |         b6b8cfa Merge remote-tracking branch 'origin/main' into feat/274-key-kind-abi
+      |         b05de9b Merge remote-tracking branch 'origin/main' into feat/275-measured-hold-grace
+      |         da2be76 Merge pull request #283 from femboy2112/feat/274-key-kind-abi
+      |         a4ea422 Merge remote-tracking branch 'origin/main' into feat/275-measured-hold-grace
+      |         d526d7c Merge pull request #284 from femboy2112/feat/275-measured-hold-grace
+      |         1b0d59a fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         00e347b Merge remote-tracking branch 'origin/main' into fix/269-owned-tty-source
+      |         83bce27 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         04c0ad2 Merge pull request #282 from femboy2112/fix/269-owned-tty-source
+      |         002db69 docs(v0.7): RXVIII ledger: #264, #269 (#15), #274 and #275 merged; v0.6.0 RC qualified and held; node J design note
+      |         8db8426 Merge remote-tracking branch 'origin/main' into docs/v0.7-ledger-rxviii
+      |         5790f1a Merge pull request #286 from femboy2112/docs/v0.7-ledger-rxviii
+      |         3906c63 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285)
+      |         86e56d5 docs(v0.7): RXIX status reconciliation: #15 owned-path scope, #274 addressed, #275 compromise, node H SIGHUP, v0.6.0 HOLD
+      |         7cbaebb fix(input): bound drops past the deadline; keep Windows Alt-codes; schedule-proof #285 tests (review)
+      |         5f6a79d fix(input): state the Windows release premise truthfully (#292); test that drops keep the deadline
+      |         9bbd7d9 feat(parity): v0.8 first parity slice: one script, five installed-interface consumers
+      |         3c92a26 docs(v0.8): V08_PARITY_SLICE.md: matrix, findings, required additions, not claimed
+      |         0b516af docs(input): Windows key-kind decoding is unchanged; continued polling applies there too (#289 review)
+      |         a73e246 fix(parity): refuse fewer than 500 repetitions, where the resource gate loses its sensitivity
+      |         fd86454 feat(v0.7 node J): generic software-framebuffer adapter over the installed SDK
+      |         0aeafc3 docs(v0.7 node J): fb_adapter contract, measured numbers, findings and boundary
+      |         f365239 Merge pull request #289 from femboy2112/fix/285-key-release-not-press
+      |         0e8756e fix(parity): require complete transcripts, pin known gaps, bound C glyph readback (#295 review)
+      |         341bb31 Merge origin/main (#289 merged as f365239) into the v0.8 parity slice
+      |         df866db Merge origin/main (#289 merged as f365239) into the RXIX docs reconciliation
+      |         b79bfeb Merge origin/main (#289 merged as f365239) into the v0.7 node J adapter slice
+      |         ccbac09 Merge pull request #295 from femboy2112/feat/v0.8-parity-first-slice
+      |         8724d61 Merge origin/main (#295 merged as ccbac09) into the RXIX docs reconciliation
+      |         ca6f620 docs(v0.7): RXIX final statuses: #285 fixed (#289), RC 572e551 requalified, parity slice merged, node J in review
+      |         09d36a3 docs(v0.7): fact-check fixes: #285 status, #15 scope (crossterm's Unix reader), RC record link, baseline (#300 review)
+      |         c3804b4 fix(v0.7 node J): review findings on the fb_adapter evidence (#299)
+      |         6e14f00 docs(v0.7 node J): README states the P7 gate exactly and matches the evidence (#299 review)
+      |         74a8d1a fix(v0.7 node J): gate the real-clock 35 Hz run at the common sizes; report 320x100 (#299 review)
+      |         0de3deb Merge pull request #300 from femboy2112/docs/v0.7-graph-rxix
+      |         c8ea0d8 fix(v0.7 node J): atomic signal generation; no write to a closed trace on reopen; scope a control claim (#299 re-review)
+      |         0f71ec6 Merge origin/main (#300 merged as 0de3deb) into the v0.7 node J adapter slice
+      |         102ece1 docs(v0.7): node J's in-repo adapter is merged by this PR (#299); 23 controls; real-clock gate scope
+      |         a0a36d1 Merge pull request #299 from femboy2112/feat/v0.7-node-j-framebuffer-adapter
+      | INFO  commits: not checked against a qualification record (pass --allow-commits-file; required to qualify a candidate)
+      | RESULT: FAIL — 7 violation(s); a0a36d170f39 is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N2 changed ABI symbol baseline (exit 1, 2 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 93ec4f9b8ef32114e5158767f78caeede18d14e4 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 93ec4f9
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | FAIL  C ABI: abi/gibson-abi-v1.symbols lists 60 symbols at the candidate, 59 at the baseline:
+      |         + gibson_calibration_extra
+      | FAIL  C ABI: abi/ differs from the baseline:
+      |         abi/gibson-abi-v1.symbols | 1 +
+      |         1 file changed, 1 insertion(+)
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..93ec4f9:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         93ec4f9 calibration: abi baseline change
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n2, and it lists nothing else
+      | RESULT: FAIL — 2 violation(s); 93ec4f9b8ef3 is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N3 not descended from the baseline (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 66da81e7116a6e3ca6bdcd38c294bd99c2a11635 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | FAIL  ancestry: baseline 9a899e1 is NOT an ancestor of candidate 66da81e (merge-base: 7f57047)
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 1 in 9a899e1..66da81e:
+      |         66da81e calibration: the candidate tree, not descended from the baseline
+      | INFO  commits: not checked against a qualification record (pass --allow-commits-file; required to qualify a candidate)
+      | RESULT: FAIL — 1 violation(s); 66da81e7116a is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N4a allow-list missing a commit (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 572e551
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 16 in 9a899e1..572e551:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      | FAIL  commits: 572e551 is not in the allow-list (Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285)
+      | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N4b allow-list with an extra commit (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 572e551
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 16 in 9a899e1..572e551:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      | FAIL  commits: allow-list entry a0a36d1 is not in 9a899e1..572e551
+      | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N4c allow-list with a bad class (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 572e551
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 16 in 9a899e1..572e551:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      | FAIL  commits: allow-list entry 9d8df7c has class 'feature' (expected backport or release-engineering)
+      | PASS  commits: all 16 commits are in the allow-list <tmp>/allow.class, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N5a built library from another tree (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 572e551
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | FAIL  C ABI: the built library exports 62 gibson_* symbols, the baseline 59 (<dev-build>, sha256 ae2e7edf5a07675f949803ba176c299bc8fcd9459506d1833c9e89f987261186):
+      |         + gibson_poll_event_kind
+      |         + gibson_push_event
+      |         + gibson_push_event_kind
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 16 in 9a899e1..572e551:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      | PASS  commits: all 16 commits are in the allow-list docs/decisions/0001/allow-commits-572e551.txt, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N5b Cargo.toml version mismatch (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 8280838a9a43e5d604eec8c5fe7f7095e25a9f3e (Cargo.toml 0.6.1)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 8280838
+      | FAIL  version: candidate Cargo.toml = '0.6.1', expected 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..8280838:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         8280838 calibration: manifest version mismatch
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n5, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); 8280838a9a43 is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N5c release version mismatch (exit 1, 3 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.1
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 572e551
+      | FAIL  version: candidate Cargo.toml = '0.6.0', expected 0.6.1
+      | FAIL  version: candidate Cargo.lock libgibson = '0.6.0', expected 0.6.1
+      | FAIL  version: candidate bindings/python/pyproject.toml = '0.6.0', expected 0.6.1
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.1-rc
+      | INFO  tag: v0.6.1 does not exist locally
+      | INFO  tag: bindings/go/v0.6.1 does not exist locally
+      | INFO  commits: 16 in 9a899e1..572e551:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      | PASS  commits: all 16 commits are in the allow-list docs/decisions/0001/allow-commits-572e551.txt, and it lists nothing else
+      | RESULT: FAIL — 3 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N6a v0.6.0 tag on another commit (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 572e551
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | FAIL  tag: v0.6.0 exists and peels to 9a899e1d3502, not the candidate
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 16 in 9a899e1..572e551:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      | PASS  commits: all 16 commits are in the allow-list docs/decisions/0001/allow-commits-572e551.txt, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N6b bindings/go/v0.6.0 tag on another commit (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 572e551
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | FAIL  tag: bindings/go/v0.6.0 exists and peels to 9a899e1d3502, not the candidate
+      | INFO  commits: 16 in 9a899e1..572e551:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      | PASS  commits: all 16 commits are in the allow-list docs/decisions/0001/allow-commits-572e551.txt, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    P3 both tags on the candidate (exit 0, 0 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 572e551
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  C ABI: the built library exports the baseline's 59 gibson_* symbols exactly (<rc-build>, sha256 cd09a28160d363a8f2082d463197ef0bb00ebb2b1ae7fb98261dc483ede476d6)
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | PASS  tag: v0.6.0 peels to the candidate
+      | PASS  tag: bindings/go/v0.6.0 peels to the candidate
+      | INFO  commits: 16 in 9a899e1..572e551:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      | PASS  commits: all 16 commits are in the allow-list docs/decisions/0001/allow-commits-572e551.txt, and it lists nothing else
+      | RESULT: PASS — 572e5519a07f meets the maintenance-line checks against baseline 9a899e1d3502
+ok    N7 header declaration change (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 7a954131ae39bd63e0a39e190901015b448ccf04 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 7a95413
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | FAIL  C ABI: include/ declarations differ from the baseline in: include/gibson.h
+      |         include/gibson.h | 4 ++--
+      |         1 file changed, 2 insertions(+), 2 deletions(-)
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..7a95413:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         7a95413 calibration: header declaration change
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n7, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); 7a954131ae39 is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N8 MSRV change (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate d467af5513a41f7ca6dffd883fc4571432e20acf (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate d467af5
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | FAIL  MSRV: rust-version '1.85' at the baseline, '1.86' at the candidate
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..d467af5:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         d467af5 calibration: MSRV change
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n8, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); d467af5513a4 is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N9 frozen PCM producer change (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 806cdc29648f5e5bdd98e8bf023d0d99124e9bbf (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 806cdc2
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | FAIL  PCM golden: the producer or the frozen golden changed since the baseline:
+      |         src/audio/buffer.rs | 1 +
+      |         1 file changed, 1 insertion(+)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..806cdc2:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         806cdc2 calibration: PCM producer change
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n9, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); 806cdc29648f is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N10 a new gibson_* export in src/ (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 3472c63d3ed434bcfca6a14c07b37c02e934289d (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 3472c63
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | FAIL  C ABI: src/ at the candidate exports 60 gibson_* symbols, the baseline 59:
+      |         + gibson_calibration_extra
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | PASS  branch: candidate is on release/v0.6.0-rc
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 17 in 9a899e1..3472c63:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      |         3472c63 calibration: new export
+      | PASS  commits: all 17 commits are in the allow-list <tmp>/allow.n10, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); 3472c63d3ed4 is not a valid maintenance candidate for baseline 9a899e1d3502
+ok    N11 candidate on no authorized branch (exit 1, 1 FAIL line(s))
+      | check-maintenance-candidate: baseline  9a899e1d35025894725c5b14aa8836349fc01825 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: candidate 572e5519a07f837796838f07717aa6a7ac535232 (Cargo.toml 0.6.0)
+      | check-maintenance-candidate: release version 0.6.0
+      | PASS  ancestry: baseline 9a899e1 is an ancestor of candidate 572e551
+      | PASS  version: candidate Cargo.toml = 0.6.0
+      | PASS  version: candidate Cargo.lock libgibson = 0.6.0
+      | PASS  version: candidate bindings/python/pyproject.toml = 0.6.0
+      | PASS  C ABI: src/ at the candidate exports the baseline's 59 gibson_* symbols exactly (extractor calibrated at the baseline: 59 = 59)
+      | PASS  C ABI: abi/ is byte-identical to the baseline
+      | PASS  C ABI: include/ is byte-identical to the baseline
+      | PASS  MSRV: rust-version 1.85, unchanged
+      | PASS  PCM golden: src/audio tests/audio_pocket_voice.rs unchanged (frozen fingerprint 0xe6027cf399d5cc71)
+      | FAIL  branch: no local or remote-tracking ref named release/v0.6.0-rc or release/0.6 contains the candidate
+      | INFO  tag: v0.6.0 does not exist locally
+      | INFO  tag: bindings/go/v0.6.0 does not exist locally
+      | INFO  commits: 16 in 9a899e1..572e551:
+      |         9d8df7c fix(scheduler): run_once waits for the frame that is needed, not the one that is permitted (#264)
+      |         3e8a103 fix(scheduler): tighten #264 tests and run_once docs after independent review
+      |         3abbaf8 test(scheduler): measure the pending-frame bound from before the first render (#281 re-review)
+      |         f76abc4 test(release-0.6): run #264's off-TTY cases through a non-terminal stdout, not a headless context
+      |         dd9fb97 fix(input): read the Unix terminal with a library-owned source; a hangup can no longer spin a poll (#269, #15)
+      |         8d2274d fix(input): own-source review fixes — crossterm's fd choice, non-blocking reads, sticky hangup, bounded waits (#269)
+      |         0873374 fix(input): own-source re-review fixes: TIOCGDEV identity, identity latched at acquisition, non-blocking reset, recoverable EIO (#269)
+      |         b3d65d7 docs(release-0.6): record the release candidate's backported fixes and its known limitations
+      |         38287b1 fix(input): own-source round-3 fixes: single-atomic identity latch, sampled before raw mode, inode-proven reopen (#269)
+      |         1b90b48 fix(input): a failed acquisition undoes only its own latch; test the /dev/tty alias guard (#269 round 4)
+      |         74a1ede fix(context): a headless context never reads the process terminal (#259, 0.6 backport)
+      |         c4233ba test(context): make the #259 PTY and idle checks schedule-proof; scope the CHANGELOG claim (review)
+      |         ef35650 test(context): count post-sync polls, time idle calls singly, always unlink the sync file (#288 re-review)
+      |         e6b9c42 Merge pull request #288 from femboy2112/fix/v0.6-rc-headless-input-259
+      |         31d6ec2 fix(input): a key release is not a key press; a dropped event no longer ends a poll early (#285, 0.6 backport)
+      |         572e551 Merge pull request #294 from femboy2112/fix/v0.6-rc-key-release-285
+      | PASS  commits: all 16 commits are in the allow-list docs/decisions/0001/allow-commits-572e551.txt, and it lists nothing else
+      | RESULT: FAIL — 1 violation(s); 572e5519a07f is not a valid maintenance candidate for baseline 9a899e1d3502
+
+CALIBRATION: PASS — every case met its expected verdict for its intended reason
