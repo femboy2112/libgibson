@@ -292,10 +292,27 @@ dimensions the script does not exercise are listed under [Not claimed](#not-clai
     are unexported, so a wrapper `Node` cannot be mounted on a context created by other cgo code.
     `Line.AddSpan` takes a `*C.gibson_style_t`, a cgo type no other package can construct.
   - All three bindings ignore or flatten the C status of node constructors.
-* **F6 (Go binding, source read, NOT observed).** `bindings/go/gibson/gibson.go:88-91` reads the
-  thread-local `gibson_last_error_message` in a separate cgo call without `runtime.LockOSThread`,
-  so the message can come from another OS thread. The Go consumer pins its thread; the wrapper path
-  was not exercised (it needs a TTY context).
+* **F6 (Go binding, REPRODUCED on gccgo, fixed).** `NewContext` read the thread-local
+  `gibson_last_error_message` in a second cgo call after `gibson_create_context` failed, so the
+  message could come from another OS thread. Observed with `TestNewContextErrorIsFromItsOwnCall`
+  (`bindings/go/gibson/last_error_test.go`). Each of 64 goroutines calls `NewContext` with its own
+  invalid mode (100+i), which fails before touching a terminal with its own text, 2000 times
+  (128,000 calls per run, GOMAXPROCS 8), while 4 unlocked polluter goroutines write a third text
+  into whichever thread they run on.
+  * Old wrapper (`c23bd72`), 12 runs of one compiled binary: **12 of 12 runs failed**, **4,601 of
+    1,536,000 calls** returned a foreign message (another goroutine's mode, or the polluters' text).
+  * Fixed wrapper, same 12 runs: **0 of 1,536,000**.
+  * A first version of the test (one shared mode, polluters locked to their own threads) could only
+    see an empty message. It caught 24 of 3,840,000 (15 of 30 runs; an independent re-run 14 of
+    1,536,000, 8 of 12 runs), all empty. Review (Codex) noted that design could not see foreign
+    text; the current test can.
+  * Toolchain: local gccgo 1.18 only. gc (CI's `setup-go stable`) was **not** run locally, so its
+    failure rate is UNVERIFIED; the test still passes or fails on gc by the same rule.
+  * Detection is probabilistic: the broken wrapper is caught only when the scheduler moves a
+    goroutine between the two calls; the fixed wrapper cannot fail this way.
+  * Fix: create and read the error in one C helper in the cgo preamble, so both run in one cgo call
+    on one thread. It was the only `gibson_last_error_message` call site in the Go binding; the
+    exported API is unchanged.
 * **F7 (header, source read).** `gibson.h` does not state that `gibson_destroy_context(NULL)` /
   `gibson_node_free(NULL)` are no-ops. The implementation null-checks (`src/ffi.rs:583`, `:1623`),
   which is what l02 relies on.
@@ -359,5 +376,5 @@ bypassing the binding:**
   one recorded run set.
 * **Resources.** Peak RSS is a high-water mark, so it cannot show memory being freed. The gate detects leaks
   of about 16 KB per rep or more at N=500, not smaller. Wall times are not benchmarks.
-* **Labels are as of `5790f1a`.** F6 and F7 are source reads, not observed failures.
+* **Labels are as of `5790f1a`.** F7 is a source read, not an observed failure; F6 was observed (see its entry).
 * **No claim** that the C ABI needs no additions beyond what this script exercises.
