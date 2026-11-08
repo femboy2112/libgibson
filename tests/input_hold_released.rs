@@ -174,6 +174,28 @@ fn when_reporting_stops_every_hold_falls_back_to_a_deadline() {
 }
 
 #[test]
+fn when_reporting_stops_an_inferred_deadline_is_kept() {
+    // #275 review: an inferred press, reporting turned on without the key observed again, then
+    // off: the hold keeps its own deadline (it never waited for a release).
+    let mut h = HoldTracker::new(CFG);
+    h.observe(0, 'w').unwrap();
+    h.advance(10).unwrap();
+    h.set_releases_reported(true);
+    h.advance(12).unwrap();
+    h.set_releases_reported(false);
+    assert_eq!(h.hold('w').unwrap().ends_at, 18);
+    // Even when that deadline is later than a fresh grace would be (a repeat timeout longer than
+    // the grace): only a hold waiting for a release is given a new deadline.
+    let mut h = HoldTracker::new(HoldConfig::new(3, 20));
+    h.observe(0, 'w').unwrap();
+    h.observe(1, 'w').unwrap(); // ends 21
+    h.set_releases_reported(true);
+    h.advance(3).unwrap();
+    h.set_releases_reported(false);
+    assert_eq!(h.hold('w').unwrap().ends_at, 21);
+}
+
+#[test]
 fn a_focus_loss_still_ends_every_hold() {
     let mut h = reported();
     h.observe(1, 'w').unwrap();
@@ -332,14 +354,10 @@ fn ended_records_do_not_depend_on_how_often_the_caller_advances() {
         }
         a.extend(sparse.advance(end).unwrap());
         let (_, b) = run_tracker(&tr, end, 1);
-        let key = |e: &EndedHold<char>| (e.ended_at, e.key, e.hold.started, format!("{:?}", e.end));
-        let mut a: Vec<_> = a.iter().map(key).collect();
-        let mut b: Vec<_> = b.iter().map(key).collect();
-        a.sort();
-        b.sort();
+        // Every field, in the order returned (#275 review: no sorting, nothing left out).
         assert_eq!(a, b, "seed {seed}");
         assert!(
-            a.iter().all(|r| r.3 == format!("{KEY_RELEASED:?}")),
+            a.iter().all(|r| r.end == KEY_RELEASED),
             "seed {seed}: only releases end holds"
         );
     }

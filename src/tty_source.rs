@@ -88,6 +88,8 @@ pub(crate) struct TtySource {
     pending: VecDeque<SourceEvent>,
     /// Keys currently down, as their presses were decoded (#275): see [`PressedKeys`].
     pressed: PressedKeys,
+    /// The key-release epoch `pressed` was recorded under; a new epoch clears it.
+    pressed_epoch: u64,
     /// Read end of the `SIGWINCH` self-pipe (non-blocking), if resizes are watched.
     winch: Option<UnixStream>,
     size: SizeFn,
@@ -101,6 +103,9 @@ pub(crate) struct TtySource {
     /// Tests: name keys as while key releases are delivered, without the process-global switch.
     #[cfg(test)]
     track_keys: bool,
+    /// Tests: an epoch to use instead of the process-global one.
+    #[cfg(test)]
+    test_epoch: Option<u64>,
 }
 
 impl Drop for TtySource {
@@ -138,6 +143,7 @@ impl TtySource {
             parser: Parser::default(),
             pending: VecDeque::new(),
             pressed: PressedKeys::default(),
+            pressed_epoch: crate::input::key_release_epoch(),
             winch,
             size,
             dropped_partial_bytes: 0,
@@ -145,6 +151,8 @@ impl TtySource {
             winch_id: None,
             #[cfg(test)]
             track_keys: false,
+            #[cfg(test)]
+            test_epoch: None,
         })
     }
 
@@ -321,12 +329,20 @@ impl TtySource {
 
     /// Moves every event the parser completed into the hand-out queue.
     fn decode(&mut self) {
+        let delivered = crate::input::key_releases_delivered();
         #[cfg(test)]
-        let track = self.track_keys || crate::input::key_releases_delivered();
+        let (track, epoch) = (
+            self.track_keys || delivered,
+            self.test_epoch
+                .unwrap_or_else(crate::input::key_release_epoch),
+        );
         #[cfg(not(test))]
-        let track = crate::input::key_releases_delivered();
-        if !track {
+        let (track, epoch) = (delivered, crate::input::key_release_epoch());
+        // Reporting was turned off or on since the last decode: nothing recorded under the old
+        // setting may name a key now (#275 review).
+        if !track || epoch != self.pressed_epoch {
             self.pressed.clear();
+            self.pressed_epoch = epoch;
         }
         for internal in self.parser.by_ref() {
             let event = match internal {
@@ -340,7 +356,7 @@ impl TtySource {
                 InternalEvent::KittyKey(k, _) => CtEvent::Key(k),
                 // The answers to a key-release reporting request (#275): see `KEYBOARD_QUERIES`.
                 InternalEvent::KeyboardEnhancementFlags(flags) => {
-                    if let Some(r) = lock_queries().flags_reply(flags) {
+                    if let Some(r) = lock_queries().flags_reply(flags, delivered) {
                         self.pending.push_back(SourceEvent::KeyReleaseReporting(r));
                     }
                     continue;
@@ -560,17 +576,24 @@ impl PressedKeys {
         self.0.clear();
     }
 
-    /// `k` as the event to deliver: a press is recorded (replacing an earlier record of the key);
-    /// a repeat or release of a recorded key takes the recorded press's code and modifiers, and a
-    /// release forgets it. A key with no record (already down when reporting began) is
+    /// `k` as the event to deliver: a press is recorded (replacing an earlier record of the same
+    /// key); a repeat or release of a recorded key takes the recorded press's code and modifiers,
+    /// and a release forgets it. A key with no record (already down when reporting began) is
     /// delivered as decoded.
+    ///
+    /// A press is matched by its own identity only. A repeat or release with no record under its
+    /// identity falls back to a legacy record under its decoded code: a `w` typed before the
+    /// flags were pushed, released as kitty's `CSI 119;1:3u`. A kitty key never takes over a
+    /// record of another key that decodes to the same code (keypad Left and the arrow Left).
     fn name(&mut self, id: KeyId, k: CtKeyEvent) -> CtKeyEvent {
-        let fallback = KeyId::Code(k.code);
-        let found = self
-            .0
-            .iter()
-            .position(|(i, _)| *i == id)
-            .or_else(|| self.0.iter().position(|(i, _)| *i == fallback));
+        let exact = self.0.iter().position(|(i, _)| *i == id);
+        let found = match k.kind {
+            KeyEventKind::Press => exact,
+            _ => exact.or_else(|| {
+                let legacy = KeyId::Code(k.code);
+                self.0.iter().position(|(i, _)| *i == legacy)
+            }),
+        };
         match (k.kind, found) {
             (KeyEventKind::Press, Some(i)) => {
                 self.0[i] = (id, k);
@@ -601,27 +624,41 @@ impl PressedKeys {
 /// last; only a kitty-protocol terminal answers the second, and it answers first. So per request:
 /// a flags reply with event types => `Active`; one without => `Unsupported`; the attributes reply
 /// with no flags reply before it => `Unsupported`.
+///
+/// A device attributes reply cannot be told from one to somebody else's earlier query, and a
+/// stray one arriving first reads as `Unsupported`. A flags reply, though, states the flags in
+/// force on the terminal, whoever asked: while reporting is enabled, one that changes the answer
+/// is reported too, so the stray `Unsupported` is followed by `Active` when kitty's reply arrives
+/// (#275 review). The latest answer is the one in force.
 #[derive(Debug, Default)]
 struct KeyboardQueries {
     /// Requests whose device attributes reply has not arrived.
     outstanding: u32,
     /// Whether the oldest outstanding request already got its flags reply.
     answered: bool,
+    /// The last answer reported, so a repeated flags reply adds nothing.
+    last: Option<KeyReleaseReporting>,
 }
 
 impl KeyboardQueries {
-    fn flags_reply(&mut self, flags: KeyboardEnhancementFlags) -> Option<KeyReleaseReporting> {
-        if self.outstanding == 0 || self.answered {
+    /// A flags reply; `enabled`: key-release reporting is on.
+    fn flags_reply(
+        &mut self,
+        flags: KeyboardEnhancementFlags,
+        enabled: bool,
+    ) -> Option<KeyReleaseReporting> {
+        let r = if flags.contains(KeyboardEnhancementFlags::REPORT_EVENT_TYPES) {
+            KeyReleaseReporting::Active
+        } else {
+            KeyReleaseReporting::Unsupported
+        };
+        if self.outstanding > 0 && !self.answered {
+            self.answered = true;
+        } else if !(enabled && self.last != Some(r)) {
             return None;
         }
-        self.answered = true;
-        Some(
-            if flags.contains(KeyboardEnhancementFlags::REPORT_EVENT_TYPES) {
-                KeyReleaseReporting::Active
-            } else {
-                KeyReleaseReporting::Unsupported
-            },
-        )
+        self.last = Some(r);
+        Some(r)
     }
 
     fn device_attributes_reply(&mut self) -> Option<KeyReleaseReporting> {
@@ -632,6 +669,7 @@ impl KeyboardQueries {
         if std::mem::take(&mut self.answered) {
             None
         } else {
+            self.last = Some(KeyReleaseReporting::Unsupported);
             Some(KeyReleaseReporting::Unsupported)
         }
     }
@@ -640,6 +678,7 @@ impl KeyboardQueries {
 static KEYBOARD_QUERIES: Mutex<KeyboardQueries> = Mutex::new(KeyboardQueries {
     outstanding: 0,
     answered: false,
+    last: None,
 });
 
 fn lock_queries() -> std::sync::MutexGuard<'static, KeyboardQueries> {
@@ -1648,11 +1687,14 @@ mod tests {
             | F::REPORT_ALL_KEYS_AS_ESCAPE_CODES;
         let mut q = KeyboardQueries::default();
         // Unsolicited replies (no request written) are ignored.
-        assert_eq!(q.flags_reply(active), None);
+        assert_eq!(q.flags_reply(active, false), None);
         assert_eq!(q.device_attributes_reply(), None);
         // kitty: flags reply, then device attributes.
         q.outstanding += 1;
-        assert_eq!(q.flags_reply(active), Some(KeyReleaseReporting::Active));
+        assert_eq!(
+            q.flags_reply(active, false),
+            Some(KeyReleaseReporting::Active)
+        );
         assert_eq!(q.device_attributes_reply(), None);
         // A terminal that only answers device attributes.
         q.outstanding += 1;
@@ -1663,16 +1705,22 @@ mod tests {
         // A flags reply without event types (the push was not honoured).
         q.outstanding += 1;
         assert_eq!(
-            q.flags_reply(F::empty()),
+            q.flags_reply(F::empty(), false),
             Some(KeyReleaseReporting::Unsupported)
         );
         assert_eq!(q.device_attributes_reply(), None);
         // Two requests in flight (an alternate-screen move re-asks): answered one by one.
         q.outstanding += 2;
-        assert_eq!(q.flags_reply(active), Some(KeyReleaseReporting::Active));
-        assert_eq!(q.flags_reply(active), None, "one answer per request");
+        assert_eq!(
+            q.flags_reply(active, false),
+            Some(KeyReleaseReporting::Active)
+        );
+        assert_eq!(q.flags_reply(active, false), None, "one answer per request");
         assert_eq!(q.device_attributes_reply(), None);
-        assert_eq!(q.flags_reply(active), Some(KeyReleaseReporting::Active));
+        assert_eq!(
+            q.flags_reply(active, false),
+            Some(KeyReleaseReporting::Active)
+        );
         assert_eq!(q.device_attributes_reply(), None);
         assert_eq!(q.outstanding, 0);
         assert_eq!(q.device_attributes_reply(), None);
@@ -1693,6 +1741,93 @@ mod tests {
                 SourceEvent::Terminal(key('b')),
                 // A second, unsolicited pair of replies produces nothing, and no keystrokes.
             ],
+        );
+    }
+
+    #[test]
+    fn kitty_272_a_stray_device_attributes_reply_is_corrected_by_the_flags_reply() {
+        // #275 review: somebody else's earlier `CSI c` is answered after the request was written.
+        let active = F::DISAMBIGUATE_ESCAPE_CODES
+            | F::REPORT_EVENT_TYPES
+            | F::REPORT_ALTERNATE_KEYS
+            | F::REPORT_ALL_KEYS_AS_ESCAPE_CODES;
+        let mut q = KeyboardQueries::default();
+        q.outstanding += 1;
+        // stray DA1, then kitty's own flags reply and DA1
+        assert_eq!(
+            q.device_attributes_reply(),
+            Some(KeyReleaseReporting::Unsupported)
+        );
+        assert_eq!(
+            q.flags_reply(active, true),
+            Some(KeyReleaseReporting::Active)
+        );
+        assert_eq!(q.device_attributes_reply(), None);
+        // A repeated flags reply adds nothing; with reporting off, nothing at all.
+        assert_eq!(q.flags_reply(active, true), None);
+        let mut off = KeyboardQueries::default();
+        assert_eq!(off.flags_reply(active, false), None);
+    }
+
+    #[test]
+    fn kitty_272_a_keypad_key_never_takes_over_the_arrow_with_the_same_code() {
+        // #275 review: shift+Left down, then keypad Left with ctrl (kitty 57417), then the arrow
+        // released after the modifiers: its release keeps the shift+Left name.
+        let got = terminal(decode_all(
+            b"\x1b[1;2D\x1b[57417;5u\x1b[1;1:3D\x1b[57417;1:3u",
+            true,
+        ));
+        let names: Vec<(K, M, Kind)> = got
+            .iter()
+            .map(|e| match e {
+                CtEvent::Key(k) => (k.code, k.modifiers, k.kind),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(names[0], (K::Left, M::SHIFT, Kind::Press));
+        assert_eq!(names[1], (K::Left, M::CONTROL, Kind::Press));
+        assert_eq!(
+            names[2],
+            (K::Left, M::SHIFT, Kind::Release),
+            "the arrow's own name"
+        );
+        assert_eq!(
+            names[3],
+            (K::Left, M::CONTROL, Kind::Release),
+            "the keypad key's own name"
+        );
+    }
+
+    #[test]
+    fn kitty_272_a_new_epoch_forgets_names_recorded_under_the_old_one() {
+        // #275 review: W pressed with shift while reporting was on; reporting toggled; then a
+        // legacy `w` and kitty's release of it. The release names `w`, not the stale `W`.
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            s.test_epoch = Some(1);
+            write_all(&master, b"\x1b[119:87;2u");
+            let first = s.poll_source(Duration::from_millis(500));
+            s.test_epoch = Some(2); // disabled and re-enabled since
+            write_all(&master, b"w\x1b[119;1:3u");
+            let mut rest = Vec::new();
+            while let Ok(Some(e)) = s.poll_source(Duration::from_millis(200)) {
+                rest.push(e);
+            }
+            drop(master);
+            (first, rest)
+        });
+        assert_eq!(
+            got.0.unwrap(),
+            Some(SourceEvent::Terminal(kind(
+                K::Char('W'),
+                M::NONE,
+                Kind::Press
+            )))
+        );
+        assert_eq!(
+            terminal(got.1),
+            vec![key('w'), kind(K::Char('w'), M::NONE, Kind::Release)]
         );
     }
 }

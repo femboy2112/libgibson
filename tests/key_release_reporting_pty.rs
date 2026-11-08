@@ -89,6 +89,8 @@ fn finish(mut cap: Capture, role: &str) -> (Capture, portable_pty::ExitStatus) {
         }
         assert!(Instant::now() < deadline, "[{role}] child did not exit");
     };
+    // An exited child may have written more than was read: read to the end of the PTY.
+    cap.collect_all().unwrap();
     (cap, status)
 }
 
@@ -217,6 +219,68 @@ fn the_panic_hook_pops_the_flags_before_leaving_the_alternate_screen() {
     let pop = find(raw, POP, push).expect("the panic hook pops the flags");
     let leave = find(raw, LEAVE_ALT, push).expect("and leaves the alternate screen");
     assert!(pop < leave);
+    // The restore that unwinding runs afterwards must not pop again: on the main screen, that
+    // would remove another program's entry (#275 review).
+    assert_eq!(count(raw, POP), 1, "popped exactly once");
+}
+
+#[test]
+fn a_stray_device_attributes_reply_is_corrected_by_the_flags_reply() {
+    // Somebody else's earlier `CSI c` is answered after the request was written (#275 review).
+    let mut cap = Capture::spawn(child("fullscreen"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "READY");
+    wait_bytes(&mut cap, PUSH_AND_ASK);
+    send(&mut cap, PLAIN_ANSWER); // the stray
+    wait_for(&mut cap, "EV reporting:Unsupported");
+    send(&mut cap, KITTY_ANSWER);
+    wait_for(&mut cap, "EV reporting:Active");
+    send(&mut cap, b"\x1b[119u\x1b[119;1:3u\x1b[113u");
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, "stray");
+    assert!(status.success());
+    assert_eq!(
+        events(&cap),
+        [
+            "reporting:Unsupported",
+            "reporting:Active",
+            "key:w:0",
+            "release:w:0",
+            "key:q:0"
+        ]
+    );
+}
+
+#[test]
+fn after_disabling_a_late_answer_and_releases_are_dropped() {
+    // The child enables, then disables before reading anything; the answer arrives late
+    // (#275 review: it must not switch a hold model back on).
+    let mut cap = Capture::spawn(child("disable"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "DISABLED");
+    send(&mut cap, KITTY_ANSWER);
+    send(&mut cap, b"\x1b[119u\x1b[119;1:3uq");
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, "disable");
+    assert!(status.success());
+    assert_eq!(events(&cap), ["key:w:0", "key:q:0"]);
+    let raw = cap.raw();
+    assert_eq!(count(raw, PUSH_AND_ASK), 1);
+    assert_eq!(
+        count(raw, POP),
+        1,
+        "popped by the disable, not again at restore"
+    );
+}
+
+#[test]
+fn a_restored_session_cannot_enable_reporting() {
+    // #275 review: after restore the session no longer holds the terminal.
+    let mut cap = Capture::spawn(child("restored"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, "restored");
+    assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
+    let raw = cap.raw();
+    assert_eq!(find(raw, b"\x1b[>", 0), None, "no push after restore");
+    assert_eq!(find(raw, POP, 0), None);
 }
 
 #[test]
@@ -294,8 +358,19 @@ fn key_release_reporting_child() {
         RenderMode::Fullscreen
     };
     let mut ctx = Context::new(mode).expect("terminal context");
+    if role == "restored" {
+        ctx.restore().unwrap();
+        ctx.session.set_key_release_reporting(true).unwrap();
+        assert!(!ctx.session.key_release_reporting_enabled());
+        say("DONE");
+        return;
+    }
     ctx.session.enter_interactive().unwrap();
-    if role != "off" {
+    if role == "disable" {
+        ctx.session.set_key_release_reporting(true).unwrap();
+        ctx.session.set_key_release_reporting(false).unwrap();
+        say("DISABLED");
+    } else if role != "off" {
         ctx.session.set_key_release_reporting(true).unwrap();
         assert!(ctx.session.key_release_reporting_enabled());
     }

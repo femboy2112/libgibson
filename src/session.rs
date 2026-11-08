@@ -60,6 +60,18 @@ fn pop_key_releases(out: &mut impl Write) -> io::Result<()> {
     out.flush()
 }
 
+/// Whether this process's push is still on the terminal: the `REPORT_KEY_RELEASE` bit, set
+/// before the push and cleared by whichever path pops first (the panic hook, restore, disable),
+/// so the push is popped exactly once; a second pop would remove another program's entry.
+fn key_releases_pushed() -> bool {
+    REPORTING_MODES.load(Ordering::SeqCst) & REPORT_KEY_RELEASE != 0
+}
+
+/// Claims the pop: true for exactly one caller after a push.
+fn take_key_releases_pushed() -> bool {
+    REPORTING_MODES.fetch_and(!REPORT_KEY_RELEASE, Ordering::SeqCst) & REPORT_KEY_RELEASE != 0
+}
+
 /// The thread that currently holds the terminal lease, if any. The panic hook
 /// restores the terminal only when the *panicking* thread is this owner, so a
 /// recoverable panic on a non-owner worker thread cannot tear down the owner's
@@ -290,11 +302,12 @@ impl TerminalSession {
                     let mut out = stdout();
                     // Disable exactly the reporting modes the owner turned on; the
                     // hook can't see the session, so it reads the lease-scoped flags.
-                    let modes = REPORTING_MODES.load(Ordering::SeqCst);
-                    if modes & REPORT_KEY_RELEASE != 0 {
-                        // Before leaving the alternate screen: the push is on its stack.
+                    if take_key_releases_pushed() {
+                        // Before leaving the alternate screen: the push is on its stack. Claimed,
+                        // so the restore that unwinding runs next does not pop again.
                         let _ = pop_key_releases(&mut out);
                     }
+                    let modes = REPORTING_MODES.load(Ordering::SeqCst);
                     if modes & REPORT_FOCUS != 0 {
                         let _ = execute!(out, DisableFocusChange);
                     }
@@ -355,12 +368,13 @@ impl TerminalSession {
 
         let mut out = stdout();
         // Key-release reporting follows the screen: the kitty flag stacks are per screen.
-        if self.key_release_reporting_enabled {
+        let follow = self.key_release_reporting_enabled && key_releases_pushed();
+        if follow {
             pop_key_releases(&mut out)?;
         }
         execute!(out, EnterAlternateScreen)?;
         self.alt_screen_active = true;
-        if self.key_release_reporting_enabled {
+        if follow {
             request_key_releases(&mut out)?;
         }
         Ok(())
@@ -373,12 +387,13 @@ impl TerminalSession {
         }
 
         let mut out = stdout();
-        if self.key_release_reporting_enabled {
+        let follow = self.key_release_reporting_enabled && key_releases_pushed();
+        if follow {
             pop_key_releases(&mut out)?;
         }
         execute!(out, LeaveAlternateScreen)?;
         self.alt_screen_active = false;
-        if self.key_release_reporting_enabled {
+        if follow {
             request_key_releases(&mut out)?;
         }
         Ok(())
@@ -456,19 +471,33 @@ impl TerminalSession {
     /// delivered. Text typed through an input method may not arrive: enable this for direct key
     /// control (a game), not for text entry.
     ///
-    /// Tracked and unwound like [`set_mouse_capture`](TerminalSession::set_mouse_capture):
+    /// Enabling enters interactive (raw) mode first ([`enter_interactive`](Self::enter_interactive)),
+    /// so the terminal's answer is never echoed. Tracked and unwound like
+    /// [`set_mouse_capture`](TerminalSession::set_mouse_capture):
     /// `restore`, `Drop` and the panic hook pop the flags. A process killed outright (SIGKILL)
     /// leaves them pushed and the shell then receives escape sequences for Enter; kitty's reset
     /// (Ctrl+Shift+Delete) clears them. Moving between the main and alternate screen while enabled
     /// pops the flags on the screen being left and asks again on the new one, so a second answer
-    /// follows. Idempotent; a no-op off Unix, on a non-TTY or on a headless session.
+    /// follows. Disabling pops the flags and drops anything not yet delivered: an answer, a
+    /// release; an application tracking holds then calls
+    /// [`HoldTracker::set_releases_reported(false)`](crate::hold::HoldTracker::set_releases_reported)
+    /// itself. A release names its key as the press did for the 32 most recent keys still down.
+    /// Idempotent; a no-op off Unix, on a non-TTY or headless session, and on a session that has
+    /// been restored (it no longer holds the terminal).
     pub fn set_key_release_reporting(&mut self, enable: bool) -> io::Result<()> {
         if !cfg!(unix)
             || !self.is_tty
             || self.headless
+            || !self.owns_lease
+            || self.restore_attempted
             || enable == self.key_release_reporting_enabled
         {
             return Ok(());
+        }
+        if enable {
+            // Raw mode first: the terminal answers at once, and a cooked terminal would echo the
+            // answer onto the screen (and hold it back until a newline).
+            self.enter_interactive()?;
         }
         let mut out = stdout();
         if enable {
@@ -478,10 +507,16 @@ impl TerminalSession {
             crate::input::set_key_releases_delivered(true);
             request_key_releases(&mut out)
         } else {
-            let result = pop_key_releases(&mut out);
+            let result = if take_key_releases_pushed() {
+                pop_key_releases(&mut out)
+            } else {
+                Ok(())
+            };
             self.key_release_reporting_enabled = false;
-            REPORTING_MODES.fetch_and(!REPORT_KEY_RELEASE, Ordering::SeqCst);
             crate::input::set_key_releases_delivered(false);
+            // An answer still on its way belongs to a request no one is waiting for.
+            #[cfg(unix)]
+            crate::tty_source::forget_keyboard_replies();
             result
         }
     }
@@ -571,7 +606,10 @@ impl TerminalSession {
         // bytes as before (the PTY/golden streams are unchanged). The key-release pop
         // must precede leaving the alternate screen: the push is on that screen's stack.
         if self.key_release_reporting_enabled {
-            record(pop_key_releases(&mut out));
+            // The panic hook may already have popped (it claims the pop): never pop twice.
+            if take_key_releases_pushed() {
+                record(pop_key_releases(&mut out));
+            }
             self.key_release_reporting_enabled = false;
             crate::input::set_key_releases_delivered(false);
         }

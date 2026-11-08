@@ -5,9 +5,9 @@ use crossterm::event::{
 use std::borrow::Cow;
 use std::io;
 use std::sync::atomic::AtomicBool;
-#[cfg(unix)]
-use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering;
+#[cfg(unix)]
+use std::sync::atomic::{AtomicU64, AtomicU8};
 use std::time::{Duration, Instant};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -232,10 +232,22 @@ impl From<CtEvent> for SourceEvent {
 /// key-release reporting enabled (#275). Off, a release is dropped (#285).
 static KEY_RELEASES_DELIVERED: AtomicBool = AtomicBool::new(false);
 
-/// Turns delivery of [`Event::KeyRelease`] on or off; the session calls this when it enables,
-/// disables or restores key-release reporting.
+/// Bumped every time delivery is turned on or off, so the Unix source forgets the keys it recorded
+/// under the previous setting before decoding anything more (#275 review).
+#[cfg(unix)]
+static KEY_RELEASE_EPOCH: AtomicU64 = AtomicU64::new(0);
+
+/// Turns delivery of [`Event::KeyRelease`] (and of the terminal's answers) on or off; the session
+/// calls this when it enables, disables or restores key-release reporting.
 pub(crate) fn set_key_releases_delivered(on: bool) {
     KEY_RELEASES_DELIVERED.store(on, Ordering::SeqCst);
+    #[cfg(unix)]
+    KEY_RELEASE_EPOCH.fetch_add(1, Ordering::SeqCst);
+}
+
+#[cfg(unix)]
+pub(crate) fn key_release_epoch() -> u64 {
+    KEY_RELEASE_EPOCH.load(Ordering::SeqCst)
 }
 
 pub(crate) fn key_releases_delivered() -> bool {
@@ -385,9 +397,16 @@ fn delivers_key_kind(kind: KeyEventKind, windows: bool) -> bool {
 /// Applies LibGibson's delivery rules to one source item, with key-release delivery as the
 /// session set it ([`set_key_releases_delivered`]).
 fn decode_source_event(ev: SourceEvent) -> Option<Event> {
+    decode_source_event_as(ev, cfg!(windows), key_releases_delivered())
+}
+
+/// [`decode_source_event`] with delivery given. Both a release and an answer are decided at
+/// delivery: one decoded while reporting was on but handed out after it was turned off is dropped,
+/// so a late answer cannot switch a hold model back on (#275 review).
+fn decode_source_event_as(ev: SourceEvent, windows: bool, releases: bool) -> Option<Event> {
     match ev {
-        SourceEvent::Terminal(ev) => decode_event_as(ev, cfg!(windows), key_releases_delivered()),
-        SourceEvent::KeyReleaseReporting(r) => Some(Event::KeyReleaseReporting(r)),
+        SourceEvent::Terminal(ev) => decode_event_as(ev, windows, releases),
+        SourceEvent::KeyReleaseReporting(r) => releases.then_some(Event::KeyReleaseReporting(r)),
     }
 }
 
@@ -1561,7 +1580,7 @@ mod mouse_focus_tests {
 mod key_kind_tests {
     //! #285: the event type a kitty-protocol terminal reports with a key.
     use super::{
-        decode_event, decode_event_as, decode_source_event, delivers_key_kind,
+        decode_event, decode_event_as, decode_source_event_as, delivers_key_kind,
         poll_until_deliverable, Event, KeyCode, KeyEvent, KeyModifiers, KeyReleaseReporting,
         SourceEvent, MAX_DROPS_PAST_DEADLINE,
     };
@@ -1635,13 +1654,14 @@ mod key_kind_tests {
             KeyEventKind::Release,
         ));
         assert_eq!(decode_event_as(f5_up, false, true), None);
-        // The answer to the request passes straight through.
+        // The answer passes through while reporting is on, and is dropped once it is off (a late
+        // answer must not switch a hold model back on).
+        let active = || SourceEvent::KeyReleaseReporting(KeyReleaseReporting::Active);
         assert_eq!(
-            decode_source_event(SourceEvent::KeyReleaseReporting(
-                KeyReleaseReporting::Active
-            )),
+            decode_source_event_as(active(), false, true),
             Some(Event::KeyReleaseReporting(KeyReleaseReporting::Active))
         );
+        assert_eq!(decode_source_event_as(active(), false, false), None);
     }
 
     /// A scripted source: each call pops the next scripted reply and records the `left` it was

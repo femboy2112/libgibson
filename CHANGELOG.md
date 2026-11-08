@@ -63,6 +63,14 @@ decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed p
   independent reference on 300 seeded traces); and `scripts/dev/kitty_key_release_e2e.sh`, which
   runs DEEP SIGNAL in real kitty 0.32.2 and xterm 390 on a private Xvfb display with xdotool key
   events (not in CI).
+- **Review hardening (Codex, 7 P2 + 3 P3, all fixed with a test that fails without the fix):** the
+  pop is claimed once, so a panic followed by the unwinding restore pops once; a restored session
+  cannot enable; a stray device-attributes reply (somebody else's earlier query) that reads as
+  `Unsupported` is corrected by kitty's flags reply, which states the flags in force; after a
+  disable, a late answer or release is dropped at delivery; a keypad key never takes over the
+  record of the arrow with the same code; names recorded before a disable/enable are forgotten;
+  DEEP SIGNAL keeps holds per physical key, so releasing W while Up is down keeps moving forward;
+  enabling enters raw mode first, so the answer is never echoed.
 - **The C ABI is unchanged** (62 symbols): a C consumer cannot enable this yet, and never sees the
   new events.
 

@@ -80,7 +80,26 @@ fn action_of(k: &KeyEvent) -> Option<Action> {
     {
         return None;
     }
-    Some(match k.code {
+    action_of_key(phys_key(k.code))
+}
+
+/// The physical key a movement key event names: letters folded to lowercase, so `W` (shift held)
+/// and `w` are one key. Holds are kept per physical key, not per action (#275 review): with
+/// releases reported, letting go of W while Up is still down must keep the drone moving forward.
+fn phys_key(code: KeyCode) -> KeyCode {
+    match code {
+        KeyCode::Char(c) => KeyCode::Char(c.to_ascii_lowercase()),
+        other => other,
+    }
+}
+
+/// The hold-tracker key of a movement key event; `None` for anything that is not movement.
+fn hold_key(k: &KeyEvent) -> Option<KeyCode> {
+    action_of(k).map(|_| phys_key(k.code))
+}
+
+fn action_of_key(code: KeyCode) -> Option<Action> {
+    Some(match code {
         KeyCode::Up => Action::Forward,
         KeyCode::Down => Action::Back,
         KeyCode::Left => Action::TurnLeft,
@@ -416,7 +435,8 @@ fn replay_trace(text: &str) -> Result<(World, u64), String> {
 /// The authoritative simulation: world + held-key model + the trace that reproduces it.
 struct Sim {
     world: World,
-    holds: HoldTracker<Action>,
+    /// Held movement keys, per physical key ([`phys_key`]).
+    holds: HoldTracker<KeyCode>,
     trace: Vec<(u64, Event)>,
     last_message: (u64, &'static str),
     /// Rolling hash of the trajectory (tic, position, angle, integrity after every tic): two
@@ -439,7 +459,7 @@ impl Sim {
     fn feed(&mut self, e: &Event) {
         let tic = self.world.tic;
         // The tracker never sees time move backwards: `tic` only grows.
-        let _ = self.holds.observe_event(tic, e, action_of);
+        let _ = self.holds.observe_event(tic, e, hold_key);
         self.trace.push((tic, e.clone()));
     }
 
@@ -451,7 +471,7 @@ impl Sim {
     }
 
     fn intent(&self) -> Intent {
-        let held = |a| self.holds.is_held(a);
+        let held = |a| self.holds.held().any(|(k, _)| action_of_key(k) == Some(a));
         let axis = |pos, neg| i32::from(held(pos)) - i32::from(held(neg));
         Intent {
             forward: axis(Action::Forward, Action::Back),
@@ -784,7 +804,13 @@ fn selfcheck_reported_releases() -> Result<u64, String> {
     trace.push((100, Event::KeyRelease(key('w'))));
     trace.push((120, Event::Key(key('a'))));
     trace.push((120, Event::KeyRelease(key('a'))));
-    let end = 140;
+    // Two keys for one action: w down 130..160 and Up down 140..170; forward until both are up.
+    let up = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
+    trace.push((130, Event::Key(key('w'))));
+    trace.push((140, Event::Key(up)));
+    trace.push((160, Event::KeyRelease(key('w'))));
+    trace.push((170, Event::KeyRelease(up)));
+    let end = 180;
     let mut sim = Sim::new(2112, 3, HoldConfig::new(16, 4));
     let mut i = 0;
     while sim.world.tic < end {
@@ -794,7 +820,7 @@ fn selfcheck_reported_releases() -> Result<u64, String> {
             i += 1;
         }
         let want = Intent {
-            forward: i32::from((10..100).contains(&t)),
+            forward: i32::from((10..100).contains(&t) || (130..170).contains(&t)),
             strafe: 0,
             turn: i32::from((20..40).contains(&t)) - i32::from(t == 120),
         };

@@ -42,8 +42,8 @@
 //! reason. So a tap lasts as long as the key was down, and keys held together stay held
 //! together. A release observed at the tic its hold started ends it one tic later: every press
 //! is held for at least one tic. A hold that started before releases were reported keeps its
-//! deadline until the key is observed again; if reporting stops, every hold falls back to the
-//! inferred rule, as if pressed at that tic.
+//! deadline until the key is observed again; if reporting stops, every hold that was waiting for
+//! a release falls back to the inferred rule, as if pressed at that tic.
 //!
 //! The tracker is pure: no I/O, no clock, no global state. Memory is one small record per key
 //! currently held; ended holds are returned to the caller, not retained.
@@ -229,15 +229,16 @@ impl<K: Copy + Eq> HoldTracker<K> {
 
     /// Declares whether the terminal reports key releases (see the module documentation).
     /// Turning it on changes holds as they are observed from now on. Turning it off gives every
-    /// current hold the inferred deadline it would have if pressed at the current tic, so none
-    /// waits for a release that will not come.
+    /// hold that was waiting for a release the inferred deadline it would have if pressed at the
+    /// current tic, so none waits for a release that will not come; a hold that still has an
+    /// inferred deadline keeps it.
     pub fn set_releases_reported(&mut self, on: bool) {
         if self.releases_reported && !on {
+            // `> now` (grace >= 1) except at the last representable tic.
             let ends_at = self.now.saturating_add(self.config.initial_grace);
-            for (key, hold) in &mut self.holds {
-                if !self.released.contains(key) {
-                    // `ends_at > now` (grace >= 1) except at the last representable tic.
-                    hold.ends_at = hold.ends_at.min(ends_at);
+            for (_, hold) in &mut self.holds {
+                if hold.ends_at == u64::MAX {
+                    hold.ends_at = ends_at;
                 }
             }
         }
