@@ -23,6 +23,49 @@ whether a `v0.6.0` tag names the corrected candidate `release/v0.6.0-rc` @ `572e
 decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed policy in #291).
 `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
 
+### Added — key-release reporting on kitty-protocol terminals ([#275](https://github.com/femboy2112/libgibson/issues/275))
+- **Opt-in, Rust only for now:** `TerminalSession::set_key_release_reporting(true)` (reached as
+  `ctx.session`) asks the terminal to report key releases through the kitty keyboard protocol.
+  Tested in kitty 0.32.2 (and xterm 390, which answers `Unsupported`); other terminals that
+  implement the protocol (foot, Ghostty, WezTerm with its kitty-keyboard option) are expected to
+  behave the same but are not tested. It pushes keyboard flags 15 on the current screen
+  and asks whether the terminal took them. The answer arrives in input order as the new
+  `Event::KeyReleaseReporting(KeyReleaseReporting::{Active, Unsupported})`; once `Active`, each key
+  that goes up is the new `Event::KeyRelease(KeyEvent)`. Both variants are additions to the
+  `#[non_exhaustive]` `Event`. Off by default: an application that does not opt in writes and
+  receives exactly what it did before, and releases stay undelivered (#285).
+- **A release is named exactly as its press was delivered.** kitty names a key differently on the
+  way up when shift goes up first (a `W` pressed with shift is released as `w`, a `!` as `1`), so
+  the Unix input source records each press by the key's base code and names its repeats and release
+  the same way: a release matches its press by equality.
+- **Restored on every exit path the session owns.** `restore`, `Drop` and the panic hook pop the
+  flags before leaving the alternate screen (the kitty flag stacks are per screen, and a push left
+  on the alternate screen is inherited by the next full-screen program). Moving between the main
+  and alternate screen while enabled pops on the screen being left and asks again on the new one.
+  A process killed outright (SIGKILL) leaves the flags pushed; kitty's reset (Ctrl+Shift+Delete)
+  clears them. While enabled, text typed through an input method may not arrive: the feature is
+  for direct key control, not text entry.
+- **`gibson::hold` uses reported releases.** `HoldTracker::set_releases_reported` (or the answer
+  event through `observe_event`) switches holds observed from then on to "held until released, at
+  least one tic"; `observe_release` and `ReleaseCause::KeyReleased` end them. Keys held together
+  stay held together, which the inferred model cannot do (a terminal autorepeats only the last key
+  pressed). If reporting stops, every hold falls back to the inferred deadline.
+- **DEEP SIGNAL opts in** (`--no-key-releases` opts out), shows `KEYS EXACT` on the HUD once the
+  terminal confirms, and records releases and the answer in its `--record` trace. Its self-check
+  adds a reported-release segment (`exact_keys=519616832bd513f1`); the existing values are
+  unchanged.
+- **Fixed in the ported decoder:** the kitty flags reply `CSI ? flags u` was read from the byte
+  of its first digit (as in crossterm 0.29.0), so kitty's `CSI ? 15 u` read as flags 1 and a
+  confirmed request would have looked unsupported.
+- Evidence: `tests/key_release_reporting_pty.rs` (the bytes written, in order, on a normal exit, a
+  panic, inline and across a screen switch; answers; release naming; no opt-in, no change), replaying
+  bytes captured from kitty 0.32.2; `tests/input_hold_released.rs` (the hold model against an
+  independent reference on 300 seeded traces); and `scripts/dev/kitty_key_release_e2e.sh`, which
+  runs DEEP SIGNAL in real kitty 0.32.2 and xterm 390 on a private Xvfb display with xdotool key
+  events (not in CI).
+- **The C ABI is unchanged** (62 symbols): a C consumer cannot enable this yet, and never sees the
+  new events.
+
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
 - The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an
   event type with each key (`CSI 97u` press, `CSI 97;1:2u` repeat, `CSI 97;1:3u` release), and

@@ -52,7 +52,11 @@
 
 mod parse;
 
-use crossterm::event::Event as CtEvent;
+use crate::input::{KeyReleaseReporting, SourceEvent};
+use crossterm::event::{
+    Event as CtEvent, KeyCode as CtKeyCode, KeyEvent as CtKeyEvent, KeyEventKind,
+    KeyboardEnhancementFlags,
+};
 use parse::{InternalEvent, Parser};
 use std::collections::VecDeque;
 use std::io::{self, Read};
@@ -81,7 +85,9 @@ pub(crate) struct TtySource {
     _owned: Option<std::os::fd::OwnedFd>,
     parser: Parser,
     /// Decoded events not yet handed out, oldest first.
-    pending: VecDeque<CtEvent>,
+    pending: VecDeque<SourceEvent>,
+    /// Keys currently down, as their presses were decoded (#275): see [`PressedKeys`].
+    pressed: PressedKeys,
     /// Read end of the `SIGWINCH` self-pipe (non-blocking), if resizes are watched.
     winch: Option<UnixStream>,
     size: SizeFn,
@@ -92,6 +98,9 @@ pub(crate) struct TtySource {
     hung_up: bool,
     /// The `SIGWINCH` registration feeding `winch`, removed when the source is dropped.
     winch_id: Option<signal_hook::SigId>,
+    /// Tests: name keys as while key releases are delivered, without the process-global switch.
+    #[cfg(test)]
+    track_keys: bool,
 }
 
 impl Drop for TtySource {
@@ -128,11 +137,14 @@ impl TtySource {
             _owned: None,
             parser: Parser::default(),
             pending: VecDeque::new(),
+            pressed: PressedKeys::default(),
             winch,
             size,
             dropped_partial_bytes: 0,
             hung_up: false,
             winch_id: None,
+            #[cfg(test)]
+            track_keys: false,
         })
     }
 
@@ -148,8 +160,17 @@ impl TtySource {
         self.pending.len()
     }
 
-    /// See the module documentation for the contract.
+    /// [`poll_source`](Self::poll_source) for tests that expect terminal events only.
+    #[cfg(test)]
     pub(crate) fn poll(&mut self, timeout: Duration) -> io::Result<Option<CtEvent>> {
+        Ok(self.poll_source(timeout)?.map(|e| match e {
+            SourceEvent::Terminal(e) => e,
+            other => panic!("unexpected source event {other:?}"),
+        }))
+    }
+
+    /// See the module documentation for the contract.
+    pub(crate) fn poll_source(&mut self, timeout: Duration) -> io::Result<Option<SourceEvent>> {
         let deadline = deadline_after(timeout);
         if self.hung_up {
             return Err(hung_up());
@@ -258,7 +279,7 @@ impl TtySource {
 
     /// Reports the hangup, after any event decoded before it was seen. Once reported it is
     /// sticky: see `hung_up`.
-    fn report_hangup(&mut self) -> io::Result<Option<CtEvent>> {
+    fn report_hangup(&mut self) -> io::Result<Option<SourceEvent>> {
         if let Some(event) = self.pending.pop_front() {
             return Ok(Some(event));
         }
@@ -300,13 +321,41 @@ impl TtySource {
 
     /// Moves every event the parser completed into the hand-out queue.
     fn decode(&mut self) {
+        #[cfg(test)]
+        let track = self.track_keys || crate::input::key_releases_delivered();
+        #[cfg(not(test))]
+        let track = crate::input::key_releases_delivered();
+        if !track {
+            self.pressed.clear();
+        }
         for internal in self.parser.by_ref() {
-            if let InternalEvent::Event(event) = internal {
-                self.pending.push_back(event);
-            }
-            // Replies to terminal queries (cursor position, keyboard flags, device
-            // attributes) are decoded so they never surface as keystrokes, then dropped:
-            // LibGibson does not send those queries on this path.
+            let event = match internal {
+                InternalEvent::Event(CtEvent::Key(k)) if track => {
+                    CtEvent::Key(self.pressed.name(KeyId::Code(k.code), k))
+                }
+                InternalEvent::KittyKey(k, base) if track => {
+                    CtEvent::Key(self.pressed.name(KeyId::Base(base), k))
+                }
+                InternalEvent::Event(event) => event,
+                InternalEvent::KittyKey(k, _) => CtEvent::Key(k),
+                // The answers to a key-release reporting request (#275): see `KEYBOARD_QUERIES`.
+                InternalEvent::KeyboardEnhancementFlags(flags) => {
+                    if let Some(r) = lock_queries().flags_reply(flags) {
+                        self.pending.push_back(SourceEvent::KeyReleaseReporting(r));
+                    }
+                    continue;
+                }
+                InternalEvent::PrimaryDeviceAttributes => {
+                    if let Some(r) = lock_queries().device_attributes_reply() {
+                        self.pending.push_back(SourceEvent::KeyReleaseReporting(r));
+                    }
+                    continue;
+                }
+                // A cursor position reply is decoded so it never surfaces as keystrokes, then
+                // dropped: LibGibson does not send that query on this path.
+                InternalEvent::CursorPosition(..) => continue,
+            };
+            self.pending.push_back(SourceEvent::Terminal(event));
         }
     }
 
@@ -321,7 +370,8 @@ impl TtySource {
         // A size that cannot be read (the terminal is going away) yields no event; the
         // hangup itself is reported by the read.
         if let Ok((cols, rows)) = (self.size)() {
-            self.pending.push_back(CtEvent::Resize(cols, rows));
+            self.pending
+                .push_back(SourceEvent::Terminal(CtEvent::Resize(cols, rows)));
         }
     }
 }
@@ -486,12 +536,135 @@ pub(crate) fn reopen_same_terminal(_fd: RawFd) -> Option<std::os::fd::OwnedFd> {
     None
 }
 
+/// A key's identity across its press, repeats and release (#275): the kitty unicode-key-code
+/// when the key came as `CSI ... u`, otherwise its decoded code (an arrow's release is
+/// `CSI 1;1:3D`, a legacy press of `w` is the byte `w`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyId {
+    Base(u32),
+    Code(CtKeyCode),
+}
+
+/// The keys currently down while key releases are delivered, each as its press was decoded, so
+/// every repeat and the release of a key are named exactly as its press was (#275). A terminal
+/// can name them differently: with shift let go first, kitty reports the release of a `W`
+/// pressed with shift as `w`, and of a `!` as `1`.
+#[derive(Debug, Default)]
+struct PressedKeys(Vec<(KeyId, CtKeyEvent)>);
+
+impl PressedKeys {
+    /// More keys than any keyboard holds at once; the oldest is forgotten beyond it.
+    const CAP: usize = 32;
+
+    fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    /// `k` as the event to deliver: a press is recorded (replacing an earlier record of the key);
+    /// a repeat or release of a recorded key takes the recorded press's code and modifiers, and a
+    /// release forgets it. A key with no record (already down when reporting began) is
+    /// delivered as decoded.
+    fn name(&mut self, id: KeyId, k: CtKeyEvent) -> CtKeyEvent {
+        let fallback = KeyId::Code(k.code);
+        let found = self
+            .0
+            .iter()
+            .position(|(i, _)| *i == id)
+            .or_else(|| self.0.iter().position(|(i, _)| *i == fallback));
+        match (k.kind, found) {
+            (KeyEventKind::Press, Some(i)) => {
+                self.0[i] = (id, k);
+                k
+            }
+            (KeyEventKind::Press, None) => {
+                if self.0.len() == Self::CAP {
+                    self.0.remove(0);
+                }
+                self.0.push((id, k));
+                k
+            }
+            (KeyEventKind::Repeat, Some(i)) => {
+                let p = self.0[i].1;
+                CtKeyEvent::new_with_kind_and_state(p.code, p.modifiers, k.kind, k.state)
+            }
+            (KeyEventKind::Release, Some(i)) => {
+                let (_, p) = self.0.remove(i);
+                CtKeyEvent::new_with_kind_and_state(p.code, p.modifiers, k.kind, k.state)
+            }
+            (_, None) => k,
+        }
+    }
+}
+
+/// Outstanding key-release reporting requests (#275). Each request is written as push flags,
+/// `CSI ? u` (query the flags) and `CSI c` (primary device attributes). Every terminal answers the
+/// last; only a kitty-protocol terminal answers the second, and it answers first. So per request:
+/// a flags reply with event types => `Active`; one without => `Unsupported`; the attributes reply
+/// with no flags reply before it => `Unsupported`.
+#[derive(Debug, Default)]
+struct KeyboardQueries {
+    /// Requests whose device attributes reply has not arrived.
+    outstanding: u32,
+    /// Whether the oldest outstanding request already got its flags reply.
+    answered: bool,
+}
+
+impl KeyboardQueries {
+    fn flags_reply(&mut self, flags: KeyboardEnhancementFlags) -> Option<KeyReleaseReporting> {
+        if self.outstanding == 0 || self.answered {
+            return None;
+        }
+        self.answered = true;
+        Some(
+            if flags.contains(KeyboardEnhancementFlags::REPORT_EVENT_TYPES) {
+                KeyReleaseReporting::Active
+            } else {
+                KeyReleaseReporting::Unsupported
+            },
+        )
+    }
+
+    fn device_attributes_reply(&mut self) -> Option<KeyReleaseReporting> {
+        if self.outstanding == 0 {
+            return None;
+        }
+        self.outstanding -= 1;
+        if std::mem::take(&mut self.answered) {
+            None
+        } else {
+            Some(KeyReleaseReporting::Unsupported)
+        }
+    }
+}
+
+static KEYBOARD_QUERIES: Mutex<KeyboardQueries> = Mutex::new(KeyboardQueries {
+    outstanding: 0,
+    answered: false,
+});
+
+fn lock_queries() -> std::sync::MutexGuard<'static, KeyboardQueries> {
+    KEYBOARD_QUERIES
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+}
+
+/// Records that a key-release reporting request was written; its answers arrive as
+/// [`SourceEvent::KeyReleaseReporting`].
+pub(crate) fn expect_keyboard_reply() {
+    lock_queries().outstanding += 1;
+}
+
+/// Forgets outstanding requests: the session that wrote them restored the terminal.
+pub(crate) fn forget_keyboard_replies() {
+    *lock_queries() = KeyboardQueries::default();
+}
+
 /// Polls the controlling terminal. See the module documentation. `stdin_is_terminal` is the
 /// identity latched when the terminal was acquired (see [`terminal_input_fd`]).
 ///
 /// Waiting for another thread's poll counts against `timeout`: with the source busy past the
 /// deadline this returns `Ok(None)` rather than queueing behind it.
-pub(crate) fn poll(timeout: Duration, stdin_is_terminal: bool) -> io::Result<Option<CtEvent>> {
+pub(crate) fn poll(timeout: Duration, stdin_is_terminal: bool) -> io::Result<Option<SourceEvent>> {
     use std::sync::atomic::Ordering;
     let deadline = deadline_after(timeout);
     let mut guard = loop {
@@ -523,7 +696,11 @@ pub(crate) fn poll(timeout: Duration, stdin_is_terminal: bool) -> io::Result<Opt
     let left = deadline.map_or(Duration::MAX, |d| {
         d.saturating_duration_since(Instant::now())
     });
-    guard.as_mut().expect("initialised above").1.poll(left)
+    guard
+        .as_mut()
+        .expect("initialised above")
+        .1
+        .poll_source(left)
 }
 
 /// Retires the terminal source: called when the session gives the terminal up, so a later
@@ -1329,5 +1506,193 @@ mod tests {
             (ru.ru_utime.tv_sec + ru.ru_stime.tv_sec) as u64 * 1_000_000
                 + (ru.ru_utime.tv_usec + ru.ru_stime.tv_usec) as u64,
         )
+    }
+
+    // ------------------------------------------------ #275: key-release reporting (kitty)
+
+    use crossterm::event::{KeyEventKind as Kind, KeyboardEnhancementFlags as F, ModifierKeyCode};
+
+    fn kind(k: K, m: M, kind: Kind) -> CtEvent {
+        CtEvent::Key(KeyEvent::new_with_kind(k, m, kind))
+    }
+
+    /// Every event `bytes` decodes to, polled on a worker with key naming on or off.
+    fn decode_all(bytes: &'static [u8], track: bool) -> Vec<SourceEvent> {
+        let (master, slave) = pty();
+        write_all(&master, bytes);
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = track;
+            let mut out = Vec::new();
+            while let Ok(Some(e)) = s.poll_source(Duration::from_millis(200)) {
+                out.push(e);
+            }
+            out
+        });
+        drop(master);
+        got
+    }
+
+    fn terminal(events: Vec<SourceEvent>) -> Vec<CtEvent> {
+        events
+            .into_iter()
+            .map(|e| match e {
+                SourceEvent::Terminal(e) => e,
+                other => panic!("unexpected {other:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn kitty_272_a_release_is_named_as_its_press_when_shift_goes_up_first() {
+        // Bytes kitty 0.32.2 sent with flags 15 (captured under Xvfb, PR evidence): shift down,
+        // w down (as W), shift up, then w up, which kitty names plain `w`.
+        let got = terminal(decode_all(
+            b"\x1b[57441;2u\x1b[119:87;2u\x1b[57441;1:3u\x1b[119;1:3u\
+              \x1b[57441;2u\x1b[49:33;2u\x1b[57441;1:3u\x1b[49;1:3u",
+            true,
+        ));
+        let shift = |kd| kind(K::Modifier(ModifierKeyCode::LeftShift), M::SHIFT, kd);
+        assert_eq!(
+            got,
+            vec![
+                shift(Kind::Press),
+                kind(K::Char('W'), M::NONE, Kind::Press),
+                kind(
+                    K::Modifier(ModifierKeyCode::LeftShift),
+                    M::SHIFT,
+                    Kind::Release
+                ),
+                kind(K::Char('W'), M::NONE, Kind::Release),
+                shift(Kind::Press),
+                kind(K::Char('!'), M::NONE, Kind::Press),
+                kind(
+                    K::Modifier(ModifierKeyCode::LeftShift),
+                    M::SHIFT,
+                    Kind::Release
+                ),
+                kind(K::Char('!'), M::NONE, Kind::Release),
+            ],
+        );
+    }
+
+    #[test]
+    fn kitty_272_without_naming_a_release_is_delivered_as_the_terminal_names_it() {
+        let got = terminal(decode_all(b"\x1b[119:87;2u\x1b[119;1:3u", false));
+        assert_eq!(
+            got,
+            vec![
+                kind(K::Char('W'), M::NONE, Kind::Press),
+                kind(K::Char('w'), M::NONE, Kind::Release),
+            ],
+        );
+    }
+
+    #[test]
+    fn kitty_272_repeats_and_releases_of_special_keys_keep_the_press_name() {
+        // Left with shift held at the press, repeated and released after shift; F5; Enter.
+        let got = terminal(decode_all(
+            b"\x1b[1;2D\x1b[1;2:2D\x1b[1;1:2D\x1b[1;1:3D\x1b[15~\x1b[15;1:3~\x1b[13u\x1b[13;1:3u",
+            true,
+        ));
+        assert_eq!(
+            got,
+            vec![
+                kind(K::Left, M::SHIFT, Kind::Press),
+                kind(K::Left, M::SHIFT, Kind::Repeat),
+                kind(K::Left, M::SHIFT, Kind::Repeat),
+                kind(K::Left, M::SHIFT, Kind::Release),
+                kind(K::F(5), M::NONE, Kind::Press),
+                kind(K::F(5), M::NONE, Kind::Release),
+                kind(K::Enter, M::NONE, Kind::Press),
+                kind(K::Enter, M::NONE, Kind::Release),
+            ],
+        );
+    }
+
+    #[test]
+    fn kitty_272_a_key_down_before_reporting_began_is_released_as_reported() {
+        // A legacy `w` (pressed before the flags were pushed), then kitty's release of it.
+        let got = terminal(decode_all(b"w\x1b[119;1:3u", true));
+        assert_eq!(
+            got,
+            vec![key('w'), kind(K::Char('w'), M::NONE, Kind::Release)]
+        );
+    }
+
+    #[test]
+    fn kitty_272_the_record_of_keys_down_is_bounded() {
+        let mut p = PressedKeys::default();
+        for cp in 0..1000u32 {
+            let c = char::from_u32(0x4e00 + cp).unwrap();
+            p.name(KeyId::Base(cp), KeyEvent::new(K::Char(c), M::NONE));
+        }
+        assert_eq!(p.0.len(), PressedKeys::CAP);
+        // The newest is still named; the oldest was forgotten and is released as reported.
+        let newest = p.name(
+            KeyId::Base(999),
+            KeyEvent::new_with_kind(K::Char('x'), M::NONE, Kind::Release),
+        );
+        assert_eq!(newest.code, K::Char(char::from_u32(0x4e00 + 999).unwrap()));
+        let oldest = p.name(
+            KeyId::Base(0),
+            KeyEvent::new_with_kind(K::Char('x'), M::NONE, Kind::Release),
+        );
+        assert_eq!(oldest.code, K::Char('x'));
+    }
+
+    #[test]
+    fn kitty_272_answers_are_paired_with_requests_in_order() {
+        let active = F::DISAMBIGUATE_ESCAPE_CODES
+            | F::REPORT_EVENT_TYPES
+            | F::REPORT_ALTERNATE_KEYS
+            | F::REPORT_ALL_KEYS_AS_ESCAPE_CODES;
+        let mut q = KeyboardQueries::default();
+        // Unsolicited replies (no request written) are ignored.
+        assert_eq!(q.flags_reply(active), None);
+        assert_eq!(q.device_attributes_reply(), None);
+        // kitty: flags reply, then device attributes.
+        q.outstanding += 1;
+        assert_eq!(q.flags_reply(active), Some(KeyReleaseReporting::Active));
+        assert_eq!(q.device_attributes_reply(), None);
+        // A terminal that only answers device attributes.
+        q.outstanding += 1;
+        assert_eq!(
+            q.device_attributes_reply(),
+            Some(KeyReleaseReporting::Unsupported)
+        );
+        // A flags reply without event types (the push was not honoured).
+        q.outstanding += 1;
+        assert_eq!(
+            q.flags_reply(F::empty()),
+            Some(KeyReleaseReporting::Unsupported)
+        );
+        assert_eq!(q.device_attributes_reply(), None);
+        // Two requests in flight (an alternate-screen move re-asks): answered one by one.
+        q.outstanding += 2;
+        assert_eq!(q.flags_reply(active), Some(KeyReleaseReporting::Active));
+        assert_eq!(q.flags_reply(active), None, "one answer per request");
+        assert_eq!(q.device_attributes_reply(), None);
+        assert_eq!(q.flags_reply(active), Some(KeyReleaseReporting::Active));
+        assert_eq!(q.device_attributes_reply(), None);
+        assert_eq!(q.outstanding, 0);
+        assert_eq!(q.device_attributes_reply(), None);
+    }
+
+    #[test]
+    fn kitty_272_the_answer_is_delivered_in_input_order() {
+        // The only test that touches the process-global request record.
+        forget_keyboard_replies();
+        expect_keyboard_reply();
+        let got = decode_all(b"a\x1b[?15u\x1b[?62;cb\x1b[?15u\x1b[?62;c", false);
+        forget_keyboard_replies();
+        assert_eq!(
+            got,
+            vec![
+                SourceEvent::Terminal(key('a')),
+                SourceEvent::KeyReleaseReporting(KeyReleaseReporting::Active),
+                SourceEvent::Terminal(key('b')),
+                // A second, unsolicited pair of replies produces nothing, and no keystrokes.
+            ],
+        );
     }
 }

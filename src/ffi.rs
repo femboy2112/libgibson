@@ -1029,8 +1029,14 @@ unsafe fn poll_event_impl(
                     // The C ABI (v1) does not model mouse or focus events, and they
                     // only arise when a Rust consumer opts into capture (this C poll
                     // path never does), so they report as GIBSON_EVENT_NONE like Tick.
-                    // Keeps ABI v1 frozen (issue #126).
-                    Event::Tick | Event::Mouse(_) | Event::Focus(_) => {}
+                    // Keeps ABI v1 frozen (issue #126). Key releases and the answer to a
+                    // key-release reporting request likewise arise only after a Rust
+                    // consumer opts in (#275).
+                    Event::Tick
+                    | Event::Mouse(_)
+                    | Event::Focus(_)
+                    | Event::KeyRelease(_)
+                    | Event::KeyReleaseReporting(_) => {}
                 }
                 GibsonStatus::Ok
             }

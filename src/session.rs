@@ -33,6 +33,32 @@ static REPORTING_MODES: AtomicU8 = AtomicU8::new(0);
 
 const REPORT_MOUSE: u8 = 0b01;
 const REPORT_FOCUS: u8 = 0b10;
+const REPORT_KEY_RELEASE: u8 = 0b100;
+
+/// The kitty keyboard flags pushed when key-release reporting is enabled (#275): disambiguate
+/// escape codes (1), report event types (2), report alternate keys (4), report all keys as escape
+/// codes (8). Measured on kitty 0.32.2: without 8, Enter, Tab, Backspace and Esc report their
+/// release as their legacy byte, which reads as a second press; without 4, shift+1 reads as `1`
+/// with shift, not `!`.
+const KEY_RELEASE_FLAGS: u8 = 15;
+
+/// Pushes [`KEY_RELEASE_FLAGS`] onto the kitty keyboard stack of the current screen, then asks
+/// for the flags now in force (`CSI ? u`) and the primary device attributes (`CSI c`). Every
+/// terminal answers the last query; a kitty-protocol terminal answers the flags query before it.
+/// The answers reach the application as `Event::KeyReleaseReporting`.
+fn request_key_releases(out: &mut impl Write) -> io::Result<()> {
+    #[cfg(unix)]
+    crate::tty_source::expect_keyboard_reply();
+    write!(out, "\x1b[>{KEY_RELEASE_FLAGS}u\x1b[?u\x1b[c")?;
+    out.flush()
+}
+
+/// Pops the entry [`request_key_releases`] pushed. The kitty stacks are per screen (main and
+/// alternate, each kept across switches), so this must run on the screen the push ran on.
+fn pop_key_releases(out: &mut impl Write) -> io::Result<()> {
+    out.write_all(b"\x1b[<u")?;
+    out.flush()
+}
 
 /// The thread that currently holds the terminal lease, if any. The panic hook
 /// restores the terminal only when the *panicking* thread is this owner, so a
@@ -92,6 +118,9 @@ pub struct TerminalSession {
     mouse_capture_enabled: bool,
     /// Opt-in focus-change reporting is on, tracked and unwound for the same reason.
     focus_reporting_enabled: bool,
+    /// Opt-in key-release reporting is on (#275): kitty keyboard flags pushed on the current
+    /// screen, popped by `restore`, `Drop` and the panic hook.
+    key_release_reporting_enabled: bool,
     sync_updates_enabled: bool,
     capabilities: TerminalCapabilities,
     /// True when this instance holds the process-global terminal lease. Only an
@@ -146,6 +175,7 @@ impl TerminalSession {
             bracketed_paste_enabled: false,
             mouse_capture_enabled: false,
             focus_reporting_enabled: false,
+            key_release_reporting_enabled: false,
             sync_updates_enabled: true,
             capabilities: TerminalCapabilities::detect_from_env(),
             owns_lease,
@@ -184,6 +214,7 @@ impl TerminalSession {
             bracketed_paste_enabled: false,
             mouse_capture_enabled: false,
             focus_reporting_enabled: false,
+            key_release_reporting_enabled: false,
             sync_updates_enabled: true,
             capabilities: TerminalCapabilities::truecolor(),
             // A headless session is a mannequin, not a patient: it performs no OS
@@ -260,6 +291,10 @@ impl TerminalSession {
                     // Disable exactly the reporting modes the owner turned on; the
                     // hook can't see the session, so it reads the lease-scoped flags.
                     let modes = REPORTING_MODES.load(Ordering::SeqCst);
+                    if modes & REPORT_KEY_RELEASE != 0 {
+                        // Before leaving the alternate screen: the push is on its stack.
+                        let _ = pop_key_releases(&mut out);
+                    }
                     if modes & REPORT_FOCUS != 0 {
                         let _ = execute!(out, DisableFocusChange);
                     }
@@ -319,8 +354,15 @@ impl TerminalSession {
         }
 
         let mut out = stdout();
+        // Key-release reporting follows the screen: the kitty flag stacks are per screen.
+        if self.key_release_reporting_enabled {
+            pop_key_releases(&mut out)?;
+        }
         execute!(out, EnterAlternateScreen)?;
         self.alt_screen_active = true;
+        if self.key_release_reporting_enabled {
+            request_key_releases(&mut out)?;
+        }
         Ok(())
     }
 
@@ -331,8 +373,14 @@ impl TerminalSession {
         }
 
         let mut out = stdout();
+        if self.key_release_reporting_enabled {
+            pop_key_releases(&mut out)?;
+        }
         execute!(out, LeaveAlternateScreen)?;
         self.alt_screen_active = false;
+        if self.key_release_reporting_enabled {
+            request_key_releases(&mut out)?;
+        }
         Ok(())
     }
 
@@ -386,6 +434,62 @@ impl TerminalSession {
     /// Whether session-owned focus reporting is currently enabled.
     pub fn focus_reporting_enabled(&self) -> bool {
         self.focus_reporting_enabled
+    }
+
+    /// Asks the terminal to report key releases, or stops asking (#275). **Off by default.**
+    ///
+    /// A terminal reports key presses and autorepeats, not releases, so a program that acts
+    /// while a key is held has to infer the hold ([`crate::hold`]), and two keys cannot be held
+    /// at once (autorepeat follows only the last key pressed). A terminal that speaks the kitty
+    /// keyboard protocol can report releases (tested in kitty 0.32.2; foot, Ghostty and WezTerm
+    /// with its kitty-keyboard option implement the protocol but are not tested). On
+    /// enable this pushes the protocol's flags for the current screen and asks the terminal
+    /// whether it took them; the answer arrives in input order as
+    /// [`Event::KeyReleaseReporting`](crate::input::Event::KeyReleaseReporting): `Active`, after
+    /// which every key that goes up is reported as an
+    /// [`Event::KeyRelease`](crate::input::Event::KeyRelease), or `Unsupported`. A terminal that
+    /// answers neither query leaves the session press-only with no answer at all.
+    ///
+    /// While enabled the terminal sends every key as an escape sequence, which LibGibson decodes
+    /// into the same [`Event::Key`](crate::input::Event::Key)s as before (`Esc`, `Enter`, Ctrl and
+    /// Alt chords, shifted characters), and reports modifier keys alone, which are not
+    /// delivered. Text typed through an input method may not arrive: enable this for direct key
+    /// control (a game), not for text entry.
+    ///
+    /// Tracked and unwound like [`set_mouse_capture`](TerminalSession::set_mouse_capture):
+    /// `restore`, `Drop` and the panic hook pop the flags. A process killed outright (SIGKILL)
+    /// leaves them pushed and the shell then receives escape sequences for Enter; kitty's reset
+    /// (Ctrl+Shift+Delete) clears them. Moving between the main and alternate screen while enabled
+    /// pops the flags on the screen being left and asks again on the new one, so a second answer
+    /// follows. Idempotent; a no-op off Unix, on a non-TTY or on a headless session.
+    pub fn set_key_release_reporting(&mut self, enable: bool) -> io::Result<()> {
+        if !cfg!(unix)
+            || !self.is_tty
+            || self.headless
+            || enable == self.key_release_reporting_enabled
+        {
+            return Ok(());
+        }
+        let mut out = stdout();
+        if enable {
+            // Flags set before the write, so even a failed or partial enable is unwound.
+            self.key_release_reporting_enabled = true;
+            REPORTING_MODES.fetch_or(REPORT_KEY_RELEASE, Ordering::SeqCst);
+            crate::input::set_key_releases_delivered(true);
+            request_key_releases(&mut out)
+        } else {
+            let result = pop_key_releases(&mut out);
+            self.key_release_reporting_enabled = false;
+            REPORTING_MODES.fetch_and(!REPORT_KEY_RELEASE, Ordering::SeqCst);
+            crate::input::set_key_releases_delivered(false);
+            result
+        }
+    }
+
+    /// Whether session-owned key-release reporting is currently enabled (requested; whether the
+    /// terminal confirmed it is the answer event's business).
+    pub fn key_release_reporting_enabled(&self) -> bool {
+        self.key_release_reporting_enabled
     }
 
     /// Hides the hardware cursor.
@@ -461,10 +565,18 @@ impl TerminalSession {
 
         let mut out = stdout();
 
-        // Unwind opt-in reporting FIRST, reverse of enable order (focus, then
-        // mouse). Each disable is emitted only when the mode was actually enabled,
+        // Unwind opt-in reporting FIRST, reverse of enable order (key releases, focus,
+        // then mouse). Each disable is emitted only when the mode was actually enabled,
         // so a session that never turned these on writes the exact same restore
-        // bytes as before (the PTY/golden streams are unchanged).
+        // bytes as before (the PTY/golden streams are unchanged). The key-release pop
+        // must precede leaving the alternate screen: the push is on that screen's stack.
+        if self.key_release_reporting_enabled {
+            record(pop_key_releases(&mut out));
+            self.key_release_reporting_enabled = false;
+            crate::input::set_key_releases_delivered(false);
+        }
+        #[cfg(unix)]
+        crate::tty_source::forget_keyboard_replies();
         if self.focus_reporting_enabled {
             record(execute!(out, DisableFocusChange));
             self.focus_reporting_enabled = false;

@@ -52,13 +52,19 @@ use crossterm::event::{
     MediaKeyCode, ModifierKeyCode, MouseButton, MouseEvent, MouseEventKind,
 };
 
-/// What the decoder produces: crossterm's `InternalEvent` (0.29.0 `src/event.rs`).
-/// LibGibson consumes only [`InternalEvent::Event`]; the replies to terminal queries
-/// are decoded (so they never leak in as keystrokes) and then dropped.
+/// What the decoder produces: crossterm's `InternalEvent` (0.29.0 `src/event.rs`), plus
+/// [`InternalEvent::KittyKey`] (a LibGibson addition). The source consumes events, the keyboard
+/// flags reply and the device attributes reply (#275); the cursor position reply is decoded (so
+/// it never leaks in as keystrokes) and then dropped.
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub(crate) enum InternalEvent {
     /// An event.
     Event(Event),
+    /// A key decoded from a kitty-protocol `CSI unicode-key-code ... u` sequence, with that
+    /// unicode-key-code: the key's base (unshifted) identity, the same in its press, repeats
+    /// and release whatever modifiers are down (LibGibson addition, #275). Produced by
+    /// [`Parser`] only; [`parse_event`] keeps upstream's `Event` shape.
+    KittyKey(KeyEvent, u32),
     /// A cursor position (`col`, `row`).
     CursorPosition(u16, u16),
     /// The progressive keyboard enhancement flags enabled by the terminal.
@@ -331,7 +337,13 @@ fn parse_csi_keyboard_enhancement_flags(buffer: &[u8]) -> io::Result<Option<Inte
         return Ok(None);
     }
 
-    let bits = buffer[3];
+    // LibGibson fix (#275): the flags are a decimal number. Upstream (0.29.0) reads the byte of
+    // its first digit, which only works below 10 because the low four bits of `'0'..='9'` are
+    // the digit: kitty's `CSI ? 15 u` read as flags 1, without REPORT_EVENT_TYPES.
+    let bits: u8 = std::str::from_utf8(&buffer[3..buffer.len() - 1])
+        .ok()
+        .and_then(|digits| digits.parse().ok())
+        .ok_or_else(could_not_parse_event_error)?;
     let mut flags = KeyboardEnhancementFlags::empty();
 
     if bits & 1 != 0 {
@@ -966,6 +978,12 @@ impl Parser {
 
             match parse_event(&self.buffer, more) {
                 Ok(Some(ie)) => {
+                    let ie = match (ie, kitty_key_base(&self.buffer)) {
+                        (InternalEvent::Event(Event::Key(k)), Some(base)) => {
+                            InternalEvent::KittyKey(k, base)
+                        }
+                        (ie, _) => ie,
+                    };
                     self.internal_events.push_back(ie);
                     self.buffer.clear();
                 }
@@ -987,6 +1005,18 @@ impl Parser {
     pub(crate) fn pending_bytes(&self) -> usize {
         self.buffer.len()
     }
+}
+
+/// The unicode-key-code of a complete `CSI unicode-key-code[:alternates][;...] u` sequence
+/// (LibGibson addition, #275): the digits right after `ESC [`. `None` for anything else,
+/// including the keyboard flags reply `CSI ? flags u`.
+fn kitty_key_base(seq: &[u8]) -> Option<u32> {
+    let body = seq.strip_prefix(b"\x1B[")?.strip_suffix(b"u")?;
+    let digits = body.iter().take_while(|b| b.is_ascii_digit()).count();
+    if digits == 0 {
+        return None;
+    }
+    std::str::from_utf8(&body[..digits]).ok()?.parse().ok()
 }
 
 impl Iterator for Parser {
@@ -1636,5 +1666,35 @@ mod tests {
                 KeyEventKind::Release,
             )))),
         );
+    }
+
+    #[test]
+    fn keyboard_flags_reply_is_read_as_a_decimal_number() {
+        // #275: kitty answers `CSI ? 15 u` after LibGibson pushes flags 15.
+        use crossterm::event::KeyboardEnhancementFlags as F;
+        let all = F::DISAMBIGUATE_ESCAPE_CODES
+            | F::REPORT_EVENT_TYPES
+            | F::REPORT_ALTERNATE_KEYS
+            | F::REPORT_ALL_KEYS_AS_ESCAPE_CODES;
+        for (seq, want) in [
+            (&b"\x1B[?0u"[..], F::empty()),
+            (
+                b"\x1B[?3u",
+                F::DISAMBIGUATE_ESCAPE_CODES | F::REPORT_EVENT_TYPES,
+            ),
+            (
+                b"\x1B[?10u",
+                F::REPORT_EVENT_TYPES | F::REPORT_ALL_KEYS_AS_ESCAPE_CODES,
+            ),
+            (b"\x1B[?15u", all),
+            (b"\x1B[?31u", all), // 16 (associated text) is not modelled
+        ] {
+            assert_eq!(
+                parse_event(seq, false).unwrap(),
+                Some(InternalEvent::KeyboardEnhancementFlags(want)),
+                "{seq:?}"
+            );
+        }
+        assert!(parse_event(b"\x1B[?1x5u", false).is_err());
     }
 }
