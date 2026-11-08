@@ -74,6 +74,16 @@ first-parent history (Release Contract §1); until then it is a candidate, not a
     `gibson_poll_event_kind`.
   - Off Unix, or with stdin not a terminal and no controlling terminal, input still goes through
     crossterm.
+  - [#297](https://github.com/femboy2112/libgibson/issues/297) (RXX): a headless C context's ANSI
+    capture keeps every frame for the context's lifetime. `gibson_get_rendered_output` (and Python's
+    `rendered_output()`) copies and never drains, and 0.6.0 has no C drain, so a program rendering
+    changing frames indefinitely grows without bound (about 2 KB per changing 80×24 frame). The
+    documented procedure bounds it without a new API: size-query the capture and, past a budget,
+    destroy the context and create a new one. Stated in `include/gibson.h`, the FFI and Python docs
+    (which had said "since its creation or the last drain") and Release Contract §9; tested against
+    the installed SDK by the new clean-room consumer `bindings/sdk_forcing/headless_capture_lifetime.c`
+    (40×15, 80×24 and 240×80; fixed and changing frames; ten replacements per changing case; a
+    no-replacement negative control must fail). The drain itself is additive v0.7 work.
 
 ### Release engineering — source version 0.6.0, RXVII
 - **Version prepared in source:** `Cargo.toml`, `Cargo.lock` (the `libgibson` entry only),

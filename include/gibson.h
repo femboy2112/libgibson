@@ -220,7 +220,11 @@ void     gibson_stats_init(gibson_stats_t *out_stats);
 gibson_status_t gibson_create_context(int32_t mode, gibson_context_t **out);
 /* Headless: renders into an in-memory buffer with deterministic, TTY-independent semantics
    (fixed cols x rows, truecolor, no terminal lease). Read the ANSI frame via
-   gibson_get_rendered_output. cols and rows must be non-zero. (ABI v1, additive) */
+   gibson_get_rendered_output. cols and rows must be non-zero. (ABI v1, additive)
+   LIMIT (0.6, #297): the capture keeps every rendered frame's bytes for the context's lifetime and
+   this ABI has no drain, so a context that renders changing frames indefinitely grows without bound.
+   Bound it: size-query the capture after each render and, past a byte budget, destroy the context
+   and create a new one (see gibson_get_rendered_output). */
 gibson_status_t gibson_create_headless_context(int32_t mode, uint16_t cols, uint16_t rows, gibson_context_t **out);
 void            gibson_destroy_context(gibson_context_t *ctx);
 /* Synchronized-update framing (CSI ?2026 h/l) around each frame on a TTY; on by default. A request
@@ -258,7 +262,11 @@ gibson_status_t gibson_poll_event(gibson_context_t *ctx, uint32_t timeout_ms, gi
 gibson_status_t gibson_get_stats(gibson_context_t *ctx, gibson_stats_t *out_stats);
 int32_t         gibson_last_error_message(char *buf, size_t buf_len);
 /* Copies the headless ANSI frame stream into buf (binary-safe, NOT NUL-terminated).
-   out_len always receives the available size; pass buf=NULL or cap=0 to size-query first. */
+   out_len always receives the available size; pass buf=NULL or cap=0 to size-query first.
+   It copies and never drains: the stream holds every frame since the context was created (0.6 has
+   no C drain, #297). A long-running C consumer must bound the context's lifetime: when the size
+   query passes its budget, gibson_destroy_context and gibson_create_headless_context again
+   (re-apply settings and the root node). Tested: bindings/sdk_forcing/headless_capture_lifetime.c. */
 gibson_status_t gibson_get_rendered_output(gibson_context_t *ctx, uint8_t *buf, size_t cap, size_t *out_len);
 /* Resolved styled cell grid of the most recently rendered frame. frame_size writes (0,0) if there
    is no frame yet; frame_cell returns GIBSON_ERR_INVALID_PARAM for a null out, no frame, or an
