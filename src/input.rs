@@ -4,8 +4,10 @@ use crossterm::event::{
 };
 use std::borrow::Cow;
 use std::io;
+use std::sync::atomic::AtomicU64;
 #[cfg(unix)]
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::AtomicU8;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -153,6 +155,29 @@ pub enum FocusChange {
     Lost,
 }
 
+/// The terminal's answer to a key-release reporting request
+/// (`TerminalSession::set_key_release_reporting`, #275), delivered as
+/// [`Event::KeyReleaseReporting`].
+///
+/// `#[non_exhaustive]`: downstream `match`es must include a `_` arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum KeyReleaseReporting {
+    /// The terminal confirmed it (it speaks the kitty keyboard protocol): from this event on,
+    /// a key that goes up is reported as an [`Event::KeyRelease`].
+    Active,
+    /// The terminal answered without confirming the current request: keys stay press-only, and
+    /// no [`Event::KeyRelease`] will come for it. Final for that request: once any poll hands it
+    /// out, releases stop and the request is withdrawn (see
+    /// `TerminalSession::set_key_release_reporting`).
+    ///
+    /// Also the notice that reporting *ended* because the panic hook popped the flags. That
+    /// notice is news about the earlier request, not a verdict on a later one: if the client
+    /// enabled reporting again after a caught panic, the notice comes first and the new request
+    /// stands, so its own answer (possibly [`Active`](Self::Active)) follows.
+    Unsupported,
+}
+
 /// High-level input event.
 ///
 /// `#[non_exhaustive]`: new event kinds are expected, so downstream `match`es must
@@ -170,6 +195,25 @@ pub enum Event {
     /// A terminal focus change. Only produced when focus reporting is enabled via
     /// [`set_focus_reporting`] — **off by default** (issue #126).
     Focus(FocusChange),
+    /// A key went up. Only produced while key-release reporting is enabled with
+    /// `TerminalSession::set_key_release_reporting` — **off by default** — on a terminal that
+    /// confirmed it ([`Event::KeyReleaseReporting`]); a terminal without the kitty keyboard
+    /// protocol reports presses only (#275).
+    ///
+    /// The key is named exactly as its press was delivered, the same code and modifiers, even
+    /// when the terminal names it differently on the way up (shift let go first turns a released
+    /// `W` into `w`), so a release matches its press by equality. A key that was already down
+    /// when reporting began has no recorded press: its release is named as its first autorepeat
+    /// since then was delivered, or, with none, as the terminal reports it. Not covered: a
+    /// shifted symbol pressed just before the flags take effect (at enable, or as a screen switch
+    /// pushes them again) and let go without an autorepeat is released as the terminal reports it
+    /// (`!` as `1`), so that release does not match its press
+    /// ([#312](https://github.com/femboy2112/libgibson/issues/312)). An autorepeat of a held key is
+    /// an [`Event::Key`], as on any terminal.
+    KeyRelease(KeyEvent),
+    /// The terminal's answer to a key-release reporting request, in input order: every event
+    /// after it was produced under that answer.
+    KeyReleaseReporting(KeyReleaseReporting),
     /// Reserved animation/timer tick. It is **not** produced by [`poll_event`]:
     /// the core loop is input-driven. A consumer paces animation itself with
     /// `Context::animation_interval` + `Context::render_if_due` (see the
@@ -179,6 +223,122 @@ pub enum Event {
     /// synthesizes its own ticks can route them through the same `Event`
     /// channel. (Issue #48 E-07)
     Tick,
+}
+
+/// One decoded item from a terminal input source, before LibGibson's delivery rules
+/// ([`decode_source_event`]): a terminal event, or the answer to a key-release reporting
+/// request, which only the library-owned Unix source recognises.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SourceEvent {
+    Terminal(CtEvent),
+    // Only the Unix source constructs the two variants below; elsewhere they are matched but
+    // never built.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    KeyReleaseReporting(KeyReleaseReporting),
+    /// The panic hook ended key-release reporting and nobody has said so yet (#275 review 8).
+    /// The Unix source queues it just before the first answer it decodes after the end, so
+    /// whichever poll hands that answer out says `Unsupported` first. Delivered as `Unsupported`,
+    /// whatever the delivery state, and changes none of it: it is news, not a verdict.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    ReportingEnded,
+}
+
+impl From<CtEvent> for SourceEvent {
+    fn from(ev: CtEvent) -> Self {
+        SourceEvent::Terminal(ev)
+    }
+}
+
+/// A source item and, from the Unix source, the generation it was decoded in (see
+/// [`KEY_RELEASE_STATE`]): what ties an answer to the request it answers (#275 review 8).
+pub(crate) struct SourceItem {
+    event: SourceEvent,
+    generation: Option<u64>,
+}
+
+impl From<CtEvent> for SourceItem {
+    fn from(ev: CtEvent) -> Self {
+        SourceEvent::Terminal(ev).into()
+    }
+}
+
+impl From<SourceEvent> for SourceItem {
+    fn from(event: SourceEvent) -> Self {
+        SourceItem {
+            event,
+            generation: None,
+        }
+    }
+}
+
+impl From<(u64, SourceEvent)> for SourceItem {
+    fn from((generation, event): (u64, SourceEvent)) -> Self {
+        SourceItem {
+            event,
+            generation: Some(generation),
+        }
+    }
+}
+
+/// Key-release delivery as one word, so that what an answer does to it is a single atomic step
+/// (#275 review 8): the generation (epoch) shifted left one, ORed with whether a key release is
+/// delivered as [`Event::KeyRelease`] (true while a session has key-release reporting enabled;
+/// off, a release is dropped, #285). The generation moves every time delivery is turned on or
+/// off, so the Unix source forgets the keys it recorded under the previous setting before decoding
+/// anything more, and an answer decoded in one generation can never act on a later one.
+static KEY_RELEASE_STATE: AtomicU64 = AtomicU64::new(0);
+
+/// [`KEY_RELEASE_STATE`] for `generation` with delivery `on`.
+const fn key_release_state(generation: u64, on: bool) -> u64 {
+    (generation << 1) | on as u64
+}
+
+/// Moves `state` to the next generation with delivery `on`.
+fn set_delivered_in(state: &AtomicU64, on: bool) {
+    let _ = state.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |s| {
+        Some(key_release_state((s >> 1).wrapping_add(1), on))
+    });
+}
+
+/// Turns delivery of [`Event::KeyRelease`] (and of the terminal's answers) on or off; the session
+/// calls this when it enables, disables or restores key-release reporting.
+pub(crate) fn set_key_releases_delivered(on: bool) {
+    set_delivered_in(&KEY_RELEASE_STATE, on);
+}
+
+#[cfg(unix)]
+pub(crate) fn key_release_epoch() -> u64 {
+    KEY_RELEASE_STATE.load(Ordering::SeqCst) >> 1
+}
+
+pub(crate) fn key_releases_delivered() -> bool {
+    KEY_RELEASE_STATE.load(Ordering::SeqCst) & 1 != 0
+}
+
+/// Hands out the terminal's answer to the request made in `generation`, against `state`
+/// ([`KEY_RELEASE_STATE`] outside tests). Only while that generation is still current with
+/// delivery on: anything else is a stale answer, and changes nothing. An `Unsupported` also ends
+/// delivery, in the same compare-and-swap that checks the generation, so an old verdict read by a
+/// slow poller cannot withdraw a request made after it (#275 review 8). Being right once is the
+/// whole job; being right about last week's patient is how you get sued.
+fn hand_out_answer_in(
+    state: &AtomicU64,
+    answer: KeyReleaseReporting,
+    generation: u64,
+) -> Option<Event> {
+    let live = key_release_state(generation, true);
+    let current = match answer {
+        KeyReleaseReporting::Active => state.load(Ordering::SeqCst) == live,
+        KeyReleaseReporting::Unsupported => state
+            .compare_exchange(
+                live,
+                key_release_state(generation.wrapping_add(1), false),
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .is_ok(),
+    };
+    current.then_some(Event::KeyReleaseReporting(answer))
 }
 
 /// Polls for an event with a timeout.
@@ -256,7 +416,7 @@ fn poll_event_crossterm(timeout: Duration) -> io::Result<Option<Event>> {
     let timeout = timeout.min(Duration::from_millis(u64::from(u32::MAX - 1)));
     poll_until_deliverable(timeout, |left| {
         if event::poll(left)? {
-            Ok(Some(event::read()?))
+            Ok(Some(SourceEvent::Terminal(event::read()?)))
         } else {
             Ok(None)
         }
@@ -274,16 +434,16 @@ const MAX_DROPS_PAST_DEADLINE: u32 = 64;
 /// Polls `next` until it yields an event LibGibson delivers, or `timeout` has passed.
 ///
 /// `next(left)` waits at most `left` for one decoded terminal event (`Ok(None)` when it waited
-/// that long and none came). An event [`decode_event`] does not deliver (a key release, #285,
+/// that long and none came). An event [`decode_source_event`] does not deliver (a key release, #285,
 /// or a key code LibGibson does not model) is consumed and the wait **continues** for the rest
 /// of the same deadline: dropping it must not end the poll early as if the timeout had passed,
 /// and the events queued behind it are delivered in order. So `Ok(None)` means the timeout
 /// passed with nothing delivered. Once the deadline has passed, at most
 /// [`MAX_DROPS_PAST_DEADLINE`] further undelivered events, each already available, are consumed
 /// before the poll gives up; with a zero timeout that is all the poll does.
-fn poll_until_deliverable(
+fn poll_until_deliverable<T: Into<SourceItem>>(
     timeout: Duration,
-    mut next: impl FnMut(Duration) -> io::Result<Option<CtEvent>>,
+    mut next: impl FnMut(Duration) -> io::Result<Option<T>>,
 ) -> io::Result<Option<Event>> {
     // A timeout too large to add to `now` is effectively unbounded: keep passing it whole.
     let deadline = Instant::now().checked_add(timeout);
@@ -293,7 +453,7 @@ fn poll_until_deliverable(
         match next(left)? {
             None => return Ok(None),
             Some(raw) => {
-                if let Some(event) = decode_event(raw) {
+                if let Some(event) = decode_source_event(raw.into()) {
                     return Ok(Some(event));
                 }
                 if left.is_zero() {
@@ -307,8 +467,10 @@ fn poll_until_deliverable(
     }
 }
 
-/// Whether a key event of this kind is delivered. Press and repeat are; a release is not, on Unix
-/// (#285), where only a kitty-keyboard-protocol terminal reports one.
+/// Whether a key event of this kind is delivered as a press. Press and repeat are; a release is
+/// not, on Unix (#285), where only a kitty-keyboard-protocol terminal reports one. While
+/// key-release reporting is enabled a Unix release is delivered as [`Event::KeyRelease`]
+/// instead (see [`decode_event_as`]).
 ///
 /// Windows keeps its earlier behaviour, every kind delivered (#285 review). crossterm 0.29 reports
 /// a release there for each ordinary key-up, which LibGibson has always delivered as a second press
@@ -319,46 +481,95 @@ fn delivers_key_kind(kind: KeyEventKind, windows: bool) -> bool {
     kind != KeyEventKind::Release || windows
 }
 
-/// Translates a crossterm event into our [`Event`]; `None` for what LibGibson does not
-/// deliver: a key **release** (#285) and key codes it does not model.
-///
-/// The public input model is press-only. A kitty-keyboard-protocol terminal reports an event
-/// type with each key: a press and a repeat are delivered as [`Event::Key`] (a repeat is what a
-/// held key produces on any terminal), and a release is not delivered, never as a second press
-/// (see [`delivers_key_kind`] for the Windows Alt-code exception).
-fn decode_event(ev: CtEvent) -> Option<Event> {
-    match ev {
-        CtEvent::Key(k) if !delivers_key_kind(k.kind, cfg!(windows)) => None,
-        CtEvent::Key(k) => {
-            let code = match k.code {
-                CtKeyCode::Char(c) => KeyCode::Char(c),
-                CtKeyCode::Enter => KeyCode::Enter,
-                CtKeyCode::Left => KeyCode::Left,
-                CtKeyCode::Right => KeyCode::Right,
-                CtKeyCode::Up => KeyCode::Up,
-                CtKeyCode::Down => KeyCode::Down,
-                CtKeyCode::Home => KeyCode::Home,
-                CtKeyCode::End => KeyCode::End,
-                CtKeyCode::PageUp => KeyCode::PageUp,
-                CtKeyCode::PageDown => KeyCode::PageDown,
-                CtKeyCode::Backspace => KeyCode::Backspace,
-                CtKeyCode::Delete => KeyCode::Delete,
-                CtKeyCode::Esc => KeyCode::Esc,
-                CtKeyCode::Tab => KeyCode::Tab,
-                CtKeyCode::BackTab => KeyCode::BackTab,
-                _ => return None,
-            };
-            Some(Event::Key(KeyEvent {
-                code,
-                modifiers: k.modifiers.into(),
-            }))
+/// Applies LibGibson's delivery rules to one source item, with key-release delivery as the
+/// session set it ([`set_key_releases_delivered`]). Every public poll hands events out through
+/// here. An answer is handed out only in the generation of the request it answers, and an
+/// `Unsupported` one ends delivery in the same atomic step ([`hand_out_answer_in`]), so it is final
+/// for every poll (#275 review 8): releases queued behind it are dropped as they are handed out,
+/// and a stale one changes nothing. Popping the push stays the owning session's (its next
+/// `Context` poll, enable, disable or screen switch, `restore`, `Drop` or the panic hook): anyone
+/// may read the verdict, only the owner may act on it.
+fn decode_source_event(item: SourceItem) -> Option<Event> {
+    match (item.event, item.generation) {
+        (SourceEvent::KeyReleaseReporting(r), Some(generation)) => {
+            hand_out_answer_in(&KEY_RELEASE_STATE, r, generation)
         }
+        // Only the Unix source decodes answers, and it tags each with its generation.
+        (SourceEvent::KeyReleaseReporting(_), None) => None,
+        (ev, _) => decode_source_event_as(ev, cfg!(windows), key_releases_delivered()),
+    }
+}
+
+/// [`decode_source_event`] with delivery given, for an item that is not a tagged answer. Both a
+/// release and an answer are decided at delivery: one decoded while reporting was on but handed
+/// out after it was turned off is dropped, so a late answer cannot switch a hold model back on
+/// (#275 review). The notice that reporting ended is always delivered.
+fn decode_source_event_as(ev: SourceEvent, windows: bool, releases: bool) -> Option<Event> {
+    match ev {
+        SourceEvent::Terminal(ev) => decode_event_as(ev, windows, releases),
+        SourceEvent::KeyReleaseReporting(r) => releases.then_some(Event::KeyReleaseReporting(r)),
+        SourceEvent::ReportingEnded => {
+            Some(Event::KeyReleaseReporting(KeyReleaseReporting::Unsupported))
+        }
+    }
+}
+
+/// Translates a crossterm event into our [`Event`] with key releases **not** delivered (the
+/// default; see [`decode_event_as`]).
+#[cfg(test)]
+fn decode_event(ev: CtEvent) -> Option<Event> {
+    decode_event_as(ev, cfg!(windows), false)
+}
+
+/// Translates a crossterm event into our [`Event`]; `None` for what LibGibson does not
+/// deliver: a key code it does not model, and a key **release** unless `releases` (key-release
+/// reporting is enabled) on a non-Windows platform (#285, #275).
+///
+/// Without key-release reporting the public input model is press-only. A kitty-keyboard-protocol
+/// terminal reports an event type with each key: a press and a repeat are delivered as
+/// [`Event::Key`] (a repeat is what a held key produces on any terminal), and a release is not
+/// delivered, never as a second press (see [`delivers_key_kind`] for the Windows Alt-code
+/// exception). With it, a release is delivered as [`Event::KeyRelease`].
+fn decode_event_as(ev: CtEvent, windows: bool, releases: bool) -> Option<Event> {
+    match ev {
+        CtEvent::Key(k) if k.kind == KeyEventKind::Release && releases && !windows => {
+            decode_key(&k).map(Event::KeyRelease)
+        }
+        CtEvent::Key(k) if !delivers_key_kind(k.kind, windows) => None,
+        CtEvent::Key(k) => decode_key(&k).map(Event::Key),
         CtEvent::Paste(s) => Some(Event::Paste(s)),
         CtEvent::Resize(cols, rows) => Some(Event::Resize(cols, rows)),
         CtEvent::Mouse(m) => decode_mouse(m),
         CtEvent::FocusGained => Some(Event::Focus(FocusChange::Gained)),
         CtEvent::FocusLost => Some(Event::Focus(FocusChange::Lost)),
     }
+}
+
+/// Our [`KeyEvent`] for a crossterm key, whatever its kind; `None` for a key code LibGibson does
+/// not model (function keys beyond the set below, keypad and media keys, modifier keys).
+fn decode_key(k: &crossterm::event::KeyEvent) -> Option<KeyEvent> {
+    let code = match k.code {
+        CtKeyCode::Char(c) => KeyCode::Char(c),
+        CtKeyCode::Enter => KeyCode::Enter,
+        CtKeyCode::Left => KeyCode::Left,
+        CtKeyCode::Right => KeyCode::Right,
+        CtKeyCode::Up => KeyCode::Up,
+        CtKeyCode::Down => KeyCode::Down,
+        CtKeyCode::Home => KeyCode::Home,
+        CtKeyCode::End => KeyCode::End,
+        CtKeyCode::PageUp => KeyCode::PageUp,
+        CtKeyCode::PageDown => KeyCode::PageDown,
+        CtKeyCode::Backspace => KeyCode::Backspace,
+        CtKeyCode::Delete => KeyCode::Delete,
+        CtKeyCode::Esc => KeyCode::Esc,
+        CtKeyCode::Tab => KeyCode::Tab,
+        CtKeyCode::BackTab => KeyCode::BackTab,
+        _ => return None,
+    };
+    Some(KeyEvent {
+        code,
+        modifiers: k.modifiers.into(),
+    })
 }
 
 /// Translates a crossterm mouse event into our [`MouseEvent`]. Always produces an
@@ -1473,8 +1684,9 @@ mod mouse_focus_tests {
 mod key_kind_tests {
     //! #285: the event type a kitty-protocol terminal reports with a key.
     use super::{
-        decode_event, delivers_key_kind, poll_until_deliverable, Event, KeyCode, KeyEvent,
-        KeyModifiers, MAX_DROPS_PAST_DEADLINE,
+        decode_event, decode_event_as, decode_source_event_as, delivers_key_kind,
+        poll_until_deliverable, Event, KeyCode, KeyEvent, KeyModifiers, KeyReleaseReporting,
+        SourceEvent, MAX_DROPS_PAST_DEADLINE,
     };
     use crossterm::event::{
         Event as CtEvent, KeyCode as CtKeyCode, KeyEvent as CtKeyEvent, KeyEventKind,
@@ -1523,6 +1735,37 @@ mod key_kind_tests {
             ));
             assert_eq!(decode_event(up), None);
         }
+    }
+
+    #[test]
+    fn with_key_release_reporting_a_release_is_a_key_release_event() {
+        // #275: delivered only while reporting is on, and never on Windows (#292 unchanged).
+        let up = || ct_key('a', KeyEventKind::Release);
+        let a = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty());
+        assert_eq!(
+            decode_event_as(up(), false, true),
+            Some(Event::KeyRelease(a))
+        );
+        assert_eq!(decode_event_as(up(), false, false), None);
+        assert_eq!(decode_event_as(up(), true, true), Some(Event::Key(a)));
+        // A press and a repeat are presses either way; an unmodelled key's release is dropped.
+        for kind in [KeyEventKind::Press, KeyEventKind::Repeat] {
+            assert_eq!(decode_event_as(ct_key('a', kind), false, true), key('a'));
+        }
+        let f5_up = CtEvent::Key(CtKeyEvent::new_with_kind(
+            CtKeyCode::F(5),
+            CtKeyModifiers::NONE,
+            KeyEventKind::Release,
+        ));
+        assert_eq!(decode_event_as(f5_up, false, true), None);
+        // The answer passes through while reporting is on, and is dropped once it is off (a late
+        // answer must not switch a hold model back on).
+        let active = || SourceEvent::KeyReleaseReporting(KeyReleaseReporting::Active);
+        assert_eq!(
+            decode_source_event_as(active(), false, true),
+            Some(Event::KeyReleaseReporting(KeyReleaseReporting::Active))
+        );
+        assert_eq!(decode_source_event_as(active(), false, false), None);
     }
 
     /// A scripted source: each call pops the next scripted reply and records the `left` it was
@@ -1641,10 +1884,71 @@ mod key_kind_tests {
         let mut seen = None;
         let got = poll_until_deliverable(Duration::MAX, |left| {
             seen = Some(left);
-            Ok(None)
+            Ok(None::<CtEvent>)
         })
         .unwrap();
         assert_eq!(got, None);
         assert_eq!(seen, Some(Duration::MAX));
+    }
+}
+
+#[cfg(test)]
+mod answer_generation_tests {
+    //! #275 review 8: an answer acts only in the generation of the request it answers. These
+    //! drive the one step that decides it on a local state word, so nothing races and no other
+    //! test's delivery switch is touched.
+    use super::{hand_out_answer_in, set_delivered_in, Event, KeyReleaseReporting};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    fn a_stale_unsupported_changes_nothing_after_a_disable_and_re_enable() {
+        // A poller dequeued generation g's `Unsupported`, then stalled; meanwhile the owner
+        // disabled and enabled again (a fresh push and query). The old verdict must not end
+        // the new request: delivery and generation stay exactly as the owner left them, so the
+        // owner's next sync finds nothing to withdraw and pops nothing.
+        let state = AtomicU64::new(0);
+        set_delivered_in(&state, true);
+        let old = state.load(Ordering::SeqCst) >> 1;
+        set_delivered_in(&state, false);
+        set_delivered_in(&state, true);
+        let renewed = state.load(Ordering::SeqCst);
+        assert_eq!(
+            hand_out_answer_in(&state, KeyReleaseReporting::Unsupported, old),
+            None
+        );
+        assert_eq!(
+            hand_out_answer_in(&state, KeyReleaseReporting::Active, old),
+            None
+        );
+        assert_eq!(
+            state.load(Ordering::SeqCst),
+            renewed,
+            "a stale answer changed state"
+        );
+        assert_eq!(renewed & 1, 1, "delivery still on for the new request");
+    }
+
+    #[test]
+    fn the_current_unsupported_ends_delivery_once() {
+        let state = AtomicU64::new(0);
+        set_delivered_in(&state, true);
+        let now = state.load(Ordering::SeqCst) >> 1;
+        assert_eq!(
+            hand_out_answer_in(&state, KeyReleaseReporting::Active, now),
+            Some(Event::KeyReleaseReporting(KeyReleaseReporting::Active))
+        );
+        assert_eq!(
+            hand_out_answer_in(&state, KeyReleaseReporting::Unsupported, now),
+            Some(Event::KeyReleaseReporting(KeyReleaseReporting::Unsupported))
+        );
+        let after = state.load(Ordering::SeqCst);
+        assert_eq!(after & 1, 0, "delivery ended");
+        assert_eq!(after >> 1, now + 1, "and the generation moved, once");
+        // A second copy of the same verdict is now stale itself.
+        assert_eq!(
+            hand_out_answer_in(&state, KeyReleaseReporting::Unsupported, now),
+            None
+        );
+        assert_eq!(state.load(Ordering::SeqCst), after);
     }
 }

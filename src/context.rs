@@ -1,5 +1,5 @@
 use crate::cell::RichText;
-use crate::input::{poll_event, Event};
+use crate::input::{poll_event, Event, KeyReleaseReporting};
 use crate::node::Node;
 use crate::renderer::{FrameReport, InsertStrategy, Renderer};
 use crate::scheduler::{FramePacing, FrameScheduler, RenderStats};
@@ -724,13 +724,28 @@ impl Context {
         if !self.session.is_tty || self.session.is_headless() {
             return Ok(None);
         }
-        self.session.enter_interactive()?;
+        self.session.sync_key_release_reporting();
+        // Before entering interactive mode: the panic hook left raw mode, and this restores it.
+        let ended = self.session.take_key_releases_ended();
+        if let Err(e) = self.session.enter_interactive() {
+            if ended {
+                // Not delivered: the next poll delivers it.
+                self.session.keep_key_releases_ended();
+            }
+            return Err(e);
+        }
+        if ended {
+            return Ok(Some(Event::KeyReleaseReporting(
+                KeyReleaseReporting::Unsupported,
+            )));
+        }
         let ev = poll_event(timeout)?;
         if let Some(Event::Resize(_, _)) = ev {
             // Geometry is authoritative on the next render via observe_geometry;
             // marking dirty is enough to schedule it.
             self.scheduler.mark_dirty();
         }
+        self.session.sync_key_release_reporting();
         Ok(ev)
     }
 
@@ -760,10 +775,17 @@ impl Context {
     where
         S: crate::event_source::EventSource + ?Sized,
     {
+        self.session.sync_key_release_reporting();
+        if self.session.take_key_releases_ended() {
+            return Ok(Some(Event::KeyReleaseReporting(
+                KeyReleaseReporting::Unsupported,
+            )));
+        }
         let ev = source.poll_event(timeout)?;
         if let Some(Event::Resize(cols, rows)) = ev {
             self.deliver_resize(cols, rows);
         }
+        self.session.sync_key_release_reporting();
         Ok(ev)
     }
 

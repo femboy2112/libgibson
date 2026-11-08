@@ -21,6 +21,13 @@
 //! ```
 //! Keys: W/S or ↑/↓ move · A/D or ←/→ turn · Z/C strafe · Q, Esc or Ctrl-C quit.
 //!
+//! Held keys (#275): a terminal reports presses, not releases, so by default a press is held for
+//! a grace period (`--hold-grace-ms`) and kept alive by autorepeat. In a terminal that speaks the
+//! kitty keyboard protocol (tested in kitty) the game asks for key releases
+//! (`TerminalSession::set_key_release_reporting`); once the terminal confirms, a key is held
+//! exactly as long as it is down, keys held together stay held, and the HUD shows `KEYS EXACT`.
+//! `--no-key-releases` keeps the inferred model.
+//!
 //! Every ending that leaves a terminal restores it (node H): quitting; a delivered SIGTERM or
 //! SIGINT, which stops the loop, restores, writes the `--record` trace, then re-raises the signal
 //! so the parent still sees it - within a 3 s grace, after which a watchdog restores cooked mode
@@ -44,7 +51,7 @@ use gibson::event_source::InjectedQueue;
 use gibson::glitch::tear;
 use gibson::glyph::{transcode_surface_glyphs, SubcellGlyphMode};
 use gibson::hold::{HoldConfig, HoldTracker, ReleaseCause};
-use gibson::input::{Event, KeyCode, KeyEvent, KeyModifiers};
+use gibson::input::{Event, KeyCode, KeyEvent, KeyModifiers, KeyReleaseReporting};
 use gibson::node::Node;
 use gibson::raster::RgbRaster;
 use gibson::surface::{Rect, Surface};
@@ -73,7 +80,26 @@ fn action_of(k: &KeyEvent) -> Option<Action> {
     {
         return None;
     }
-    Some(match k.code {
+    action_of_key(phys_key(k.code))
+}
+
+/// The physical key a movement key event names: letters folded to lowercase, so `W` (shift held)
+/// and `w` are one key. Holds are kept per physical key, not per action (#275 review): with
+/// releases reported, letting go of W while Up is still down must keep the drone moving forward.
+fn phys_key(code: KeyCode) -> KeyCode {
+    match code {
+        KeyCode::Char(c) => KeyCode::Char(c.to_ascii_lowercase()),
+        other => other,
+    }
+}
+
+/// The hold-tracker key of a movement key event; `None` for anything that is not movement.
+fn hold_key(k: &KeyEvent) -> Option<KeyCode> {
+    action_of(k).map(|_| phys_key(k.code))
+}
+
+fn action_of_key(code: KeyCode) -> Option<Action> {
+    Some(match code {
         KeyCode::Up => Action::Forward,
         KeyCode::Down => Action::Back,
         KeyCode::Left => Action::TurnLeft,
@@ -284,24 +310,30 @@ fn is_quit(e: &Event) -> bool {
 /// The replayable trace (`--record` / `--replay`), version 1: a header with everything the
 /// simulation depends on, one line per simulation-relevant input stamped with its tic, and the
 /// tic the session ended at. Inputs that cannot change the simulation (paste, mouse, resize)
-/// are not recorded.
+/// are not recorded. A key release and the terminal's answer to the key-release request (#275)
+/// are recorded too (`release` and `keys` lines), so a session with exact keys replays exactly.
 const TRACE_MAGIC: &str = "deep_signal-trace v1";
+
+fn encode_key(kind: &str, k: &KeyEvent) -> Option<String> {
+    let ctrl = u8::from(k.modifiers.contains(KeyModifiers::CONTROL));
+    let alt = u8::from(k.modifiers.contains(KeyModifiers::ALT));
+    let code = match k.code {
+        KeyCode::Char(c) => format!("char:{}", u32::from(c)),
+        KeyCode::Up => "up".into(),
+        KeyCode::Down => "down".into(),
+        KeyCode::Left => "left".into(),
+        KeyCode::Right => "right".into(),
+        _ => return None, // no other key affects the simulation
+    };
+    Some(format!("{kind}\t{code}\t{ctrl}{alt}"))
+}
 
 fn encode_event(e: &Event) -> Option<String> {
     match e {
-        Event::Key(k) => {
-            let ctrl = u8::from(k.modifiers.contains(KeyModifiers::CONTROL));
-            let alt = u8::from(k.modifiers.contains(KeyModifiers::ALT));
-            let code = match k.code {
-                KeyCode::Char(c) => format!("char:{}", u32::from(c)),
-                KeyCode::Up => "up".into(),
-                KeyCode::Down => "down".into(),
-                KeyCode::Left => "left".into(),
-                KeyCode::Right => "right".into(),
-                _ => return None, // no other key affects the simulation
-            };
-            Some(format!("key\t{code}\t{ctrl}{alt}"))
-        }
+        Event::Key(k) => encode_key("key", k),
+        Event::KeyRelease(k) => encode_key("release", k),
+        Event::KeyReleaseReporting(KeyReleaseReporting::Active) => Some("keys\treleases".into()),
+        Event::KeyReleaseReporting(_) => Some("keys\tpresses".into()),
         Event::Focus(gibson::input::FocusChange::Lost) => Some("focus\tlost".into()),
         _ => None,
     }
@@ -309,7 +341,7 @@ fn encode_event(e: &Event) -> Option<String> {
 
 fn decode_event(fields: &[&str]) -> Result<Event, String> {
     match fields {
-        ["key", code, mods] => {
+        [kind @ ("key" | "release"), code, mods] => {
             let code = match *code {
                 "up" => KeyCode::Up,
                 "down" => KeyCode::Down,
@@ -330,8 +362,15 @@ fn decode_event(fields: &[&str]) -> Result<Event, String> {
             if mods.ends_with('1') {
                 m |= KeyModifiers::ALT;
             }
-            Ok(Event::Key(KeyEvent::new(code, m)))
+            let k = KeyEvent::new(code, m);
+            Ok(if *kind == "key" {
+                Event::Key(k)
+            } else {
+                Event::KeyRelease(k)
+            })
         }
+        ["keys", "releases"] => Ok(Event::KeyReleaseReporting(KeyReleaseReporting::Active)),
+        ["keys", "presses"] => Ok(Event::KeyReleaseReporting(KeyReleaseReporting::Unsupported)),
         ["focus", "lost"] => Ok(Event::Focus(gibson::input::FocusChange::Lost)),
         other => Err(format!("unrecognised trace line {other:?}")),
     }
@@ -396,7 +435,8 @@ fn replay_trace(text: &str) -> Result<(World, u64), String> {
 /// The authoritative simulation: world + held-key model + the trace that reproduces it.
 struct Sim {
     world: World,
-    holds: HoldTracker<Action>,
+    /// Held movement keys, per physical key ([`phys_key`]).
+    holds: HoldTracker<KeyCode>,
     trace: Vec<(u64, Event)>,
     last_message: (u64, &'static str),
     /// Rolling hash of the trajectory (tic, position, angle, integrity after every tic): two
@@ -419,12 +459,19 @@ impl Sim {
     fn feed(&mut self, e: &Event) {
         let tic = self.world.tic;
         // The tracker never sees time move backwards: `tic` only grows.
-        let _ = self.holds.observe_event(tic, e, action_of);
+        let _ = self.holds.observe_event(tic, e, hold_key);
         self.trace.push((tic, e.clone()));
     }
 
+    /// The intent the next tick will use: holds advanced to the current tic first, as
+    /// [`Sim::tick`] does.
+    fn intent_after_advance(&mut self) -> Intent {
+        let _ = self.holds.advance(self.world.tic);
+        self.intent()
+    }
+
     fn intent(&self) -> Intent {
-        let held = |a| self.holds.is_held(a);
+        let held = |a| self.holds.held().any(|(k, _)| action_of_key(k) == Some(a));
         let axis = |pos, neg| i32::from(held(pos)) - i32::from(held(neg));
         Intent {
             forward: axis(Action::Forward, Action::Back),
@@ -478,6 +525,8 @@ enum Look {
 #[derive(Clone, Copy, Debug)]
 struct Hud {
     ascii: bool,
+    /// The terminal reports key releases (#275): keys are held exactly as long as they are down.
+    exact_keys: bool,
 }
 
 fn frame(world: Arc<World>, look: Look, message: &'static str, hud: Hud) -> Node {
@@ -543,10 +592,15 @@ fn frame(world: Arc<World>, look: Look, message: &'static str, hud: Hud) -> Node
         }
         Phase::Playing => (message, message),
     };
+    let exact = if hud.exact_keys {
+        format!(" {dot} KEYS EXACT")
+    } else {
+        String::new()
+    };
     let (wide2, compact2) = match phase_msg {
         ("", _) => (
-            format!("WASD/ARROWS MOVE {dot} Z/C STRAFE {dot} Q QUIT"),
-            format!("WASD MOVE {dot} Z/C STRAFE {dot} Q QUIT"),
+            format!("WASD/ARROWS MOVE {dot} Z/C STRAFE {dot} Q QUIT{exact}"),
+            format!("WASD MOVE {dot} Z/C STRAFE {dot} Q QUIT{exact}"),
         ),
         (long, short) => (long.to_string(), short.to_string()),
     };
@@ -663,6 +717,7 @@ fn replay(
             let msg = sim.last_message.1;
             let hud = Hud {
                 ascii: look == Look::Mono(SubcellGlyphMode::Ascii),
+                exact_keys: sim.holds.releases_reported(),
             };
             ctx.set_root(frame(Arc::new(sim.world.clone()), look, msg, hud));
             ctx.render().expect("headless render");
@@ -721,14 +776,76 @@ fn selfcheck() -> Result<(), String> {
     if mono.world_digest != a.world_digest {
         return Err("40x15 ASCII presentation changed the simulation".into());
     }
+    let exact = selfcheck_reported_releases()?;
     println!(
-        "deep_signal selfcheck: OK world={:016x} tics={} frames={} first_frame={:016x}",
+        "deep_signal selfcheck: OK world={:016x} tics={} frames={} first_frame={:016x} exact_keys={:016x}",
         a.world_digest,
         a.tics,
         a.frames.len(),
-        a.frames[0]
+        a.frames[0],
+        exact
     );
     Ok(())
+}
+
+/// The #275 model, end to end through the game: once the terminal confirms key releases, a key
+/// moves the drone exactly while it is down, a chord holds both keys, and a tap inside one tic
+/// moves it one tic. The trace also survives the `--record` encoding unchanged, and replaying
+/// it through a headless context (as `replay` does) gives the same world.
+fn selfcheck_reported_releases() -> Result<u64, String> {
+    let key = |c: char| KeyEvent::new(KeyCode::Char(c), KeyModifiers::empty());
+    // w down 10..100; d (turn right) down 20..40 while w stays down, autorepeating; a tap of a
+    // (turn left) pressed and released inside tic 120.
+    let mut trace = vec![(0, Event::KeyReleaseReporting(KeyReleaseReporting::Active))];
+    trace.push((10, Event::Key(key('w'))));
+    trace.push((20, Event::Key(key('d'))));
+    trace.extend((34..40).map(|t| (t, Event::Key(key('d')))));
+    trace.push((40, Event::KeyRelease(key('d'))));
+    trace.push((100, Event::KeyRelease(key('w'))));
+    trace.push((120, Event::Key(key('a'))));
+    trace.push((120, Event::KeyRelease(key('a'))));
+    // Two keys for one action: w down 130..160 and Up down 140..170; forward until both are up.
+    let up = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
+    trace.push((130, Event::Key(key('w'))));
+    trace.push((140, Event::Key(up)));
+    trace.push((160, Event::KeyRelease(key('w'))));
+    trace.push((170, Event::KeyRelease(up)));
+    let end = 180;
+    let mut sim = Sim::new(2112, 3, HoldConfig::new(16, 4));
+    let mut i = 0;
+    while sim.world.tic < end {
+        let t = sim.world.tic;
+        while i < trace.len() && trace[i].0 == t {
+            sim.feed(&trace[i].1.clone());
+            i += 1;
+        }
+        let want = Intent {
+            forward: i32::from((10..100).contains(&t) || (130..170).contains(&t)),
+            strafe: 0,
+            turn: i32::from((20..40).contains(&t)) - i32::from(t == 120),
+        };
+        let got = sim.intent_after_advance();
+        if (got.forward, got.strafe, got.turn) != (want.forward, want.strafe, want.turn) {
+            return Err(format!(
+                "reported releases: tic {t}: intent {:?}, want {:?}",
+                (got.forward, got.strafe, got.turn),
+                (want.forward, want.strafe, want.turn)
+            ));
+        }
+        sim.tick();
+    }
+    for (_, e) in &trace {
+        let line = encode_event(e).ok_or("an exact-keys event is not recorded")?;
+        let fields: Vec<&str> = line.split('\t').collect();
+        if decode_event(&fields)? != *e {
+            return Err(format!("trace line {line:?} does not decode to {e:?}"));
+        }
+    }
+    let replayed = replay(&trace, end, 1, Look::Color, 80, 24);
+    if replayed.world_digest != sim.world.digest() {
+        return Err("exact keys through a headless context changed the simulation".into());
+    }
+    Ok(sim.world.digest())
 }
 
 struct Opts {
@@ -736,6 +853,8 @@ struct Opts {
     levels: u32,
     look: Look,
     ascii_hud: bool,
+    /// Ask the terminal for key releases (#275); `--no-key-releases` turns it off.
+    key_releases: bool,
     hold: HoldConfig,
     max_seconds: Option<u64>,
     record: Option<String>,
@@ -748,6 +867,7 @@ fn parse() -> Result<Option<Opts>, String> {
         levels: 3,
         look: Look::Color,
         ascii_hud: false,
+        key_releases: true,
         // 25 tics (714 ms) of initial grace bridges the autorepeat delays measured through a
         // real terminal (#275): first repeat 18 tics after the press at X/MATE 500 ms / 30 Hz,
         // 23 tics at X's default 660 ms / 25 Hz. The cost: a single tap moves for 25 tics,
@@ -780,6 +900,7 @@ fn parse() -> Result<Option<Opts>, String> {
                 o.ascii_hud = true;
             }
             "--max-seconds" => o.max_seconds = Some(num()?),
+            "--no-key-releases" => o.key_releases = false,
             "--hold-grace-ms" => grace_ms = Some(num()?),
             "--hold-repeat-ms" => repeat_ms = Some(num()?),
             "--record" => o.record = it.next(),
@@ -823,6 +944,12 @@ fn play(o: Opts) -> std::io::Result<()> {
     // stops autorepeating, but the key may still be down.
     ctx.session.enter_interactive()?;
     ctx.session.set_focus_reporting(true)?;
+    // Key releases (#275), through the session so every exit path pops the keyboard flags. The
+    // terminal's answer arrives as an event; until then (and on a terminal that never confirms)
+    // holds are inferred.
+    if o.key_releases {
+        ctx.session.set_key_release_reporting(true)?;
+    }
     if o.look != Look::Color {
         ctx.set_color_depth(ColorDepth::Mono);
     }
@@ -892,7 +1019,10 @@ fn play(o: Opts) -> std::io::Result<()> {
             } else {
                 ""
             };
-            let hud = Hud { ascii: o.ascii_hud };
+            let hud = Hud {
+                ascii: o.ascii_hud,
+                exact_keys: sim.holds.releases_reported(),
+            };
             ctx.set_root(frame(Arc::new(sim.world.clone()), o.look, msg, hud));
             if let Err(e) = ctx.render() {
                 outcome = Err(e);
