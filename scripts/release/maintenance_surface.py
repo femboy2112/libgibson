@@ -175,11 +175,24 @@ def attrs_before(text, pos):
         return attrs
 
 
+def strip_test_modules(text):
+    """Drop `#[cfg(test)] mod name { ... }` bodies: test code is not part of the shipped ABI."""
+    out, i = [], 0
+    pat = re.compile(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]\s*(pub(\s*\([^)]*\))?\s+)?mod\s+[A-Za-z0-9_]+\s*\{")
+    for m in pat.finditer(text):
+        if m.start() < i:
+            continue
+        out.append(text[i : m.start()])
+        i = balanced(text, m.end() - 1, "{", "}")
+    out.append(text[i:])
+    return "".join(out)
+
+
 def rust_abi(stdin):
     records, files = set(), re.split(r"^//@file (.*)$", stdin, flags=re.M)
     sources = list(zip(files[1::2], files[2::2]))
     fn_macros = set()
-    stripped = [(path, strip_rust_comments(src)) for path, src in sources]
+    stripped = [(path, strip_test_modules(strip_rust_comments(src))) for path, src in sources]
     # Files that define exported symbols: their extern "C" fns, aliases and imports are recorded,
     # and so is the src/lib.rs declaration of their module.
     export_files = {path for path, text in stripped if re.search(r"\bno_mangle\b|\bexport_name\b", text)}

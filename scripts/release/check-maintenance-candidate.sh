@@ -129,15 +129,31 @@ show() {
         *) err "git cat-file -e $1:$2 exited $rc" ;;
     esac
 }
+# The readers below capture a file first and parse the variable, so no reader can exit early on a
+# live `git show` (whose SIGPIPE would then be recorded as a tool failure).
 # package_field <rev> <key>: a key of Cargo.toml's [package] table.
 package_field() {
-    show "$1" Cargo.toml | awk -v k="$2" '
+    local text
+    text="$(show "$1" Cargo.toml)"
+    printf '%s\n' "$text" | awk -v k="$2" '
         /^\[/ { in_pkg = ($0 == "[package]"); next }
-        in_pkg && $1 == k { sub(/^[^=]*=[[:space:]]*"/, ""); sub(/".*/, ""); print; exit }'
+        in_pkg && $1 == k && !done { sub(/^[^=]*=[[:space:]]*"/, ""); sub(/".*/, ""); print; done = 1 }'
 }
-lock_version() { show "$1" Cargo.lock | sed -n '/^name = "libgibson"$/{n;s/^version = "\(.*\)"/\1/p;}' | head -1; }
-pyproject_version() { show "$1" bindings/python/pyproject.toml | sed -n 's/^version = "\(.*\)"/\1/p' | head -1; }
-declared_symbols() { show "$1" "$ABI_FILE" | sed -e '/^#/d' -e '/^[[:space:]]*$/d' | sort -u; }
+lock_version() {
+    local text
+    text="$(show "$1" Cargo.lock)"
+    printf '%s\n' "$text" | awk '/^name = "libgibson"$/ { getline; if (!done && sub(/^version = "/, "")) { sub(/"$/, ""); print; done = 1 } }'
+}
+pyproject_version() {
+    local text
+    text="$(show "$1" bindings/python/pyproject.toml)"
+    printf '%s\n' "$text" | awk '!done && /^version = "/ { sub(/^version = "/, ""); sub(/"$/, ""); print; done = 1 }'
+}
+declared_symbols() {
+    local text
+    text="$(show "$1" "$ABI_FILE")"
+    printf '%s\n' "$text" | sed -e '/^#/d' -e '/^[[:space:]]*$/d' | sort -u
+}
 count() { grep -c . || true; }
 
 # rust_surface <rev>: the canonical Rust C-ABI surface of src/ at <rev> (see check 3), or a
@@ -165,12 +181,10 @@ header_decls() {
     git cat-file -e "$1:$2" 2>/dev/null || return 1
     raw="$(git show "$1:$2")" || { err "git show $1:$2 failed"; return 1; }
     raw="${raw//$'\r'/}"
-    # Exit 1 (no splice, no trigraph) is the only way on; a match (0) or an error (2) fails closed.
-    # A here-string, not a pipe: grep -q exits at the first match, and a writer into a pipe would
-    # then die of SIGPIPE, whose status pipefail would report as the condition's.
-    local rc=0
-    grep -q -E '\\$|\?\?' <<<"$raw" || rc=$?
-    [ "$rc" -eq 1 ] || return 1
+    # A line splice (a backslash at the end of a line) or a trigraph introducer fails closed. Pure
+    # pattern matching: no pipe (grep -q's early exit gave the writer a SIGPIPE that pipefail
+    # reported as "no match") and no here-string (whose temp file can fail to be created).
+    case "$raw" in *$'\\\n'* | *$'\\' | *'??'*) return 1 ;; esac
     out="$(printf '%s\n' "$raw" | "${CC:-cc}" -fpreprocessed -dD -E -P -x "$lang" - 2>/dev/null)" || return 1
     [ -n "$out" ] || return 1
     printf '%s' "$out" | python3 -I "$SURFACE" header
@@ -255,13 +269,17 @@ else
     comment_only=() decl_changed=()
     changed="$(git diff --name-status "$B" "$C" -- include/)" || { err "git diff --name-status include/ failed"; changed=""; }
     [ -n "$changed" ] || decl_changed+=("(no changed header could be listed)")
-    while IFS=$'\t' read -r st p _; do
+    rest="$changed"
+    while [ -n "$rest" ]; do
+        line="${rest%%$'\n'*}"
+        if [ "$line" = "$rest" ]; then rest=""; else rest="${rest#*$'\n'}"; fi
+        st="${line%%$'\t'*}" p="${line#*$'\t'}"; p="${p%%$'\t'*}"
         [ -n "${st:-}" ] || continue
         if [ "$st" != "M" ]; then decl_changed+=("$p($st)"); continue; fi
         bd="$(header_decls "$B" "$p")" || { decl_changed+=("$p(comment stripper failed)"); continue; }
         cd_="$(header_decls "$C" "$p")" || { decl_changed+=("$p(comment stripper failed)"); continue; }
         if [ -n "$bd" ] && [ "$bd" = "$cd_" ]; then comment_only+=("$p"); else decl_changed+=("$p"); fi
-    done <<<"$changed"
+    done
     if [ ${#decl_changed[@]} -eq 0 ]; then
         pass "C ABI: include/ declarations are identical to the baseline; only comments changed in ${comment_only[*]} (review the text)"
     else
@@ -355,7 +373,10 @@ if [ -n "$allow_file" ]; then
     allowed=""
     while IFS= read -r raw || [ -n "$raw" ]; do
         line="${raw%%#*}"; line="${line//$'\r'/}"
-        read -r sha class _ <<<"$line" || true
+        line="${line//$'\t'/ }"
+        line="${line#"${line%%[! ]*}"}"
+        sha="${line%% *}" class="${line#"$sha"}"
+        class="${class#"${class%%[! ]*}"}" class="${class%% *}"
         [ -n "${sha:-}" ] || continue
         full="$(git rev-parse --verify --quiet "$sha^{commit}")" || { fail "commits: allow-list entry '$sha' is not a commit"; continue; }
         case "${class:-}" in

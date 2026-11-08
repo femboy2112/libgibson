@@ -15,6 +15,10 @@
 #   M10 skip the layout-oracle check
 #   M11 record only no_mangle/export_name attributes (so a cfg on an export is invisible)
 #   M12 record every src/lib.rs module, not only exporting ones (the false-positive control)
+# Fourth independent review (run on the 47-case harness):
+#   M8b run the new pattern-match splice guard through a pipe again
+#   M13 parse Cargo.toml with a reader that exits at the version line (on a live git show)
+#   M14 do not strip #[cfg(test)] modules before recording the surface
 # M1-M7 ran on the 33/34-case harness; under M12 every candidate that carries the #269 backport's
 # `#[cfg(unix)] mod tty_source;` fails, i.e. the scoping is what lets the real release pass.
 # Under M3, N15/N16/N21 exit 0 (a layout, signature or constant change would be ACCEPTED); N1/N10/N17/N18
@@ -31,3 +35,6 @@ M9-no-tool-error-verdict: exit=1 WRONG: F1 the header read dies after a common p
 M10-no-layout-oracle: exit=1 WRONG: N1 development candidate (exit 1, want 1),N29 the layout oracle edited (exit 0, want 1)
 M11-only-export-attrs: exit=1 WRONG: N25 a cfg attribute on an export (exit 0, want 1)
 M12-every-lib-mod: exit=1 WRONG: P1 valid candidate (exit 1, want 0),P2 comment-only header change (exit 1, want 0),P3 both tags on the candidate (exit 1, want 0),P4 doc-comment-only change in src/ffi.rs (exit 1, want 0),P5 CRLF two-column allow-list (exit 1, want 0),P6 synthetic library with exactly the baseline's names (exit 1, want 0),N2 changed ABI symbol baseline (exit 1, want 1),N3 not descended from the baseline (exit 1, want 1),N4a allow-list missing a commit (exit 1, want 1),N4b allow-list with an extra commit (exit 1, want 1),N4c allow-list with a bad class (exit 1, want 1),N5a built library from another tree (exit 1, want 1),N5b Cargo.toml version mismatch (exit 1, want 1),N5c release version mismatch (exit 1, want 1),N6a v0.6.0 tag on another commit (exit 1, want 1),N6b bindings/go/v0.6.0 tag on another commit (exit 1, want 1),N7 header declaration change (exit 1, want 1),N8 MSRV change (exit 1, want 1),N9 frozen PCM producer change (exit 1, want 1),N11 candidate on no authorized branch (exit 1, want 1),N12 macro hidden in a comment by line splices (exit 1, want 1),N13 whitespace inside a string literal (exit 1, want 1),N14 comment spliced by a trigraph (exit 1, want 1),N20 candidate only on feature/release/v0.6.0-rc (exit 1, want 1),N22 a library that also exports a gibson_* data symbol (exit 1, want 1),N24 a splice followed by 6000 padding comments (84 KB, past a 64 KB pipe buffer) (exit 1, want 1),N29 the layout oracle edited (exit 1, want 1),P7 a new non-exporting #[cfg(unix)] module (exit 1, want 0),F1 the header read dies after a common prefix (exit 1, want 1),F2 header enumeration fails (exit 1, want 1),F3 nm dies after printing every symbol (exit 1, want 1),F4 branch enumeration dies after printing (exit 1, want 1)
+M8b-guard-through-a-pipe: exit=1 cases_run=47 WRONG: N24 a splice followed by 6000 padding comments (84 KB, past a 64 KB pipe buffer) (exit 0, want 1)
+M14-no-test-module-strip: exit=1 cases_run=47 WRONG: P8 a #[cfg(test)] module with imports in src/ffi.rs (exit 1, want 0)
+M13-early-exit-reader: exit=1 cases_run=47 WRONG: P9 a Cargo.toml with 20000 comment lines (no early-exit SIGPIPE) (exit 1, want 0)
