@@ -700,10 +700,9 @@ impl Context {
     ///   resize *is* its new terminal size. It is applied before this returns, exactly
     ///   as the C ABI's `gibson_poll_event` does (both call the same implementation;
     ///   #293), and the next render lays out against it as against a real terminal: a
-    ///   [`RenderMode::Fullscreen`](crate::RenderMode::Fullscreen) frame is
-    ///   `cols`×`rows`; an [`Inline`](crate::RenderMode::Inline) frame is `cols` wide
-    ///   and as tall as its content, at least 1 and at most `max(rows - 1, 1)` rows. A
-    ///   resize with a zero
+    ///   [`RenderMode::Fullscreen`] frame is `cols`×`rows`; an
+    ///   [`Inline`](crate::RenderMode::Inline) frame is `cols` wide and as tall as its
+    ///   content, at least 1 and at most `max(rows - 1, 1)` rows. A resize with a zero
     ///   dimension is still returned but is **not applied**: the geometry stays as it
     ///   was. The C ABI refuses to queue such a resize (`GIBSON_ERR_INVALID_PARAM`), so
     ///   on either side a headless context never takes a zero geometry from a resize.
