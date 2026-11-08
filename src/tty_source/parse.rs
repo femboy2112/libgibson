@@ -1000,6 +1000,16 @@ impl Parser {
         }
     }
 
+    /// Delivers a lone `ESC` held for the rest of a sequence as the Esc key (LibGibson addition,
+    /// #275): nothing followed it in time.
+    pub(crate) fn flush_lone_esc(&mut self) {
+        if self.buffer == [0x1B] {
+            self.buffer.clear();
+            self.internal_events
+                .push_back(InternalEvent::Event(Event::Key(KeyCode::Esc.into())));
+        }
+    }
+
     /// Bytes of an unfinished sequence still waiting for the rest of it (LibGibson
     /// addition: lets the source report what a hangup cut off).
     pub(crate) fn pending_bytes(&self) -> usize {

@@ -1,5 +1,5 @@
 use crate::cell::RichText;
-use crate::input::{poll_event, Event};
+use crate::input::{poll_event, Event, KeyReleaseReporting};
 use crate::node::Node;
 use crate::renderer::{FrameReport, InsertStrategy, Renderer};
 use crate::scheduler::{FramePacing, FrameScheduler, RenderStats};
@@ -665,13 +665,21 @@ impl Context {
         if !self.session.is_tty || self.session.is_headless() {
             return Ok(None);
         }
+        // Before entering interactive mode: the panic hook left raw mode, and this restores it.
+        let ended = self.session.take_key_releases_ended();
         self.session.enter_interactive()?;
+        if ended {
+            return Ok(Some(Event::KeyReleaseReporting(
+                KeyReleaseReporting::Unsupported,
+            )));
+        }
         let ev = poll_event(timeout)?;
         if let Some(Event::Resize(_, _)) = ev {
             // Geometry is authoritative on the next render via observe_geometry;
             // marking dirty is enough to schedule it.
             self.scheduler.mark_dirty();
         }
+        self.session.key_release_answer_delivered(&ev);
         Ok(ev)
     }
 
@@ -687,10 +695,16 @@ impl Context {
     where
         S: crate::event_source::EventSource + ?Sized,
     {
+        if self.session.take_key_releases_ended() {
+            return Ok(Some(Event::KeyReleaseReporting(
+                KeyReleaseReporting::Unsupported,
+            )));
+        }
         let ev = source.poll_event(timeout)?;
         if let Some(Event::Resize(_, _)) = ev {
             self.scheduler.mark_dirty();
         }
+        self.session.key_release_answer_delivered(&ev);
         Ok(ev)
     }
 

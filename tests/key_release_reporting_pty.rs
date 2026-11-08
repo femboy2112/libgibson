@@ -76,7 +76,14 @@ fn count(hay: &[u8], needle: &[u8]) -> usize {
 fn events(cap: &Capture) -> Vec<String> {
     String::from_utf8_lossy(cap.raw())
         .split(['\r', '\n'])
-        .filter_map(|l| l.trim().strip_prefix("EV ").map(str::to_string))
+        // An `Unsupported` answer is followed at once by the pop that withdraws the push, written
+        // just before the child prints the event.
+        .filter_map(|l| {
+            l.trim()
+                .trim_start_matches("\x1b[<u")
+                .strip_prefix("EV ")
+                .map(str::to_string)
+        })
         .collect()
 }
 
@@ -184,8 +191,11 @@ fn a_terminal_without_the_protocol_answers_unsupported() {
         events(&cap),
         ["reporting:Unsupported", "key:w:0", "key:q:0"]
     );
-    // The flags were still pushed, so they are still popped (a no-op on such a terminal).
-    assert_eq!(count(cap.raw(), POP), 1);
+    // The flags were still pushed, so they are popped (a no-op on such a terminal), once, as the
+    // answer is handed out rather than at restore.
+    let raw = cap.raw();
+    assert_eq!(count(raw, POP), 1);
+    assert!(find(raw, POP, 0) < find(raw, b"EV reporting:Unsupported", 0));
 }
 
 #[test]
@@ -228,29 +238,26 @@ fn the_panic_hook_pops_the_flags_before_leaving_the_alternate_screen() {
 }
 
 #[test]
-fn a_stray_device_attributes_reply_is_corrected_by_the_flags_reply() {
-    // Somebody else's earlier `CSI c` is answered after the request was written (#275 review).
+fn a_stray_device_attributes_reply_reads_as_unsupported_and_is_final() {
+    // Somebody else's earlier `CSI c` is answered after the request was written (#275 review). It
+    // cannot be told from a terminal without the protocol, and `Unsupported` is final: the push
+    // is withdrawn as it is handed out, so kitty's own flags reply that follows is not an answer
+    // any more, and no release is delivered.
     let mut cap = Capture::spawn(child("fullscreen"), 80, 24, Duration::from_secs(40));
     wait_for(&mut cap, "READY");
     wait_bytes(&mut cap, PUSH_AND_ASK);
     send(&mut cap, PLAIN_ANSWER); // the stray
     wait_for(&mut cap, "EV reporting:Unsupported");
     send(&mut cap, KITTY_ANSWER);
-    wait_for(&mut cap, "EV reporting:Active");
     send(&mut cap, b"\x1b[119u\x1b[119;1:3u\x1b[113u");
     wait_for(&mut cap, "DONE");
     let (cap, status) = finish(cap, "stray");
     assert!(status.success());
     assert_eq!(
         events(&cap),
-        [
-            "reporting:Unsupported",
-            "reporting:Active",
-            "key:w:0",
-            "release:w:0",
-            "key:q:0"
-        ]
+        ["reporting:Unsupported", "key:w:0", "key:q:0"]
     );
+    assert_eq!(count(cap.raw(), POP), 1);
 }
 
 #[test]
@@ -319,9 +326,54 @@ fn after_a_caught_panic_no_release_is_delivered() {
     assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
     assert_eq!(
         events(&cap),
-        ["reporting:Active", "key:!:0", "key:w:0", "key:q:0"]
+        [
+            "reporting:Active",
+            "key:!:0",
+            // The client learns that releases ended, once, on the next poll.
+            "reporting:Unsupported",
+            "key:w:0",
+            "key:q:0"
+        ]
     );
     assert_eq!(count(cap.raw(), POP), 1, "the hook's pop only");
+}
+
+#[test]
+fn a_partial_flags_reply_is_unsupported_and_the_push_is_withdrawn() {
+    // A terminal that took only flags 3 (no 4, no 8) answers `CSI ? 3 u`: Unsupported. LibGibson
+    // pops its push as it hands that answer out, so the terminal goes back to legacy keys (one
+    // `\r` per Enter, no release), and delivers no release from then on.
+    let mut cap = Capture::spawn(child("fullscreen"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "READY");
+    wait_bytes(&mut cap, PUSH_AND_ASK);
+    let push = find(cap.raw(), PUSH_AND_ASK, 0).unwrap();
+    send(&mut cap, b"\x1b[?3u\x1b[?62;c");
+    wait_for(&mut cap, "EV reporting:Unsupported");
+    let raw = cap.raw().to_vec();
+    let answer = find(&raw, b"EV reporting:Unsupported", push).unwrap();
+    let pop = find(&raw, POP, push);
+    // Played as the terminal: a w release sent before the pop took effect, then Enter, which
+    // with flags 3 still applied is `\r` twice (press, and release as the legacy byte).
+    let enter: &[u8] = if pop.is_some() { b"\r" } else { b"\r\r" };
+    send(&mut cap, b"w\x1b[119;1:3u");
+    send(&mut cap, enter);
+    send(&mut cap, b"q");
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, "partial");
+    assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
+    assert_eq!(
+        events(&cap),
+        ["reporting:Unsupported", "key:w:0", "key:Enter:0", "key:q:0"]
+    );
+    assert!(
+        pop.is_some_and(|p| p < answer),
+        "popped as the answer was handed out"
+    );
+    assert_eq!(
+        count(cap.raw(), POP),
+        1,
+        "withdrawn once, not again at restore"
+    );
 }
 
 #[test]

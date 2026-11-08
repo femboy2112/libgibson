@@ -166,8 +166,10 @@ pub enum KeyReleaseReporting {
     /// The terminal confirmed it (it speaks the kitty keyboard protocol): from this event on,
     /// a key that goes up is reported as an [`Event::KeyRelease`].
     Active,
-    /// The terminal answered without confirming it: keys stay press-only, and no
-    /// [`Event::KeyRelease`] will come.
+    /// The terminal answered without confirming it (or reporting ended: the panic hook popped
+    /// the flags): keys stay press-only, and no [`Event::KeyRelease`] will come. Final: handed
+    /// out by a `Context` poll, it withdraws the request (see
+    /// `TerminalSession::set_key_release_reporting`).
     Unsupported,
 }
 

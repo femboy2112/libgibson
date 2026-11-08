@@ -67,8 +67,16 @@ use std::time::{Duration, Instant};
 
 /// One read's worth of terminal bytes; crossterm uses the same size. A full buffer
 /// tells the decoder more bytes may follow (a lone `ESC` then waits for them), as does a read
-/// ending in `ESC` while key-release reporting is confirmed (the Esc key is then `CSI 27u`).
+/// ending in `ESC` while key-release reporting is confirmed (the Esc key is then `CSI 27u`), for
+/// at most [`LONE_ESC_WAIT`].
 const READ_BUF: usize = 1024;
+
+/// How long a lone `ESC` held for the rest of a split sequence (see [`READ_BUF`]) waits before it
+/// is delivered as the Esc key. The rest of a split sequence is the remainder of one terminal write
+/// and follows at once; nothing following means the `ESC` was the key itself (the flags were
+/// cleared behind LibGibson's back, by kitty's reset for instance). 50 ms is Neovim's default
+/// `ttimeoutlen`, the same decision for the same bytes, and well under human reaction time.
+const LONE_ESC_WAIT: Duration = Duration::from_millis(50);
 
 /// The error a hung-up terminal reports. Same kind and message as before #269.
 fn hung_up() -> io::Error {
@@ -95,6 +103,8 @@ pub(crate) struct TtySource {
     size: SizeFn,
     /// Bytes of unfinished sequences discarded because a hangup ended them.
     dropped_partial_bytes: usize,
+    /// When a held lone `ESC` (see [`LONE_ESC_WAIT`]) is delivered as Esc if nothing follows.
+    esc_deadline: Option<Instant>,
     /// Set once a hangup has been reported: from then on every poll reports it, and nothing
     /// observed afterwards (a later resize, say) is delivered as if the terminal were alive.
     hung_up: bool,
@@ -182,6 +192,7 @@ impl TtySource {
             winch,
             size,
             dropped_partial_bytes: 0,
+            esc_deadline: None,
             hung_up: false,
             winch_id: None,
             #[cfg(test)]
@@ -222,11 +233,29 @@ impl TtySource {
             if let Some(event) = self.next_pending() {
                 return Ok(Some(event));
             }
+            if self.esc_deadline.is_some_and(|at| Instant::now() >= at) {
+                self.esc_deadline = None;
+                self.parser.flush_lone_esc();
+                self.decode();
+                continue;
+            }
             let left = match deadline {
                 Some(d) => d.saturating_duration_since(Instant::now()),
                 None => Duration::MAX,
             };
             let forever = deadline.is_none();
+            // A held lone ESC shortens the wait to its own deadline.
+            let (wait, wait_forever) = match self.esc_deadline {
+                Some(at) => {
+                    let esc_left = at.saturating_duration_since(Instant::now());
+                    if forever || esc_left < left {
+                        (esc_left, false)
+                    } else {
+                        (left, forever)
+                    }
+                }
+                None => (left, forever),
+            };
 
             let mut fds = [
                 libc::pollfd {
@@ -244,7 +273,8 @@ impl TtySource {
                 },
             ];
             // SAFETY: `fds` is a valid array of two pollfds; a negative fd is ignored.
-            let rc = unsafe { libc::poll(fds.as_mut_ptr(), 2, poll_timeout_ms(left, forever)) };
+            let rc =
+                unsafe { libc::poll(fds.as_mut_ptr(), 2, poll_timeout_ms(wait, wait_forever)) };
             if rc < 0 {
                 let e = io::Error::last_os_error();
                 if e.kind() == io::ErrorKind::Interrupted {
@@ -258,6 +288,10 @@ impl TtySource {
                 return Err(e);
             }
             if rc == 0 {
+                // A held lone ESC that is now due is delivered before the poll times out.
+                if self.esc_deadline.is_some_and(|at| Instant::now() >= at) {
+                    continue;
+                }
                 // Timed out, unless this was one chunk of a wait longer than poll(2) can
                 // express (or a forever wait): then wait again.
                 if !forever && deadline.is_some_and(|d| Instant::now() >= d) {
@@ -345,9 +379,11 @@ impl TtySource {
         if n > 0 {
             let n = n as usize;
             // While the flags are confirmed the Esc key is `CSI 27u`, so a read ending in a lone
-            // ESC is a sequence split across reads: it waits for the rest.
+            // ESC is a sequence split across reads: it waits for the rest, up to `LONE_ESC_WAIT`.
             let split = buf[n - 1] == 0x1B && self.reporting_confirmed();
             self.parser.advance(&buf[..n], n == READ_BUF || split);
+            self.esc_deadline =
+                (split && self.parser.pending_bytes() == 1).then(|| Instant::now() + LONE_ESC_WAIT);
             return Ok(ReadOutcome::Bytes);
         }
         if n == 0 {
@@ -739,8 +775,8 @@ impl PressedKeys {
 /// A device attributes reply cannot be told from one to somebody else's earlier query, and a
 /// stray one arriving first reads as `Unsupported`. A flags reply, though, states the flags in
 /// force on the terminal, whoever asked: while reporting is enabled, one that changes the answer
-/// is reported too, so the stray `Unsupported` is followed by `Active` when kitty's reply arrives
-/// (#275 review). The latest answer is the one in force.
+/// is reported too (#275 review). Through a `Context` the first `Unsupported` handed out is
+/// final: it withdraws the request, and a later answer is dropped with it.
 #[derive(Debug, Default)]
 struct KeyboardQueries {
     /// Requests whose device attributes reply has not arrived.
@@ -2312,7 +2348,9 @@ mod tests {
             write_all(&master, b"\x1b[?15u\x1b[?62;c\x1b[119u");
             drain(s, &mut out);
             write_all(&master, b"\x1b");
-            drain(s, &mut out);
+            // One read takes the lone ESC; it is held (nothing delivered) while the rest follows
+            // within `LONE_ESC_WAIT`, in a second read.
+            assert_eq!(s.poll_source(Duration::from_millis(10)).unwrap(), None);
             write_all(&master, b"[119;1:3u");
             drain(s, &mut out);
             drop(master);
@@ -2384,5 +2422,46 @@ mod tests {
                 (K::Enter, M::NONE),
             ]
         );
+    }
+
+    #[test]
+    fn kitty_272_a_held_lone_esc_is_the_esc_key_once_nothing_follows() {
+        // Confirmed, but the flags were cleared behind LibGibson's back (kitty's reset): the Esc
+        // key arrives as a lone ESC with nothing after it. It is held only briefly, then delivered
+        // as Esc, and the next key is not taken for an Alt chord.
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        expect_keyboard_reply();
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            write_all(&master, b"\x1b[?15u\x1b[?62;c");
+            let active = s.poll_source(Duration::from_millis(500)).unwrap();
+            write_all(&master, b"\x1b");
+            let start = Instant::now();
+            let esc = s.poll_source(Duration::from_millis(1000)).unwrap();
+            let waited = start.elapsed();
+            write_all(&master, b"a");
+            let next = s.poll_source(Duration::from_millis(500)).unwrap();
+            drop(master);
+            (active, esc, waited, next)
+        });
+        forget_keyboard_replies();
+        assert_eq!(
+            got.0,
+            Some(SourceEvent::KeyReleaseReporting(
+                KeyReleaseReporting::Active
+            ))
+        );
+        assert_eq!(
+            got.1,
+            Some(SourceEvent::Terminal(CtEvent::Key(K::Esc.into())))
+        );
+        assert!(
+            got.2 >= LONE_ESC_WAIT && got.2 < LONE_ESC_WAIT + Duration::from_millis(400),
+            "{:?}",
+            got.2
+        );
+        assert_eq!(got.3, Some(SourceEvent::Terminal(key('a'))));
     }
 }
