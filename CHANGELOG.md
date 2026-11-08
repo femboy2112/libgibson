@@ -19,9 +19,77 @@ Development toward **0.7.0** — a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)). This is the working development
 line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 remains **prepared in source at
 `9a899e1`** (release state 1 — not tagged, not released). It is never tagged on a later `main`;
-whether a `v0.6.0` tag names the corrected candidate `release/v0.6.0-rc` @ `572e551` is the owner's
-decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed policy in #291).
-`GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
+it is released, once a candidate qualifies, from `release/v0.6.0-rc` under the approved
+maintenance-line exception (below). `GIBSON_ABI_VERSION` stays 1; MSRV stays 1.85.
+
+### Release engineering — maintenance-line releases approved ([#287](https://github.com/femboy2112/libgibson/issues/287), #291)
+- **Release Contract §1 gains an approved maintenance-line exception** (owner decision 2026-11-08,
+  conditional on its gates): a `v<x.y.z>` tag may name a qualified commit on `release/v<x.y.z>-rc`
+  or `release/<x.y>` that descends from the version's source baseline and adds only listed
+  backports and release engineering, with the C ABI symbol set, header declarations, MSRV and
+  frozen PCM golden unchanged. Procedure: `docs/RELEASING.md` §7. Decision record:
+  `docs/decisions/0001-v0.6.0-release-line.md` (option A, 0.6.0 from `release/v0.6.0-rc`).
+- **`scripts/release/check-maintenance-candidate.sh`** checks a candidate structurally: ancestry
+  (and that the candidate is not the baseline itself), version, the C ABI, MSRV, the PCM golden, the
+  C ABI layout oracle (`tests/ffi_abi_layout_freeze.rs`, which CI runs, unchanged), an exactly named
+  release branch, tags and allow-listed commits. For the C ABI it compares:
+  - the exported names, from source, from `abi/`, and from every `gibson_*` symbol of the built
+    library, data symbols included;
+  - the Rust C-ABI surface of the files that export (`scripts/release/maintenance_surface.py`):
+    - every `extern "C"` function's signature, generics and non-doc attributes (`no_mangle`,
+      `export_name`, `cfg`);
+    - exported statics;
+    - `#[repr]` struct, enum and union bodies;
+    - `GIBSON_*` constant values;
+    - type aliases, imports and module declarations;
+    - the macros that define exported functions.
+
+  A header change passes only if it is comment-only. Comments are removed by the compiler's own
+  lexer (`cc -fpreprocessed -dD -E -P`) and whitespace is collapsed outside string and character
+  literals. These fail closed: a header with a line splice or a trigraph introducer, a raw string,
+  no compiler, and any failure of a tool feeding a check (git, nm, python3), including a tool that
+  dies after printing part of its output. Parsing involves no pipes into early-exiting readers and
+  no here-strings, so it has no IO failure mode of its own.
+- **`scripts/release/tests/test-maintenance-checker.sh`** calibrates the checker with 47 cases in a
+  throwaway clone. Every `GIT_*` variable is cleared first, and the clone's git directory is
+  verified before any ref is touched.
+  - **9 must pass:**
+    - a valid candidate;
+    - a comment-only header change;
+    - both tags on the candidate;
+    - a doc-only `src/ffi.rs` change;
+    - a CRLF two-column allow-list;
+    - a synthetic library with exactly the baseline's names;
+    - a new non-exporting `#[cfg(unix)]` module, the shape of the #269 backport;
+    - a `#[cfg(test)]` module with imports in `src/ffi.rs`;
+    - a `Cargo.toml` with 20,000 comment lines.
+  - **38 must fail, each for its intended reason and no other:**
+    - candidate identity: a 0.7 development commit; a non-descendant; the baseline itself;
+    - ABI baseline and library: a changed ABI baseline; a library from another tree or with an
+      extra data symbol;
+    - allow-list: a missing, extra or misclassified entry;
+    - version and tags: a manifest or release-version mismatch; either tag on another commit;
+    - headers: a declaration change; a macro hidden by line splices, by a trigraph or behind 84 KB
+      of padding; whitespace inside a string literal;
+    - Rust surface: swapped `#[repr(C)]` fields; a changed parameter type or constant; `cfg` or
+      generics on an export; an `export_name` export; a new type alias; a new export or exported
+      static;
+    - frozen files and branches: an edited layout oracle; an MSRV or PCM producer change; no
+      release branch, or a wrongly named one;
+    - unreadable input: an unreadable `src/` file;
+    - fault injection: four tools that die after printing.
+
+  Raw run: `docs/decisions/0001/calibration-572e551.txt`. Mutation controls (each guard reverted
+  turns exactly its cases wrong): `docs/decisions/0001/checker-mutation-controls.txt`.
+
+  Three rounds of independent (Codex) review found the bypasses these cases now cover. An earlier
+  count in this PR's description ("20/20") was wrong. **The checker's boundary:** its Rust surface
+  parses the constructs this crate's C ABI uses. The export set is settled by `--so` (required to
+  qualify), struct layouts by the frozen layout oracle in CI, and anything else by the independent
+  review.
+- **The 0.6 limitations in Release Contract §9** now state that a headless C context's capture grows
+  for its lifetime (#297) and how a C program must bound it, and that 0.6.0's `gibson_poll_event`
+  on a headless context reports no input (#259).
 
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
 - The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an

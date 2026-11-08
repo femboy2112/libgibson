@@ -87,6 +87,88 @@ to publish this specific version.
    (the module lives under `bindings/go`; the exact tag form is documented in
    `bindings/go/README.md`). Verify the tag form before pushing it.
 
+## 7. Maintenance-line release — *Approved 2026-11-08 (owner decision #287)*
+
+The procedure for the gated exception in
+[Release Contract §1](RELEASE_CONTRACT.md#1-versioning-model). Every step acts on one **exact
+candidate SHA**, never on a branch name; any new commit on the branch is a new candidate and
+restarts at step 3, with no green run inherited from an earlier SHA.
+
+1. **Branch** `release/v<x.y.z>-rc` (or `release/<x.y>`) from the baseline: the commit at which
+   the version was prepared in source (0.6.0: `9a899e1`), or the line's previous release tag.
+2. **Land only fixes and release engineering.** A backport cites its `main` counterpart (issue, PR
+   and commit); a release-engineering commit (changelog, test or CI adaptation, a patch version
+   bump) says so. Nothing else.
+3. **Freeze a candidate**: the branch head's full 40-hex SHA.
+4. **Run the candidate checker** with the qualification record's commit list, one line per commit
+   in `<baseline>..<candidate>`, `<sha> <backport|release-engineering> <counterpart or reason>`:
+
+   ```
+   scripts/release/check-maintenance-candidate.sh --baseline <baseline> --candidate <sha> \
+       --allow-commits-file <list>
+   ```
+
+   It must print `RESULT: PASS`: ancestry; `Cargo.toml`, `Cargo.lock` and `pyproject.toml` at the
+   release version; `abi/`, the `gibson_*` exports and the Rust C-ABI surface of `src/`
+   (signatures, `#[repr]` layouts, `GIBSON_*` constants) equal to the baseline's, and `include/`
+   equal or different only in comments; `rust-version` unchanged; `src/audio/` and
+   `tests/audio_pocket_voice.rs` (the frozen PCM golden) and `tests/ffi_abi_layout_freeze.rs` (the
+   layout oracle) unchanged; no tool failure behind any check; the candidate not the baseline,
+   and on a branch named exactly `release/v<x.y.z>-rc` or `release/<x.y>`; every commit listed.
+   Calibrate the checker on the same candidate first:
+   `scripts/release/tests/test-maintenance-checker.sh --baseline <baseline> --candidate <sha>
+   --allow-commits-file <list> --so <built library> --foreign-so <a library built from another
+   tree> --dev-candidate <a main commit>` must print `CALIBRATION: PASS`: the valid candidate and
+   its comment-only and doc-only variants pass, and every negative case (development commit, ABI
+   baseline, ancestry, the baseline itself, allow-list, library, version, tags, header declarations,
+   splice and trigraph tricks, string literals, Rust layouts, signatures, constants, attributes,
+   aliases, exports, the layout oracle, MSRV, PCM, branch, an unreadable source, and four injected
+   tool failures) fails for that reason alone. The final run of this step uses `--so` with a library
+   built from the candidate (step 9 repeats it on the tagged tree's build).
+5. **Qualify the same SHA**: full CI at exactly that SHA (every job), the publication-free Release
+   Preflight at that SHA printing `RELEASE PREFLIGHT: PASS` (both MSRV floors, cleanroom
+   consumers, package audit), the hangup PTY tests passing on their first attempt (§3), and an
+   independent review of every backported fix.
+6. **Qualification record.** Post on the release's decision issue, and copy into its decision
+   record under `docs/decisions/`: version, baseline SHA, branch, candidate SHA, the commit list,
+   the checker output, the CI and preflight run IDs, the review outcome and the known limitations
+   the release carries.
+7. **Owner approval.** The owner approves that record in writing, naming the version, the exact
+   candidate SHA, the baseline and the branch, and stating that the maintenance-line exception
+   applies; or the owner's advance conditional approval (Release Contract §1 condition 5) applies
+   and the record shows every gate of steps 4–6 passed on that SHA. An approval covers that one
+   SHA. Without it, stop.
+8. **Tag** the approved SHA, not the branch: an annotated `v<x.y.z>` whose message names the
+   baseline, the branch and the qualification record, and `bindings/go/v<x.y.z>` on the same
+   commit. Before pushing, `git rev-parse 'v<x.y.z>^{commit}' 'bindings/go/v<x.y.z>^{commit}'`
+   prints the approved SHA twice. Push those two tags only; confirm the remote peel with
+   `git ls-remote origin 'refs/tags/v<x.y.z>^{}' 'refs/tags/bindings/go/v<x.y.z>^{}'`, then fetch the
+   tags and re-run step 4; its tag checks must now pass.
+9. **Build the artifacts from the tagged tree**: a fresh export of the tag (`git archive
+   v<x.y.z>` into an empty directory, or a new worktree at the tag), never a working branch.
+   Build the native SDK bundle (`scripts/release/bundle.sh`:
+   `libgibson-<x.y.z>-linux-x86_64.tar.gz` and its `.sha256`) and the Python wheel and sdist.
+   Re-run step 4 with `--so <export>/target/release/libgibson.so`: the built library must export
+   exactly the baseline's symbols.
+10. **GitHub prerelease** of `v<x.y.z>` with those four assets
+    (`libgibson-<x.y.z>-linux-x86_64.tar.gz`, `libgibson-<x.y.z>-linux-x86_64.tar.gz.sha256`,
+    `libgibson-<x.y.z>-py3-none-any.whl`, `libgibson-<x.y.z>-python-sdist.tar.gz`). The notes say it
+    is a maintenance-line release, name the baseline and branch, and list the backports and known
+    limitations. No registry upload: state 3 is a separate approval.
+11. **Download-verify**: download the native asset and its `.sha256` from the release into an
+    empty directory, run `sha256sum -c`, and confirm both digests equal the locally built ones.
+12. **Post-release records**, by a docs PR on `main` that leaves `main`'s version alone: the
+    CHANGELOG `[x.y.z]` heading (date, tag → SHA, branch), the Release Contract §1 milestone entry
+    (state 2), the README / ROADMAP / `docs/STATE_OF_LIBGIBSON.md` current-release references, and
+    the decision record's outcome.
+13. **Optional back-merge into `main`**: its own PR and its own acceptance, never implied by the
+    release. It is a merge commit (no squash, no rebase), so afterwards
+    `git merge-base --is-ancestor v<x.y.z> origin/main` holds. Every version conflict resolves to
+    `main` (`Cargo.toml`, `Cargo.lock`, `pyproject.toml` keep `main`'s version); `main`'s `abi/`,
+    `include/` and exported symbols are unchanged by the merge; `main` already carries each fix,
+    so any source difference from the merge's first parent is justified line by line; and `main`'s
+    full CI is green at the merge commit.
+
 ## Disk hygiene (local dev)
 
 The release scripts each trap-clean their own temp trees, so `preflight.sh`,

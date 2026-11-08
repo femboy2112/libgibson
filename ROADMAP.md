@@ -22,9 +22,12 @@ prerelease). *(Until this bump the section described the integration as an unmer
 
 *Update 2026-11-07:* v0.6.0 is still not tagged or released. A release candidate,
 `release/v0.6.0-rc` @ `572e551` (`9a899e1` + the #264, #269, #259 and #285 fixes), passed
-exact-head CI (run 42421627573) and Release Preflight (run 42421629285) and is on **HOLD** for an
-owner decision on the release line ([#287](https://github.com/femboy2112/libgibson/issues/287);
-proposed policy in draft #291). Record of this candidate's qualification:
+exact-head CI (run 42421627573) and Release Preflight (run 42421629285). *Update 2026-11-08:* the
+owner chose option A ([#287](https://github.com/femboy2112/libgibson/issues/287)): 0.6.0 is released
+from `release/v0.6.0-rc` under the approved maintenance-line exception (Release Contract §1,
+[decision 0001](docs/decisions/0001-v0.6.0-release-line.md)) once a final candidate passes every
+gate; until a tag and GitHub release exist, the latest release is v0.5.0. Record of the `572e551`
+qualification:
 [#287, RXIX comment](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6714185831);
 the earlier `1b90b48` qualification stays in
 [`V06_QUALIFICATION_LEDGER.md`](docs/V06_QUALIFICATION_LEDGER.md), Renaissance XVIII.
