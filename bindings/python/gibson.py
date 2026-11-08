@@ -664,22 +664,33 @@ class Context:
 
     def take_rendered_output(self) -> bytes:
         """Drains the headless capture: returns its bytes and empties it (binary-safe; mirrors
-        Context::take_rendered_bytes). Empty for an interactive context. (ABI v1, additive, #297.)"""
+        Context::take_rendered_bytes). Empty for an interactive context. (ABI v1, additive, #297.)
+
+        The capture is copied and the Python ``bytes`` built BEFORE anything is removed, so a
+        failure here (e.g. MemoryError for a large capture) leaves the capture intact. A context
+        is not thread-safe: if another thread renders between the copy and the clear, the clear
+        removes more than was returned and this raises RuntimeError."""
         while True:
             need = ctypes.c_size_t(0)
-            status = _lib.gibson_take_rendered_output(self.handle, None, 0, ctypes.byref(need))
+            status = _lib.gibson_get_rendered_output(self.handle, None, 0, ctypes.byref(need))
             if status != 0:
                 raise RuntimeError(f"take_rendered_output size query failed: status {status}")
             if need.value == 0:
                 return b""
             buf = (ctypes.c_uint8 * need.value)()
             got = ctypes.c_size_t(0)
-            status = _lib.gibson_take_rendered_output(self.handle, buf, need.value, ctypes.byref(got))
+            status = _lib.gibson_get_rendered_output(self.handle, buf, need.value, ctypes.byref(got))
             if status != 0:
-                raise RuntimeError(f"take_rendered_output failed: status {status}")
-            if got.value <= need.value:
-                return bytes(buf[: got.value])
-            # The capture grew between the two calls; nothing was taken, so size it again.
+                raise RuntimeError(f"take_rendered_output copy failed: status {status}")
+            if got.value > need.value:
+                continue  # the capture grew between the two calls; nothing was copied
+            data = ctypes.string_at(buf, got.value)
+            removed = self.clear_rendered_output()
+            if removed != len(data):
+                raise RuntimeError(
+                    f"take_rendered_output: the capture changed between copy and clear "
+                    f"({len(data)} copied, {removed} removed); contexts are not thread-safe")
+            return data
 
     def clear_rendered_output(self) -> int:
         """Discards the headless capture without copying it; returns the number of bytes removed
