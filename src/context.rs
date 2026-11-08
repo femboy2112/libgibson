@@ -663,6 +663,54 @@ impl Context {
         Ok(())
     }
 
+    /// Puts the terminal into interactive mode now: raw mode and bracketed paste, exactly what
+    /// the first [`poll_event`](Self::poll_event) (or [`run_once`](Self::run_once)) does.
+    ///
+    /// [`Context::inline`] and [`Context::fullscreen`] leave this to the first poll. Output shown
+    /// before that poll (a READY line, a first frame) is therefore on a **cooked** tty: the kernel
+    /// echoes anything typed in that window, and its ICRNL turns Enter (`\r`) into `\n`, which raw
+    /// decoding then reads as Ctrl+J, so a line typed at "ready" is never submitted (#296). Call
+    /// this before the first output so that "the screen says ready" implies "the terminal is
+    /// interactive":
+    ///
+    /// ```no_run
+    /// use gibson::cell::Style;
+    /// use gibson::context::Context;
+    /// use gibson::node::Node;
+    ///
+    /// let mut ctx = Context::inline()?;
+    /// ctx.enter_interactive()?;
+    /// ctx.set_root(Node::text("READY", Style::default()));
+    /// ctx.render()?;
+    /// # Ok::<(), std::io::Error>(())
+    /// ```
+    ///
+    /// This replaces the workaround of calling `poll_event(Duration::ZERO)` before the first
+    /// output, which also consumed (and could drop) an event.
+    ///
+    /// * **Idempotent.** A second call, and every later poll, finds raw mode and bracketed paste
+    ///   already on and writes nothing.
+    /// * **No-op returning `Ok`** on a headless context and when stdout is not a terminal.
+    /// * **Restoration is unchanged.** What it enables is tracked by the session exactly as when
+    ///   the first poll enables it, so [`restore`](Self::restore), `Drop` and the panic hook undo
+    ///   it. If raw mode cannot be entered, the error is returned and nothing is left enabled; the
+    ///   first poll fails the same way.
+    /// * **After [`restore`](Self::restore)** the context has handed the terminal back and released
+    ///   its ownership lease, so this returns an error and does not touch the terminal: raw mode
+    ///   re-entered then would never be undone.
+    pub fn enter_interactive(&mut self) -> io::Result<()> {
+        if !self.session.is_tty || self.session.is_headless() {
+            return Ok(());
+        }
+        if self.session.restore_attempted() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "enter_interactive after restore: this context has released the terminal",
+            ));
+        }
+        self.session.enter_interactive()
+    }
+
     /// Polls the controlling terminal for structured input events.
     ///
     /// Returns `Ok(None)` at once, without touching the process terminal, when there is no
@@ -691,18 +739,43 @@ impl Context {
     /// so a headless, scripted, or recorded context can be driven through the same
     /// event path as a live TTY (the general injected-input path — SmartChem
     /// #131/G). Unlike [`poll_event`](Self::poll_event) this does **not** require a
-    /// TTY: the injected source is the authority on event availability. An injected
-    /// `Resize` still marks the scheduler dirty so the next render re-observes
-    /// geometry, keeping a scripted resize indistinguishable from a terminal one.
+    /// TTY: the injected source is the authority on event availability.
+    ///
+    /// A delivered `Resize(cols, rows)` marks the scheduler dirty, so the next render
+    /// re-observes geometry. Where that geometry comes from depends on the session:
+    ///
+    /// * **Headless** ([`Context::headless`]): the session is virtual, so the delivered
+    ///   resize *is* its new terminal size. It is applied before this returns, exactly
+    ///   as the C ABI's `gibson_poll_event` does (both call the same implementation;
+    ///   #293), and the next render lays out against it as against a real terminal: a
+    ///   [`RenderMode::Fullscreen`] frame is `cols`×`rows`; an
+    ///   [`Inline`](crate::RenderMode::Inline) frame is `cols` wide and as tall as its
+    ///   content, at least 1 and at most `max(rows - 1, 1)` rows. A resize with a zero
+    ///   dimension is still returned but is **not applied**: the geometry stays as it
+    ///   was. The C ABI refuses to queue such a resize (`GIBSON_ERR_INVALID_PARAM`), so
+    ///   on either side a headless context never takes a zero geometry from a resize.
+    /// * **Terminal**: the geometry stays observed from the terminal itself; an injected
+    ///   resize schedules a render but does not override what the terminal reports.
     pub fn poll_from<S>(&mut self, source: &mut S, timeout: Duration) -> io::Result<Option<Event>>
     where
         S: crate::event_source::EventSource + ?Sized,
     {
         let ev = source.poll_event(timeout)?;
-        if let Some(Event::Resize(_, _)) = ev {
-            self.scheduler.mark_dirty();
+        if let Some(Event::Resize(cols, rows)) = ev {
+            self.deliver_resize(cols, rows);
         }
         Ok(ev)
+    }
+
+    /// The effect of a delivered `Resize` on an injected-input path: on a headless
+    /// session, a non-zero geometry becomes the virtual terminal's size; on any session
+    /// the next render is scheduled. Shared by [`poll_from`](Self::poll_from) and the
+    /// C ABI's poll, so both apply a resize the same way (#293).
+    fn deliver_resize(&mut self, cols: u16, rows: u16) {
+        if self.session.is_headless() && cols != 0 && rows != 0 {
+            self.session.set_terminal_size(cols, rows);
+        }
+        self.scheduler.mark_dirty();
     }
 
     /// Returns a snapshot of render statistics.

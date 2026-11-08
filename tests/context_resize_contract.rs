@@ -7,6 +7,9 @@
 //! - produce a frame of exactly the new geometry,
 //! - leave no cell from an earlier frame: every cell carries the current paint.
 //!
+//! On a headless context the resize takes effect when `poll_from` delivers it: nothing but the
+//! event sets the new geometry (#293), as with the C ABI's `gibson_poll_event`.
+//!
 //! Growth and shrinkage both, including to 1×1, from a context that had already rendered. The
 //! canvas covers the whole frame, so this checks the glyph readback of a fully repainted frame;
 //! physical clearing of uncovered terminal areas on resize is covered in
@@ -100,7 +103,8 @@ fn a_resize_repaints_a_full_size_canvas_at_exactly_the_new_geometry() {
         );
         generation.store(step as u32 + 1, Ordering::SeqCst);
         rects.lock().unwrap().clear();
-        ctx.session.set_terminal_size(cols, rows);
+        // No manual `ctx.session.set_terminal_size`: on a headless context the delivered
+        // resize itself sets the geometry, as `gibson_poll_event` does (#293).
         queue.push(Event::Resize(cols, rows)).expect("queue");
         // Queued but not yet delivered: still nothing to draw, and the canvas is not called.
         wait_until_due(&ctx);
@@ -148,4 +152,91 @@ fn a_resize_repaints_a_full_size_canvas_at_exactly_the_new_geometry() {
         );
         size = (cols, rows);
     }
+}
+
+#[test]
+fn a_delivered_resize_alone_sets_the_headless_geometry() {
+    // #293: before the fix `poll_from` only marked the scheduler dirty, so the next render laid
+    // out at the old size (r02 of the v0.8 parity slice: 40x12 where the C ABI gives 60x16).
+    let mut ctx = Context::headless(RenderMode::Inline, 40, 12);
+    ctx.set_root(Node::text("x", gibson::cell::Style::default()));
+    ctx.render().expect("first render");
+    let mut queue = InjectedQueue::with_capacity(4);
+    queue.push(Event::Resize(60, 16)).expect("queue");
+    assert_eq!(
+        ctx.session.terminal_size(),
+        (40, 12),
+        "queued, not delivered"
+    );
+    assert_eq!(
+        ctx.poll_from(&mut queue, Duration::ZERO).expect("poll"),
+        Some(Event::Resize(60, 16))
+    );
+    assert_eq!(
+        ctx.session.terminal_size(),
+        (60, 16),
+        "a delivered resize must set a headless context's geometry"
+    );
+    ctx.render().expect("render");
+    assert_eq!(ctx.frame_size().map(|(c, _)| c), Some(60), "frame width");
+}
+
+#[test]
+fn a_zero_dimension_resize_is_delivered_but_not_applied_on_headless() {
+    // The contract for hostile sizes: the C ABI refuses to queue a resize with a zero
+    // dimension (`gibson_push_event` -> INVALID_PARAM), so a headless context never takes a
+    // zero geometry from a resize there. The Rust path agrees: `poll_from` still hands the event
+    // out (the source is the authority on what was delivered), but the geometry is unchanged.
+    let mut ctx = Context::headless(RenderMode::Fullscreen, 40, 12);
+    ctx.set_root(Node::text("x", gibson::cell::Style::default()));
+    ctx.render().expect("first render");
+    let mut queue = InjectedQueue::with_capacity(4);
+    for (cols, rows) in [(0u16, 12u16), (12, 0), (0, 0)] {
+        queue.push(Event::Resize(cols, rows)).expect("queue");
+        assert_eq!(
+            ctx.poll_from(&mut queue, Duration::ZERO).expect("poll"),
+            Some(Event::Resize(cols, rows)),
+            "{cols}x{rows}: the event is still delivered"
+        );
+        assert_eq!(
+            ctx.session.terminal_size(),
+            (40, 12),
+            "{cols}x{rows}: a zero dimension must not be applied"
+        );
+        ctx.render().expect("render");
+        assert_eq!(
+            ctx.frame_size(),
+            Some((40, 12)),
+            "{cols}x{rows}: frame size"
+        );
+    }
+    // A valid resize after the refused ones still applies.
+    queue.push(Event::Resize(21, 5)).expect("queue");
+    ctx.poll_from(&mut queue, Duration::ZERO).expect("poll");
+    assert_eq!(ctx.session.terminal_size(), (21, 5));
+}
+
+#[test]
+fn a_terminal_context_keeps_observing_its_geometry_from_the_terminal() {
+    // Control: a non-headless context's size comes from the terminal (or the fixed 80x24 of a
+    // non-TTY stdout), never from an event. An injected resize is delivered and schedules a
+    // render, but the geometry stays what the terminal reports.
+    let mut ctx = Context::inline().expect("inline context");
+    assert!(!ctx.session.is_headless());
+    let observed = ctx.session.terminal_size();
+    let odd = (
+        observed.0.wrapping_add(17).max(1),
+        observed.1.wrapping_add(5).max(1),
+    );
+    let mut queue = InjectedQueue::with_capacity(1);
+    queue.push(Event::Resize(odd.0, odd.1)).expect("queue");
+    assert_eq!(
+        ctx.poll_from(&mut queue, Duration::ZERO).expect("poll"),
+        Some(Event::Resize(odd.0, odd.1))
+    );
+    assert_eq!(
+        ctx.session.terminal_size(),
+        observed,
+        "a terminal context's geometry must stay observed from the terminal"
+    );
 }

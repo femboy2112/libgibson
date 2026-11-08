@@ -111,6 +111,38 @@ stays 1.85.
   [publication](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6721728874);
   [decision 0001](docs/decisions/0001-v0.6.0-release-line.md), "Outcome".
 
+### Added — Rust library (`gibson::Context`): `Context::enter_interactive` ([#296](https://github.com/femboy2112/libgibson/issues/296))
+- `pub fn enter_interactive(&mut self) -> io::Result<()>` enables raw mode and bracketed paste now,
+  exactly as the first `poll_event` / `run_once` does. `Context::inline()` and `fullscreen()` still
+  leave it to the first poll, so output shown before that poll (a READY line, a first frame) was on
+  a cooked tty: the kernel echoed type-ahead, and ICRNL turned Enter into `\n`, which raw decoding
+  reads as Ctrl+J, so a line typed at "ready" was never submitted. Call it before the first output
+  and "the screen says ready" implies "the terminal is interactive".
+- Idempotent (a second call and later polls write nothing more); a no-op returning `Ok` on a
+  headless context and on a non-TTY stdout. `restore()`, `Drop` and the panic hook undo it as they
+  undo the first poll's. After `restore()` it returns an error (`ErrorKind::NotConnected`) instead
+  of re-entering raw mode on a terminal the context no longer owns.
+- The downstream workaround, `poll_event(Duration::ZERO)` before the first output, is no longer
+  needed.
+- `tests/enter_interactive_pty.rs` is a deterministic real-PTY probe: with the call, `hello\r`
+  typed at READY is five characters and one Enter with no kernel echo; without it (the old
+  behaviour, held so the race is not a race) the same probe fails with an echo and Ctrl+J.
+
+### Fixed — Rust library (`gibson::Context`): a delivered resize resizes a headless context ([#293](https://github.com/femboy2112/libgibson/issues/293))
+- `Context::poll_from` on a **headless** context now applies a delivered `Event::Resize(cols, rows)`
+  before it returns, so the next render lays out against the new terminal size (a fullscreen frame
+  is `cols`×`rows`; an inline frame is `cols` wide and as tall as its content, at most
+  `max(rows - 1, 1)` rows, as on a terminal). It used to only schedule a
+  render, which then re-read the old size, while the C ABI's `gibson_poll_event` applied it: a
+  Rust consumer had to call `ctx.session.set_terminal_size` itself to match C. Both now call one
+  implementation in `Context`; the copy in `src/ffi.rs` is gone.
+- **Zero sizes:** a resize with a zero width or height is still delivered but is not applied (the
+  geometry stays). The C ABI already refuses to queue one (`GIBSON_ERR_INVALID_PARAM`), so neither
+  side ever gives a headless context a zero geometry through a resize.
+- A terminal (non-headless) context is unchanged: its geometry is observed from the terminal.
+- The v0.8 parity slice's Rust consumer now uses `poll_from` alone; it produces the C records
+  r02/r03/r04 byte-identically without the manual resize step.
+
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
 - The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an
   event type with each key (`CSI 97u` press, `CSI 97;1:2u` repeat, `CSI 97;1:3u` release), and

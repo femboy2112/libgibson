@@ -15,10 +15,11 @@
 //! outcome (`RUST_NONE` / `RUST_ERR`) and where it accepts what the C ABI rejects, `RUST_ACCEPTED`.
 //! Those differences are data, not failures.
 //!
-//! A delivered `Resize` does not change a headless session's size through `poll_from`; the C ABI's
-//! `gibson_poll_event` applies it (`TerminalSession::set_terminal_size`). By default this consumer
-//! applies it explicitly after `poll_from`, as the C ABI does internally; set
-//! `PARITY_V08_RUST_RESIZE=native` to skip that step (the gap witness in `scripts/dev/parity_v08.sh`).
+//! A delivered `Resize` resizes the headless context inside `poll_from`, the same implementation
+//! the C ABI's `gibson_poll_event` uses (#293), so this consumer takes no extra step.
+//! `PARITY_V08_RUST_RESIZE=unapplied` (a negative control in `scripts/dev/parity_v08.sh`, never on
+//! by default) puts the pre-resize geometry back after the poll, reproducing the behaviour before
+//! #293, so the comparator must catch r02/r03/r04.
 //!
 //! Negative controls (never on by default): `PARITY_V08_PERTURB=cell | events` (see parity_v08.c).
 
@@ -213,7 +214,7 @@ struct Interp<'o> {
     root: Option<Node>,
     styles: BTreeMap<String, Style>,
     queue: InjectedQueue,
-    apply_resize: bool,
+    unapply_resize: bool,
 }
 
 impl Interp<'_> {
@@ -579,11 +580,12 @@ impl Interp<'_> {
             "poll" => {
                 for k in 1..=a[0].parse::<usize>().unwrap() {
                     let ctx = self.ctx.as_mut().expect("no context");
+                    let before = ctx.session.terminal_size();
                     let polled = ctx.poll_from(&mut self.queue, Duration::ZERO);
-                    if let Ok(Some(Event::Resize(c, r))) = &polled {
-                        if self.apply_resize {
-                            // The explicit step the C ABI's gibson_poll_event performs internally.
-                            ctx.session.set_terminal_size(*c, *r);
+                    if let Ok(Some(Event::Resize(..))) = &polled {
+                        if self.unapply_resize {
+                            // Negative control only: undo what poll_from applied (pre-#293).
+                            ctx.session.set_terminal_size(before.0, before.1);
                         }
                     }
                     self.emit_event(&format!("{id}.{k}"), polled);
@@ -629,7 +631,7 @@ fn base_clone(id: &str, name: &str) -> Rec {
     Rec::default().s("id", id).s("k", "probe").s("name", name)
 }
 
-fn run_script(steps: &[Vec<String>], apply_resize: bool) -> String {
+fn run_script(steps: &[Vec<String>], unapply_resize: bool) -> String {
     let mut out = String::new();
     let mut it = Interp {
         out: &mut out,
@@ -637,7 +639,7 @@ fn run_script(steps: &[Vec<String>], apply_resize: bool) -> String {
         root: None,
         styles: BTreeMap::new(),
         queue: InjectedQueue::with_capacity(QUEUE_CAPACITY),
-        apply_resize,
+        unapply_resize,
     };
     for s in steps {
         it.step(s);
@@ -689,15 +691,15 @@ fn main() {
         }
         _ => {}
     }
-    let apply_resize = std::env::var("PARITY_V08_RUST_RESIZE").as_deref() != Ok("native");
+    let unapply_resize = std::env::var("PARITY_V08_RUST_RESIZE").as_deref() == Ok("unapplied");
 
     let t0 = Instant::now();
-    let first = run_script(&steps, apply_resize);
+    let first = run_script(&steps, unapply_resize);
     let rss1 = maxrss_kb();
     let mut rss_mid = rss1;
     let mut identical = 1;
     for rep in 2..=reps {
-        if run_script(&steps, apply_resize) != first {
+        if run_script(&steps, unapply_resize) != first {
             identical = 0;
         }
         if rep == reps.div_ceil(2) {

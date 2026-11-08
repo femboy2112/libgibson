@@ -131,10 +131,10 @@ if [ "${PARITY_V08_SKIP_CONTROLS:-0}" != 1 ]; then
         control cell "$lang" "r03,s16" PARITY_V08_PERTURB=cell
         control events "$lang" "ORDER,e09.1,e09.2" PARITY_V08_PERTURB=events
     done
-    # Gap witness (not a perturbation): without the explicit set_terminal_size step, the Rust
-    # consumer's polled Resize leaves the headless geometry at 40x12.
-    control rust-resize-native rust "r02,r03,r04" PARITY_V08_RUST_RESIZE=native
-    grep '"id":"r02"' "$WORK/ctl/rust-resize-native.rust.jsonl" | sed 's/^/    witness r02: /' || true
+    # Resize regression witness (#293): the Rust consumer undoes the geometry poll_from applied,
+    # as the library did before #293; the polled Resize then leaves the headless geometry at 40x12.
+    control rust-resize-unapplied rust "r02,r03,r04" PARITY_V08_RUST_RESIZE=unapplied
+    grep '"id":"r02"' "$WORK/ctl/rust-resize-unapplied.rust.jsonl" | sed 's/^/    witness r02: /' || true
     # Resource-gate control: the C consumer leaks its context every repetition.
     ( export PARITY_V08_PERTURB=leak; run_lang c "$REPS" ) >/dev/null 2>"$WORK/ctl/leak.c.err" || true
     rc=0
