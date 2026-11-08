@@ -24,7 +24,7 @@ is never tagged; the released tree adds reviewed backports of the `main` fixes f
 #259 and #285, plus release engineering (the #297 disclosure and the approved policy text and
 checker). The install instructions use v0.6.0. **Known limit (#297):** a headless C context's
 ANSI capture grows for its lifetime and 0.6.0 has no C drain; bound it by replacing the context
-past a byte budget (the additive drain is v0.7 work, PR #306, open).
+past a byte budget (the additive drain is on `main` for v0.7, unreleased, PR #306).
 The v0.6 "Instrumental Renaissance" integration merged to `main` through #253 (merge `f6cd8c7`,
 after an independent audit approved its exact head `eaa0d1c`). v0.6 adds a live Python↔Rust wire
 instrument and instrument-driven
