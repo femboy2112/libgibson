@@ -264,6 +264,7 @@ void fb_adapter_counters_get(const fb_adapter *ad, fb_adapter_counters *out);
 #define FB_FAULT_RETRY_ON_IO           0x10u /* GIBSON_ERR_IO from a poll is ignored (spins on hangup) */
 #define FB_FAULT_STICKY_SIGNAL         0x20u /* any signal ever received ends every later adapter too */
 #define FB_FAULT_IGNORE_RELEASES       0x80u /* reported releases are ignored: holds keep their grace */
+#define FB_FAULT_REARM_PENDING         0x100u /* a re-press re-arms a hold whose release waits for a full queue */
 #define FB_FAULT_SLOW_PRESENT          0x40u /* every 35th present stalls 400 ms (inside the timing; longer than
                                                 the 10-tic catch-up cap, so a real-clock loop drops tics) */
 void fb_adapter_set_faults(fb_adapter *ad, unsigned faults);

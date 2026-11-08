@@ -157,10 +157,11 @@ if demo:
     tr = [l.split() for l in open(f"{out}/demo.trace").read().splitlines()]
     kinds = [int(t[1]) for t in tr]
     check(0x200 in kinds, "demo (C ABI): the answer KEY_RELEASES_ACTIVE is in the input trace")
-    rel = [t for t in tr if int(t[1]) & 0x100 and int(t[1]) < 0x200]
-    names = {(int(t[1]) & 0xff, int(t[2])) for t in rel}
-    check(len(rel) == 3 and (1, ord("w")) in names and (1, ord("a")) in names and (2, 0x1003) in names,
-          f"demo (C ABI): one release each of Right, w and a ({len(rel)} release lines)")
+    rel = [(int(t[1]) & 0xff, int(t[2])) for t in tr if int(t[1]) & 0x100 and int(t[1]) < 0x200]
+    # the quit key's release may be recorded too (pressed and released before the loop ends)
+    keys = [(1, ord("w")), (1, ord("a")), (2, 0x1003)]
+    check(all(rel.count(k) == 1 for k in keys) and all(r in keys or r == (1, ord("q")) for r in rel),
+          f"demo (C ABI): one release each of Right, w and a ({rel})")
     rp = dict(kv.split("=", 1) for kv in open(f"{out}/demo.report").read().split() if "=" in kv)
     r = subprocess.run([demo, "--replay", f"{out}/demo.trace", "--tics", rp["tics"]], capture_output=True, text=True)
     m = re.search(r"hash=([0-9a-f]+)", r.stdout)

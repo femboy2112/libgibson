@@ -523,6 +523,7 @@ enum {
     C_P2_NO_LETTERBOX,
     C_P3_IGNORE_INPUT,
     C_P3_IGNORE_RELEASES,
+    C_P3_REARM_LOSES_RELEASE,
     C_P4_FRAME_LOCKED,
     C_P5_STALE_MAP,
     C_P5_RESIZE_STEPS,
@@ -547,6 +548,7 @@ static const struct {
     {"p2-no-letterbox", 2, "the reference stretches to the whole grid (no bars)"},
     {"p3-ignore-input", 3, "the producer ignores every key"},
     {"p3-ignore-releases", 3, "mutant adapter: reported key releases are ignored (holds keep the grace)"},
+    {"p3-rearm-loses-release", 3, "mutant adapter: a re-press re-arms a hold whose release is waiting for a full queue"},
     {"p4-frame-locked", 4, "mutant adapter: one tic per presented frame"},
     {"p5-stale-map", 5, "mutant adapter: the map is not rebuilt on resize"},
     {"p5-resize-steps", 5, "mutant adapter: a resize runs an extra producer tic"},
@@ -1049,6 +1051,93 @@ static const logent S3R_WANT[] = {
     {150, FB_KEY_BASE + (GIBSON_KEY_RIGHT - 0x1000u), 1}, {155, FB_KEY_BASE + (GIBSON_KEY_RIGHT - 0x1000u), 0},
 };
 
+/* Queue pressure with reported releases (#275 review): the caller pumps without draining until the
+   256-entry key queue is full; `a` is released then (its release cannot be queued) and pressed
+   again. The release must still reach the producer once there is room, and the second press is
+   the one dropped (counted), never the release. Returns 1 when that holds; *dropped gets the count. */
+static int queue_pressure_keeps_releases(unsigned long long *dropped, unsigned faults) {
+    fb_adapter_config cfg;
+    fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+    fb_adapter *ad = NULL;
+    if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+    fb_adapter_set_faults(ad, faults);
+    gibson_context_t *ctx = fb_adapter_context(ad);
+    gibson_event_t e;
+    uint64_t tic = 1;
+#define PUSH(type, code)                                                         \
+    do {                                                                         \
+        memset(&e, 0, sizeof e);                                                 \
+        e.event_type = (type);                                                   \
+        e.key_code = (code);                                                     \
+        if ((type) == GIBSON_EVENT_KEY_RELEASES_ACTIVE) gibson_push_event(ctx, &e); \
+        else gibson_push_event_kind(ctx, &e, CH);                                \
+        fb_adapter_pump(ad, tic, 0);                                             \
+        tic++;                                                                   \
+    } while (0)
+    PUSH(GIBSON_EVENT_KEY_RELEASES_ACTIVE, 0);
+    PUSH(GIBSON_EVENT_KEY, 'a');                   /* 1 queued */
+    for (int i = 0; i < 127; i++) {                /* 254 more: b taps, never drained */
+        PUSH(GIBSON_EVENT_KEY, 'b');
+        PUSH(GIBSON_EVENT_KEY_RELEASE, 'b');
+    }
+    PUSH(GIBSON_EVENT_KEY, 'c');                   /* 256: full */
+    PUSH(GIBSON_EVENT_KEY_RELEASE, 'a');           /* its release cannot be queued */
+    PUSH(GIBSON_EVENT_KEY, 'a');                   /* pressed again */
+#undef PUSH
+    int a_press = 0, a_release = 0, order_ok = 1;
+    fb_key_event k;
+    for (uint64_t t = tic; t < tic + 600; t++)
+        while (fb_adapter_next_key(ad, t, &k))
+            if (k.code == 'a') {
+                if (k.pressed) a_press++;
+                else {
+                    a_release++;
+                    if (a_press != 1) order_ok = 0;
+                }
+            }
+    fb_adapter_counters c;
+    fb_adapter_counters_get(ad, &c);
+    *dropped = c.keys_dropped;
+    fb_adapter_close(ad);
+    return a_press == 1 && a_release == 1 && order_ok && c.keys_dropped == 1;
+}
+
+/* Withdrawal (#275 review): grace 25, repeat 100. `a` pressed at 1 and repeated at 2 (inferred
+   deadline 102); the terminal confirms at 3; `b` pressed at 3 (held until its release); the
+   terminal withdraws at 4. As in gibson::hold, only `b` (waiting for a release) gets a new
+   deadline, 4 + 25 = 29; `a` keeps 102. Returns 1 when the releases come at exactly those tics. */
+static int withdrawal_keeps_inferred_deadlines(uint64_t *a_end, uint64_t *b_end) {
+    fb_adapter_config cfg;
+    fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+    cfg.hold_repeat_tics = 100;
+    fb_adapter *ad = NULL;
+    if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+    gibson_context_t *ctx = fb_adapter_context(ad);
+    static const struct { uint64_t tic; int32_t type; uint32_t code; } S[] = {
+        {1, GIBSON_EVENT_KEY, 'a'}, {2, GIBSON_EVENT_KEY, 'a'}, {3, GIBSON_EVENT_KEY_RELEASES_ACTIVE, 0},
+        {3, GIBSON_EVENT_KEY, 'b'}, {4, GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED, 0},
+    };
+    for (size_t i = 0; i < sizeof S / sizeof S[0]; i++) {
+        gibson_event_t e;
+        memset(&e, 0, sizeof e);
+        e.event_type = S[i].type;
+        e.key_code = S[i].code;
+        if (S[i].type == GIBSON_EVENT_KEY) gibson_push_event_kind(ctx, &e, CH);
+        else gibson_push_event(ctx, &e);
+        fb_adapter_pump(ad, S[i].tic, 0);
+    }
+    *a_end = *b_end = 0;
+    fb_key_event k;
+    for (uint64_t t = 4; t < 200; t++)
+        while (fb_adapter_next_key(ad, t, &k))
+            if (!k.pressed) {
+                if (k.code == 'a') *a_end = k.tic;
+                if (k.code == 'b') *b_end = k.tic;
+            }
+    fb_adapter_close(ad);
+    return *a_end == 102 && *b_end == 29;
+}
+
 static int prop3(char *ev) {
     fclock a, b;
     memset(&a, 0, sizeof a);
@@ -1076,7 +1165,11 @@ static int prop3(char *ev) {
     qsort(rgot, rel.nlog, sizeof *rgot, cmp_log);
     int rel_ok = rel.nlog == nr;
     for (size_t i = 0; rel_ok && i < nr; i++) rel_ok = cmp_log(&S3R_WANT[i], &rgot[i]) == 0;
-    const int pass = ok && keyed.hash != quiet.hash && log_ok && keyed.tics == 200 && quiet.tics == 200 && rel_ok;
+    unsigned long long qdropped = 0;
+    const int qok = queue_pressure_keeps_releases(&qdropped, ctl(C_P3_REARM_LOSES_RELEASE) ? FB_FAULT_REARM_PENDING : 0);
+    uint64_t wa = 0, wb = 0;
+    const int wok = withdrawal_keeps_inferred_deadlines(&wa, &wb);
+    const int pass = ok && keyed.hash != quiet.hash && log_ok && keyed.tics == 200 && quiet.tics == 200 && rel_ok && qok && wok;
     ev_append(ev, "keys pushed with gibson_push_event_kind, polled by the adapter (gibson_poll_event_kind): keyed hash=%016llx %s "
                   "unkeyed hash=%016llx (200 tics each); producer key log %u events %s independent hold model (grace 25, repeat 4): ",
               (unsigned long long)keyed.hash, keyed.hash != quiet.hash ? "!=" : "==", (unsigned long long)quiet.hash,
@@ -1088,6 +1181,9 @@ static int prop3(char *ev) {
               rel.nlog, rel_ok ? "==" : "!=");
     for (unsigned i = 0; i < rel.nlog && i < 10; i++)
         ev_append(ev, " %s@%llu", rgot[i].pressed ? "press" : "release", (unsigned long long)rgot[i].tic);
+    ev_append(ev, "; a full key queue keeps a reported release (a's release delivered once there is room, its re-press dropped: "
+                  "%s, keys_dropped=%llu); a withdrawal re-times only holds waiting for a release (a ends at %llu, want 102; "
+                  "b at %llu, want 29)", qok ? "yes" : "NO", qdropped, (unsigned long long)wa, (unsigned long long)wb);
     if (ign) ev_append(ev, " [control: producer ignores input]");
     if (rfault) ev_append(ev, " [control: reported releases ignored]");
     return pass;

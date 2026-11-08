@@ -691,6 +691,12 @@ static void observe_key(fb_adapter *ad, uint64_t tic, uint32_t code) {
     int free_slot = -1;
     for (int i = 0; i < FB_HOLD_SLOTS; i++) {
         if (ad->holds[i].used && ad->holds[i].code == code) {
+            if (ad->holds[i].ends_at <= tic && !(ad->faults & FB_FAULT_REARM_PENDING)) {
+                /* the hold has ended but its release is still waiting for room in a full queue:
+                   re-arming would lose that release, so this press is the one dropped (#275 review) */
+                ad->ctr.keys_dropped++;
+                return;
+            }
             /* an autorepeat re-arms; with reported releases the key is held until its release
                (pressed again in the tic it was released: down again) */
             ad->holds[i].released = 0;
@@ -719,18 +725,20 @@ static void release_key(fb_adapter *ad, uint64_t tic, uint32_t code) {
     for (int i = 0; i < FB_HOLD_SLOTS; i++) {
         if (ad->holds[i].used && ad->holds[i].code == code) {
             ad->holds[i].released = 1;
-            ad->holds[i].ends_at = ad->holds[i].started < tic ? tic : tic + 1;
+            ad->holds[i].ends_at = (ad->holds[i].started < tic || tic == UINT64_MAX) ? tic : tic + 1;
             return;
         }
     }
 }
 
-/* The terminal stopped reporting releases: no hold may wait for one. */
+/* The terminal stopped reporting releases: a hold waiting for one gets the grace as if pressed at
+   `tic` (saturating); a hold that still has an inferred deadline keeps it, as in gibson::hold. */
 static void releases_withdrawn(fb_adapter *ad, uint64_t tic) {
+    const uint64_t g = ad->cfg.hold_grace_tics;
+    const uint64_t ends = tic > UINT64_MAX - g ? UINT64_MAX : tic + g;
     for (int i = 0; i < FB_HOLD_SLOTS; i++) {
         hold_slot *h = &ad->holds[i];
-        if (h->used && !h->released && h->ends_at > tic + ad->cfg.hold_grace_tics)
-            h->ends_at = tic + ad->cfg.hold_grace_tics;
+        if (h->used && !h->released && h->ends_at == UINT64_MAX) h->ends_at = ends;
     }
 }
 

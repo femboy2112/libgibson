@@ -173,7 +173,8 @@ typedef enum {
     GIBSON_EVENT_RESIZE = 3,
     /* Key-release reporting (ABI v1, additive, #275): delivered only after
        gibson_set_key_release_reporting. KEY_RELEASE: a key went up; key_code, modifiers and the
-       key kind are exactly those its press was delivered with. KEY_RELEASES_ACTIVE: the terminal
+       key kind are exactly those its press was delivered with (for the 32 most recent keys still
+       down; a key already down when reporting began is named as the terminal reports it). KEY_RELEASES_ACTIVE: the terminal
        confirmed the request; every key that goes up after this event is a KEY_RELEASE.
        KEY_RELEASES_UNSUPPORTED: it answered without confirming; keys stay press-only. */
     GIBSON_EVENT_KEY_RELEASE = 4,

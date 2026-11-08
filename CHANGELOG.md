@@ -90,8 +90,10 @@ decision ([#287](https://github.com/femboy2112/libgibson/issues/287); proposed p
   tic, and a terminal without the protocol keeps the grace. `fb_adapter_releases_reported`;
   releases and the answer are recorded in the input trace (`FB_OBSERVED_*`), so a session replays
   exactly; the demo's status row shows `keys exact`. The selfcheck's P3 adds a reported-release leg
-  (w held across a d chord, a one-tic tap) against the rule written out by hand, with the control
-  `p3-ignore-releases` (24 controls). `scripts/dev/kitty_key_release_e2e.sh` with `FB_DEMO=` runs the
+  (w held across a d chord, a one-tic tap) against the rule written out by hand, a full key queue
+  (a release waiting for room is never lost to a re-press, which is dropped and counted) and a
+  withdrawal (only holds waiting for a release are re-timed, as in `gibson::hold`), with the
+  controls `p3-ignore-releases` and `p3-rearm-loses-release` (25 controls). `scripts/dev/kitty_key_release_e2e.sh` with `FB_DEMO=` runs the
   demo in real kitty: the trace of the live session replays headless to the same hash.
 
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))

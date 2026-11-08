@@ -12,7 +12,7 @@ repository and links this adapter in (see "The engine-port contract").
 |---|---|
 | `fb_adapter.h` / `fb_adapter.c` | the adapter: scaling + half-block lowering, input + hold grace, fixed-tic loop, resize, lifecycle |
 | `synthetic_producer.h` / `.c` | own procedural art: a steerable tunnel, star dust and a ship marker, 320x200 indexed, deterministic state + FNV-1a 64 hash |
-| `fb_adapter_demo.c` | interactive demo, headless replay, and `--selfcheck` (7 properties, 15 negative controls) |
+| `fb_adapter_demo.c` | interactive demo, headless replay, and `--selfcheck` (7 properties, 16 negative controls) |
 | `pty_harness.py` | an independent real-PTY harness: P2 on the wire (needs pyte), P3, P5, P6, P7 through a pty; 9 negative controls |
 | `../../scripts/dev/fb_adapter_consumer.sh` | builds all of it from a temp dir against a staged SDK and runs everything |
 
@@ -150,8 +150,8 @@ and the demo's report file) for P3, P5, P6 and P7, and adds a wire check for P2.
 
 ### Negative controls (each must FAIL)
 
-`fb_adapter_demo --selfcheck --list-controls` lists the 15 selfcheck controls; `pty_harness.py
---control NAME` runs the 9 PTY ones. The consumer script runs all 24 and requires each to fail.
+`fb_adapter_demo --selfcheck --list-controls` lists the 16 selfcheck controls; `pty_harness.py
+--control NAME` runs the 9 PTY ones. The consumer script runs all 25 and requires each to fail.
 
 | Control | Property | Defect injected | Observed |
 |---|---|---|---|
