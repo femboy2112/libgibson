@@ -386,25 +386,26 @@ func TestReadbackAndCapture(t *testing.T) {
 	if !bytes.Equal(taken, wire) {
 		t.Error("take must return what get returned")
 	}
-	if left, _ := ctx.RenderedOutput(); len(left) != 0 {
-		t.Error("capture not empty after take")
+	if left, err := ctx.RenderedOutput(); err != nil || len(left) != 0 {
+		t.Errorf("capture after take: %d bytes, err %v; want 0 bytes, no error", len(left), err)
 	}
-	if again, _ := ctx.TakeRenderedOutput(); len(again) != 0 {
-		t.Error("second take must be empty")
+	if again, err := ctx.TakeRenderedOutput(); err != nil || len(again) != 0 {
+		t.Errorf("second take: %d bytes, err %v; want 0 bytes, no error", len(again), err)
 	}
 	// A changed frame, so there are bytes to discard (an unchanged frame writes none).
 	mount(t, ctx, nil, "cd")
-	have, _ := ctx.RenderedOutput()
+	have, err := ctx.RenderedOutput()
+	must(t, err)
 	n, err := ctx.ClearRenderedOutput()
 	must(t, err)
 	if n == 0 || n != len(have) {
 		t.Errorf("clear removed %d of %d", n, len(have))
 	}
-	if left, _ := ctx.RenderedOutput(); len(left) != 0 {
-		t.Error("capture not empty after clear")
+	if left, err := ctx.RenderedOutput(); err != nil || len(left) != 0 {
+		t.Errorf("capture after clear: %d bytes, err %v; want 0 bytes, no error", len(left), err)
 	}
-	if n, _ := ctx.ClearRenderedOutput(); n != 0 {
-		t.Errorf("second clear removed %d", n)
+	if n, err := ctx.ClearRenderedOutput(); err != nil || n != 0 {
+		t.Errorf("second clear: removed %d, err %v; want 0, no error", n, err)
 	}
 }
 
@@ -417,6 +418,15 @@ func TestLifecycle(t *testing.T) {
 	must(t, err)
 	if !n.Valid() {
 		t.Fatal("fresh node should be valid")
+	}
+	// A closed context refuses the node and leaves it with the caller, who can still free it.
+	err = ctx.SetRootNode(n)
+	var ge *gibson.Error
+	if !errors.As(err, &ge) || ge.Status != gibson.StatusInvalidParam {
+		t.Fatalf("SetRootNode on a closed context: %v, want a *gibson.Error with StatusInvalidParam", err)
+	}
+	if !n.Valid() {
+		t.Fatal("a node refused by a closed context must stay with the caller")
 	}
 	n.Free()
 	if n.Valid() {

@@ -534,9 +534,14 @@ func (c *Context) ClearRenderedOutput() (int, error) {
 }
 
 // SetRootNode assigns the root node tree (taking ownership, as SetRoot does) and reports the status.
+// On a closed (or nil) Context it returns an error and leaves the node with the caller, who can
+// still Free it: the native call would refuse the context before taking the node.
 func (c *Context) SetRootNode(n *Node) error {
 	if n == nil || n.ptr == nil {
 		return errors.New("invalid node")
+	}
+	if c == nil || c.ptr == nil {
+		return &Error{Op: "SetRootNode", Status: StatusInvalidParam, LastError: "closed context"}
 	}
 	ptr := n.ptr
 	n.ptr = nil
