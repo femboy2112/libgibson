@@ -286,7 +286,8 @@ class Event:
     `key_kind` is a KeyKind for a KEY event polled with kind (CHAR vs SPECIAL, so a typed U+1001
     stays distinct from Key.ENTER) and KeyKind.NONE for other event types; it is None only when
     polled with ``kind=False``. Pushing key_kind=None uses the kind-less call, where U+1001-U+100D
-    always mean the special keys. A polled Event can be pushed back as is."""
+    always mean the special keys. A polled KEY, PASTE or RESIZE Event can be pushed back as is;
+    a NONE (empty queue) cannot, because the C ABI refuses to queue NONE."""
     event_type: int = EventType.NONE
     key_code: int = 0
     modifiers: int = 0
@@ -986,8 +987,9 @@ class Context:
         The kind is ignored for non-KEY events. PASTE needs `paste`; RESIZE needs non-zero cols and
         rows. Raises QueueFullError (full queue, nothing displaced) or GibsonError (terminal
         context, unrepresentable event: status Status.ERR_INVALID_PARAM) with the C last-error
-        text; ValueError if a field cannot fit the C struct. Nothing is validated in Python
-        beyond that: the C ABI decides. (ABI v1, additive.)"""
+        text. Raises ValueError (UnicodeEncodeError is one) when Python cannot build the C struct:
+        a value that does not fit its field, or a paste str that is not encodable as UTF-8 or
+        contains a NUL byte. Event validity itself is the C ABI's decision. (ABI v1, additive.)"""
         c, keep = _event_to_struct(event)
         if event.key_kind is None:
             status = _lib.gibson_push_event(self.handle, ctypes.byref(c))

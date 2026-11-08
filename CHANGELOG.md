@@ -112,8 +112,9 @@ stays 1.85.
     `gibson_poll_event` (`key_kind` is `None`); a `None` key kind on push calls `gibson_push_event`.
   - A non-OK status raises `GibsonError` (a `RuntimeError`, with `.status` and the thread-local
     `.last_error` read right after the call); a full queue raises `QueueFullError`. The C ABI, not
-    Python, decides what is invalid; `ValueError` is raised only where Python must refuse before the call:
-    a value that cannot fit its C field, or a paste containing a NUL byte (the C string would be cut short).
+    Python, decides which events are invalid. Python raises `ValueError` (`UnicodeEncodeError` is one)
+    only when it cannot build the C struct, for example a value that does not fit its C field, or a
+    paste `str` that cannot be encoded as UTF-8 or contains a NUL byte.
   - `bindings/python/test_events.py` (new CI step in the Bindings job) covers CHAR/SPECIAL, paste,
     resize, empty queue, queue full, invalid parameters and the poll-then-push round trip.
   - `bindings/parity/v08/parity_v08.py` now uses these calls for events (transcript unchanged,
