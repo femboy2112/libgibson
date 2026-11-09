@@ -47,6 +47,8 @@ impl Default for RealClock {
 pub struct FixedStepClock {
     step: Duration,
     frame: StdCell<u64>,
+    /// Pause gate for [`advance`](Self::advance); `Cell` so `advance(&self)` can read it.
+    paused: StdCell<bool>,
 }
 
 impl FixedStepClock {
@@ -55,6 +57,7 @@ impl FixedStepClock {
         Self {
             step: step.max(Duration::from_nanos(1)),
             frame: StdCell::new(0),
+            paused: StdCell::new(false),
         }
     }
 
@@ -87,7 +90,40 @@ impl FixedStepClock {
     }
 
     /// Advances one frame and returns the new time.
+    ///
+    /// While [`paused`](Self::pause) this is a no-op: the model tick does not move and
+    /// the unchanged time is returned. Use [`step`](Self::step) to move exactly one
+    /// frame regardless of pause state.
     pub fn advance(&self) -> Duration {
+        if self.paused.get() {
+            return self.now();
+        }
+        self.step_one()
+    }
+
+    /// Freezes [`advance`](Self::advance). [`seek`](Self::seek) and
+    /// [`step`](Self::step) still work — they are explicit.
+    pub fn pause(&mut self) {
+        self.paused.set(true);
+    }
+
+    /// Undoes [`pause`](Self::pause); `advance` moves the clock again.
+    pub fn resume(&mut self) {
+        self.paused.set(false);
+    }
+
+    /// True while `advance` is frozen.
+    pub fn is_paused(&self) -> bool {
+        self.paused.get()
+    }
+
+    /// Single-step control: advances exactly one frame whether or not the clock is
+    /// paused (it does not change the pause state), and returns the new time.
+    pub fn step_frame(&mut self) -> Duration {
+        self.step_one()
+    }
+
+    fn step_one(&self) -> Duration {
         self.frame.set(self.frame.get().saturating_add(1));
         self.now()
     }
@@ -145,6 +181,8 @@ pub struct FixedTimestep {
     max_ticks_per_advance: u32,
     /// Exact catch-up: whole ticks beyond the cap are deferred, never discarded.
     exact: bool,
+    /// Multiplier on the render dt feeding the accumulator (`1.0` = real time).
+    time_scale: f64,
 }
 
 /// How many fixed model ticks a frame demands, plus whether the catch-up cap
@@ -189,6 +227,7 @@ impl FixedTimestep {
             accumulator: Duration::ZERO,
             max_ticks_per_advance: max_ticks.max(1),
             exact: false,
+            time_scale: 1.0,
         }
     }
 
@@ -208,9 +247,35 @@ impl FixedTimestep {
         self.step
     }
 
-    /// Feeds one render frame's real elapsed time and returns the ticks to run.
+    /// Sets the model-time scale: each `advance` dt is multiplied by `scale` before it
+    /// reaches the accumulator, so a producer can slow (`< 1`), fast-forward (`> 1`) or
+    /// freeze (`0`) model time deterministically. Non-finite or negative values
+    /// become `0.0`. The default `1.0` is bit-exact (no float math touches the dt).
+    /// Already-accumulated time is not rescaled.
+    pub fn set_time_scale(&mut self, scale: f64) {
+        self.time_scale = if scale.is_finite() && scale > 0.0 {
+            scale
+        } else {
+            0.0
+        };
+    }
+
+    /// The current model-time scale (default `1.0`).
+    pub fn time_scale(&self) -> f64 {
+        self.time_scale
+    }
+
+    /// Feeds one render frame's real elapsed time (scaled by
+    /// [`time_scale`](Self::set_time_scale)) and returns the ticks to run.
     pub fn advance(&mut self, real_dt: Duration) -> TickDemand {
-        self.accumulator = self.accumulator.saturating_add(real_dt);
+        let dt = if self.time_scale == 1.0 {
+            real_dt
+        } else {
+            // `mul_f64` panics on overflow; saturate through f64 secs instead.
+            let secs = real_dt.as_secs_f64() * self.time_scale;
+            Duration::try_from_secs_f64(secs).unwrap_or(Duration::MAX)
+        };
+        self.accumulator = self.accumulator.saturating_add(dt);
         let mut ticks = 0u32;
         while self.accumulator >= self.step && ticks < self.max_ticks_per_advance {
             self.accumulator -= self.step;
@@ -504,6 +569,278 @@ mod tests {
         let d = ts.advance(s / 2);
         assert_eq!((d.executed, d.owed, d.deferred, d.discarded), (0, 0, 0, 0));
         assert!(!d.clamped);
+    }
+
+    #[test]
+    fn pause_freezes_advance_and_resume_restores_it() {
+        let mut c = FixedStepClock::new(Duration::from_millis(10));
+        c.advance();
+        assert!(!c.is_paused());
+        c.pause();
+        assert!(c.is_paused());
+        let frozen = c.advance();
+        c.advance();
+        assert_eq!(c.frame(), 1);
+        assert_eq!(frozen, Duration::from_millis(10));
+        c.resume();
+        assert!(!c.is_paused());
+        assert_eq!(c.advance(), Duration::from_millis(20));
+        assert_eq!(c.frame(), 2);
+    }
+
+    #[test]
+    fn step_frame_moves_exactly_one_regardless_of_pause() {
+        let mut c = FixedStepClock::new(Duration::from_millis(10));
+        assert_eq!(c.step_frame(), Duration::from_millis(10)); // running
+        c.pause();
+        assert_eq!(c.step_frame(), Duration::from_millis(20)); // paused
+        assert_eq!(c.frame(), 2);
+        assert!(c.is_paused(), "step must not resume");
+        c.advance();
+        assert_eq!(c.frame(), 2);
+    }
+
+    #[test]
+    fn seek_is_unaffected_by_pause() {
+        let mut c = FixedStepClock::new(Duration::from_millis(10));
+        c.pause();
+        assert_eq!(c.seek(7), Duration::from_millis(70));
+        assert_eq!(c.frame(), 7);
+        assert!(c.is_paused(), "seek must not change pause state");
+    }
+
+    #[test]
+    fn time_scale_slows_speeds_and_freezes_model_time() {
+        let step = Duration::from_millis(10);
+        let run = |scale: f64| {
+            let mut ts = FixedTimestep::with_max_ticks(step, 10_000);
+            ts.set_time_scale(scale);
+            (0..100)
+                .map(|_| ts.advance(Duration::from_millis(10)).ticks)
+                .sum::<u32>()
+        };
+        assert_eq!(run(1.0), 100);
+        assert_eq!(run(0.5), 50);
+        assert_eq!(run(2.0), 200);
+        assert_eq!(run(0.0), 0);
+        assert_eq!(run(f64::NAN), 0);
+        assert_eq!(run(-3.0), 0);
+        assert_eq!(FixedTimestep::new(step).time_scale(), 1.0);
+    }
+
+    // ---- Falsifier #2 (#130): multi-fps digest invariance --------------------
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum Edit {
+        Insert(u32),
+    }
+
+    fn fnv(h: u64, x: u64) -> u64 {
+        (h ^ x).wrapping_mul(0x0000_0100_0000_01b3)
+    }
+
+    /// Runs one fixed logical trace (1 s of model time, 16 ms ticks, an edit on every
+    /// 10th tick) "presented" at `fps` (`0` = unlimited = 1 ms frames). The consumer
+    /// drains the edit stream every `drain_every` frames (`0` = blocked until the end).
+    /// Returns (ticks, model-event digest, consumer digest, edit order, superseded, frames).
+    fn presented(fps: u64, drain_every: u64) -> (u64, u64, u64, Vec<u32>, u64, u64) {
+        use crate::frame::{Frame, FrameSource};
+        use crate::snapshot::SnapshotBridge;
+
+        let total_ns: u128 = 1_000_000_000;
+        let frames = if fps == 0 { 1000 } else { fps };
+        let mut ts = FixedTimestep::with_max_ticks(Duration::from_millis(16), 10_000);
+        let mut bridge: SnapshotBridge<Edit> = SnapshotBridge::new();
+        let (mut tick, mut model_digest, mut consumer_digest) =
+            (0u64, 0xcbf2_9ce4_8422_2325u64, 0xcbf2_9ce4_8422_2325u64);
+        let mut order = Vec::new();
+        let drain = |bridge: &mut SnapshotBridge<Edit>, d: &mut u64, order: &mut Vec<u32>| {
+            for Edit::Insert(n) in bridge.drain_commands() {
+                *d = fnv(*d, n as u64);
+                order.push(n);
+            }
+        };
+        let mut prev_ns = 0u128;
+        for i in 1..=frames {
+            let t_ns = total_ns * i as u128 / frames as u128;
+            let dt = Duration::from_nanos((t_ns - prev_ns) as u64);
+            prev_ns = t_ns;
+            for _ in 0..ts.advance(dt).ticks {
+                tick += 1;
+                model_digest = fnv(model_digest, tick); // tick event
+                if tick % 10 == 0 {
+                    model_digest = fnv(model_digest, 1_000_000 + tick); // edit event
+                    assert!(bridge.issue(Edit::Insert(tick as u32)).is_accepted());
+                }
+            }
+            // The presentation side: one frame per render, coalesced by seq.
+            let f = Frame::from_rgb_bytes(FrameSource(0), i, 1, 1, 3, &[0, 0, 0]).unwrap();
+            bridge.publish_frame(f);
+            if drain_every != 0 && i % drain_every == 0 {
+                drain(&mut bridge, &mut consumer_digest, &mut order);
+            }
+        }
+        drain(&mut bridge, &mut consumer_digest, &mut order);
+        assert!(bridge.commands_conserved());
+        (
+            tick,
+            model_digest,
+            consumer_digest,
+            order,
+            bridge.frames_superseded(),
+            frames,
+        )
+    }
+
+    #[test]
+    fn model_digest_and_edit_order_are_invariant_across_fps_and_slow_consumers() {
+        let base = presented(60, 1);
+        assert_eq!(base.0, 62, "1000ms / 16ms = 62 ticks");
+        assert_eq!(base.3, vec![10, 20, 30, 40, 50, 60]);
+
+        // 15 / 30 / 60 / unlimited, plus 60fps with a slow (every 7th) and a
+        // fully blocked (drain only at the end) consumer.
+        let runs = [
+            presented(15, 1),
+            presented(30, 1),
+            presented(0, 1),
+            presented(60, 7),
+            presented(60, 0),
+        ];
+        for r in &runs {
+            assert_eq!((r.0, r.1, r.2, &r.3), (base.0, base.1, base.2, &base.3));
+        }
+        // ...while the presented-frame count (and so the coalescing) genuinely differs.
+        let frames: Vec<u64> = [
+            presented(15, 1),
+            presented(30, 1),
+            base.clone(),
+            presented(0, 1),
+        ]
+        .iter()
+        .map(|r| r.5)
+        .collect();
+        assert_eq!(frames, vec![15, 30, 60, 1000]);
+        let sup: Vec<u64> = [
+            presented(15, 1),
+            presented(30, 1),
+            base.clone(),
+            presented(0, 1),
+        ]
+        .iter()
+        .map(|r| r.4)
+        .collect();
+        assert_eq!(sup, vec![14, 29, 59, 999]);
+    }
+
+    // ---- Falsifier #3 (#130): pause/step/seek from an explicit checkpoint ----
+
+    #[derive(Debug, Clone, Copy)]
+    enum Ev {
+        Tick,
+        Redraw,
+        Resize(u16, u16),
+    }
+
+    /// Consumer whose model state may change ONLY when the model clock moves.
+    struct Consumer {
+        clock: FixedStepClock,
+        state: u64,
+        model_updates: u32,
+        non_tick_events: u32,
+        size: (u16, u16),
+    }
+
+    impl Consumer {
+        fn model_step(&mut self, moved: bool) {
+            if moved {
+                self.state = fnv(self.state, self.clock.frame());
+                self.model_updates += 1;
+            }
+        }
+        fn handle(&mut self, ev: Ev) {
+            match ev {
+                Ev::Tick => {
+                    let before = self.clock.frame();
+                    self.clock.advance();
+                    self.model_step(self.clock.frame() != before);
+                }
+                Ev::Redraw => self.non_tick_events += 1,
+                Ev::Resize(w, h) => {
+                    self.size = (w, h); // view state only; never touches `state`
+                    self.non_tick_events += 1;
+                }
+            }
+        }
+        fn single_step(&mut self) {
+            self.clock.step_frame();
+            self.model_step(true);
+        }
+    }
+
+    #[test]
+    fn pause_step_seek_from_checkpoint_updates_model_only_on_ticks() {
+        let mut c = Consumer {
+            clock: FixedStepClock::new(Duration::from_millis(10)),
+            state: 0,
+            model_updates: 0,
+            non_tick_events: 0,
+            size: (0, 0),
+        };
+        for ev in [Ev::Tick, Ev::Redraw, Ev::Tick, Ev::Resize(80, 24), Ev::Tick] {
+            c.handle(ev);
+        }
+        assert_eq!(
+            (c.clock.frame(), c.model_updates, c.non_tick_events),
+            (3, 3, 2)
+        );
+
+        // Explicit checkpoint: frame index + consumer model state.
+        let (cp_frame, cp_state, cp_updates) = (c.clock.frame(), c.state, c.model_updates);
+
+        // Paused: ticks and non-tick events change nothing.
+        c.clock.pause();
+        for ev in [Ev::Tick, Ev::Tick, Ev::Redraw, Ev::Resize(120, 40)] {
+            c.handle(ev);
+        }
+        assert_eq!(
+            (c.clock.frame(), c.state, c.model_updates),
+            (cp_frame, cp_state, cp_updates)
+        );
+
+        // One explicit step moves exactly one frame, exactly one model update.
+        c.single_step();
+        assert_eq!(
+            (c.clock.frame(), c.model_updates),
+            (cp_frame + 1, cp_updates + 1)
+        );
+        let stepped_state = c.state;
+        assert_ne!(stepped_state, cp_state);
+        assert!(c.clock.is_paused());
+
+        // Resume: the next tick is one more update; a redraw in between adds none.
+        c.clock.resume();
+        c.handle(Ev::Redraw);
+        assert_eq!(c.model_updates, cp_updates + 1);
+        c.handle(Ev::Tick);
+        assert_eq!(
+            (c.clock.frame(), c.model_updates),
+            (cp_frame + 2, cp_updates + 2)
+        );
+
+        // Seek back to the checkpoint (even while paused) and restore its state.
+        c.clock.pause();
+        c.clock.seek(cp_frame);
+        c.state = cp_state;
+        c.model_updates = cp_updates;
+        assert_eq!(c.clock.frame(), cp_frame);
+        c.handle(Ev::Resize(40, 10));
+        assert_eq!(c.size, (40, 10));
+        assert_eq!((c.state, c.model_updates), (cp_state, cp_updates));
+
+        // Replaying forward from the checkpoint reproduces the earlier state exactly.
+        c.single_step();
+        assert_eq!((c.clock.frame(), c.state), (cp_frame + 1, stepped_state));
     }
 
     #[test]
