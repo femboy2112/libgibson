@@ -961,6 +961,18 @@ pub(crate) fn reset() {
     }
 }
 
+/// Serialises tests across modules (here and e.g. `session`) that mutate the process-global
+/// keyboard-query record (`KEYBOARD_QUERIES`) or the key-release reporting globals, so they
+/// never interleave.
+#[cfg(test)]
+static QUERIES_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Acquires [`QUERIES_LOCK`], tolerating poisoning from a panicking test.
+#[cfg(test)]
+pub(crate) fn queries_lock() -> std::sync::MutexGuard<'static, ()> {
+    QUERIES_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     //! The hostile matrix of #269, in process, on real pseudo-terminal pairs. Every
@@ -2249,13 +2261,6 @@ mod tests {
             terminal(got.1),
             vec![key('ｶ'), kind(K::Char('ｶ'), M::NONE, Kind::Release)]
         );
-    }
-
-    /// Serialises the tests that touch the process-global request record (`KEYBOARD_QUERIES`).
-    static QUERIES_LOCK: Mutex<()> = Mutex::new(());
-
-    fn queries_lock() -> std::sync::MutexGuard<'static, ()> {
-        QUERIES_LOCK.lock().unwrap_or_else(|p| p.into_inner())
     }
 
     /// The keys a hold tracker keyed by code and modifiers (a release matches its press by

@@ -440,12 +440,13 @@ impl TerminalSession {
         }
         self.alt_screen_active = alt_active_after;
         if follow {
-            // Re-push on the new screen; re-set the bit only once it is confirmed on the wire.
-            if let Err(e) = request_key_releases(out) {
-                self.on_key_release_push_lost();
-                return Err(e);
-            }
+            // Set the bit BEFORE the re-push: a torn or failed re-push write may already have
+            // placed our push on the new screen's stack, so it must stay poppable by restore/Drop
+            // (the same defensive unwinding the initial enable uses). This is deliberately the
+            // opposite of the pop above, which clears the bit first — a torn pop must not be
+            // popped a second time, but a torn re-push must not leak unpopped (#305 review: P2).
             REPORTING_MODES.fetch_or(REPORT_KEY_RELEASE, Ordering::SeqCst);
+            request_key_releases(out)?;
         }
         Ok(())
     }
@@ -848,7 +849,7 @@ impl Drop for TerminalSession {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod key_release_switch_tests {
     //! #305: a failed screen-switch write after a successful kitty-flag pop must not strand
     //! the `REPORT_KEY_RELEASE` bit set — otherwise a later `restore`/`Drop`/retry pops a
@@ -858,17 +859,21 @@ mod key_release_switch_tests {
     use super::*;
     use std::io::{self, Write};
 
-    // The push bit and delivery flag are process-global, so serialize these tests.
-    static SWITCH_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
+    // These mutate process-global key-release state (the push bit, the delivery flag, and the
+    // keyboard-query record `expect_keyboard_reply`/`forget_keyboard_replies` use), so they share
+    // the one cross-module lock the `tty_source` query tests also hold — never interleaving with
+    // them (#305 review: P3).
     fn lock() -> std::sync::MutexGuard<'static, ()> {
-        SWITCH_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+        crate::tty_source::queries_lock()
     }
 
     fn reset_globals() {
         REPORTING_MODES.store(0, Ordering::SeqCst);
         KEY_RELEASES_ENDED.store(false, Ordering::SeqCst);
         crate::input::set_key_releases_delivered(false);
+        // Clear any `outstanding` left by a re-push, so a later `tty_source` query test is not
+        // perturbed (review: P3).
+        crate::tty_source::forget_keyboard_replies();
     }
 
     /// A headless session reporting itself as key-release-live, with raw mode genuinely on,
@@ -895,10 +900,7 @@ mod key_release_switch_tests {
         fn write(&mut self, b: &[u8]) -> io::Result<usize> {
             if self.armed && b.contains(&self.needle) {
                 self.armed = false;
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "injected write failure",
-                ));
+                return Err(io::Error::other("injected write failure"));
             }
             self.buf.extend_from_slice(b);
             Ok(b.len())
@@ -914,11 +916,7 @@ mod key_release_switch_tests {
         let mut s = reporting_live_session();
         let mut buf: Vec<u8> = Vec::new();
         // Pop succeeds; the screen-switch write fails (EnterAlternateScreen).
-        let r = s.switch_screen_on(
-            &mut buf,
-            |_o| Err(io::Error::new(io::ErrorKind::Other, "switch failed")),
-            true,
-        );
+        let r = s.switch_screen_on(&mut buf, |_o| Err(io::Error::other("switch failed")), true);
         assert!(r.is_err());
         assert!(
             !key_releases_pushed(),
@@ -1000,7 +998,7 @@ mod key_release_switch_tests {
     }
 
     #[test]
-    fn repush_failure_does_not_strand_the_bit() {
+    fn repush_failure_keeps_the_bit_set_so_restore_pops_the_possibly_live_push() {
         let _g = lock();
         let mut s = reporting_live_session();
         // Pop ok, switch writes "SW" (ok), the re-push (`\x1b[>15u…`) fails on '>'.
@@ -1011,16 +1009,22 @@ mod key_release_switch_tests {
         };
         let r = s.switch_screen_on(&mut w, |o| o.write_all(b"SW"), true);
         assert!(r.is_err());
+        // A torn re-push may already have placed our push on the new screen's stack, so the bit
+        // MUST stay set: restore/Drop then pops it instead of leaking it (shell left in kitty
+        // mode). The opposite of a failed pop/switch, where a second pop would hit a foreign
+        // entry. The bit is set before the re-push write for exactly this (#305 review: P2).
         assert!(
-            !key_releases_pushed(),
-            "#305: a re-push that never reached the terminal is not later popped"
+            key_releases_pushed(),
+            "#305/P2: a torn re-push stays poppable, not leaked"
+        );
+        assert!(
+            take_key_releases_pushed(),
+            "restore would find the push and pop it exactly once"
         );
         assert!(s.alt_screen_active, "the switch itself succeeded");
-        assert!(!s.key_release_reporting_enabled);
-        assert!(s.raw_mode_enabled, "raw mode preserved");
-        assert_eq!(
-            w.buf, b"\x1b[<uSW",
-            "pop and switch on the wire; the re-push failed"
+        assert!(
+            s.key_release_reporting_enabled,
+            "reporting stays on defensively, like a failed initial enable"
         );
         reset_globals();
     }
@@ -1030,11 +1034,7 @@ mod key_release_switch_tests {
         let _g = lock();
         let mut s = reporting_live_session();
         let mut buf: Vec<u8> = Vec::new();
-        let _ = s.switch_screen_on(
-            &mut buf,
-            |_o| Err(io::Error::new(io::ErrorKind::Other, "switch failed")),
-            true,
-        );
+        let _ = s.switch_screen_on(&mut buf, |_o| Err(io::Error::other("switch failed")), true);
         // #305 nag: the loss marked reporting disabled, so the next reconciliation must NOT
         // enter the `enabled && !pushed` branch that assumes the panic hook already dropped
         // raw mode. The hook did not run here; raw mode is still on and restore must disable it.
