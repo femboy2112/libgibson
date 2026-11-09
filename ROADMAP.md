@@ -121,8 +121,19 @@ authorization).
 **v0.7 — playable terminal Doom:** public raster / input / clock / lifecycle capabilities and an
 actual playable adapter, the GPL adapter kept in a separate repository; execution graph in
 [`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md) (starts from the merged `main`).
+*Progress 2026-11-08 (RXX):* the resident-agent contracts are merged: bounded C capture (#306),
+headless resize parity (#308), eager interactive entry (#309), and opt-in exact key releases in
+Rust, C and the adapter (#302, #303). **v0.7.0 is not yet eligible for publication:**
+- node J's engine port is local only;
+- #298 (C terminal-size and focus) and #292 (Windows) are open;
+- no external agent-style consumer has been re-qualified against this `main`;
+- the release prerequisites (version, changelog, notices, exact-head CI and preflight, installed
+  artifact and contents audit, MSRV, frozen audio goldens) have not been run for a v0.7.0 candidate.
 **v0.8 — cross-language functionality:** independent Rust/C/C++/Python/Go clients built against
-installed artifacts and shared semantic fixtures. **v0.9 — portability and stabilization:**
+installed artifacts and shared semantic fixtures. *Progress 2026-11-08:* the C++, Python and Go
+wrappers now reach SUPPORTED for events, geometry, cell readback and text in the shared parity
+matrix (#311, #313, #314). Failure codes and lifecycle remain PARTIAL; Rust's native path still
+differs on 28 documented records. **v0.9 — portability and stabilization:**
 terminal/OS matrices, performance envelopes, API simplification, recovery behaviour and migration
 support. **v1.0 — stable reviewed CORE:** explicit API/ABI compatibility commitments, release
 tooling, independently verified support and a documented maintenance model. Optional graphics /

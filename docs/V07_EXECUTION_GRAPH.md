@@ -8,7 +8,7 @@ that contains it — never from the integration branch itself.
 `main` (59 → 60: `gibson_push_event`, #273; → 62: `gibson_poll_event_kind` /
 `gibson_push_event_kind`, #283). `GIBSON_ABI_VERSION` stays 1; v0.6.0 keeps 59.
 *Update 2026-11-08:* → 64: `gibson_take_rendered_output` / `gibson_clear_rendered_output` bound a
-headless context's capture (#297).
+headless context's capture (#297); → 65: `gibson_set_key_release_reporting` (#301, #303).
 
 ## What v0.6 already proves (preserved evidence, not re-litigated)
 
@@ -62,10 +62,59 @@ would kill or reshape it.
 
 Order: **A → {B, C} → D; B → F → G; {B, C, D} → E → H; {B, C} → I → J.**
 
-## Progress ledger (updated 2026-11-07)
+## Progress ledger (updated 2026-11-08)
 
 States: **merged** (on `main`), **partial** (some of the node's oracle met), **not started**. Each
 node closes only on its own oracle, not because this table looks complete.
+
+**Renaissance XX (2026-11-08): what merged after the v0.6.0 release.** Checked against `main`
+`3c4a549` and GitHub. Where earlier rounds' wording below differs, this governs. Every
+merge below carries an owner-condition record comment on its PR (exact head, CI and preflight run
+ids, independent review, controls).
+
+- **v0.6.0 is released** (tag `v0.6.0` → `492d0fe`, maintenance line, decision 0001; #287 closed by
+  #307 `c23bd72`). `main` was not merged with the release branch.
+- **Resource and lifecycle contracts for resident agents (Tier B):**
+  - #306 (`dbcd354`): the C ABI can drain or discard a headless capture, 62 → 64. **#297 closed**
+    after its original reproducer passed on merged `main`: unchanged copy semantics (1,995,006 B at
+    frame 1000); with one take per frame, 1,995 B and 0 after every take.
+  - #308 (`8531bba`): `Context::poll_from` applies a delivered resize to a headless context, as the
+    C ABI does. **#293 closed**: r02/r03/r04 identical across all five parity consumers.
+  - #309 (`1f8cfbb`): `Context::enter_interactive` enters raw mode and bracketed paste before the
+    first output. **#296 closed**: the PTY probe shows no kernel echo and exactly one Enter
+    (fullscreen mode not probed).
+- **Node D, held keys: exact holds on kitty-protocol terminals (opt-in).**
+  - #302 (`ddc54f9`) adds Rust key-release reporting (`TerminalSession::set_key_release_reporting`).
+    An answer acts only in its own request's generation, and a panic-ended notice comes before the
+    next answer on every polling path. Reviewed over repeated Codex rounds plus a blind
+    adversarial pass; the last round found no P0–P2.
+  - #303 (merged `3c4a549`) adds the C ABI (65, `gibson_set_key_release_reporting`) and exact holds
+    in the node J adapter: opt-in, `fb_adapter_config.key_releases` default 0, holds tracked per
+    source key. Review 5 closed the sentinel class: a live exact hold's `ends_at == UINT64_MAX`
+    no-deadline marker is no longer read as a reached deadline at any of the three sites, so a
+    release reported at `tic == UINT64_MAX` ends the hold with a real (not synthesized) release.
+  - Real kitty 0.32.2 / xterm 390 under Xvfb: 13/13 (Rust) and 20/20 (with the C-ABI demo).
+  - Known limits: #305 (a failed screen-switch write after a successful pop) and #312 (a shifted
+    symbol pressed in the screen-switch window). Only kitty was exercised; other emulators are not
+    claimed.
+- **v0.8 wrapper parity:**
+  - #311 (Python, `cdab9c2`), #313 (C++, `97ebed8`) and #314 (Go, `218d896`) give each wrapper a
+    headless context, events with key kinds, geometry, cell and glyph readback, and capture
+    take/clear.
+  - The parity matrix now reads SUPPORTED for event identity, geometry, rendered cells and text in
+    all four C-ABI languages. Failure codes and lifecycle stay PARTIAL: NULL-pointer and
+    `destroy(NULL)` probes still need raw calls.
+  - #310 (`3381dc8`) fixed Go's `NewContext` reading the thread-local last error on another OS
+    thread. This was F6, first reproduced on gccgo: 4,601 foreign messages in 1,536,000 calls,
+    then 0.
+- **Still open for v0.7.0:**
+  - Node J's GPL port is local only (no external repository; the remote-creation scope is not
+    established).
+  - #298: no C terminal-size query and no C focus events.
+  - #292: Windows key doubling.
+  - The MINERVA/ProjectGHOST canary has not been re-run against this `main` (its v0.6.0 upgrade PR
+    is the operator's).
+  - v0.7.0 is **not** ready to publish (see ROADMAP).
 
 **Renaissance XIX (2026-11-07): status reconciliation.** First checked against `main` `5790f1a`
 and GitHub, then updated with the round's later merges through `main` `ccbac09`. Where RXVIII's
@@ -97,8 +146,8 @@ wording below differs, this governs.
   poll before its timeout. Evidence is PTY injection; no emulator here implements the protocol.
   Windows key-kind decoding is unchanged: crossterm 0.29 reports every Windows key-up as a release,
   which LibGibson still delivers as a second press (#292, open; no Windows runner here).
-- **C ABI:** 64 symbols on `main` (59 → 60 by #273 `67c43bd`, → 62 by #283, → 64 by the #297
-  capture drain); 59 at `9a899e1` and
+- **C ABI:** 65 symbols on `main` (59 → 60 by #273 `67c43bd`, → 62 by #283, → 64 by the #297
+  capture drain, → 65 by #303's `gibson_set_key_release_reporting`); 59 at `9a899e1` and
   on the v0.6.0 candidate `572e551`. `GIBSON_ABI_VERSION` stays 1.
 - **Node H:** its earlier statement that a handled or ignored SIGHUP can spin in #269 is
   superseded by #282; the row now separates what is tested from what is not.
@@ -107,7 +156,8 @@ wording below differs, this governs.
   backport (#294, `572e551`), requalified at that exact head: CI 42421627573 (8/8), Release
   Preflight 42421629285 (PASS), `check-maintenance-candidate.sh` PASS (59 symbols, built library
   included), 140/140 counted stress runs; record on #287. The release-line policy is proposed in
-  draft #291 (Tier C, owner only). Latest published release: v0.5.0.
+  draft #291 (Tier C, owner only). Latest published release: v0.5.0. *(2026-11-08: #291 merged;
+v0.6.0 is the latest published release.)*
 - **v0.8 first parity slice merged** (#295, `ccbac09`): one script, five installed-interface
   consumers; C++, Python and Go transcripts byte-identical to C; Rust differs on 28 documented
   records. Found #293 (Rust `poll_from` does not resize a headless context; the C ABI does).

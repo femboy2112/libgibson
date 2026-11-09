@@ -24,7 +24,7 @@ is never tagged; the released tree adds reviewed backports of the `main` fixes f
 #259 and #285, plus release engineering (the #297 disclosure and the approved policy text and
 checker). The install instructions use v0.6.0. **Known limit (#297):** a headless C context's
 ANSI capture grows for its lifetime and 0.6.0 has no C drain; bound it by replacing the context
-past a byte budget (the additive drain is on `main` for v0.7, unreleased, PR #306).
+past a byte budget (the additive drain is on `main` for v0.7, unreleased, PR #306; #297 closed).
 The v0.6 "Instrumental Renaissance" integration merged to `main` through #253 (merge `f6cd8c7`,
 after an independent audit approved its exact head `eaa0d1c`). v0.6 adds a live Python↔Rust wire
 instrument and instrument-driven
@@ -36,7 +36,17 @@ evidence and remaining limits: [`V06_QUALIFICATION_LEDGER.md`](V06_QUALIFICATION
 Records: [qualification](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6721675144),
 [publication](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6721728874);
 exact-head CI run 42480198449 (8/8, first attempt), Release Preflight run 42480200825 (PASS).
-`main` (0.7.0-dev) exports 62 C ABI symbols (#273, #283), `GIBSON_ABI_VERSION` still 1.
+`main` (0.7.0-dev) exports 65 C ABI symbols (#273, #283, #306, #303), `GIBSON_ABI_VERSION` still 1.
+**v0.7 line since v0.6.0 (unreleased):**
+- Bounded headless capture (#306).
+- Headless resize parity (#308).
+- `Context::enter_interactive` (#309).
+- Opt-in exact key-release reporting on kitty-protocol terminals, in Rust (#302) and through the
+  C ABI and the framebuffer adapter (#303).
+- Python, C++ and Go wrappers covering headless contexts, events, readback and capture
+  (#311, #313, #314).
+- A Go last-error thread fix (#310).
+Status per node: [`V07_EXECUTION_GRAPH.md`](V07_EXECUTION_GRAPH.md).
 
 **v0.5.0 released (2026-10-24; the prior release):** **v0.5.0 — Interactive instruments** is released on
 GitHub as an Engineering Alpha (tag → `v0.5.0` at `d8c7b99`, prerelease-flagged, Linux
