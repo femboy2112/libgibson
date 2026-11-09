@@ -143,8 +143,11 @@ pub struct TerminalSession {
     /// the panic hook unwind it (the raw `input::set_mouse_capture` free function
     /// does not, so its enable leaks on any early return or panic).
     mouse_capture_enabled: bool,
-    /// Opt-in focus-change reporting is on, tracked and unwound for the same reason.
+    /// A focus enable may have reached the terminal; a disable is required on cleanup.
     focus_reporting_enabled: bool,
+    /// The latest focus-enable write and flush succeeded. A failed transition invalidates this
+    /// without clearing cleanup ownership, because a partial write may have reached the terminal.
+    focus_reporting_confirmed: bool,
     /// Opt-in key-release reporting is on (#275): kitty keyboard flags pushed on the current
     /// screen, popped by `restore`, `Drop` and the panic hook.
     key_release_reporting_enabled: bool,
@@ -202,6 +205,7 @@ impl TerminalSession {
             bracketed_paste_enabled: false,
             mouse_capture_enabled: false,
             focus_reporting_enabled: false,
+            focus_reporting_confirmed: false,
             key_release_reporting_enabled: false,
             sync_updates_enabled: true,
             capabilities: TerminalCapabilities::detect_from_env(),
@@ -241,6 +245,7 @@ impl TerminalSession {
             bracketed_paste_enabled: false,
             mouse_capture_enabled: false,
             focus_reporting_enabled: false,
+            focus_reporting_confirmed: false,
             key_release_reporting_enabled: false,
             sync_updates_enabled: true,
             capabilities: TerminalCapabilities::truecolor(),
@@ -504,17 +509,34 @@ impl TerminalSession {
         self.mouse_capture_enabled
     }
 
-    /// Enables or disables focus-change reporting, tracked and unwound exactly like
-    /// [`set_mouse_capture`](TerminalSession::set_mouse_capture).
+    /// Requests or disables focus-change reporting, tracked for cleanup like
+    /// [`set_mouse_capture`](TerminalSession::set_mouse_capture). If a write or flush fails,
+    /// the terminal state is unknown and the next enable retries the request. A successful write
+    /// does not establish that the terminal supports focus reporting.
     pub fn set_focus_reporting(&mut self, enable: bool) -> io::Result<()> {
-        if !self.is_tty || self.headless || enable == self.focus_reporting_enabled {
+        if !self.is_tty || self.headless {
             return Ok(());
         }
-        let mut out = stdout();
+        self.set_focus_reporting_with_writer(enable, &mut stdout())
+    }
+
+    fn set_focus_reporting_with_writer(
+        &mut self,
+        enable: bool,
+        out: &mut impl Write,
+    ) -> io::Result<()> {
+        if (enable && self.focus_reporting_confirmed) || (!enable && !self.focus_reporting_enabled)
+        {
+            return Ok(());
+        }
+        // Until the flush succeeds the terminal's state is unknown: retain ownership for cleanup,
+        // but do not let a retry report success without sending another request.
+        self.focus_reporting_confirmed = false;
         if enable {
             self.focus_reporting_enabled = true;
             REPORTING_MODES.fetch_or(REPORT_FOCUS, Ordering::SeqCst);
             execute!(out, EnableFocusChange)?;
+            self.focus_reporting_confirmed = true;
         } else {
             execute!(out, DisableFocusChange)?;
             self.focus_reporting_enabled = false;
@@ -523,7 +545,8 @@ impl TerminalSession {
         Ok(())
     }
 
-    /// Whether session-owned focus reporting is currently enabled.
+    /// Whether this session owns a focus-reporting request and must disable it during cleanup.
+    /// After a failed write the terminal's actual state is unknown; `true` does not confirm delivery.
     pub fn focus_reporting_enabled(&self) -> bool {
         self.focus_reporting_enabled
     }
@@ -787,6 +810,7 @@ impl TerminalSession {
         if self.focus_reporting_enabled {
             record(execute!(out, DisableFocusChange));
             self.focus_reporting_enabled = false;
+            self.focus_reporting_confirmed = false;
         }
         if self.mouse_capture_enabled {
             record(execute!(out, DisableMouseCapture));
@@ -1064,5 +1088,127 @@ mod key_release_switch_tests {
             "#305 nag: a failed switch must not route into the branch that drops raw mode"
         );
         reset_globals();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod focus_retry_tests {
+    use super::*;
+
+    // Restore only this bit even if an assertion panics. All tests in this module share the
+    // query lock with the keyboard transition tests that reset REPORTING_MODES.
+    struct FocusBitGuard(u8);
+    impl Drop for FocusBitGuard {
+        fn drop(&mut self) {
+            REPORTING_MODES.fetch_and(!REPORT_FOCUS, Ordering::SeqCst);
+            REPORTING_MODES.fetch_or(self.0 & REPORT_FOCUS, Ordering::SeqCst);
+        }
+    }
+
+    struct FailWrite;
+    impl Write for FailWrite {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "injected write failure",
+            ))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct FailFlush(Vec<u8>);
+
+    impl Write for FailFlush {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "injected flush failure",
+            ))
+        }
+    }
+
+    #[test]
+    fn failed_focus_enable_must_retry_and_retain_cleanup_ownership() {
+        let _serial = crate::tty_source::queries_lock();
+        let initial = REPORTING_MODES.load(Ordering::SeqCst);
+        let _restore_focus_bit = FocusBitGuard(initial);
+        assert_eq!(
+            initial & REPORT_FOCUS,
+            0,
+            "focus ownership leaked into test"
+        );
+        let mut session = TerminalSession::headless(80, 24);
+
+        // A write can fail before sending a complete sequence; cleanup still owns the mode.
+        assert!(session
+            .set_focus_reporting_with_writer(true, &mut FailWrite)
+            .is_err());
+        assert!(session.focus_reporting_enabled());
+        assert_ne!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_FOCUS, 0);
+        let mut cleanup = Vec::new();
+        session
+            .set_focus_reporting_with_writer(false, &mut cleanup)
+            .unwrap();
+        assert_eq!(cleanup, b"\x1b[?1004l");
+        assert_eq!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_FOCUS, 0);
+
+        let mut failing = FailFlush(Vec::new());
+        assert!(session
+            .set_focus_reporting_with_writer(true, &mut failing)
+            .is_err());
+        assert_eq!(failing.0, b"\x1b[?1004h");
+        assert!(
+            session.focus_reporting_enabled(),
+            "failed write still needs cleanup"
+        );
+        assert_ne!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_FOCUS, 0);
+
+        let mut retry = Vec::new();
+        session
+            .set_focus_reporting_with_writer(true, &mut retry)
+            .unwrap();
+        assert_eq!(
+            retry, b"\x1b[?1004h",
+            "retry must actually request reporting"
+        );
+
+        let mut duplicate = Vec::new();
+        session
+            .set_focus_reporting_with_writer(true, &mut duplicate)
+            .unwrap();
+        assert!(duplicate.is_empty(), "confirmed enable remains idempotent");
+
+        // A failed disable may have reached the terminal; another enable must be sent.
+        let mut failing_disable = FailFlush(Vec::new());
+        assert!(session
+            .set_focus_reporting_with_writer(false, &mut failing_disable)
+            .is_err());
+        assert_eq!(failing_disable.0, b"\x1b[?1004l");
+        assert!(session.focus_reporting_enabled());
+        assert_ne!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_FOCUS, 0);
+        let mut reenable = Vec::new();
+        session
+            .set_focus_reporting_with_writer(true, &mut reenable)
+            .unwrap();
+        assert_eq!(reenable, b"\x1b[?1004h");
+
+        let mut disable = Vec::new();
+        session
+            .set_focus_reporting_with_writer(false, &mut disable)
+            .unwrap();
+        assert_eq!(disable, b"\x1b[?1004l");
+        assert!(!session.focus_reporting_enabled());
+        assert_eq!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_FOCUS, 0);
+        let mut duplicate_disable = Vec::new();
+        session
+            .set_focus_reporting_with_writer(false, &mut duplicate_disable)
+            .unwrap();
+        assert!(duplicate_disable.is_empty());
     }
 }
