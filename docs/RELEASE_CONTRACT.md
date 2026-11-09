@@ -317,11 +317,12 @@ The C ABI is the foundation the C, C++, Python, and Go bindings all stand on.
   exact-version discipline — the caller sets `struct_size = sizeof(gibson_stats_t)`
   and the engine validates `abi_version` against `GIBSON_ABI_VERSION` — **is
   preserved and must not be quietly changed.**
-- The ABI v1 surface is the set of **65 exported `gibson_*` symbols** (59 in v0.6.0; v0.7
+- The ABI v1 surface is the set of **67 exported `gibson_*` symbols** (59 in v0.6.0; v0.7
   development adds `gibson_push_event`, then `gibson_poll_event_kind` and
   `gibson_push_event_kind` for issue #274, then `gibson_take_rendered_output` and
   `gibson_clear_rendered_output` for issue #297, then `gibson_set_key_release_reporting` for
-  key-release reporting (#275), all additively), captured as a
+  key-release reporting (#275), then `gibson_get_terminal_size` and `gibson_set_focus_reporting`
+  for the terminal-size query and focus events (#298), all additively), captured as a
   baseline in [`../abi/gibson-abi-v1.symbols`](../abi/gibson-abi-v1.symbols) and
   guarded in CI. Symbols in that set must not disappear or change signature without
   an ABI-version bump.
@@ -456,6 +457,13 @@ fails CI early.
   `docs/GLYPHS.md`.
 - **Not covered this round:** Windows, macOS, tmux/screen/SSH certification, Kitty
   graphics protocol. These may follow; they are not promised here.
+- **Windows is UNVERIFIED and unsupported this round.** There is no Windows CI job and no
+  Windows host run. One defect is named from reading the source, not from a run
+  ([#292](https://github.com/femboy2112/libgibson/issues/292)): crossterm 0.29 reports a Windows
+  console key-up as `KeyEventKind::Release`, LibGibson passes that kind through on Windows, and
+  the key is delivered a second time as a press, so **every key is doubled**. A blanket release
+  filter is not the fix, because an Alt+numpad character reaches the console only as a release.
+  The fix is a LibGibson-owned Windows console source (future work, needs a native Windows host).
 
 ---
 

@@ -738,6 +738,16 @@ impl PressedKeys {
     /// keypad, media and modifier keys): keypad Left decodes as the arrow Left and keypad `1` as the
     /// top-row `1`, so a legacy record of that code belongs to a different physical key (#275
     /// review 4).
+    ///
+    /// A legacy-recorded shifted *symbol* has no match here (#312): a `!` typed while the terminal
+    /// is briefly in legacy mode — the pop/re-push window of a screen switch — is released by kitty
+    /// under its base key `1`, and shift does not lowercase a symbol, so `!` does not fold to `1`.
+    /// The release is delivered as `1`, so a held-key model keeps `!` held until a focus loss, the
+    /// key's next kitty press/release (which moves the record), or reporting is disabled. It is
+    /// deliberately NOT renamed: base `1` cannot be mapped back to `!` without assuming a keyboard
+    /// layout, and pairing the unmatched release with the newest orphan would mis-identify an
+    /// unrelated key's release. Letters fold (`W`->`w`), so sustained/movement keys are unaffected.
+    /// Pinned and bounded by the `issue_312_*` tests below.
     fn find_down(&self, id: KeyId, code: CtKeyCode) -> Option<usize> {
         let legacy = KeyId::Code(code);
         let exact = self.newest(|r| r.0 == id);
@@ -959,6 +969,18 @@ pub(crate) fn reset() {
     if let Ok(mut guard) = TERMINAL_SOURCE.try_lock() {
         *guard = None;
     }
+}
+
+/// Serialises tests across modules (here and e.g. `session`) that mutate the process-global
+/// keyboard-query record (`KEYBOARD_QUERIES`) or the key-release reporting globals, so they
+/// never interleave.
+#[cfg(test)]
+static QUERIES_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Acquires [`QUERIES_LOCK`], tolerating poisoning from a panicking test.
+#[cfg(test)]
+pub(crate) fn queries_lock() -> std::sync::MutexGuard<'static, ()> {
+    QUERIES_LOCK.lock().unwrap_or_else(|p| p.into_inner())
 }
 
 #[cfg(test)]
@@ -1823,6 +1845,8 @@ mod tests {
 
     #[test]
     fn kitty_272_without_naming_a_release_is_delivered_as_the_terminal_names_it() {
+        // track=false reads the process-global delivery flag; serialise with anything that sets it.
+        let _serial = queries_lock();
         let got = terminal(decode_all(b"\x1b[119:87;2u\x1b[119;1:3u", false));
         assert_eq!(
             got,
@@ -2251,13 +2275,6 @@ mod tests {
         );
     }
 
-    /// Serialises the tests that touch the process-global request record (`KEYBOARD_QUERIES`).
-    static QUERIES_LOCK: Mutex<()> = Mutex::new(());
-
-    fn queries_lock() -> std::sync::MutexGuard<'static, ()> {
-        QUERIES_LOCK.lock().unwrap_or_else(|p| p.into_inner())
-    }
-
     /// The keys a hold tracker keyed by code and modifiers (a release matches its press by
     /// equality) still holds after `events`, one tic each, with releases reported throughout.
     /// Modifier keys alone are skipped: they are never delivered.
@@ -2363,6 +2380,68 @@ mod tests {
     }
 
     #[test]
+    fn issue_312_a_shifted_symbol_from_the_legacy_switch_window_releases_under_its_base_key() {
+        // DOCUMENTED LIMITATION (#312). A shifted symbol pressed while the terminal is briefly in
+        // legacy mode — the pop/re-push window of a screen switch — arrives as the bare byte `!`,
+        // which carries no physical-key identity. With no intervening kitty autorepeat to move the
+        // record to the kitty identity (contrast the test above), kitty reports its release under
+        // the base key `1`. Shift does not lowercase a symbol, so `!` does not fold to `1` (letters
+        // do: `W`->`w`), nothing matches, and the release is delivered as decoded (`1`). A held-key
+        // model therefore keeps `!` held until a bound below. A layout-agnostic rename is
+        // impossible: base `1` cannot be mapped back to the shifted `!` without assuming a keyboard
+        // layout, and pairing the unmatched release with the newest orphan would mis-identify an
+        // unrelated key's release. Letters (the usual sustained/movement keys) are unaffected.
+        let got = terminal(decode_all(b"!\x1b[57441;1:3u\x1b[49;1:3u", true));
+        assert_eq!(got[0], kind(K::Char('!'), M::NONE, Kind::Press));
+        // The release is delivered under the base key — the limitation.
+        assert_eq!(got[2], kind(K::Char('1'), M::NONE, Kind::Release));
+        // The consumer's held-key model keeps `!` held (the stuck state the issue describes).
+        assert_eq!(still_held(&got), vec![(K::Char('!'), M::NONE)]);
+    }
+
+    #[test]
+    fn issue_312_the_stuck_hold_is_bounded_by_focus_loss() {
+        // The #312 stuck hold is not permanent. Modelled directly: with releases reported, `!` is
+        // pressed (no deadline) and its release arrives named `1` (the base key), which does not
+        // match, so `!` stays held — then a focus loss ends it (the terminal reports focus loss,
+        // and DEEP SIGNAL / #276 acts on it).
+        let mut holds = crate::hold::HoldTracker::new(crate::hold::HoldConfig::new(1, 1));
+        holds.set_releases_reported(true);
+        holds.observe(0, (K::Char('!'), M::NONE)).unwrap();
+        holds.observe_release(1, (K::Char('1'), M::NONE)).unwrap();
+        holds.advance(1_000).unwrap();
+        assert!(
+            holds.is_held((K::Char('!'), M::NONE)),
+            "stuck before any bound"
+        );
+        let ended = holds.release_all(crate::hold::ReleaseCause::FocusLost);
+        assert_eq!(ended.len(), 1);
+        assert!(
+            !holds.is_held((K::Char('!'), M::NONE)),
+            "#312: focus loss ends the stuck hold"
+        );
+    }
+
+    #[test]
+    fn issue_312_the_stuck_hold_is_bounded_when_reporting_is_disabled() {
+        // The other layout-agnostic bound: when key-release reporting is disabled, every hold that
+        // was waiting for a release (ends_at == u64::MAX) is given the inferred grace deadline, so
+        // the stuck `!` times out instead of waiting forever.
+        let mut holds = crate::hold::HoldTracker::new(crate::hold::HoldConfig::new(1, 5));
+        holds.set_releases_reported(true);
+        holds.observe(0, (K::Char('!'), M::NONE)).unwrap();
+        holds.observe_release(1, (K::Char('1'), M::NONE)).unwrap();
+        assert!(holds.is_held((K::Char('!'), M::NONE)));
+        holds.set_releases_reported(false);
+        let ended = holds.advance(1_000).unwrap();
+        assert!(
+            ended.iter().any(|e| e.key == (K::Char('!'), M::NONE)),
+            "#312: disabling reporting bounds the stuck hold"
+        );
+        assert!(!holds.is_held((K::Char('!'), M::NONE)));
+    }
+
+    #[test]
     fn kitty_272_active_needs_every_flag_pushed() {
         // LibGibson pushes 15. Without 8, Enter/Tab/Backspace/Esc release as their legacy byte (a
         // second press); without 4, shift+1 reads as `1` with shift. A reply missing any of them is
@@ -2443,6 +2522,8 @@ mod tests {
         // The rustdoc of `set_key_release_reporting` states what reporting changes in the keys
         // delivered. Each pair: what kitty sends with flags 15, and the legacy bytes for the same
         // keystroke without them.
+        // track=false reads the process-global delivery flag; serialise with anything that sets it.
+        let _serial = queries_lock();
         let names = |bytes: &'static [u8]| -> Vec<(K, M)> {
             terminal(decode_all(bytes, false))
                 .into_iter()
