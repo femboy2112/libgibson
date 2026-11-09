@@ -36,16 +36,16 @@ int main(void) {
     return 0;
 }
 C
-if ! cc "$work/abi.c" $(pkg-config --cflags --libs libgibson) -o "$work/abi"; then
+if ! "$python" "$here/pkg-config-cc.py" cc "$work/abi.c" -o "$work/abi"; then
     echo 'SDK link failed; check compiler, libgibson.pc and library installation' >&2; exit 1
 fi
 if ! "$work/abi"; then
     echo 'ABI/loader probe failed; check ABI version and LD_LIBRARY_PATH' >&2; exit 1
 fi
-if ! (cd "$work/c" && cc -std=c11 -Wall -Wextra -Werror main.c $(pkg-config --cflags --libs libgibson) -o main && ./main); then
+if ! (cd "$work/c" && "$python" "$here/pkg-config-cc.py" cc -std=c11 -Wall -Wextra -Werror main.c -o main && ./main); then
     echo 'C example build or execution failed after SDK probe' >&2; exit 1
 fi
-if ! (cd "$work/cpp" && c++ -std=c++17 -Wall -Wextra -Werror main.cpp $(pkg-config --cflags --libs libgibson) -o main && ./main); then
+if ! (cd "$work/cpp" && "$python" "$here/pkg-config-cc.py" c++ -std=c++17 -Wall -Wextra -Werror main.cpp -o main && ./main); then
     echo 'C++ example build or execution failed after SDK probe' >&2; exit 1
 fi
 if ! (cd "$work/python" && "$python" -I main.py); then

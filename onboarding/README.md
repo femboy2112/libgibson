@@ -33,6 +33,9 @@ linker, loader, missing toolchain and example failures are surfaced with context
 It sets `PKG_CONFIG_PATH` and `LD_LIBRARY_PATH` to the selected SDK. It requires
 cached Rust dependencies or network access. The Go module copy allows the check
 to run without the Go module proxy. Set `TMPDIR` if `/tmp` lacks space.
+To check C and C++ against a copied SDK path containing spaces, including a
+missing-package control, run `./onboarding/test-sdk-paths.sh` with `GIBSON_SDK`
+set. This smaller check does not require Cargo or exercise the other languages.
 
 ## Run one starter
 
@@ -41,8 +44,8 @@ Copy the desired directory outside the checkout. For C and C++, export
 `LD_LIBRARY_PATH="$GIBSON_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"`, then:
 
 ```sh
-cc -std=c11 main.c $(pkg-config --cflags --libs libgibson) -o app && ./app
-c++ -std=c++17 main.cpp $(pkg-config --cflags --libs libgibson) -o app && ./app
+cc -std=c11 -I"$GIBSON_SDK/include" main.c -L"$GIBSON_SDK/lib" -lgibson -o app && ./app
+c++ -std=c++17 -I"$GIBSON_SDK/include" main.cpp -L"$GIBSON_SDK/lib" -lgibson -o app && ./app
 ```
 
 Run the line matching the copied language. Python needs the separately installed
