@@ -131,6 +131,31 @@ if [ "${PARITY_V08_SKIP_CONTROLS:-0}" != 1 ]; then
         control cell "$lang" "r03,s16" PARITY_V08_PERTURB=cell
         control events "$lang" "ORDER,e09.1,e09.2" PARITY_V08_PERTURB=events
     done
+    # Focus identity control: mutate a completed wrapper transcript so a lost focus identity
+    # cannot be hidden by a comparator that merely checks transcript cardinality.
+    python3 - "$WORK/out/py.a.jsonl" "$WORK/ctl/focus.py.jsonl" <<'PYFOCUS'
+import json, sys
+lines = open(sys.argv[1], encoding="utf-8").readlines()
+changed = 0
+with open(sys.argv[2], "w", encoding="utf-8") as out:
+    for line in lines:
+        row = json.loads(line)
+        if row.get("id") == "f05.1" and row.get("type") == "FOCUS_GAINED":
+            row["type"] = "NONE"
+            line = json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+            changed += 1
+        out.write(line)
+if changed != 1:
+    raise SystemExit("focus control did not find exactly one focus-gained record")
+PYFOCUS
+    rc=0
+    line=$("${COMPARE[@]}" check --script "$SCRIPT" --expected "$EXPECTED" --ref "$WORK/out/c.a.jsonl" \
+        --lang py --transcript "$WORK/ctl/focus.py.jsonl" --want f05.1 | tail -n 1) || rc=$?
+    if [ "$rc" = 1 ] && [[ $line == *EXACT ]]; then
+        echo "  CAUGHT   focus/py: $line"
+    else
+        echo "  MISSED   focus/py (rc=$rc): $line"; CTL_FAIL=1
+    fi
     # Resize regression witness (#293): the Rust consumer undoes the geometry poll_from applied,
     # as the library did before #293; the polled Resize then leaves the headless geometry at 40x12.
     control rust-resize-unapplied rust "r02,r03,r04,t02" PARITY_V08_RUST_RESIZE=unapplied
