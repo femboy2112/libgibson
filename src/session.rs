@@ -390,19 +390,8 @@ impl TerminalSession {
         if !self.is_tty || self.headless || self.alt_screen_active {
             return Ok(());
         }
-
         let mut out = stdout();
-        // Key-release reporting follows the screen: the kitty flag stacks are per screen.
-        let follow = self.key_release_reporting_live();
-        if follow {
-            pop_key_releases(&mut out)?;
-        }
-        execute!(out, EnterAlternateScreen)?;
-        self.alt_screen_active = true;
-        if follow {
-            request_key_releases(&mut out)?;
-        }
-        Ok(())
+        self.switch_screen_on(&mut out, |o| execute!(o, EnterAlternateScreen), true)
     }
 
     /// Leaves alternate screen mode.
@@ -410,18 +399,81 @@ impl TerminalSession {
         if !self.is_tty || !self.alt_screen_active {
             return Ok(());
         }
-
         let mut out = stdout();
+        self.switch_screen_on(&mut out, |o| execute!(o, LeaveAlternateScreen), false)
+    }
+
+    /// Relocates this process's key-release push across a screen switch, then performs the
+    /// switch, for [`enter_alternate_screen`](Self::enter_alternate_screen) and
+    /// [`leave_alternate_screen`](Self::leave_alternate_screen). The kitty keyboard-flag
+    /// stacks are per screen, so the push on the old screen is popped and a fresh one placed
+    /// on the new one. Generic over the writer so the failure paths can be tested without a
+    /// real terminal.
+    ///
+    /// #305: the push bit is CLAIMED (via [`take_key_releases_pushed`]) the moment the pop
+    /// *succeeds*, so if the switch or re-push below then fails, no later `restore`/`Drop`/retry
+    /// pops a second time and removes another program's keyboard-stack entry. A pop that *fails*
+    /// leaves the bit set and propagates — the entry never left this screen, so restore still
+    /// pops it (review item 1). The re-push, conversely, sets the bit *before* its write, because
+    /// a torn re-push may already have placed our push on the new screen and so must stay
+    /// poppable (the same defensive unwinding the initial enable uses). A failed switch marks
+    /// reporting ended via [`on_key_release_push_lost`](Self::on_key_release_push_lost) without
+    /// touching raw mode.
+    ///
+    /// This closes the specific #305 case — a successful pop followed by a failed switch. Under a
+    /// buffered pop whose flush tears then recovers, or a re-push that writes nothing, the
+    /// best-effort bit can still mis-pop once on restore: the same non-atomic-write limitation the
+    /// initial enable carries and `docs/RELEASE_CONTRACT.md` §9 discloses, which a per-screen
+    /// push/pop protocol over buffered stdout cannot fully avoid.
+    fn switch_screen_on<W: Write>(
+        &mut self,
+        out: &mut W,
+        switch: impl FnOnce(&mut W) -> io::Result<()>,
+        alt_active_after: bool,
+    ) -> io::Result<()> {
         let follow = self.key_release_reporting_live();
         if follow {
-            pop_key_releases(&mut out)?;
+            // Pop the old screen's push. If the pop FAILS (a torn or zero-byte write), the entry
+            // never left this screen's stack, so leave the bit set and propagate — restore then
+            // pops it, no leak (#305 review item 1).
+            pop_key_releases(out)?;
+            // The pop succeeded: the entry is gone. Claim the bit now, so a failed switch or
+            // re-push below — or a later restore/Drop — does not pop a second time and remove
+            // another program's keyboard-stack entry (#305).
+            take_key_releases_pushed();
         }
-        execute!(out, LeaveAlternateScreen)?;
-        self.alt_screen_active = false;
+        if let Err(e) = switch(&mut *out) {
+            if follow {
+                self.on_key_release_push_lost();
+            }
+            return Err(e);
+        }
+        self.alt_screen_active = alt_active_after;
         if follow {
-            request_key_releases(&mut out)?;
+            // Set the bit BEFORE the re-push: a torn or failed re-push write may already have
+            // placed our push on the new screen's stack, so it must stay poppable by restore/Drop
+            // (the same defensive unwinding the initial enable uses). This is deliberately the
+            // opposite of the pop above, which clears the bit first — a torn pop must not be
+            // popped a second time, but a torn re-push must not leak unpopped (#305 review: P2).
+            REPORTING_MODES.fetch_or(REPORT_KEY_RELEASE, Ordering::SeqCst);
+            request_key_releases(out)?;
         }
         Ok(())
+    }
+
+    /// Reconciles session state after a key-release push was lost mid screen-switch (#305):
+    /// the `REPORT_KEY_RELEASE` bit is already clear (claimed before a failed pop, or never
+    /// re-set after a failed switch/re-push), so stop delivering releases and mark reporting
+    /// disabled — but do NOT touch `raw_mode_enabled`. Unlike the panic-hook path (whose
+    /// `enabled && !pushed` reconciliation in [`key_release_reporting_live`] assumes the hook
+    /// already dropped raw mode), raw mode is still on here, so `restore` must disable it;
+    /// setting `enabled = false` also keeps the next `key_release_reporting_live` out of that
+    /// branch.
+    fn on_key_release_push_lost(&mut self) {
+        self.key_release_reporting_enabled = false;
+        crate::input::set_key_releases_delivered(false);
+        #[cfg(unix)]
+        crate::tty_source::forget_keyboard_replies();
     }
 
     /// Enables or disables SGR mouse-capture reporting, tracked by the session so
@@ -804,5 +856,213 @@ impl TerminalSession {
 impl Drop for TerminalSession {
     fn drop(&mut self) {
         let _ = self.restore();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod key_release_switch_tests {
+    //! #305: a failed screen-switch write after a successful kitty-flag pop must not strand
+    //! the `REPORT_KEY_RELEASE` bit set — otherwise a later `restore`/`Drop`/retry pops a
+    //! second time and removes another program's keyboard-stack entry. These drive the
+    //! writer-seam [`TerminalSession::switch_screen_on`] directly (a real PTY cannot fail only
+    //! the second of two back-to-back writes), asserting the global push bit and the bytes.
+    use super::*;
+    use std::io::{self, Write};
+
+    // These mutate process-global key-release state (the push bit, the delivery flag, and the
+    // keyboard-query record `expect_keyboard_reply`/`forget_keyboard_replies` use), so they share
+    // the one cross-module lock the `tty_source` query tests also hold — never interleaving with
+    // them (#305 review: P3).
+    fn lock() -> std::sync::MutexGuard<'static, ()> {
+        crate::tty_source::queries_lock()
+    }
+
+    fn reset_globals() {
+        REPORTING_MODES.store(0, Ordering::SeqCst);
+        KEY_RELEASES_ENDED.store(false, Ordering::SeqCst);
+        crate::input::set_key_releases_delivered(false);
+        // Clear any `outstanding` left by a re-push, so a later `tty_source` query test is not
+        // perturbed (review: P3).
+        crate::tty_source::forget_keyboard_replies();
+    }
+
+    /// A headless session reporting itself as key-release-live, with raw mode genuinely on,
+    /// and the process-global push bit set — the state at the top of a screen switch.
+    fn reporting_live_session() -> TerminalSession {
+        reset_globals();
+        let mut s = TerminalSession::headless(80, 24);
+        s.raw_mode_enabled = true;
+        s.key_release_reporting_enabled = true;
+        REPORTING_MODES.fetch_or(REPORT_KEY_RELEASE, Ordering::SeqCst);
+        crate::input::set_key_releases_delivered(true);
+        // Precondition: reporting is live, so a switch follows it.
+        assert!(key_releases_pushed());
+        s
+    }
+
+    /// Fails the first write whose bytes contain `needle`; captures the rest.
+    struct NeedleFail {
+        buf: Vec<u8>,
+        needle: u8,
+        armed: bool,
+    }
+    impl Write for NeedleFail {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            if self.armed && b.contains(&self.needle) {
+                self.armed = false;
+                return Err(io::Error::other("injected write failure"));
+            }
+            self.buf.extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn switch_write_failure_clears_push_bit_and_averts_double_pop() {
+        let _g = lock();
+        let mut s = reporting_live_session();
+        let mut buf: Vec<u8> = Vec::new();
+        // Pop succeeds; the screen-switch write fails (EnterAlternateScreen).
+        let r = s.switch_screen_on(&mut buf, |_o| Err(io::Error::other("switch failed")), true);
+        assert!(r.is_err());
+        assert!(
+            !key_releases_pushed(),
+            "#305: the push bit must be cleared after a failed switch"
+        );
+        assert_eq!(buf, b"\x1b[<u", "exactly one pop on the wire, no re-push");
+        assert!(
+            !take_key_releases_pushed(),
+            "#305: restore/Drop must find no push to pop a second time"
+        );
+        assert!(
+            !s.key_release_reporting_enabled,
+            "reporting marked disabled"
+        );
+        assert!(!crate::input::key_releases_delivered(), "delivery stopped");
+        assert!(
+            s.raw_mode_enabled,
+            "raw mode must stay ON so restore still disables it (the #305 nag)"
+        );
+        assert!(
+            !s.alt_screen_active,
+            "switch failed: not on the alternate screen"
+        );
+        reset_globals();
+    }
+
+    #[test]
+    fn pop_failure_keeps_the_push_live_for_restore() {
+        let _g = lock();
+        let mut s = reporting_live_session();
+        let mut w = NeedleFail {
+            buf: Vec::new(),
+            needle: b'<',
+            armed: true,
+        };
+        let mut switched = false;
+        let r = s.switch_screen_on(
+            &mut w,
+            |o| {
+                switched = true;
+                o.write_all(b"SW")
+            },
+            true,
+        );
+        assert!(r.is_err());
+        assert!(
+            !switched,
+            "the switch must not run when the pop write fails"
+        );
+        // The pop did not complete, so our push is still live on this screen: the bit MUST stay
+        // set so restore pops it, not leak it (#305 review item 1). The claim happens only after
+        // a SUCCESSFUL pop.
+        assert!(
+            key_releases_pushed(),
+            "#305 item 1: a failed pop leaves the still-live push claimable"
+        );
+        assert!(
+            take_key_releases_pushed(),
+            "restore pops the still-live push exactly once"
+        );
+        assert!(w.buf.is_empty(), "the failed pop wrote nothing");
+        assert!(
+            s.key_release_reporting_enabled,
+            "a failed pop does not change reporting state"
+        );
+        assert!(s.raw_mode_enabled, "raw mode preserved");
+        assert!(!s.alt_screen_active);
+        reset_globals();
+    }
+
+    #[test]
+    fn happy_path_relocates_the_push_and_restores_the_bit() {
+        let _g = lock();
+        let mut s = reporting_live_session();
+        let mut buf: Vec<u8> = Vec::new();
+        let r = s.switch_screen_on(&mut buf, |o| o.write_all(b"SW"), true);
+        assert!(r.is_ok());
+        assert!(
+            key_releases_pushed(),
+            "push re-set after a confirmed re-push"
+        );
+        assert_eq!(
+            buf, b"\x1b[<uSW\x1b[>15u\x1b[?u\x1b[c",
+            "pop, then switch, then re-push — unchanged happy-path byte order"
+        );
+        assert!(s.alt_screen_active);
+        assert!(s.key_release_reporting_enabled);
+        reset_globals();
+    }
+
+    #[test]
+    fn repush_failure_keeps_the_bit_set_so_restore_pops_the_possibly_live_push() {
+        let _g = lock();
+        let mut s = reporting_live_session();
+        // Pop ok, switch writes "SW" (ok), the re-push (`\x1b[>15u…`) fails on '>'.
+        let mut w = NeedleFail {
+            buf: Vec::new(),
+            needle: b'>',
+            armed: true,
+        };
+        let r = s.switch_screen_on(&mut w, |o| o.write_all(b"SW"), true);
+        assert!(r.is_err());
+        // A torn re-push may already have placed our push on the new screen's stack, so the bit
+        // MUST stay set: restore/Drop then pops it instead of leaking it (shell left in kitty
+        // mode). The opposite of a failed pop/switch, where a second pop would hit a foreign
+        // entry. The bit is set before the re-push write for exactly this (#305 review: P2).
+        assert!(
+            key_releases_pushed(),
+            "#305/P2: a torn re-push stays poppable, not leaked"
+        );
+        assert!(
+            take_key_releases_pushed(),
+            "restore would find the push and pop it exactly once"
+        );
+        assert!(s.alt_screen_active, "the switch itself succeeded");
+        assert!(
+            s.key_release_reporting_enabled,
+            "reporting stays on defensively, like a failed initial enable"
+        );
+        reset_globals();
+    }
+
+    #[test]
+    fn failed_switch_leaves_raw_mode_on_for_restore() {
+        let _g = lock();
+        let mut s = reporting_live_session();
+        let mut buf: Vec<u8> = Vec::new();
+        let _ = s.switch_screen_on(&mut buf, |_o| Err(io::Error::other("switch failed")), true);
+        // #305 nag: the loss marked reporting disabled, so the next reconciliation must NOT
+        // enter the `enabled && !pushed` branch that assumes the panic hook already dropped
+        // raw mode. The hook did not run here; raw mode is still on and restore must disable it.
+        let _ = s.key_release_reporting_live();
+        assert!(
+            s.raw_mode_enabled,
+            "#305 nag: a failed switch must not route into the branch that drops raw mode"
+        );
+        reset_globals();
     }
 }
