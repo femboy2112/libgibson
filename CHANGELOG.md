@@ -34,6 +34,17 @@ stays 1.85.
 - Purely additive: the exported C ABI symbol set grows **65 → 67**, `GIBSON_ABI_VERSION` stays 1,
   and no existing symbol, constant, or struct layout changes. The Rust machinery (`Event::Focus`,
   `TerminalSession::{terminal_size, set_focus_reporting}`) already existed; this is the C projection.
+### Known limitation — Windows: every key is delivered twice, UNVERIFIED ([#292](https://github.com/femboy2112/libgibson/issues/292))
+- **On Windows a key press arrives as two `Event::Key`s.** crossterm 0.29 reports a console key-up
+  as `KeyEventKind::Release` (`parse.rs:286-290`); on Windows LibGibson passes every kind through
+  (`delivers_key_kind`) and `decode_key` ignores the kind, so the release is delivered as a second
+  press. This is read from the source: there is no Windows runtime or CI job, so it has not been
+  observed, and **Windows remains unsupported and unverified** (see `docs/RELEASE_CONTRACT.md` §6).
+- **Not changed here, deliberately.** Dropping releases on Windows would delete Alt+numpad
+  characters (Alt+0233 gives an e-acute), which the console delivers only as a `Release` carrying
+  `KeyCode::Char`. The fix is a LibGibson-owned Windows console source reading `KEY_EVENT_RECORD`s,
+  future work that needs a native Windows host. This entry is disclosure only; no runtime behavior
+  changed. A host-independent unit test pins today's behavior.
 
 ### Fixed — Go binding (`bindings/go`): a failed `NewContext` reports its own error message
 - **`NewContext` now reads the failure message on the same OS thread as the failing call.**
@@ -45,6 +56,16 @@ stays 1.85.
   text). The fixed wrapper: 0 of 1,536,000. The gc toolchain was not run locally. Create and read
   now happen in one C helper, one cgo call. Go API unchanged.
   ([`docs/V08_PARITY_SLICE.md`](docs/V08_PARITY_SLICE.md) F6)
+
+### Known limitation — a shifted symbol in the screen-switch window ([#312](https://github.com/femboy2112/libgibson/issues/312))
+- **A shifted *symbol* (e.g. `!`) pressed during the brief legacy-mode window of a screen switch is
+  delivered correctly as a press, but kitty reports its release under the base key (`1`); shift does
+  not lowercase a symbol, so the release cannot be matched to the press layout-agnostically and is
+  delivered as `1`.** A held-key model therefore keeps the symbol held until a focus loss, the key's
+  next kitty press/release, or reporting is disabled. Letters (the usual sustained/movement keys)
+  fold correctly (`W`→`w`) and are unaffected. Deliberately not renamed: mapping `1`→`!` assumes a
+  keyboard layout, and pairing the unmatched release with the newest orphan would mis-identify an
+  unrelated key's release. Pinned and bounded by tests in `src/tty_source.rs` (`issue_312_*`).
 
 ### Release engineering — maintenance-line releases approved ([#287](https://github.com/femboy2112/libgibson/issues/287), #291)
 - **Release Contract §1 gains an approved maintenance-line exception** (owner decision 2026-11-08,
