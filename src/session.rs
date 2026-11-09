@@ -419,6 +419,12 @@ impl TerminalSession {
     /// poppable (the same defensive unwinding the initial enable uses). A failed switch marks
     /// reporting ended via [`on_key_release_push_lost`](Self::on_key_release_push_lost) without
     /// touching raw mode.
+    ///
+    /// This closes the specific #305 case — a successful pop followed by a failed switch. Under a
+    /// buffered pop whose flush tears then recovers, or a re-push that writes nothing, the
+    /// best-effort bit can still mis-pop once on restore: the same non-atomic-write limitation the
+    /// initial enable carries and `docs/RELEASE_CONTRACT.md` §9 discloses, which a per-screen
+    /// push/pop protocol over buffered stdout cannot fully avoid.
     fn switch_screen_on<W: Write>(
         &mut self,
         out: &mut W,
