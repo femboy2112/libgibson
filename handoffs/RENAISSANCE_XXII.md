@@ -35,6 +35,16 @@ and `cargo test --lib key_release_switch_tests -- --nocapture` passed 6/6 with o
 job on rustc 1.97.0-nightly; these are local results, not CI or an independent final audit.
 No runtime fix is included. Review the draft and exact-head CI before any merge.
 
+## Draft onboarding slice
+
+Draft #324, `codex/xxii-onboarding`, head
+`2142da84835e2aa8f968df818a8a1e54c2521279`, adds five headless starters and an
+external-artifact smoke. A local run passed C, C++, Python, Go and Rust using a freshly
+staged native SDK built from baseline main, an installed wheel, an external Go module copy
+and an unpacked crate; missing SDK and deliberately incorrect ABI controls failed as
+expected. This was a nightly-toolchain headless run, not a release gate. Interactive and
+application examples, full diagnostic coverage, independent review and exact-head CI remain.
+
 ## PR debt
 
 #167 was closed as already integrated by ancestry, not merged via GitHub: its head
