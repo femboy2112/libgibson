@@ -285,6 +285,7 @@ void fb_adapter_counters_get(const fb_adapter *ad, fb_adapter_counters *out);
 #define FB_FAULT_UNMATCHED_RELEASE     0x400u /* a release of a key that holds nothing ends the inferred part */
 #define FB_FAULT_WRAP_DEADLINE         0x800u /* a hold deadline past UINT64_MAX wraps instead of saturating */
 #define FB_FAULT_REWRITE_ENDED         0x1000u /* a release rewrites a hold that ended and waits for queue room */
+#define FB_FAULT_SENTINEL_ENDS         0x2000u /* a live exact hold at tic==UINT64_MAX is read as ended (its no-deadline sentinel taken for a reached deadline) */
 #define FB_FAULT_SLOW_PRESENT          0x40u /* every 35th present stalls 400 ms (inside the timing; longer than
                                                 the 10-tic catch-up cap, so a real-clock loop drops tics) */
 void fb_adapter_set_faults(fb_adapter *ad, unsigned faults);

@@ -531,6 +531,7 @@ enum {
     C_P3_UNMATCHED_RELEASE,
     C_P3_WRAP_DEADLINE,
     C_P3_REWRITE_ENDED,
+    C_P3_SENTINEL_ENDS,
     C_P4_FRAME_LOCKED,
     C_P5_STALE_MAP,
     C_P5_RESIZE_STEPS,
@@ -560,6 +561,7 @@ static const struct {
     {"p3-unmatched-release", 3, "mutant adapter: a release of a key that holds nothing ends the inferred part"},
     {"p3-wrap-deadline", 3, "mutant adapter: a hold deadline past the last tic wraps instead of saturating"},
     {"p3-rewrite-ended", 3, "mutant adapter: a release rewrites a hold that ended and waits for queue room"},
+    {"p3-sentinel-ends", 3, "mutant adapter: a live exact hold at tic==UINT64_MAX is read as ended (its sentinel taken for a deadline)"},
     {"p4-frame-locked", 4, "mutant adapter: one tic per presented frame"},
     {"p5-stale-map", 5, "mutant adapter: the map is not rebuilt on resize"},
     {"p5-resize-steps", 5, "mutant adapter: a resize runs an extra producer tic"},
@@ -1329,6 +1331,61 @@ static int ended_hold_is_not_rewritten(unsigned faults, uint64_t *end, int *synt
     return nrel == 1 && *end == 2000 && *synth == 1;
 }
 
+/* (#275 review 5) an exact hold's no-deadline sentinel is ends_at==UINT64_MAX; a release reported
+   at tic==UINT64_MAX must still end the hold with a real (synthesized=0) release, not be taken for
+   the sentinel's own expiry. Two sub-cases: the key queue has room (the pre-existing expire_holds
+   collision) and the queue is full (the case review 4's guard regressed). Both must deliver one
+   real release at UINT64_MAX. Returns the full-queue end/synth and whether the room case passed. */
+static int sentinel_not_ended(unsigned faults, uint64_t *end_full, int *synth_full, int *room_ok) {
+    *end_full = 0;
+    *synth_full = -1;
+    *room_ok = 0;
+    int pass = 1;
+    for (int full = 0; full <= 1; full++) {
+        fb_adapter_config cfg;
+        fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+        cfg.key_releases = 1;
+        fb_adapter *ad = NULL;
+        if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+        fb_adapter_set_faults(ad, faults);
+        gibson_context_t *ctx = fb_adapter_context(ad);
+        gibson_event_t e;
+        uint64_t tic = UINT64_MAX - 600;
+#define PUSHAT(type, code, t)                                                        \
+        do {                                                                         \
+            memset(&e, 0, sizeof e);                                                 \
+            e.event_type = (type);                                                   \
+            e.key_code = (code);                                                     \
+            if ((type) == GIBSON_EVENT_KEY_RELEASES_ACTIVE) gibson_push_event(ctx, &e); \
+            else gibson_push_event_kind(ctx, &e, CH);                                \
+            fb_adapter_pump(ad, (t), 0);                                             \
+        } while (0)
+        PUSHAT(GIBSON_EVENT_KEY_RELEASES_ACTIVE, 0, tic++);  /* confirmed first: a is exact */
+        PUSHAT(GIBSON_EVENT_KEY, 'a', tic++);                /* 1 queued; exact, no deadline (sentinel) */
+        if (full) {
+            for (int i = 0; i < 127; i++) {                  /* b taps: 254 more, never drained */
+                PUSHAT(GIBSON_EVENT_KEY, 'b', tic++);
+                PUSHAT(GIBSON_EVENT_KEY_RELEASE, 'b', tic++);
+            }
+            PUSHAT(GIBSON_EVENT_KEY, 'c', tic++);            /* the last b release, then c: full */
+        }
+        PUSHAT(GIBSON_EVENT_KEY_RELEASE, 'a', UINT64_MAX);   /* a up at the sentinel tic */
+#undef PUSHAT
+        int nrel = 0, synth = -1;
+        uint64_t end = 0;
+        fb_key_event k;
+        for (int round = 0; round < 4; round++)
+            while (fb_adapter_next_key(ad, UINT64_MAX, &k))
+                if (k.code == 'a' && !k.pressed) { nrel++; end = k.tic; synth = k.synthesized; }
+        fb_adapter_close(ad);
+        const int ok = nrel == 1 && end == UINT64_MAX && synth == 0;
+        pass = pass && ok;
+        if (full) { *end_full = end; *synth_full = synth; }
+        else *room_ok = ok;
+    }
+    return pass;
+}
+
 static int prop3(char *ev) {
     fclock a, b;
     memset(&a, 0, sizeof a);
@@ -1385,8 +1442,11 @@ static int prop3(char *ev) {
     uint64_t sat_end = 0, end_at = 0;
     const int sat_ok = deadline_saturates(ctl(C_P3_WRAP_DEADLINE) ? FB_FAULT_WRAP_DEADLINE : 0, &sat_np, &sat_nr, &sat_end);
     const int end_ok = ended_hold_is_not_rewritten(ctl(C_P3_REWRITE_ENDED) ? FB_FAULT_REWRITE_ENDED : 0, &end_at, &end_syn);
+    int sent_syn = -1, sent_room = 0;
+    uint64_t sent_end = 0;
+    const int sent_ok = sentinel_not_ended(ctl(C_P3_SENTINEL_ENDS) ? FB_FAULT_SENTINEL_ENDS : 0, &sent_end, &sent_syn, &sent_room);
     const int pass = ok && keyed.hash != quiet.hash && log_ok && keyed.tics == 200 && quiet.tics == 200 && rel_ok && qok && wok &&
-                     off_ok && ax_ok && ai_ok && m1_ok && m2_ok && sat_ok && end_ok;
+                     off_ok && ax_ok && ai_ok && m1_ok && m2_ok && sat_ok && end_ok && sent_ok;
     ev_append(ev, "keys pushed with gibson_push_event_kind, polled by the adapter (gibson_poll_event_kind): keyed hash=%016llx %s "
                   "unkeyed hash=%016llx (200 tics each); producer key log %u events %s independent hold model (grace 25, repeat 4): ",
               (unsigned long long)keyed.hash, keyed.hash != quiet.hash ? "!=" : "==", (unsigned long long)quiet.hash,
@@ -1420,8 +1480,12 @@ static int prop3(char *ev) {
                   "deadline saturates; a hold that ended at 2000 waiting for queue room, its release reported at 2030: "
                   "released at %llu synthesized=%d (want 2000 and 1)",
               sat_np, sat_nr, (unsigned long long)(UINT64_MAX - sat_end), (unsigned long long)end_at, end_syn);
+    ev_append(ev, "; an exact hold released at the sentinel tic UINT64_MAX: full queue delivers one real release at %s "
+                  "synthesized=%d (want UINT64_MAX and 0), queue with room %s (want pass)",
+              sent_end == UINT64_MAX ? "UINT64_MAX" : "other", sent_syn, sent_room ? "passes" : "FAILS");
     if (ctl(C_P3_WRAP_DEADLINE)) ev_append(ev, " [control: deadlines wrap]");
     if (ctl(C_P3_REWRITE_ENDED)) ev_append(ev, " [control: an ended hold is rewritten]");
+    if (ctl(C_P3_SENTINEL_ENDS)) ev_append(ev, " [control: a live exact hold at the sentinel tic is read as ended]");
     if (ctl(C_P3_SHARED_ALIAS_HOLD)) ev_append(ev, " [control: aliases share one release]");
     if (ctl(C_P3_UNMATCHED_RELEASE)) ev_append(ev, " [control: an unmatched release ends the inferred part]");
     if (ign) ev_append(ev, " [control: producer ignores input]");

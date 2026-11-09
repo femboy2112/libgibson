@@ -687,6 +687,11 @@ static void expire_holds(fb_adapter *ad, uint64_t tic) {
         int best = -1;
         for (int i = 0; i < FB_HOLD_SLOTS; i++)
             if (ad->holds[i].used && ad->holds[i].ends_at <= tic &&
+                /* A hold with a source still down has no deadline: ends_at is the UINT64_MAX
+                   sentinel (hold_settle), equal to tic only at tic==UINT64_MAX. Such a hold ends
+                   on a reported release, never by timing out, so it is not an expiry candidate
+                   (#275 review 5: the sentinel is not a reached deadline). */
+                (ad->holds[i].nsrc == 0 || (ad->faults & FB_FAULT_SENTINEL_ENDS)) &&
                 (best < 0 || ad->holds[i].ends_at < ad->holds[best].ends_at))
                 best = i;
         if (best < 0) return;
@@ -810,8 +815,13 @@ static void release_key(fb_adapter *ad, uint64_t tic, uint32_t code, uint32_t sr
         hold_slot *h = &ad->holds[i];
         if (!h->used || h->code != code) continue;
         /* Already ended, its release only waiting for room in a full queue (#275 review 4): what
-           the producer will receive is decided; a later release must not rewrite it. */
-        if (h->ends_at <= tic && !(ad->faults & FB_FAULT_REWRITE_ENDED)) return;
+           the producer will receive is decided; a later release must not rewrite it. A hold still
+           held by a down source (nsrc>0) has not ended -- its ends_at is the UINT64_MAX sentinel,
+           not a reached deadline -- so this early return must not fire for it, or a release at
+           tic==UINT64_MAX would be dropped and the hold wrongly synthesized (#275 review 5). */
+        if ((h->nsrc == 0 || (ad->faults & FB_FAULT_SENTINEL_ENDS)) && h->ends_at <= tic &&
+            !(ad->faults & FB_FAULT_REWRITE_ENDED))
+            return;
         const uint64_t end = (h->started < tic || tic == UINT64_MAX) ? tic : tic + 1;
         int ended = 0;
         if (ad->faults & FB_FAULT_SHARED_ALIAS_HOLD) { /* mutant: the first release ends it */
