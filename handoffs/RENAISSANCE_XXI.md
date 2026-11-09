@@ -13,7 +13,7 @@ an owner-condition record comment + distinct-model (Codex) review:
 | # | PR | what landed | final head | notes |
 |---|---|---|---|---|
 | 1 | #316 (#305) | screen-switch kitty-flag-stack restore | merged | Tier B; CI fixed a clippy `io_other_error` (lint runs `--tests`) |
-| 2 | #318 (#312) | shifted-symbol limit disclosed + bounded | merged | Tier A |
+| 2 | #318 (#312) | shifted-symbol limit disclosed; recovery is conditional, not time-bounded | merged | Tier A |
 | 3 | #319 (#292) | Windows key-doubling disclosed | merged | Tier A |
 | 4 | #317 (#298) | C `gibson_get_terminal_size` + focus events, **65→67** | `051828e` | Tier B; CI caught a real defect — #298 surfaces focus in the C ABI, and two pre-#298 C-ABI tests in `key_release_kind_pty.rs` still encoded the focus→`NONE` drop; fixed (oracle preserved), Codex CONFIRM |
 | 5 | #320 (#130) | `FixedStepClock` pause/resume/step + falsifiers | `0339263` | Tier B; `time_scale` **cut** (partition-invariance/NaN-carry); Codex FLAGged a P3 `step_frame` ceiling doc/contract mismatch → documented + mutation-proven boundary test |
@@ -46,7 +46,7 @@ NEXT MOVE: v0.7.0 requalification (MINERVA full suite) + release gate, OR harden
 |---|---|---|---|---|---|
 | A #305 | READY | failed screen-switch no longer foreign-pops the kitty flag stack | #316 / `5688ec0` | Tier B: red-first + 2 mutation controls; Codex ×3 (core FIXED; residual §9-disclosed) | merge on green CI + record |
 | C #298 | READY | C `gibson_get_terminal_size` + focus events, **65→67** symbols | #317 / `b154bb8` | Tier B: check-abi 67/67; Codex (P2/P3 fixed; test non-vacuous) | merge on green CI + record |
-| B #312 | READY | shifted-symbol screen-switch limit **disclosed + bounded** (3 tests) | #318 / head | Tier A: tests + docs, no runtime change | merge on green CI |
+| B #312 | READY | shifted-symbol screen-switch limit disclosed; recovery is conditional (3 tests) | #318 / head | Tier A: tests + docs, no runtime change | merge on green CI |
 | P #292 | READY | Windows key-doubling **disclosed** (no Windows env) | #319 / `6d00ad6` | Tier A: docs + 1 host-indep test, no runtime change | merge on green CI |
 | D #130 | IN REVIEW | clock pause/resume/step + time-scale + 2 falsifiers | #320 / `5cd887d` | Tier B: Codex found time_scale partition-invariance edge → fix in progress | land fix, re-verify, re-Codex, then merge |
 | N MINERVA | VERIFIED | external consumer (ProjectGHOST) canary vs v0.7-dev `main` | — | builds (exit 0); 1 suite flake is NOT a v0.7 regression (A/B) | requalify full suite before a v0.7.0 tag |
@@ -118,7 +118,7 @@ controls; "no unacknowledged support-contract regression".
   6✓ (incl. a polled-RESIZE-updates-size test); `ffi_abi_layout_freeze` 7✓ (event discriminants 0–8
   pinned); ffi.rs unit test `get_terminal_size_clamps_a_zero_dimension_to_80x24` mutation-proven. Codex
   (01a1be1e…, 01a1be31…).
-- #312: `issue_312_*` 3✓ (limit pinned; focus-loss + reporting-disable bounds). No runtime change.
+- #312: `issue_312_*` 3✓ (limit pinned; conditional focus-loss + reporting-disable recovery). No runtime change. A hold may persist indefinitely without those events.
 - #292: `cargo +1.98.1 test --lib input` 47✓; predicate unchanged; `windows_delivers_…_two_key_events_292`
   host-independent. Disclosure only.
 - #130: `cargo +1.98.1 test --lib clock` 23✓; `--lib` 1052✓; falsifier #2 = 62 ticks + identical digests

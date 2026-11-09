@@ -747,7 +747,8 @@ impl PressedKeys {
     /// deliberately NOT renamed: base `1` cannot be mapped back to `!` without assuming a keyboard
     /// layout, and pairing the unmatched release with the newest orphan would mis-identify an
     /// unrelated key's release. Letters fold (`W`->`w`), so sustained/movement keys are unaffected.
-    /// Pinned and bounded by the `issue_312_*` tests below.
+    /// None of those recovery events is guaranteed: the hold can persist indefinitely while
+    /// reporting stays active. The `issue_312_*` tests pin both the failure and conditional recovery.
     fn find_down(&self, id: KeyId, code: CtKeyCode) -> Option<usize> {
         let legacy = KeyId::Code(code);
         let exact = self.newest(|r| r.0 == id);
@@ -2387,7 +2388,7 @@ mod tests {
         // record to the kitty identity (contrast the test above), kitty reports its release under
         // the base key `1`. Shift does not lowercase a symbol, so `!` does not fold to `1` (letters
         // do: `W`->`w`), nothing matches, and the release is delivered as decoded (`1`). A held-key
-        // model therefore keeps `!` held until a bound below. A layout-agnostic rename is
+        // model therefore keeps `!` held unless a recovery event occurs. A layout-agnostic rename is
         // impossible: base `1` cannot be mapped back to the shifted `!` without assuming a keyboard
         // layout, and pairing the unmatched release with the newest orphan would mis-identify an
         // unrelated key's release. Letters (the usual sustained/movement keys) are unaffected.
@@ -2400,8 +2401,37 @@ mod tests {
     }
 
     #[test]
+    fn issue_312_no_further_events_leave_the_legacy_hold_stuck() {
+        // The parser saw a legacy shifted symbol during the screen-switch epoch. Reporting is
+        // active for the hold tracker and the terminal reports the base-key release. There is no
+        // later repeat, focus loss, mode disable or unrelated key. A genuine Kitty press/release
+        // is the control: it must not remain held.
+        let legacy = terminal(decode_all(b"!\x1b[49;1:3u", true));
+        assert_eq!(legacy[0], kind(K::Char('!'), M::NONE, Kind::Press));
+        assert_eq!(legacy[1], kind(K::Char('1'), M::NONE, Kind::Release));
+        let mut holds = crate::hold::HoldTracker::new(crate::hold::HoldConfig::new(1, 1));
+        holds.set_releases_reported(true);
+        let CtEvent::Key(press) = legacy[0] else {
+            panic!("expected press")
+        };
+        let CtEvent::Key(release) = legacy[1] else {
+            panic!("expected release")
+        };
+        holds.observe(0, (press.code, press.modifiers)).unwrap();
+        holds
+            .observe_release(1, (release.code, release.modifiers))
+            .unwrap();
+        assert!(holds.advance(1_000_000).unwrap().is_empty());
+        assert!(holds.is_held((K::Char('!'), M::NONE)));
+        let exact = terminal(decode_all(b"\x1b[49:33;2u\x1b[49;1:3u", true));
+        assert_eq!(exact[0], kind(K::Char('!'), M::NONE, Kind::Press));
+        assert_eq!(exact[1], kind(K::Char('!'), M::NONE, Kind::Release));
+        assert!(still_held(&exact).is_empty());
+    }
+
+    #[test]
     fn issue_312_the_stuck_hold_is_bounded_by_focus_loss() {
-        // The #312 stuck hold is not permanent. Modelled directly: with releases reported, `!` is
+        // Conditional recovery: with releases reported, `!` is
         // pressed (no deadline) and its release arrives named `1` (the base key), which does not
         // match, so `!` stays held — then a focus loss ends it (the terminal reports focus loss,
         // and DEEP SIGNAL / #276 acts on it).
@@ -2412,7 +2442,7 @@ mod tests {
         holds.advance(1_000).unwrap();
         assert!(
             holds.is_held((K::Char('!'), M::NONE)),
-            "stuck before any bound"
+            "stuck before focus loss"
         );
         let ended = holds.release_all(crate::hold::ReleaseCause::FocusLost);
         assert_eq!(ended.len(), 1);
@@ -2424,7 +2454,7 @@ mod tests {
 
     #[test]
     fn issue_312_the_stuck_hold_is_bounded_when_reporting_is_disabled() {
-        // The other layout-agnostic bound: when key-release reporting is disabled, every hold that
+        // Another conditional recovery: when key-release reporting is disabled, every hold that
         // was waiting for a release (ends_at == u64::MAX) is given the inferred grace deadline, so
         // the stuck `!` times out instead of waiting forever.
         let mut holds = crate::hold::HoldTracker::new(crate::hold::HoldConfig::new(1, 5));
