@@ -49,10 +49,10 @@ application examples, full diagnostic coverage, independent review and exact-hea
 
 Draft #325, `feat/v08-focus-size-parity`, head
 `5ff3601ec68d9cd4d928efd193732bf1dea4b80e`, projects focus and geometry into
-Python, Go and C++. At its parent `e4c1ac1dd4bd9c9315a45e2145475663bfbda1b0`, the
-staged-SDK five-language parity harness passed 84 records per language, 500 repetitions,
-replay, resource and existing mutation controls. The final head adds an automatic focus
-identity mutation control and requires its own rerun. Real terminal focus delivery,
+Python, Go and C++. At this head, the staged-SDK five-language parity harness passed 84 records per language,
+500 repetitions, replay, resource and mutation controls. The added focus-identity mutation
+was caught at f05.1. The Rust example binary was built at the parent, whose example source
+is identical, and the native library came from baseline main. Real terminal focus delivery,
 independent review and exact-head CI remain unverified.
 
 ## PR debt
