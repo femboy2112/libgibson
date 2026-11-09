@@ -183,6 +183,9 @@ pub struct FixedTimestep {
     exact: bool,
     /// Multiplier on the render dt feeding the accumulator (`1.0` = real time).
     time_scale: f64,
+    /// Sub-nanosecond remainder of scaled time, in `[0, 1)` ns, carried between
+    /// `advance` calls so per-call rounding never loses scaled time. Unused at 1.0.
+    scale_carry: f64,
 }
 
 /// How many fixed model ticks a frame demands, plus whether the catch-up cap
@@ -228,6 +231,7 @@ impl FixedTimestep {
             max_ticks_per_advance: max_ticks.max(1),
             exact: false,
             time_scale: 1.0,
+            scale_carry: 0.0,
         }
     }
 
@@ -251,7 +255,10 @@ impl FixedTimestep {
     /// reaches the accumulator, so a producer can slow (`< 1`), fast-forward (`> 1`) or
     /// freeze (`0`) model time deterministically. Non-finite or negative values
     /// become `0.0`. The default `1.0` is bit-exact (no float math touches the dt).
-    /// Already-accumulated time is not rescaled.
+    /// Already-accumulated time is not rescaled. The fractional scaled nanosecond is carried
+    /// across calls, so tick totals stay partition-invariant for scales `f64` represents exactly
+    /// (e.g. `0.5`, `0.25`); a non-dyadic scale (e.g. `1.0/3.0`) may differ by one tick at a
+    /// boundary from `f64` rounding. Exact invariance at any scale would need a rational scale.
     pub fn set_time_scale(&mut self, scale: f64) {
         self.time_scale = if scale.is_finite() && scale > 0.0 {
             scale
@@ -271,9 +278,13 @@ impl FixedTimestep {
         let dt = if self.time_scale == 1.0 {
             real_dt
         } else {
-            // `mul_f64` panics on overflow; saturate through f64 secs instead.
-            let secs = real_dt.as_secs_f64() * self.time_scale;
-            Duration::try_from_secs_f64(secs).unwrap_or(Duration::MAX)
+            // Scale in f64 nanoseconds and carry the fractional ns to the next call, so
+            // the total is independent of how real time is chopped. The `as u128` cast
+            // saturates, and `nanos_u128_to_duration` saturates beyond `Duration::MAX`.
+            let exact = real_dt.as_nanos() as f64 * self.time_scale + self.scale_carry;
+            let whole = exact.floor();
+            self.scale_carry = exact - whole;
+            nanos_u128_to_duration(whole as u128)
         };
         self.accumulator = self.accumulator.saturating_add(dt);
         let mut ticks = 0u32;
@@ -628,6 +639,28 @@ mod tests {
         assert_eq!(FixedTimestep::new(step).time_scale(), 1.0);
     }
 
+    #[test]
+    fn time_scale_preserves_partition_invariance_at_a_fractional_scale() {
+        // Binary-exact scales (a non-dyadic one like 1/3 can differ by 1 ulp in f64). Trap: at scale 0.5 each 1ns call is 0.5 scaled ns. Rounding per
+        // call loses all of it; carrying the remainder must not. 1us step, 20_000ns real
+        // -> 10_000ns scaled -> 10 ticks, however the 20_000ns is chopped.
+        let step = Duration::from_micros(1);
+        let total = |chunks: u32, dt: Duration, scale: f64| {
+            let mut ts = FixedTimestep::with_max_ticks(step, 1_000_000);
+            ts.set_time_scale(scale);
+            (0..chunks).map(|_| ts.advance(dt).ticks).sum::<u32>()
+        };
+        for scale in [0.5, 0.25, 0.75] {
+            let coarse = total(1, Duration::from_nanos(60_000), scale);
+            let fine = total(60_000, Duration::from_nanos(1), scale);
+            let mid = total(600, Duration::from_nanos(100), scale);
+            assert_eq!(coarse, fine, "scale {scale}: coarse vs 1ns chunks");
+            assert_eq!(coarse, mid, "scale {scale}: coarse vs 100ns chunks");
+            assert!(coarse > 0, "non-vacuous");
+        }
+        assert_eq!(total(60_000, Duration::from_nanos(1), 0.5), 30);
+    }
+
     // ---- Falsifier #2 (#130): multi-fps digest invariance --------------------
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -820,8 +853,16 @@ mod tests {
 
         // Resume: the next tick is one more update; a redraw in between adds none.
         c.clock.resume();
+        let before_redraw = (c.state, c.clock.frame());
         c.handle(Ev::Redraw);
+        c.handle(Ev::Resize(100, 30));
         assert_eq!(c.model_updates, cp_updates + 1);
+        assert_eq!(
+            (c.state, c.clock.frame()),
+            before_redraw,
+            "running redraw/resize left state alone"
+        );
+        assert_ne!(c.state, cp_state, "non-vacuous: state did move on the step");
         c.handle(Ev::Tick);
         assert_eq!(
             (c.clock.frame(), c.model_updates),
