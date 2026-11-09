@@ -131,3 +131,50 @@ fn terminal_size_reports_the_creation_geometry_and_rejects_nulls() {
         GibsonStatus::ErrInvalidParam
     );
 }
+
+#[test]
+fn a_polled_resize_updates_the_reported_terminal_size() {
+    // review P3: the reported size is the CURRENT headless geometry, not frozen at creation — a
+    // polled RESIZE updates it (as #293/#308 made Context::poll_from do for a headless context).
+    let c = Ctx::headless(123, 45);
+    let mut resize = blank(GIBSON_EVENT_RESIZE);
+    resize.cols = 40;
+    resize.rows = 10;
+    assert_eq!(c.push(&resize), GibsonStatus::Ok);
+    let got = c.poll();
+    assert_eq!(got.event_type, GIBSON_EVENT_RESIZE);
+    assert_eq!((got.cols, got.rows), (40, 10));
+    let (mut cols, mut rows) = (0u16, 0u16);
+    assert_eq!(
+        unsafe { gibson_get_terminal_size(c.0, &mut cols, &mut rows) },
+        GibsonStatus::Ok
+    );
+    assert_eq!(
+        (cols, rows),
+        (40, 10),
+        "the query follows the resize, not the creation size"
+    );
+}
+
+#[test]
+fn a_zero_measurement_falls_back_to_the_documented_80x24() {
+    // review P2: the non-zero guarantee. A degenerate (zero) dimension is reported as 80x24. A
+    // headless context created with a zero dimension stands in for crossterm returning 0 on a
+    // *successful* TTY query (unreachable headlessly otherwise). If create rejects a zero
+    // dimension, the clamp still guards the TTY path by inspection.
+    let mut ctx = ptr::null_mut();
+    let st = unsafe { gibson_create_headless_context(GIBSON_MODE_FULLSCREEN, 0, 45, &mut ctx) };
+    if st == GibsonStatus::Ok {
+        let c = Ctx(ctx);
+        let (mut cols, mut rows) = (1u16, 1u16);
+        assert_eq!(
+            unsafe { gibson_get_terminal_size(c.0, &mut cols, &mut rows) },
+            GibsonStatus::Ok
+        );
+        assert_eq!(
+            (cols, rows),
+            (80, 24),
+            "a zero dimension falls back to 80x24"
+        );
+    }
+}

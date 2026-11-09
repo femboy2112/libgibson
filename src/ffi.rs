@@ -2036,8 +2036,10 @@ pub unsafe extern "C" fn gibson_get_frame_size(
 
 /// Writes the terminal's current `(cols, rows)` into `*out_cols` / `*out_rows` (#298). Unlike
 /// [`gibson_get_frame_size`], this is the live device geometry, not the last rendered frame's, so it
-/// answers before the first render: a headless context reports the size it was created with, a TTY
-/// its measured size, and a redirected stdout the 80x24 fallback. Both outputs are always non-zero.
+/// answers before the first render: a headless context reports its current size (initially the size
+/// it was created with; a polled `GIBSON_EVENT_RESIZE` updates it), a TTY its measured size, and a
+/// redirected stdout the 80x24 fallback. Both outputs are always non-zero — a zero measurement is
+/// treated as a failed query and reported as the 80x24 fallback, indistinguishable from a real 80x24.
 #[no_mangle]
 pub unsafe extern "C" fn gibson_get_terminal_size(
     ctx: *mut GibsonContextOpaque,
@@ -2049,7 +2051,14 @@ pub unsafe extern "C" fn gibson_get_terminal_size(
             set_last_error("Null ctx/out_cols/out_rows for gibson_get_terminal_size".into());
             return GibsonStatus::ErrInvalidParam;
         }
-        let (cols, rows) = (*ctx).inner.session.terminal_size();
+        let (mut cols, mut rows) = (*ctx).inner.session.terminal_size();
+        // Honour the non-zero guarantee. `session.terminal_size()`'s `unwrap_or` only catches an
+        // Err, but crossterm can return a 0 dimension on a *successful* query; a degenerate
+        // measurement is a failed query, reported as the documented 80x24 fallback (review: P2).
+        if cols == 0 || rows == 0 {
+            cols = 80;
+            rows = 24;
+        }
         *out_cols = cols;
         *out_rows = rows;
         GibsonStatus::Ok

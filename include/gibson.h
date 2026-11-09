@@ -389,8 +389,9 @@ gibson_status_t gibson_clear_rendered_output(gibson_context_t *ctx, size_t *out_
    out-of-bounds (x,y). Style is quantized to the context's color depth. (ABI v1, additive) */
 gibson_status_t gibson_get_frame_size(gibson_context_t *ctx, uint16_t *out_cols, uint16_t *out_rows);
 /* Live terminal geometry (cols, rows), as opposed to the last rendered frame's: answers before the
-   first render. Headless reports its creation size, a TTY its measured size, a redirected stdout the
-   80x24 fallback. Both outputs are always non-zero. (ABI v1, additive, #298) */
+   first render. Headless reports its current size (initially the creation size; a polled RESIZE
+   updates it), a TTY its measured size, a redirected stdout the 80x24 fallback. Both outputs are
+   always non-zero (a zero measurement falls back to 80x24). (ABI v1, additive, #298) */
 gibson_status_t gibson_get_terminal_size(gibson_context_t *ctx, uint16_t *out_cols, uint16_t *out_rows);
 gibson_status_t gibson_get_frame_cell(gibson_context_t *ctx, uint16_t x, uint16_t y, gibson_cell_t *out);
 /* Bulk readback: up to max_cells resolved cells row-major from (x,y) across row ends to the end of
