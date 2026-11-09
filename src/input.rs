@@ -477,6 +477,19 @@ fn poll_until_deliverable<T: Into<SourceItem>>(
 /// (#292), but it also delivers an Alt+numpad character code **only** as the release of Alt, and
 /// a decoded `KeyEvent` does not say which of the two a `Char` release is. Dropping releases there
 /// would lose those characters; fixing the doubling needs that distinction and a Windows test.
+///
+/// **KNOWN, UNVERIFIED LIMITATION (#292): on Windows every key is delivered twice**, once for the
+/// key-down (`Press`) and once for the key-up (`Release`, crossterm 0.29 `parse.rs:286-290`), and
+/// [`decode_key`] ignores the kind, so both arrive as [`Event::Key`]. No Windows runtime or CI job
+/// has exercised this; it is read from the crossterm source and pinned only through the `windows`
+/// parameter by a host-independent test. Windows is not a supported platform this round.
+///
+/// Why the predicate is not simply `kind != Release`: an Alt+numpad Unicode character (Alt+0233
+/// gives an e-acute) reaches the console only as a `Release` carrying `KeyCode::Char`, so a blanket
+/// release filter would delete real composed input (a surrogate-paired character arrives as a
+/// `Press` and would survive, which is the only case that filter would not break). The fix is a
+/// LibGibson-owned Windows console source that reads `KEY_EVENT_RECORD`s and can tell the two
+/// releases apart. That is future work and needs a native Windows host to write and test.
 fn delivers_key_kind(kind: KeyEventKind, windows: bool) -> bool {
     kind != KeyEventKind::Release || windows
 }
@@ -1835,6 +1848,34 @@ mod key_kind_tests {
         assert!(!delivers_key_kind(KeyEventKind::Release, false));
         // Windows keeps its earlier behaviour (see `delivers_key_kind`, #292).
         assert!(delivers_key_kind(KeyEventKind::Release, true));
+    }
+
+    #[test]
+    fn windows_delivers_a_press_and_its_release_as_two_key_events_292() {
+        // KNOWN LIMITATION (#292), pinned as it behaves today, not as it should: with `windows`
+        // set, one physical keystroke (crossterm 0.29 sends a Press then a Release) is delivered
+        // twice as `Event::Key`, whether or not key-release reporting is enabled. `windows` is a
+        // parameter, so this runs on every host and says nothing about a real Windows console.
+        for releases in [false, true] {
+            let stroke = [
+                ct_key('a', KeyEventKind::Press),
+                ct_key('a', KeyEventKind::Release),
+            ];
+            let got: Vec<_> = stroke
+                .into_iter()
+                .filter_map(|ev| decode_event_as(ev, true, releases))
+                .collect();
+            assert_eq!(got, vec![key('a').unwrap(), key('a').unwrap()]);
+        }
+        // The same stroke on Unix is one press.
+        let got: Vec<_> = [
+            ct_key('a', KeyEventKind::Press),
+            ct_key('a', KeyEventKind::Release),
+        ]
+        .into_iter()
+        .filter_map(|ev| decode_event_as(ev, false, false))
+        .collect();
+        assert_eq!(got, vec![key('a').unwrap()]);
     }
 
     #[test]

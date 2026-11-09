@@ -469,7 +469,7 @@ before reusing buffers or caching meshes. Preserve replay/resize purity when cac
 | --- | --- |
 | Linux x86_64 | IMPLEMENTED + TESTED locally: Rust, C/C++/Python, PTY and vt100. |
 | macOS | UNVERIFIED; no executed host matrix. Python loader currently searches .so paths. |
-| Windows / ConPTY | UNVERIFIED; no job or host run. Key event-kind handling, lifecycle and loader paths need explicit tests. |
+| Windows / ConPTY | UNVERIFIED; no job or host run. **Named unverified defect, [#292](https://github.com/femboy2112/libgibson/issues/292): key doubling.** crossterm 0.29 reports a console key-up as `KeyEventKind::Release` and LibGibson delivers it on Windows as a second `Event::Key`, so every key arrives twice (read from the source, pinned by a host-independent unit test, never run on Windows). A release filter would drop Alt+numpad characters, which arrive only as a release; the fix is a LibGibson-owned Windows console source (future work). Lifecycle and loader paths also need explicit tests. |
 | tmux / screen / SSH | UNVERIFIED; passive environment assumptions and local PTY tests are insufficient. |
 | Specific terminal emulator matrix | UNVERIFIED broadly; one parser and local PTY are not certification of every emulator/font. |
 | Go | PARTIALLY TESTED: local gccgo 14.2 / Go 1.18 and public Go 1.27.1 vet/build/example smoke; no Go unit tests or platform matrix. |

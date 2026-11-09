@@ -200,6 +200,7 @@ fn a_release_is_validated_like_a_press() {
         GibsonStatus::ErrInvalidParam
     );
     assert_eq!(c.poll().event_type, GIBSON_EVENT_NONE, "nothing was queued");
-    // An event type past the new ones is still refused.
-    assert_eq!(c.push(&blank(7)), GibsonStatus::ErrInvalidParam);
+    // An event type past the known ones is still refused. 7/8 are now the #298 focus pair, so the
+    // first genuinely unknown discriminant moved up to 9.
+    assert_eq!(c.push(&blank(9)), GibsonStatus::ErrInvalidParam);
 }
