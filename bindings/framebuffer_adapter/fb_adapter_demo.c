@@ -8,6 +8,8 @@
  *   fb_adapter_demo --replay TRACE --tics N [--grid CxR] [--dump-cells FILE]
  *
  * play options: --exit-after-tics N  --report FILE  --trace FILE  --square-pixels  --seed N
+ *               --key-releases (opt in to reported key releases, #275; a trace recorded with
+ *               it replays with it too)
  *               --hold-grace TICS  --hold-repeat TICS  --tic-hz N  --color-depth mono|16|256|true
  *               --bench-frames N (one tic + one present per loop, as fast as the terminal takes it)
  *               negative controls: --control-ignore-input  --control-no-restore  --control-no-signals
@@ -128,7 +130,7 @@ typedef struct play_opts {
     const char *report, *trace, *replay, *dump_cells;
     uint64_t replay_tics;
     uint16_t grid_cols, grid_rows;
-    int square, ignore_input, no_restore, no_signals;
+    int square, ignore_input, no_restore, no_signals, key_releases;
     unsigned faults;
     uint32_t grace, repeat, hz;
     int depth;
@@ -155,11 +157,13 @@ static fb_status demo_draw(void *u, fb_adapter *ad) {
     fb_adapter_geometry(ad, &g);
     char s[256];
     unsigned long long tic = d->prod->s.tic, drop = d->stats ? d->stats->tics_dropped : 0;
+    /* first, so a narrow status row never cuts it off */
+    const char *exact = fb_adapter_releases_reported(ad) ? " | keys exact" : "";
     if (g.cols >= 100)
-        snprintf(s, sizeof s, " LIBGIBSON fb_adapter | tic %llu | %.1f fps | dropped %llu | %ux%u | arrows/WASD steer  space pulse  q quit",
-                 tic, d->fps, drop, (unsigned)g.cols, (unsigned)g.rows);
+        snprintf(s, sizeof s, " LIBGIBSON fb_adapter%s | tic %llu | %.1f fps | dropped %llu | %ux%u | arrows/WASD steer  space pulse  q quit",
+                 exact, tic, d->fps, drop, (unsigned)g.cols, (unsigned)g.rows);
     else if (g.cols >= 60)
-        snprintf(s, sizeof s, " fb_adapter | tic %llu | %.1f fps | drop %llu | arrows/WASD  space  q", tic, d->fps, drop);
+        snprintf(s, sizeof s, " fb_adapter%s | tic %llu | %.1f fps | drop %llu | arrows/WASD  space  q", exact, tic, d->fps, drop);
     else
         snprintf(s, sizeof s, " tic %llu %.0f fps  q quit", tic, d->fps);
     return fb_adapter_set_status(ad, s);
@@ -231,6 +235,7 @@ static void config_for_play(fb_adapter_config *cfg, const play_opts *o) {
     if (o->repeat) cfg->hold_repeat_tics = o->repeat;
     if (o->hz) cfg->tic_hz = o->hz;
     cfg->color_depth = o->depth;
+    cfg->key_releases = o->key_releases; /* opt-in, never the default (#275) */
 }
 
 static void bench_summary(FILE *f, const demo *d) {
@@ -408,11 +413,16 @@ static void inject_pre_tic(void *u, fb_adapter *ad, uint64_t tic) {
             e.cols = t->cols;
             e.rows = t->rows;
             if (gibson_push_event(fb_adapter_context(ad), &e) != GIBSON_OK) in->pushed_fail++;
+        } else if (t->kind == FB_OBSERVED_RELEASES_ACTIVE || t->kind == FB_OBSERVED_RELEASES_UNSUPPORTED) {
+            /* the terminal's answer to the key-release request (#275) */
+            e.event_type = t->kind == FB_OBSERVED_RELEASES_ACTIVE ? GIBSON_EVENT_KEY_RELEASES_ACTIVE
+                                                                   : GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED;
+            if (gibson_push_event(fb_adapter_context(ad), &e) != GIBSON_OK) in->pushed_fail++;
         } else {
-            e.event_type = GIBSON_EVENT_KEY;
+            e.event_type = (t->kind & FB_OBSERVED_RELEASE) ? GIBSON_EVENT_KEY_RELEASE : GIBSON_EVENT_KEY;
             e.key_code = t->code;
             e.modifiers = t->mods;
-            if (gibson_push_event_kind(fb_adapter_context(ad), &e, t->kind) != GIBSON_OK) in->pushed_fail++;
+            if (gibson_push_event_kind(fb_adapter_context(ad), &e, t->kind & 0xFFu) != GIBSON_OK) in->pushed_fail++;
         }
     }
 }
@@ -515,6 +525,13 @@ enum {
     C_P2_EDGE_SAMPLING,
     C_P2_NO_LETTERBOX,
     C_P3_IGNORE_INPUT,
+    C_P3_IGNORE_RELEASES,
+    C_P3_REARM_LOSES_RELEASE,
+    C_P3_SHARED_ALIAS_HOLD,
+    C_P3_UNMATCHED_RELEASE,
+    C_P3_WRAP_DEADLINE,
+    C_P3_REWRITE_ENDED,
+    C_P3_SENTINEL_ENDS,
     C_P4_FRAME_LOCKED,
     C_P5_STALE_MAP,
     C_P5_RESIZE_STEPS,
@@ -538,6 +555,13 @@ static const struct {
     {"p2-edge-sampling", 2, "the reference samples pixel edges, not centres"},
     {"p2-no-letterbox", 2, "the reference stretches to the whole grid (no bars)"},
     {"p3-ignore-input", 3, "the producer ignores every key"},
+    {"p3-ignore-releases", 3, "mutant adapter: reported key releases are ignored (holds keep the grace)"},
+    {"p3-rearm-loses-release", 3, "mutant adapter: a re-press re-arms a hold whose release is waiting for a full queue"},
+    {"p3-shared-alias-hold", 3, "mutant adapter: keys mapped to one producer key share one release (the first ends it)"},
+    {"p3-unmatched-release", 3, "mutant adapter: a release of a key that holds nothing ends the inferred part"},
+    {"p3-wrap-deadline", 3, "mutant adapter: a hold deadline past the last tic wraps instead of saturating"},
+    {"p3-rewrite-ended", 3, "mutant adapter: a release rewrites a hold that ended and waits for queue room"},
+    {"p3-sentinel-ends", 3, "mutant adapter: a live exact hold at tic==UINT64_MAX is read as ended (its sentinel taken for a deadline)"},
     {"p4-frame-locked", 4, "mutant adapter: one tic per presented frame"},
     {"p5-stale-map", 5, "mutant adapter: the map is not rebuilt on resize"},
     {"p5-resize-steps", 5, "mutant adapter: a resize runs an extra producer tic"},
@@ -555,7 +579,7 @@ static char g_exe[4096];
 
 static int ctl(int c) { return g_control == c; }
 
-#define EVID 2048
+#define EVID 3072
 static void ev_append(char *ev, const char *fmt, ...) {
     size_t n = strlen(ev);
     if (n + 1 >= EVID) return;
@@ -896,7 +920,7 @@ static void run_on_present(void *u, fb_adapter *ad, uint64_t tics) {
 /* Runs the synthetic producer headless through fb_adapter_run. */
 static int headless_run(runres *res, const tev *script, size_t n, uint16_t cols, uint16_t rows, int status_rows,
                         fclock *clk, uint32_t divisor, uint64_t max_tics, uint64_t max_iters, unsigned faults,
-                        int ignore_input, int check_ref) {
+                        int ignore_input, int check_ref, int key_releases) {
     memset(res, 0, sizeof *res);
     synth_producer *prod = calloc(1, sizeof *prod);
     if (!prod || synth_init(prod, 2112) != 0) return 0;
@@ -906,6 +930,7 @@ static int headless_run(runres *res, const tev *script, size_t n, uint16_t cols,
     cfg.par_num = 5;
     cfg.par_den = 6;
     cfg.status_rows = (uint8_t)status_rows;
+    if (key_releases) cfg.key_releases = 1; /* else the default stands: that is what is tested */
     fb_adapter *ad = NULL;
     if (fb_adapter_open_headless(&cfg, cols, rows, &ad) != FB_OK) {
         synth_free(prod);
@@ -1023,14 +1048,397 @@ static const tev S3[] = {
     {100, CH, 'a', 0, 0, 0},             {101, CH, 'a', 0, 0, 0},
 };
 
+/* Reported releases (#275): the terminal confirms, then w is held 10..100 while d is pressed at 20,
+   autorepeats and is released at 40 (the chord an autorepeat-only terminal cannot hold); a tap of
+   a pressed and released inside tic 120; Right held 150..155. */
+#define REL FB_OBSERVED_RELEASE
+static const tev S3R[] = {
+    {0, FB_OBSERVED_RELEASES_ACTIVE, 0, 0, 0, 0},
+    {10, CH, 'w', 0, 0, 0},       {20, CH, 'd', 0, 0, 0},        {34, CH, 'd', 0, 0, 0},
+    {35, CH, 'd', 0, 0, 0},       {40, CH | REL, 'd', 0, 0, 0},  {100, CH | REL, 'w', 0, 0, 0},
+    {120, CH, 'a', 0, 0, 0},      {120, CH | REL, 'a', 0, 0, 0}, {150, SP, GIBSON_KEY_RIGHT, 0, 0, 0},
+    {155, SP | REL, GIBSON_KEY_RIGHT, 0, 0, 0},
+};
+/* The producer key log the rule gives, written out by hand. */
+static const logent S3R_WANT[] = {
+    {10, 'w', 1}, {20, 'd', 1}, {40, 'd', 0}, {100, 'w', 0}, {120, 'a', 1}, {121, 'a', 0},
+    {150, FB_KEY_BASE + (GIBSON_KEY_RIGHT - 0x1000u), 1}, {155, FB_KEY_BASE + (GIBSON_KEY_RIGHT - 0x1000u), 0},
+};
+
+/* The same script through an adapter left at the default (not opted in, #275): the answer and every
+   release are ignored, so each hold is the grace model's (grace 25, repeat 4): w 10..35; d 20, re-armed
+   at 34 and 35, ..39; a 120..145; Right 150..175. Written out by hand. */
+static const logent S3R_OFF_WANT[] = {
+    {10, 'w', 1}, {20, 'd', 1}, {35, 'w', 0}, {39, 'd', 0}, {120, 'a', 1}, {145, 'a', 0},
+    {150, FB_KEY_BASE + (GIBSON_KEY_RIGHT - 0x1000u), 1}, {175, FB_KEY_BASE + (GIBSON_KEY_RIGHT - 0x1000u), 0},
+};
+
+/* Queue pressure with reported releases (#275 review): the caller pumps without draining until the
+   256-entry key queue is full; `a` is released then (its release cannot be queued) and pressed
+   again. The release must still reach the producer once there is room, and the second press is
+   the one dropped (counted), never the release. Returns 1 when that holds; *dropped gets the count. */
+static int queue_pressure_keeps_releases(unsigned long long *dropped, unsigned faults) {
+    fb_adapter_config cfg;
+    fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+    cfg.key_releases = 1;
+    fb_adapter *ad = NULL;
+    if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+    fb_adapter_set_faults(ad, faults);
+    gibson_context_t *ctx = fb_adapter_context(ad);
+    gibson_event_t e;
+    uint64_t tic = 1;
+#define PUSH(type, code)                                                         \
+    do {                                                                         \
+        memset(&e, 0, sizeof e);                                                 \
+        e.event_type = (type);                                                   \
+        e.key_code = (code);                                                     \
+        if ((type) == GIBSON_EVENT_KEY_RELEASES_ACTIVE) gibson_push_event(ctx, &e); \
+        else gibson_push_event_kind(ctx, &e, CH);                                \
+        fb_adapter_pump(ad, tic, 0);                                             \
+        tic++;                                                                   \
+    } while (0)
+    PUSH(GIBSON_EVENT_KEY_RELEASES_ACTIVE, 0);
+    PUSH(GIBSON_EVENT_KEY, 'a');                   /* 1 queued */
+    for (int i = 0; i < 127; i++) {                /* 254 more: b taps, never drained */
+        PUSH(GIBSON_EVENT_KEY, 'b');
+        PUSH(GIBSON_EVENT_KEY_RELEASE, 'b');
+    }
+    PUSH(GIBSON_EVENT_KEY, 'c');                   /* 256: full */
+    PUSH(GIBSON_EVENT_KEY_RELEASE, 'a');           /* its release cannot be queued */
+    PUSH(GIBSON_EVENT_KEY, 'a');                   /* pressed again */
+#undef PUSH
+    int a_press = 0, a_release = 0, order_ok = 1;
+    fb_key_event k;
+    for (uint64_t t = tic; t < tic + 600; t++)
+        while (fb_adapter_next_key(ad, t, &k))
+            if (k.code == 'a') {
+                if (k.pressed) a_press++;
+                else {
+                    a_release++;
+                    if (a_press != 1) order_ok = 0;
+                }
+            }
+    fb_adapter_counters c;
+    fb_adapter_counters_get(ad, &c);
+    *dropped = c.keys_dropped;
+    fb_adapter_close(ad);
+    return a_press == 1 && a_release == 1 && order_ok && c.keys_dropped == 1;
+}
+
+/* Withdrawal (#275 review): grace 25, repeat 100. `a` pressed at 1 and repeated at 2 (inferred
+   deadline 102); the terminal confirms at 3; `b` pressed at 3 (held until its release); the
+   terminal withdraws at 4. As in gibson::hold, only `b` (waiting for a release) gets a new
+   deadline, 4 + 25 = 29; `a` keeps 102. Returns 1 when the releases come at exactly those tics. */
+static int withdrawal_keeps_inferred_deadlines(uint64_t *a_end, uint64_t *b_end) {
+    fb_adapter_config cfg;
+    fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+    cfg.hold_repeat_tics = 100;
+    cfg.key_releases = 1;
+    fb_adapter *ad = NULL;
+    if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+    gibson_context_t *ctx = fb_adapter_context(ad);
+    static const struct { uint64_t tic; int32_t type; uint32_t code; } S[] = {
+        {1, GIBSON_EVENT_KEY, 'a'}, {2, GIBSON_EVENT_KEY, 'a'}, {3, GIBSON_EVENT_KEY_RELEASES_ACTIVE, 0},
+        {3, GIBSON_EVENT_KEY, 'b'}, {4, GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED, 0},
+    };
+    for (size_t i = 0; i < sizeof S / sizeof S[0]; i++) {
+        gibson_event_t e;
+        memset(&e, 0, sizeof e);
+        e.event_type = S[i].type;
+        e.key_code = S[i].code;
+        if (S[i].type == GIBSON_EVENT_KEY) gibson_push_event_kind(ctx, &e, CH);
+        else gibson_push_event(ctx, &e);
+        fb_adapter_pump(ad, S[i].tic, 0);
+    }
+    *a_end = *b_end = 0;
+    fb_key_event k;
+    for (uint64_t t = 4; t < 200; t++)
+        while (fb_adapter_next_key(ad, t, &k))
+            if (!k.pressed) {
+                if (k.code == 'a') *a_end = k.tic;
+                if (k.code == 'b') *b_end = k.tic;
+            }
+    fb_adapter_close(ad);
+    return *a_end == 102 && *b_end == 29;
+}
+
+/* Aliases (#275 review): map_key sends w, Up, a, b and c to producer key 7. */
+static uint32_t alias_map(void *user, uint32_t fb_code, uint8_t mods) {
+    (void)user;
+    (void)mods;
+    return fb_code == 'w' || fb_code == 'a' || fb_code == 'b' || fb_code == 'c' ||
+                   fb_code == FB_KEY_BASE + (GIBSON_KEY_UP - 0x1000u)
+               ? 7u
+               : fb_code;
+}
+
+typedef struct { uint64_t tic; int32_t type; uint32_t code; uint32_t kind; } aev;
+
+/* What the producer receives for key 7 from a pushed script through alias_map: every press and
+   release counted, with the tic of the first press and of the last release. */
+typedef struct { int presses, releases, others, synth; uint64_t press_at, end; } k7;
+
+static int run_k7(const aev *S, size_t n, int key_releases, uint32_t repeat, unsigned faults, k7 *r) {
+    memset(r, 0, sizeof *r);
+    r->synth = -1;
+    fb_adapter_config cfg;
+    fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+    cfg.map_key = alias_map;
+    cfg.key_releases = key_releases;
+    if (repeat) cfg.hold_repeat_tics = repeat;
+    fb_adapter *ad = NULL;
+    if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+    fb_adapter_set_faults(ad, faults);
+    gibson_context_t *ctx = fb_adapter_context(ad);
+    for (size_t i = 0; i < n; i++) {
+        gibson_event_t e;
+        memset(&e, 0, sizeof e);
+        e.event_type = S[i].type;
+        e.key_code = S[i].code;
+        if (S[i].kind) gibson_push_event_kind(ctx, &e, S[i].kind);
+        else gibson_push_event(ctx, &e);
+        fb_adapter_pump(ad, S[i].tic, 0);
+    }
+    fb_key_event k;
+    for (uint64_t t = 1; t < 400; t++)
+        while (fb_adapter_next_key(ad, t, &k)) {
+            if (k.code != 7) r->others++;
+            else if (k.pressed) {
+                if (!r->presses++) r->press_at = k.tic;
+            } else {
+                r->releases++;
+                r->end = k.tic;
+                r->synth = k.synthesized;
+            }
+        }
+    fb_adapter_close(ad);
+    return 1;
+}
+
+/* Exactly one press of 7, at `at`, and exactly one release, at `end`, inferred or reported. */
+static int k7_is(const k7 *r, uint64_t at, uint64_t end, int synth) {
+    return r->presses == 1 && r->press_at == at && r->releases == 1 && r->end == end && r->synth == synth &&
+           r->others == 0;
+}
+
+#define KA GIBSON_EVENT_KEY_RELEASES_ACTIVE
+#define KP GIBSON_EVENT_KEY
+#define KR GIBSON_EVENT_KEY_RELEASE
+/* w pressed at 10, Up at 20, w released at 30, Up at 40. Reported (opted in, confirmed at 1): 7 is
+   held 10..40, w going up while Up is down does not end it. Not opted in: holds are per producer
+   key as before #275 (an alias cannot be told from an autorepeat), so Up re-arms 7 at 20 + 4: 24. */
+static const aev ALIAS[] = {
+    {1, KA, 0, 0}, {10, KP, 'w', CH}, {20, KP, GIBSON_KEY_UP, SP}, {30, KR, 'w', CH}, {40, KR, GIBSON_KEY_UP, SP},
+};
+/* (#275 review 3) a pressed at 10 before the confirmation (inferred part, deadline 35); confirmed at
+   11; b pressed at 12 (exact part); c, which holds nothing, released at 15; b released at 20. Only
+   a's release may end a's part: 7 is held to 35, inferred. */
+static const aev MIXED1[] = {
+    {10, KP, 'a', CH}, {11, KA, 0, 0}, {12, KP, 'b', CH}, {15, KR, 'c', CH}, {20, KR, 'b', CH},
+};
+/* (#275 review 3) a at 10 and c at 12, both before the confirmation (repeat 100: deadline 112);
+   confirmed at 13; c released at 14, a at 30. The inferred part ends when the last key that made it
+   is up: 7 is held to 30, reported. Ending it at c's release (14) would drop a while it is down. */
+static const aev MIXED2[] = {
+    {10, KP, 'a', CH}, {12, KP, 'c', CH}, {13, KA, 0, 0}, {14, KR, 'c', CH}, {30, KR, 'a', CH},
+};
+
+/* (#275 review 4) A press at the last tics: a at M-10 (grace 25), again at M-2 (repeat 4), M =
+   UINT64_MAX. Both deadlines pass M and saturate to it: one press @M-10 and one release @M, inferred.
+   A wrap would end the hold at 14, before its press, and start a second one. */
+static int deadline_saturates(unsigned faults, int *np, int *nr, uint64_t *end) {
+    fb_adapter_config cfg;
+    fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+    fb_adapter *ad = NULL;
+    if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+    fb_adapter_set_faults(ad, faults);
+    const uint64_t M = UINT64_MAX;
+    uint64_t press_at = 0;
+    int synth = -1;
+    *np = *nr = 0;
+    *end = 0;
+    const uint64_t at[2] = {M - 10, M - 2};
+    for (int i = 0; i < 2; i++) {
+        gibson_event_t e;
+        memset(&e, 0, sizeof e);
+        e.event_type = GIBSON_EVENT_KEY;
+        e.key_code = 'a';
+        gibson_push_event_kind(fb_adapter_context(ad), &e, CH);
+        fb_adapter_pump(ad, at[i], 0);
+    }
+    const uint64_t drain[4] = {M - 10, M - 2, M - 1, M};
+    fb_key_event k;
+    for (int i = 0; i < 4; i++)
+        while (fb_adapter_next_key(ad, drain[i], &k))
+            if (k.code == 'a') {
+                if (k.pressed) {
+                    if (!(*np)++) press_at = k.tic;
+                } else {
+                    (*nr)++;
+                    *end = k.tic;
+                    synth = k.synthesized;
+                }
+            }
+    fb_adapter_close(ad);
+    return *np == 1 && press_at == M - 10 && *nr == 1 && *end == M && synth == 1;
+}
+
+/* (#275 review 4) a pressed at 1000 before the confirmation (grace 1000: deadline 2000); the
+   terminal confirms; the 256-entry key queue fills. At 2000 a's hold has ended, but its release
+   cannot be queued; at 2030, the queue still full, the terminal reports a's release. What the
+   producer receives was decided at 2000 (inferred) and must not be rewritten to 2030. */
+static int ended_hold_is_not_rewritten(unsigned faults, uint64_t *end, int *synth) {
+    fb_adapter_config cfg;
+    fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+    cfg.key_releases = 1;
+    cfg.hold_grace_tics = 1000;
+    fb_adapter *ad = NULL;
+    if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+    fb_adapter_set_faults(ad, faults);
+    gibson_context_t *ctx = fb_adapter_context(ad);
+    gibson_event_t e;
+    uint64_t tic = 1000;
+#define PUSHAT(type, code, t)                                                    \
+    do {                                                                         \
+        memset(&e, 0, sizeof e);                                                 \
+        e.event_type = (type);                                                   \
+        e.key_code = (code);                                                     \
+        if ((type) == GIBSON_EVENT_KEY_RELEASES_ACTIVE) gibson_push_event(ctx, &e); \
+        else gibson_push_event_kind(ctx, &e, CH);                                \
+        fb_adapter_pump(ad, (t), 0);                                             \
+    } while (0)
+    PUSHAT(GIBSON_EVENT_KEY, 'a', tic++);                    /* 1 queued; inferred, ends 2000 */
+    PUSHAT(GIBSON_EVENT_KEY_RELEASES_ACTIVE, 0, tic++);
+    for (int i = 0; i < 127; i++) {                          /* b taps: 254 more, never drained */
+        PUSHAT(GIBSON_EVENT_KEY, 'b', tic++);
+        PUSHAT(GIBSON_EVENT_KEY_RELEASE, 'b', tic++);
+    }
+    PUSHAT(GIBSON_EVENT_KEY, 'c', tic++);                    /* the last b release, then c: full */
+    PUSHAT(GIBSON_EVENT_KEY_RELEASE, 'a', 2030);             /* a ended at 2000, still unqueued */
+#undef PUSHAT
+    *end = 0;
+    *synth = -1;
+    int nrel = 0;
+    fb_key_event k;
+    for (uint64_t t = 2030; t < 2400; t++)
+        while (fb_adapter_next_key(ad, t, &k))
+            if (k.code == 'a' && !k.pressed) {
+                nrel++;
+                *end = k.tic;
+                *synth = k.synthesized;
+            }
+    fb_adapter_close(ad);
+    return nrel == 1 && *end == 2000 && *synth == 1;
+}
+
+/* (#275 review 5) an exact hold's no-deadline sentinel is ends_at==UINT64_MAX; a release reported
+   at tic==UINT64_MAX must still end the hold with a real (synthesized=0) release, not be taken for
+   the sentinel's own expiry. Two sub-cases: the key queue has room (the pre-existing expire_holds
+   collision) and the queue is full (the case review 4's guard regressed). Both must deliver one
+   real release at UINT64_MAX. Returns the full-queue end/synth and whether the room case passed. */
+static int sentinel_not_ended(unsigned faults, uint64_t *end_full, int *synth_full, int *room_ok) {
+    *end_full = 0;
+    *synth_full = -1;
+    *room_ok = 0;
+    int pass = 1;
+    for (int full = 0; full <= 1; full++) {
+        fb_adapter_config cfg;
+        fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+        cfg.key_releases = 1;
+        fb_adapter *ad = NULL;
+        if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+        fb_adapter_set_faults(ad, faults);
+        gibson_context_t *ctx = fb_adapter_context(ad);
+        gibson_event_t e;
+        uint64_t tic = UINT64_MAX - 600;
+#define PUSHAT(type, code, t)                                                        \
+        do {                                                                         \
+            memset(&e, 0, sizeof e);                                                 \
+            e.event_type = (type);                                                   \
+            e.key_code = (code);                                                     \
+            if ((type) == GIBSON_EVENT_KEY_RELEASES_ACTIVE) gibson_push_event(ctx, &e); \
+            else gibson_push_event_kind(ctx, &e, CH);                                \
+            fb_adapter_pump(ad, (t), 0);                                             \
+        } while (0)
+        PUSHAT(GIBSON_EVENT_KEY_RELEASES_ACTIVE, 0, tic++);  /* confirmed first: a is exact */
+        PUSHAT(GIBSON_EVENT_KEY, 'a', tic++);                /* 1 queued; exact, no deadline (sentinel) */
+        if (full) {
+            for (int i = 0; i < 127; i++) {                  /* b taps: 254 more, never drained */
+                PUSHAT(GIBSON_EVENT_KEY, 'b', tic++);
+                PUSHAT(GIBSON_EVENT_KEY_RELEASE, 'b', tic++);
+            }
+            PUSHAT(GIBSON_EVENT_KEY, 'c', tic++);            /* the last b release, then c: full */
+        }
+        PUSHAT(GIBSON_EVENT_KEY_RELEASE, 'a', UINT64_MAX);   /* a up at the sentinel tic */
+#undef PUSHAT
+        int nrel = 0, synth = -1;
+        uint64_t end = 0;
+        fb_key_event k;
+        for (int round = 0; round < 4; round++)
+            while (fb_adapter_next_key(ad, UINT64_MAX, &k))
+                if (k.code == 'a' && !k.pressed) { nrel++; end = k.tic; synth = k.synthesized; }
+        fb_adapter_close(ad);
+        const int ok = nrel == 1 && end == UINT64_MAX && synth == 0;
+        pass = pass && ok;
+        if (full) { *end_full = end; *synth_full = synth; }
+        else *room_ok = ok;
+    }
+    return pass;
+}
+
+/* (#275 review 5, observe_key path) a press of a key that aliases a live exact hold, landing at the
+   sentinel tic UINT64_MAX, must re-arm the hold (add its source), not be mistaken for a re-press of
+   an ended hold and dropped. Codex's sequence: w down at M-1 holds producer key 7; Up (also 7)
+   pressed at M; w up at M. With the sentinel read as a deadline, Up's press is dropped and 7 ends
+   while Up is still down. Correct: nothing dropped, and 7 stays held by Up after w goes up. Returns
+   keys_dropped and whether 7 was still held after the first source went up. */
+static int sentinel_press_not_dropped(unsigned faults, uint64_t *dropped, int *held_after_one_up) {
+    *dropped = 0;
+    *held_after_one_up = 0;
+    fb_adapter_config cfg;
+    fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+    cfg.map_key = alias_map;
+    cfg.key_releases = 1;
+    fb_adapter *ad = NULL;
+    if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+    fb_adapter_set_faults(ad, faults);
+    gibson_context_t *ctx = fb_adapter_context(ad);
+    gibson_event_t e;
+    const uint64_t M = UINT64_MAX;
+#define PUSH(ty, cd, kd, t)                                                       \
+    do {                                                                          \
+        memset(&e, 0, sizeof e);                                                  \
+        e.event_type = (ty);                                                      \
+        e.key_code = (cd);                                                        \
+        if (kd) gibson_push_event_kind(ctx, &e, (kd)); else gibson_push_event(ctx, &e); \
+        fb_adapter_pump(ad, (t), 0);                                              \
+    } while (0)
+    PUSH(KA, 0, 0, M - 2);                 /* reporting on: holds are exact */
+    PUSH(KP, 'w', CH, M - 1);              /* 7 held by w; no deadline, ends_at = sentinel M */
+    PUSH(KP, GIBSON_KEY_UP, SP, M);        /* Up (also 7) pressed AT the sentinel tic */
+    PUSH(KR, 'w', CH, M);                  /* w up at M: with the fix, Up still holds 7 */
+    int released_after_w = 0;
+    fb_key_event k;
+    while (fb_adapter_next_key(ad, M, &k))
+        if (k.code == 7 && !k.pressed) released_after_w = 1;
+    *held_after_one_up = !released_after_w;
+    fb_adapter_counters c;
+    fb_adapter_counters_get(ad, &c);
+    *dropped = c.keys_dropped;
+    PUSH(KR, GIBSON_KEY_UP, SP, M);        /* Up up: 7 ends */
+#undef PUSH
+    fb_adapter_close(ad);
+    return *dropped == 0 && *held_after_one_up;
+}
+
 static int prop3(char *ev) {
     fclock a, b;
     memset(&a, 0, sizeof a);
     memset(&b, 0, sizeof b);
     static runres keyed, quiet;
     const int ign = ctl(C_P3_IGNORE_INPUT);
-    int ok = headless_run(&keyed, S3, sizeof S3 / sizeof S3[0], 80, 24, 1, &a, 1, 200, 0, 0, ign, 0);
-    ok = headless_run(&quiet, NULL, 0, 80, 24, 1, &b, 1, 200, 0, 0, ign, 0) && ok;
+    int ok = headless_run(&keyed, S3, sizeof S3 / sizeof S3[0], 80, 24, 1, &a, 1, 200, 0, 0, ign, 0, 0);
+    ok = headless_run(&quiet, NULL, 0, 80, 24, 1, &b, 1, 200, 0, 0, ign, 0, 0) && ok;
     logent want[32], got[SYNTH_LOG];
     const size_t nw = model_holds(S3, sizeof S3 / sizeof S3[0], 200, 25, 4, want, 32);
     for (unsigned i = 0; i < keyed.nlog; i++) got[i] = (logent){keyed.log[i].tic, keyed.log[i].code, keyed.log[i].pressed};
@@ -1038,14 +1446,100 @@ static int prop3(char *ev) {
     qsort(got, keyed.nlog, sizeof *got, cmp_log);
     int log_ok = nw == keyed.nlog;
     for (size_t i = 0; log_ok && i < nw; i++) log_ok = cmp_log(&want[i], &got[i]) == 0;
-    const int pass = ok && keyed.hash != quiet.hash && log_ok && keyed.tics == 200 && quiet.tics == 200;
+    /* Reported releases, pushed as the terminal's answer and GIBSON_EVENT_KEY_RELEASE events. */
+    static runres rel;
+    fclock c;
+    memset(&c, 0, sizeof c);
+    const unsigned rfault = ctl(C_P3_IGNORE_RELEASES) ? FB_FAULT_IGNORE_RELEASES : 0;
+    ok = headless_run(&rel, S3R, sizeof S3R / sizeof S3R[0], 80, 24, 1, &c, 1, 200, 0, rfault, 0, 0, 1) && ok;
+    const size_t nr = sizeof S3R_WANT / sizeof S3R_WANT[0];
+    static logent rgot[SYNTH_LOG];
+    for (unsigned i = 0; i < rel.nlog; i++) rgot[i] = (logent){rel.log[i].tic, rel.log[i].code, rel.log[i].pressed};
+    qsort(rgot, rel.nlog, sizeof *rgot, cmp_log);
+    int rel_ok = rel.nlog == nr;
+    for (size_t i = 0; rel_ok && i < nr; i++) rel_ok = cmp_log(&S3R_WANT[i], &rgot[i]) == 0;
+    unsigned long long qdropped = 0;
+    const int qok = queue_pressure_keeps_releases(&qdropped, ctl(C_P3_REARM_LOSES_RELEASE) ? FB_FAULT_REARM_PENDING : 0);
+    uint64_t wa = 0, wb = 0;
+    const int wok = withdrawal_keeps_inferred_deadlines(&wa, &wb);
+    /* Not opted in (cfg.key_releases = 0, the default; #275): the same script, answer and releases
+       included, gives the pre-#275 adapter's holds. The answer is ignored, so w (pressed at 10,
+       never repeated) ends by the grace at 10 + 25 = 35, not at its reported release at 100. */
+    static runres off;
+    fclock doff;
+    memset(&doff, 0, sizeof doff);
+    ok = headless_run(&off, S3R, sizeof S3R / sizeof S3R[0], 80, 24, 1, &doff, 1, 200, 0, 0, 0, 0, 0) && ok;
+    const size_t no = sizeof S3R_OFF_WANT / sizeof S3R_OFF_WANT[0];
+    static logent ogot[SYNTH_LOG];
+    for (unsigned i = 0; i < off.nlog; i++) ogot[i] = (logent){off.log[i].tic, off.log[i].code, off.log[i].pressed};
+    qsort(ogot, off.nlog, sizeof *ogot, cmp_log);
+    int off_ok = off.nlog == no;
+    for (size_t i = 0; off_ok && i < no; i++) off_ok = cmp_log(&S3R_OFF_WANT[i], &ogot[i]) == 0;
+    const unsigned afault = (ctl(C_P3_SHARED_ALIAS_HOLD) ? FB_FAULT_SHARED_ALIAS_HOLD : 0) |
+                            (ctl(C_P3_UNMATCHED_RELEASE) ? FB_FAULT_UNMATCHED_RELEASE : 0);
+    k7 ax, ai, m1, m2;
+    const size_t na = sizeof ALIAS / sizeof ALIAS[0];
+    const int ax_ok = run_k7(ALIAS, na, 1, 0, afault, &ax) && k7_is(&ax, 10, 40, 0);
+    const int ai_ok = run_k7(ALIAS, na, 0, 0, afault, &ai) && k7_is(&ai, 10, 24, 1);
+    const int m1_ok = run_k7(MIXED1, sizeof MIXED1 / sizeof MIXED1[0], 1, 0, afault, &m1) && k7_is(&m1, 10, 35, 1);
+    const int m2_ok = run_k7(MIXED2, sizeof MIXED2 / sizeof MIXED2[0], 1, 100, afault, &m2) && k7_is(&m2, 10, 30, 0);
+    int sat_np = 0, sat_nr = 0, end_syn = -1;
+    uint64_t sat_end = 0, end_at = 0;
+    const int sat_ok = deadline_saturates(ctl(C_P3_WRAP_DEADLINE) ? FB_FAULT_WRAP_DEADLINE : 0, &sat_np, &sat_nr, &sat_end);
+    const int end_ok = ended_hold_is_not_rewritten(ctl(C_P3_REWRITE_ENDED) ? FB_FAULT_REWRITE_ENDED : 0, &end_at, &end_syn);
+    int sent_syn = -1, sent_room = 0;
+    uint64_t sent_end = 0;
+    const int sent_ok = sentinel_not_ended(ctl(C_P3_SENTINEL_ENDS) ? FB_FAULT_SENTINEL_ENDS : 0, &sent_end, &sent_syn, &sent_room);
+    uint64_t sent_drop = 0;
+    int sent_held = 0;
+    const int press_ok = sentinel_press_not_dropped(ctl(C_P3_SENTINEL_ENDS) ? FB_FAULT_SENTINEL_ENDS : 0, &sent_drop, &sent_held);
+    const int pass = ok && keyed.hash != quiet.hash && log_ok && keyed.tics == 200 && quiet.tics == 200 && rel_ok && qok && wok &&
+                     off_ok && ax_ok && ai_ok && m1_ok && m2_ok && sat_ok && end_ok && sent_ok && press_ok;
     ev_append(ev, "keys pushed with gibson_push_event_kind, polled by the adapter (gibson_poll_event_kind): keyed hash=%016llx %s "
                   "unkeyed hash=%016llx (200 tics each); producer key log %u events %s independent hold model (grace 25, repeat 4): ",
               (unsigned long long)keyed.hash, keyed.hash != quiet.hash ? "!=" : "==", (unsigned long long)quiet.hash,
               keyed.nlog, log_ok ? "==" : "!=");
     for (size_t i = 0; i < nw && i < 8; i++)
         ev_append(ev, "%s%s@%llu", i ? " " : "", want[i].pressed ? "press" : "release", (unsigned long long)want[i].tic);
+    ev_append(ev, "; reported releases (KEY_RELEASES_ACTIVE, then KEY_RELEASE events): producer key log %u events %s "
+                  "the rule (w held 10..100 across a d chord 20..40, a tap at 120 held one tic, Right 150..155):",
+              rel.nlog, rel_ok ? "==" : "!=");
+    for (unsigned i = 0; i < rel.nlog && i < 10; i++)
+        ev_append(ev, " %s@%llu", rgot[i].pressed ? "press" : "release", (unsigned long long)rgot[i].tic);
+    ev_append(ev, "; a full key queue keeps a reported release (a's release delivered once there is room, its re-press dropped: "
+                  "%s, keys_dropped=%llu); a withdrawal re-times only holds waiting for a release (a ends at %llu, want 102; "
+                  "b at %llu, want 29)", qok ? "yes" : "NO", qdropped, (unsigned long long)wa, (unsigned long long)wb);
+    ev_append(ev, "; not opted in (the default), the same script keeps inferred holds: producer key log %u events %s "
+                  "the grace model written out by hand (w 10..35, d 20..39, a 120..145, Right 150..175):",
+              off.nlog, off_ok ? "==" : "!=");
+    for (unsigned i = 0; i < off.nlog && i < 10; i++)
+        ev_append(ev, " %s@%llu", ogot[i].pressed ? "press" : "release", (unsigned long long)ogot[i].tic);
+#define K7(r) (r).presses, (unsigned long long)(r).press_at, (r).releases, (unsigned long long)(r).end, (r).synth
+    ev_append(ev, "; w and Up both mapped to 7: reported releases hold 7 until the last goes up (%d press @%llu, "
+                  "%d release @%llu synthesized=%d; want 1 @10, 1 @40 synthesized=0), inferred holds treat Up as a "
+                  "repeat of 7 (%d @%llu, %d @%llu synthesized=%d; want 1 @10, 1 @24 synthesized=1)",
+              K7(ax), K7(ai));
+    ev_append(ev, "; mixed parts: a inferred, b reported, an unmatched c release (%d @%llu, %d @%llu synthesized=%d; "
+                  "want 1 @10, 1 @35 synthesized=1); a and c inferred, c then a released (%d @%llu, %d @%llu "
+                  "synthesized=%d; want 1 @10, 1 @30 synthesized=0)",
+              K7(m1), K7(m2));
+#undef K7
+    ev_append(ev, "; a pressed at UINT64_MAX-10 and -2: %d press, %d release at UINT64_MAX-%llu (want 1, 1 at -0): the "
+                  "deadline saturates; a hold that ended at 2000 waiting for queue room, its release reported at 2030: "
+                  "released at %llu synthesized=%d (want 2000 and 1)",
+              sat_np, sat_nr, (unsigned long long)(UINT64_MAX - sat_end), (unsigned long long)end_at, end_syn);
+    ev_append(ev, "; an exact hold released at the sentinel tic UINT64_MAX: full queue delivers one real release at %s "
+                  "synthesized=%d (want UINT64_MAX and 0), queue with room %s (want pass); an aliased press at the sentinel "
+                  "tic re-arms a live hold (keys_dropped=%llu want 0, still held after the first source up: %s want yes)",
+              sent_end == UINT64_MAX ? "UINT64_MAX" : "other", sent_syn, sent_room ? "passes" : "FAILS",
+              (unsigned long long)sent_drop, sent_held ? "yes" : "NO");
+    if (ctl(C_P3_WRAP_DEADLINE)) ev_append(ev, " [control: deadlines wrap]");
+    if (ctl(C_P3_REWRITE_ENDED)) ev_append(ev, " [control: an ended hold is rewritten]");
+    if (ctl(C_P3_SENTINEL_ENDS)) ev_append(ev, " [control: a live exact hold at the sentinel tic is read as ended]");
+    if (ctl(C_P3_SHARED_ALIAS_HOLD)) ev_append(ev, " [control: aliases share one release]");
+    if (ctl(C_P3_UNMATCHED_RELEASE)) ev_append(ev, " [control: an unmatched release ends the inferred part]");
     if (ign) ev_append(ev, " [control: producer ignores input]");
+    if (rfault) ev_append(ev, " [control: reported releases ignored]");
     return pass;
 }
 
@@ -1072,17 +1566,17 @@ static int prop4(char *ev) {
     memset(&cj, 0, sizeof cj);
     memset(&cs, 0, sizeof cs);
     /* Same simulated wall time (421 loop iterations at one tic each = 420 tics owed), three cadences. */
-    int ok = headless_run(&r1, S4, N4, 80, 24, 1, &c1, 1, 0, 421, fault, 0, 0);
-    ok = headless_run(&r4, S4, N4, 80, 24, 1, &c4, 4, 0, 421, fault, 0, 0) && ok;
-    ok = headless_run(&r0, S4, N4, 80, 24, 1, &c0, 0, 0, 421, fault, 0, 0) && ok;
+    int ok = headless_run(&r1, S4, N4, 80, 24, 1, &c1, 1, 0, 421, fault, 0, 0, 0);
+    ok = headless_run(&r4, S4, N4, 80, 24, 1, &c4, 4, 0, 421, fault, 0, 0, 0) && ok;
+    ok = headless_run(&r0, S4, N4, 80, 24, 1, &c0, 0, 0, 421, fault, 0, 0, 0) && ok;
     /* A jittery clock (0..10 tics per iteration) and a 2 s stall, to 420 tics. */
     static const uint8_t jitter[] = {1, 0, 3, 1, 0, 0, 7, 2, 10, 1, 4};
     cj.steps = jitter;
     cj.nsteps = sizeof jitter;
-    ok = headless_run(&rj, S4, N4, 80, 24, 1, &cj, 1, 420, 100000, fault, 0, 0) && ok;
+    ok = headless_run(&rj, S4, N4, 80, 24, 1, &cj, 1, 420, 100000, fault, 0, 0, 0) && ok;
     cs.stall_call = 100;
     cs.stall_tics = 70;
-    ok = headless_run(&rs, S4, N4, 80, 24, 1, &cs, 2, 420, 100000, fault, 0, 0) && ok;
+    ok = headless_run(&rs, S4, N4, 80, 24, 1, &cs, 2, 420, 100000, fault, 0, 0, 0) && ok;
     const int same = r1.hash == r4.hash && r1.hash == r0.hash && r1.hash == rj.hash && r1.hash == rs.hash;
     const int tics_ok = r1.tics == 420 && r4.tics == 420 && r0.tics == 420 && rj.tics == 420 && rs.tics == 420;
     const int frames_ok = r1.frames == 420 && r4.frames == 105 && r0.frames == 0;
@@ -1118,12 +1612,12 @@ static int prop5(char *ev) {
     fclock a, b;
     memset(&a, 0, sizeof a);
     memset(&b, 0, sizeof b);
-    int ok = headless_run(&rr, script, n, 80, 24, 1, &a, 1, 300, 0, fault, 0, 1);
+    int ok = headless_run(&rr, script, n, 80, 24, 1, &a, 1, 300, 0, fault, 0, 1, 0);
     tev noresize[N4];
     size_t m = 0;
     for (size_t i = 0; i < n; i++)
         if (script[i].kind != 0) noresize[m++] = script[i];
-    ok = headless_run(&rn, noresize, m, 80, 24, 1, &b, 1, 300, 0, fault, 0, 0) && ok;
+    ok = headless_run(&rn, noresize, m, 80, 24, 1, &b, 1, 300, 0, fault, 0, 0, 0) && ok;
     int sizes_ok = rr.nsizes == 3 && rr.sizes[0][0] == 80 && rr.sizes[0][1] == 24 && rr.sizes[1][0] == 120 &&
                    rr.sizes[1][1] == 40 && rr.sizes[2][0] == 40 && rr.sizes[2][1] == 15;
     const int pass = ok && rr.hash == rn.hash && rr.tics == 300 && sizes_ok && rr.map_builds == 3 && rr.ref_bad == 0 &&
@@ -1573,6 +2067,7 @@ static int selfcheck(int only) {
 static void usage(void) {
     fprintf(stderr,
             "usage: fb_adapter_demo [--play] [--exit-after-tics N] [--report FILE] [--trace FILE] [--square-pixels]\n"
+            "                       [--key-releases]\n"
             "                       [--seed N] [--hold-grace TICS] [--hold-repeat TICS] [--tic-hz N]\n"
             "                       [--color-depth mono|16|256|true] [--bench-frames N]\n"
             "       fb_adapter_demo --selfcheck [--only N] [--control NAME] [--list-controls]\n"
@@ -1626,6 +2121,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--hold-repeat")) { NEEDV(); o.repeat = (uint32_t)atoi(v); }
         else if (!strcmp(a, "--tic-hz")) { NEEDV(); o.hz = (uint32_t)atoi(v); }
         else if (!strcmp(a, "--square-pixels")) o.square = 1;
+        else if (!strcmp(a, "--key-releases")) o.key_releases = 1;
         else if (!strcmp(a, "--color-depth")) {
             NEEDV();
             o.depth = !strcmp(v, "mono") ? GIBSON_COLOR_DEPTH_MONO : !strcmp(v, "16") ? GIBSON_COLOR_DEPTH_ANSI16

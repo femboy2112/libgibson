@@ -170,7 +170,16 @@ typedef enum {
     GIBSON_EVENT_NONE = 0,
     GIBSON_EVENT_KEY = 1,
     GIBSON_EVENT_PASTE = 2,
-    GIBSON_EVENT_RESIZE = 3
+    GIBSON_EVENT_RESIZE = 3,
+    /* Key-release reporting (ABI v1, additive, #275): from a terminal, delivered only after
+       gibson_set_key_release_reporting (see it for the exact rules). KEY_RELEASE: a key went up;
+       key_code, modifiers and the key kind are those its press was delivered with, with the
+       exceptions listed there. KEY_RELEASES_ACTIVE: the terminal confirmed the request; every key
+       that goes up after this event is a KEY_RELEASE. KEY_RELEASES_UNSUPPORTED: it answered
+       without confirming, or reporting ended; keys stay press-only. */
+    GIBSON_EVENT_KEY_RELEASE = 4,
+    GIBSON_EVENT_KEY_RELEASES_ACTIVE = 5,
+    GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED = 6
 } gibson_event_type_t;
 
 typedef struct {
@@ -239,6 +248,47 @@ void            gibson_destroy_context(gibson_context_t *ctx);
    partial frame, which the renderer re-establishes on the next frame. */
 gibson_status_t gibson_set_sync_updates(gibson_context_t *ctx, int32_t enabled);
 gibson_status_t gibson_set_max_fps(gibson_context_t *ctx, uint32_t fps);
+/* Asks the terminal to report key releases through the kitty keyboard protocol (enabled != 0),
+   or stops asking (0). Off by default: a consumer that never calls this never polls
+   GIBSON_EVENT_KEY_RELEASE, _KEY_RELEASES_ACTIVE or _KEY_RELEASES_UNSUPPORTED from a terminal,
+   and nothing is written for it. Tested in kitty 0.32.2.
+
+   Enabling enters raw mode (so the answer is never echoed), pushes the protocol's keyboard flags
+   on the current screen and asks whether the terminal took them. The answer is polled in input
+   order: KEY_RELEASES_ACTIVE, after which every key that goes up is polled as KEY_RELEASE, or
+   KEY_RELEASES_UNSUPPORTED (the terminal answered only the device attributes query, or took only
+   some of the flags). A terminal that answers neither stays press-only with no answer at all; a
+   device attributes reply to somebody else's earlier query cannot be told apart and reads as
+   UNSUPPORTED. UNSUPPORTED is final: once polled, no KEY_RELEASE follows (not even one already
+   queued behind it) and the request is withdrawn as by disabling, with one pop of the flags. An
+   answer counts only for the request it answers: one decoded before reporting was last enabled
+   or disabled is dropped and changes nothing.
+
+   Disabling (enabled == 0) does two separate things. It stops delivery: whatever was not yet
+   polled is dropped (a late answer, a release), and no KEY_RELEASE or answer follows; a client
+   tracking holds then goes back to inferring them itself. And it pops the one entry this context
+   pushed onto the kitty keyboard stack, which restores the flags in force before that push, not
+   necessarily none: legacy keys only if nothing else had pushed flags (an inline context shares
+   its screen with the host program, which may have; see the kitty protocol's progressive
+   enhancement stack). Enabling again pushes and asks anew.
+   gibson_destroy_context pops the flags (before leaving the alternate screen); so does the panic
+   hook. A panic on the thread that owns the terminal, even one a gibson_* call caught and
+   returned as GIBSON_ERR_PANIC, ends reporting: no release or answer is delivered after it, and
+   KEY_RELEASES_UNSUPPORTED is polled once, by this context's next poll or, if the terminal
+   answers a new request first, just before that answer, so a client waiting for releases falls
+   back to inferred holds. A process killed outright (SIGKILL) leaves the flags pushed.
+
+   A KEY_RELEASE names its key exactly as its press was delivered (key_code, modifiers, key kind)
+   for the 32 most recent keys still down. A key already down when reporting began is named as its
+   first autorepeat since then was delivered, or, with none, as the terminal reports it. Known
+   limit: a shifted symbol pressed just before the flags take effect and let go without an
+   autorepeat is released as the terminal reports it ('!' as '1'), so that release does not match
+   its press (https://github.com/femboy2112/libgibson/issues/312). While enabled, the terminal
+   sends every key as an escape sequence; modifier keys alone are reported but not delivered, and
+   text typed through an input method may not arrive: this is for direct key control, not text
+   entry. A no-op on a headless context (push the events instead) and off Unix.
+   GIBSON_ERR_IO if the write fails. (ABI v1, additive, #275) */
+gibson_status_t gibson_set_key_release_reporting(gibson_context_t *ctx, int32_t enabled);
 /* Overrides the color depth (one of gibson_color_depth_t); unknown values return
    GIBSON_ERR_INVALID_PARAM. Call before the first render (see note at gibson_get_rendered_output).
    (ABI v1, additive) */
@@ -272,7 +322,7 @@ gibson_status_t gibson_clear_live_region(gibson_context_t *ctx);
 gibson_status_t gibson_poll_event(gibson_context_t *ctx, uint32_t timeout_ms, gibson_event_t *out_event);
 
 /* Like gibson_poll_event, and also writes *out_key_kind (non-NULL): GIBSON_KEY_KIND_CHAR or
-   GIBSON_KEY_KIND_SPECIAL for a KEY event, GIBSON_KEY_KIND_NONE otherwise. *out_event is written
+   GIBSON_KEY_KIND_SPECIAL for a KEY or KEY_RELEASE event, GIBSON_KEY_KIND_NONE otherwise. *out_event is written
    exactly as gibson_poll_event writes it. Use this to tell a typed U+1001-U+100D from the
    GIBSON_KEY_* constant with the same value, which gibson_poll_event reports identically.
    (ABI v1, additive) */
@@ -289,13 +339,14 @@ gibson_status_t gibson_poll_event_kind(gibson_context_t *ctx, uint32_t timeout_m
              always the special keys here; gibson_push_event_kind can push them as characters.
      PASTE:  paste_str is a non-NULL, NUL-terminated UTF-8 string; it is copied.
      RESIZE: cols and rows are both non-zero.
+     KEY_RELEASE: as KEY.  KEY_RELEASES_ACTIVE, KEY_RELEASES_UNSUPPORTED: no fields.
    Fields the event type does not use are ignored and may be left uninitialized. Returns GIBSON_ERR_INVALID_PARAM for a NULL
    argument, a terminal (non-headless) context or an unrepresentable event, and
    GIBSON_ERR_QUEUE_FULL when GIBSON_EVENT_QUEUE_CAPACITY events are undelivered. A refused event
    is not queued, and nothing already queued is displaced. (ABI v1, additive) */
 gibson_status_t gibson_push_event(gibson_context_t *ctx, const gibson_event_t *event);
 
-/* Like gibson_push_event, with key_kind saying how to read a KEY event's key_code:
+/* Like gibson_push_event, with key_kind saying how to read a KEY or KEY_RELEASE event's key_code:
    GIBSON_KEY_KIND_CHAR - any Unicode scalar value, typed (U+1001-U+100D included);
    GIBSON_KEY_KIND_SPECIAL - must be a GIBSON_KEY_* constant.
    Any other key_kind, or a key_code that does not fit it, is GIBSON_ERR_INVALID_PARAM. key_kind is
