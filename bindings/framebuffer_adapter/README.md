@@ -298,14 +298,22 @@ frame 1000: capture 1995006 bytes
 The fix is the additive pair above (#297); `bindings/sdk_forcing/headless_capture_drain.c` checks
 that one drained context stays bounded.
 
-**F2 (gap, worked around through the ABI).** C ABI v1 has no terminal-size query; a `RESIZE`
-event arrives only on a change. The adapter learns the starting grid by rendering an empty frame
-and reading `gibson_get_frame_size`, and re-reads the frame size after every present (which also
-heals a grid that a missed `RESIZE` would leave stale).
+**F2 (gap, closed in the ABI as of #298; adapter keeps its workaround).** When this adapter was
+written, C ABI v1 had no terminal-size query; a `RESIZE` event arrives only on a change. The
+adapter learns the starting grid by rendering an empty frame and reading `gibson_get_frame_size`,
+and re-reads the frame size after every present (which also heals a grid that a missed `RESIZE`
+would leave stale). #298 added `gibson_get_terminal_size`, so the query gap is closed at the ABI
+level; the adapter nonetheless retains the per-present frame-size re-read **by choice**, because it
+self-heals a stale grid, which a one-shot startup query would not.
 
-**F3 (gap, recorded).** C ABI v1 reports focus events as `GIBSON_EVENT_NONE` (issue #126), so a C
-adapter cannot release held keys on focus loss the way DEEP SIGNAL does in Rust (#276); a hold
-there ends only by its grace timeout. The kitty release events (#285) are not used either.
+**F3 (gap, closed in the ABI as of #298; adapter adoption pending).** When this adapter was
+written, C ABI v1 reported focus events as `GIBSON_EVENT_NONE` (issue #126), so a C adapter could
+not release held keys on focus loss the way DEEP SIGNAL does in Rust (#276). #298 added
+`gibson_set_focus_reporting` and the `GIBSON_EVENT_FOCUS_GAINED` / `GIBSON_EVENT_FOCUS_LOST` event
+types, so that information is now available at the ABI; this adapter has **not yet been rewired**
+to consume them, so a hold here still ends only by its grace timeout. The kitty release events
+(#285) are likewise available but not yet consumed. Wiring the adapter to the new focus/release
+events is tracked as follow-up work.
 
 ### Boundary
 

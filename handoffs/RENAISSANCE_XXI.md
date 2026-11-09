@@ -1,18 +1,44 @@
 # LibGibson Renaissance XXI — Operation Total Overclock — handoff
 
-Durable round record. Date: 2026-11-09. Baseline `main` at round start and still unmoved at this
-writing: **`4bff68d00d981b4184a5e8c768138cf09a0c6747`** (`0.7.0-dev`, C ABI v1 = 65 symbols on `main`).
-All work this round is in open PRs (nothing merged to `main` yet); each PR branches off `4bff68d`.
+Durable round record. Date: 2026-11-09. Baseline `main` at round start:
+**`4bff68d00d981b4184a5e8c768138cf09a0c6747`** (`0.7.0-dev`, C ABI v1 = 65 symbols). The body below
+(sections A–G) is the plan **as it stood at round start**, with all work in open PRs; section 0 records
+the **actual outcome** — the merge train ran to completion. Where the two disagree, section 0 wins.
+
+## 0. COMPLETION STATUS — merge train FINISHED (2026-11-09)
+
+All five development PRs merged to `main`, in this order, each with exact-head CI green and (for Tier B)
+an owner-condition record comment + distinct-model (Codex) review:
+
+| # | PR | what landed | final head | notes |
+|---|---|---|---|---|
+| 1 | #316 (#305) | screen-switch kitty-flag-stack restore | merged | Tier B; CI fixed a clippy `io_other_error` (lint runs `--tests`) |
+| 2 | #318 (#312) | shifted-symbol limit disclosed + bounded | merged | Tier A |
+| 3 | #319 (#292) | Windows key-doubling disclosed | merged | Tier A |
+| 4 | #317 (#298) | C `gibson_get_terminal_size` + focus events, **65→67** | `051828e` | Tier B; CI caught a real defect — #298 surfaces focus in the C ABI, and two pre-#298 C-ABI tests in `key_release_kind_pty.rs` still encoded the focus→`NONE` drop; fixed (oracle preserved), Codex CONFIRM |
+| 5 | #320 (#130) | `FixedStepClock` pause/resume/step + falsifiers | `0339263` | Tier B; `time_scale` **cut** (partition-invariance/NaN-carry); Codex FLAGged a P3 `step_frame` ceiling doc/contract mismatch → documented + mutation-proven boundary test |
+
+`main` after the five merges: **`de979ee40b517b46e7c8382057d2507b0e993e34`** (this handoff PR, #321, is the
+final Tier A merge on top). C ABI v1 = **67 symbols**. `GIBSON_ABI_VERSION` still 1. No force-push, no
+ABI break, no registry publish, no frozen-audio change. This PR also reconciles the framebuffer-adapter
+README F2/F3 gap notes (terminal-size query and focus events are now in the ABI as of #298; adapter
+adoption is tracked follow-up — the adapter behavior is unchanged).
+
+**Still open after this round** (unchanged from the plan): v0.7.0 stays on **HOLD** (needs MINERVA
+full-suite requalification against the merged `main` + the release gate); zombie PRs #153–#167 remain for
+the owner to close; Front M, wrapper parity (#298 mirrors), #129 and #134/#135/#136 are next-round work.
+Section G's next-round prompt is updated for this post-merge reality.
 
 ## A. Flash status
 
 ```
-MAIN: 4bff68d00d981b4184a5e8c768138cf09a0c6747 | CI: PASS (run 42544969028, pre-round)
+MAIN: de979ee40b517b46e7c8382057d2507b0e993e34 (after the 5 merges; #321 handoff on top) | C ABI = 67
 RELEASE: v0.6.0 (tag → 492d0fe) | published: YES (prerelease) ; v0.7.0: NO (HOLD)
-MERGED THIS ROUND: 0 | 5 PRs open & reviewed: #316 #317 #318 #319 #320
-BLOCKERS: 0 hard | slowest gate = exact-head CI on 5 PRs (serialized merge train)
-NEXT MOVE: merge #316 (correctness) on green CI + owner-condition record, then the rest in order
+MERGED THIS ROUND: 5 (#316 #318 #319 #317 #320) + this handoff (#321) | open dev PRs: 0
+BLOCKERS: 0 hard | merge train COMPLETE (serialized, each exact-head CI green)
+NEXT MOVE: v0.7.0 requalification (MINERVA full suite) + release gate, OR harden (Front M / wrappers / #129)
 ```
+(The line above is the post-round outcome; the table that follows is the round-start plan — see section 0.)
 
 ## B. Workstream table
 
@@ -124,22 +150,18 @@ library with a C ABI v1. VERIFY ALL LIVE STATE FIRST — the SHAs below are from
 may have moved.
 
 LIVE STATE (verify):
-- main = 4bff68d00d981b4184a5e8c768138cf09a0c6747, version 0.7.0-dev, C ABI v1 = 65 symbols on main.
+- main = de979ee40b517b46e7c8382057d2507b0e993e34 (+ the #321 handoff merge on top), version 0.7.0-dev,
+  C ABI v1 = 67 symbols on main. (Renaissance XXI's 5-PR merge train is DONE — see below.)
 - v0.6.0 RELEASED (tag v0.6.0 and bindings/go/v0.6.0 → 492d0fe, maintenance line). DO NOT touch its tags.
 - Toolchain: CI pins rustc 1.98.1 — gate with `RUSTUP_TOOLCHAIN=1.98.1 cargo +1.98.1 …`. MSRV 1.85.
 - main protected: 6 required ci.yml checks, strict up-to-date, merge commits only; merge with
   `gh pr merge N --merge --match-head-commit <FULL-40-char-SHA>` after an owner-condition record comment.
 - STALE-ARTIFACT TRAP: rebuild before trusting scripts/release/check-abi.sh (the on-disk .so can lag).
+- CI lints `--tests`; `cargo clippy --tests --all-targets` before any push (a `--lib`-only clippy misses it).
 
-OPEN PRs FROM RENAISSANCE XXI (verify state; merge in this order, each needs branch-update+CI after the
-prior merge; CHANGELOG conflicts in #317/#318/#319 are trivial appends):
-  1. #316 feat/v0.7-screen-switch-restore-305 — #305 fix (Tier B, Codex ×3, red-first+mutations).
-  2. #318 feat/v0.7-shifted-release-312 — #312 tested-boundary disclosure (Tier A).
-  3. #319 docs/v0.7-windows-292 — #292 Windows disclosure (Tier A).
-  4. #317 feat/v0.7-c-focus-size-298 — C focus+size, 65→67 symbols (Tier B, Codex, check-abi 67/67).
-  5. #320 feat/v0.7-clock-pause-130 — clock pause/resume/step + falsifiers (Tier B); CONFIRM the
-     time_scale partition-invariance fix landed and re-Codex before merging.
-  6. docs/renaissance-xxi-handoff — this handoff (Tier A).
+RENAISSANCE XXI MERGE TRAIN — COMPLETE (verify, do not re-merge): #316 (#305), #318 (#312), #319 (#292),
+#317 (#298, 65→67 symbols), #320 (#130 clock) all merged; #321 (this handoff) is the final Tier A merge.
+No open development PRs remain from this round.
 
 COMPLETED — DO NOT REDO:
 - The SmartChem instrument epic (#126/#127-core/#128/#129-frame/#132-core/#134-numeric/#137/#141) is
@@ -162,7 +184,8 @@ UNFINISHED — with acceptance gates:
   (version bump PR, exact-head CI + preflight, native SDK + wheel from the tag, installed-artifact smoke,
   download-verify, GitHub Engineering Alpha prerelease). Linux x86_64 only; Windows stays UNVERIFIED (#292).
 
-NEW BLOCKERS: none hard. The only HOLD is #320 pending its time_scale fix + re-review.
+NEW BLOCKERS: none hard. The Renaissance XXI merge train is complete; the only standing HOLD is v0.7.0
+itself (needs MINERVA full-suite requalification against the merged main + the release gate).
 
 AUTHORIZATION: conditional Tier B merge + v0.7.0 Engineering-Alpha tag/release authority under the gates
 (reproduced baseline, red-first regression, distinct-model review, exact-head CI, owner-condition record,
@@ -171,14 +194,14 @@ break, registry publish (crates.io/PyPI), frozen-audio change, touching ProjectG
 enabling its disabled tools, GPL code in the repo, disclosing private consumer details in the public tracker.
 
 FIRST COMMANDS:
-  gh pr list --repo femboy2112/libgibson --state open
-  git fetch origin && git rev-parse origin/main
-  gh pr checks 316 --repo femboy2112/libgibson   # then 317/318/319/320
-  # merge-ready PRs in the order above, each: post owner-condition record → --match-head-commit <FULL-40>
+  gh pr list --repo femboy2112/libgibson --state open     # expect: no Renaissance-XXI dev PRs
+  git fetch origin && git rev-parse origin/main           # expect: de979ee + the #321 merge on top
+  bash scripts/release/check-abi.sh                        # expect: 67/67 (rebuild first)
+  # the 5-PR train is merged; start from the decisions below, not a merge.
 
-RELEASE/MERGE DECISIONS PENDING: merge the 5 PRs; then decide whether to open a v0.7.0 candidate
-(needs MINERVA full-suite requalification + the release gate) or continue hardening (Front M, #129,
-#134/#135/#136, wrapper parity) first.
+RELEASE/MERGE DECISIONS PENDING: the 5 PRs are merged. Decide whether to open a v0.7.0 candidate
+(needs MINERVA full-suite requalification against the merged main + the release gate) or continue
+hardening (Front M, #129, #134/#135/#136, wrapper parity) first. Also: close zombie PRs #153–#167.
 
 FAN OUT on independent lanes; keep the build tree coherent; merge what earns merging; HOLD anything whose
 gate fails with the exact failing predicate. Deliver flash-tables + a fresh next-round prompt at the end.
