@@ -579,7 +579,7 @@ static char g_exe[4096];
 
 static int ctl(int c) { return g_control == c; }
 
-#define EVID 2048
+#define EVID 3072
 static void ev_append(char *ev, const char *fmt, ...) {
     size_t n = strlen(ev);
     if (n + 1 >= EVID) return;
@@ -1386,6 +1386,51 @@ static int sentinel_not_ended(unsigned faults, uint64_t *end_full, int *synth_fu
     return pass;
 }
 
+/* (#275 review 5, observe_key path) a press of a key that aliases a live exact hold, landing at the
+   sentinel tic UINT64_MAX, must re-arm the hold (add its source), not be mistaken for a re-press of
+   an ended hold and dropped. Codex's sequence: w down at M-1 holds producer key 7; Up (also 7)
+   pressed at M; w up at M. With the sentinel read as a deadline, Up's press is dropped and 7 ends
+   while Up is still down. Correct: nothing dropped, and 7 stays held by Up after w goes up. Returns
+   keys_dropped and whether 7 was still held after the first source went up. */
+static int sentinel_press_not_dropped(unsigned faults, uint64_t *dropped, int *held_after_one_up) {
+    *dropped = 0;
+    *held_after_one_up = 0;
+    fb_adapter_config cfg;
+    fb_adapter_config_defaults(&cfg, SYNTH_W, SYNTH_H);
+    cfg.map_key = alias_map;
+    cfg.key_releases = 1;
+    fb_adapter *ad = NULL;
+    if (fb_adapter_open_headless(&cfg, 80, 24, &ad) != FB_OK) return 0;
+    fb_adapter_set_faults(ad, faults);
+    gibson_context_t *ctx = fb_adapter_context(ad);
+    gibson_event_t e;
+    const uint64_t M = UINT64_MAX;
+#define PUSH(ty, cd, kd, t)                                                       \
+    do {                                                                          \
+        memset(&e, 0, sizeof e);                                                  \
+        e.event_type = (ty);                                                      \
+        e.key_code = (cd);                                                        \
+        if (kd) gibson_push_event_kind(ctx, &e, (kd)); else gibson_push_event(ctx, &e); \
+        fb_adapter_pump(ad, (t), 0);                                              \
+    } while (0)
+    PUSH(KA, 0, 0, M - 2);                 /* reporting on: holds are exact */
+    PUSH(KP, 'w', CH, M - 1);              /* 7 held by w; no deadline, ends_at = sentinel M */
+    PUSH(KP, GIBSON_KEY_UP, SP, M);        /* Up (also 7) pressed AT the sentinel tic */
+    PUSH(KR, 'w', CH, M);                  /* w up at M: with the fix, Up still holds 7 */
+    int released_after_w = 0;
+    fb_key_event k;
+    while (fb_adapter_next_key(ad, M, &k))
+        if (k.code == 7 && !k.pressed) released_after_w = 1;
+    *held_after_one_up = !released_after_w;
+    fb_adapter_counters c;
+    fb_adapter_counters_get(ad, &c);
+    *dropped = c.keys_dropped;
+    PUSH(KR, GIBSON_KEY_UP, SP, M);        /* Up up: 7 ends */
+#undef PUSH
+    fb_adapter_close(ad);
+    return *dropped == 0 && *held_after_one_up;
+}
+
 static int prop3(char *ev) {
     fclock a, b;
     memset(&a, 0, sizeof a);
@@ -1445,8 +1490,11 @@ static int prop3(char *ev) {
     int sent_syn = -1, sent_room = 0;
     uint64_t sent_end = 0;
     const int sent_ok = sentinel_not_ended(ctl(C_P3_SENTINEL_ENDS) ? FB_FAULT_SENTINEL_ENDS : 0, &sent_end, &sent_syn, &sent_room);
+    uint64_t sent_drop = 0;
+    int sent_held = 0;
+    const int press_ok = sentinel_press_not_dropped(ctl(C_P3_SENTINEL_ENDS) ? FB_FAULT_SENTINEL_ENDS : 0, &sent_drop, &sent_held);
     const int pass = ok && keyed.hash != quiet.hash && log_ok && keyed.tics == 200 && quiet.tics == 200 && rel_ok && qok && wok &&
-                     off_ok && ax_ok && ai_ok && m1_ok && m2_ok && sat_ok && end_ok && sent_ok;
+                     off_ok && ax_ok && ai_ok && m1_ok && m2_ok && sat_ok && end_ok && sent_ok && press_ok;
     ev_append(ev, "keys pushed with gibson_push_event_kind, polled by the adapter (gibson_poll_event_kind): keyed hash=%016llx %s "
                   "unkeyed hash=%016llx (200 tics each); producer key log %u events %s independent hold model (grace 25, repeat 4): ",
               (unsigned long long)keyed.hash, keyed.hash != quiet.hash ? "!=" : "==", (unsigned long long)quiet.hash,
@@ -1481,8 +1529,10 @@ static int prop3(char *ev) {
                   "released at %llu synthesized=%d (want 2000 and 1)",
               sat_np, sat_nr, (unsigned long long)(UINT64_MAX - sat_end), (unsigned long long)end_at, end_syn);
     ev_append(ev, "; an exact hold released at the sentinel tic UINT64_MAX: full queue delivers one real release at %s "
-                  "synthesized=%d (want UINT64_MAX and 0), queue with room %s (want pass)",
-              sent_end == UINT64_MAX ? "UINT64_MAX" : "other", sent_syn, sent_room ? "passes" : "FAILS");
+                  "synthesized=%d (want UINT64_MAX and 0), queue with room %s (want pass); an aliased press at the sentinel "
+                  "tic re-arms a live hold (keys_dropped=%llu want 0, still held after the first source up: %s want yes)",
+              sent_end == UINT64_MAX ? "UINT64_MAX" : "other", sent_syn, sent_room ? "passes" : "FAILS",
+              (unsigned long long)sent_drop, sent_held ? "yes" : "NO");
     if (ctl(C_P3_WRAP_DEADLINE)) ev_append(ev, " [control: deadlines wrap]");
     if (ctl(C_P3_REWRITE_ENDED)) ev_append(ev, " [control: an ended hold is rewritten]");
     if (ctl(C_P3_SENTINEL_ENDS)) ev_append(ev, " [control: a live exact hold at the sentinel tic is read as ended]");

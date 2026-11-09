@@ -773,9 +773,13 @@ static void observe_key(fb_adapter *ad, uint64_t tic, uint32_t code, uint32_t sr
     for (int i = 0; i < FB_HOLD_SLOTS; i++) {
         hold_slot *h = &ad->holds[i];
         if (h->used && h->code == code) {
-            if (h->ends_at <= tic && !(ad->faults & FB_FAULT_REARM_PENDING)) {
+            if ((h->nsrc == 0 || (ad->faults & FB_FAULT_SENTINEL_ENDS)) && h->ends_at <= tic &&
+                !(ad->faults & FB_FAULT_REARM_PENDING)) {
                 /* the hold has ended but its release is still waiting for room in a full queue:
-                   re-arming would lose that release, so this press is the one dropped (#275 review) */
+                   re-arming would lose that release, so this press is the one dropped (#275 review).
+                   A hold with a source still down (nsrc>0) has not ended -- its ends_at is the
+                   UINT64_MAX sentinel, reached only at tic==UINT64_MAX -- so a press (an aliased
+                   source, an autorepeat) at that tic re-arms it, it is not dropped (#275 review 5). */
                 ad->ctr.keys_dropped++;
                 return;
             }
