@@ -2191,3 +2191,38 @@ pub unsafe extern "C" fn gibson_get_frame_cell_glyph(
     }));
     res.unwrap_or(GibsonStatus::ErrPanic)
 }
+
+#[cfg(test)]
+mod terminal_size_tests {
+    use super::*;
+    use std::ptr;
+
+    /// The non-zero guarantee of `gibson_get_terminal_size` (review P2). The public API cannot
+    /// produce a zero geometry — create and resize both reject it — so the zero case is forced
+    /// through the session's test setter, standing in for crossterm returning 0 on a *successful*
+    /// TTY query. The query must then report the documented 80x24 fallback, while any positive pair
+    /// passes through unchanged.
+    #[test]
+    fn get_terminal_size_clamps_a_zero_dimension_to_80x24() {
+        let mut ctx = ptr::null_mut();
+        assert_eq!(
+            unsafe { gibson_create_headless_context(GIBSON_MODE_FULLSCREEN, 40, 10, &mut ctx) },
+            GibsonStatus::Ok
+        );
+        unsafe { (*ctx).inner.session.set_terminal_size(0, 45) };
+        let (mut c, mut r) = (1u16, 1u16);
+        assert_eq!(
+            unsafe { gibson_get_terminal_size(ctx, &mut c, &mut r) },
+            GibsonStatus::Ok
+        );
+        assert_eq!((c, r), (80, 24), "a zero dimension falls back to 80x24");
+        // A positive pair is returned verbatim (no over-eager clamping).
+        unsafe { (*ctx).inner.session.set_terminal_size(37, 11) };
+        assert_eq!(
+            unsafe { gibson_get_terminal_size(ctx, &mut c, &mut r) },
+            GibsonStatus::Ok
+        );
+        assert_eq!((c, r), (37, 11));
+        unsafe { gibson_destroy_context(ctx) };
+    }
+}

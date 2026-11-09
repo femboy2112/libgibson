@@ -155,26 +155,3 @@ fn a_polled_resize_updates_the_reported_terminal_size() {
         "the query follows the resize, not the creation size"
     );
 }
-
-#[test]
-fn a_zero_measurement_falls_back_to_the_documented_80x24() {
-    // review P2: the non-zero guarantee. A degenerate (zero) dimension is reported as 80x24. A
-    // headless context created with a zero dimension stands in for crossterm returning 0 on a
-    // *successful* TTY query (unreachable headlessly otherwise). If create rejects a zero
-    // dimension, the clamp still guards the TTY path by inspection.
-    let mut ctx = ptr::null_mut();
-    let st = unsafe { gibson_create_headless_context(GIBSON_MODE_FULLSCREEN, 0, 45, &mut ctx) };
-    if st == GibsonStatus::Ok {
-        let c = Ctx(ctx);
-        let (mut cols, mut rows) = (1u16, 1u16);
-        assert_eq!(
-            unsafe { gibson_get_terminal_size(c.0, &mut cols, &mut rows) },
-            GibsonStatus::Ok
-        );
-        assert_eq!(
-            (cols, rows),
-            (80, 24),
-            "a zero dimension falls back to 80x24"
-        );
-    }
-}
