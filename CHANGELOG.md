@@ -33,6 +33,16 @@ stays 1.85.
   now happen in one C helper, one cgo call. Go API unchanged.
   ([`docs/V08_PARITY_SLICE.md`](docs/V08_PARITY_SLICE.md) F6)
 
+### Known limitation — a shifted symbol in the screen-switch window ([#312](https://github.com/femboy2112/libgibson/issues/312))
+- **A shifted *symbol* (e.g. `!`) pressed during the brief legacy-mode window of a screen switch is
+  delivered correctly as a press, but kitty reports its release under the base key (`1`); shift does
+  not lowercase a symbol, so the release cannot be matched to the press layout-agnostically and is
+  delivered as `1`.** A held-key model therefore keeps the symbol held until a focus loss, the key's
+  next kitty press/release, or reporting is disabled. Letters (the usual sustained/movement keys)
+  fold correctly (`W`→`w`) and are unaffected. Deliberately not renamed: mapping `1`→`!` assumes a
+  keyboard layout, and pairing the unmatched release with the newest orphan would mis-identify an
+  unrelated key's release. Pinned and bounded by tests in `src/tty_source.rs` (`issue_312_*`).
+
 ### Release engineering — maintenance-line releases approved ([#287](https://github.com/femboy2112/libgibson/issues/287), #291)
 - **Release Contract §1 gains an approved maintenance-line exception** (owner decision 2026-11-08,
   conditional on its gates): a `v<x.y.z>` tag may name a qualified commit on `release/v<x.y.z>-rc`
