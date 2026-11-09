@@ -150,8 +150,12 @@ fn rust_poll_delivers_presses_and_repeats_but_never_a_release() {
 
 #[test]
 fn c_abi_poll_delivers_presses_and_repeats_but_never_a_release() {
-    // The legacy C poll reports focus changes as GIBSON_EVENT_NONE (unmodelled there), so they
-    // do not appear; 4097 is U+1001 here (the documented #274 legacy ambiguity).
+    // #298 models focus changes in the C ABI as GIBSON_EVENT_FOCUS_GAINED (7) and
+    // GIBSON_EVENT_FOCUS_LOST (8); this child formats any non-key/resize event as `type:N`, so
+    // they now surface as `type:7`/`type:8` where the pre-#298 C poll reported them as
+    // GIBSON_EVENT_NONE and dropped them. The release that sits *between* the two focus changes
+    // (`\x1b[97;1:3u`) is still dropped — the press-only contract this test guards is unchanged.
+    // 4097 is U+1001 here (the documented #274 legacy ambiguity).
     let got = run_sequence("seq:c");
     let want = [
         "key:97",
@@ -162,6 +166,8 @@ fn c_abi_poll_delivers_presses_and_repeats_but_never_a_release() {
         "key:99",
         "key:100",
         "key:4097",
+        "type:7",
+        "type:8",
         "key:114",
         "resize:100x30",
         "key:113",
@@ -171,6 +177,9 @@ fn c_abi_poll_delivers_presses_and_repeats_but_never_a_release() {
 
 #[test]
 fn c_abi_kind_poll_delivers_presses_and_repeats_but_never_a_release() {
+    // #298: the kinded C poll surfaces the same focus events (`type:7`/`type:8`) as the plain
+    // poll; the key-kind out-param is irrelevant for a focus event. The release between the two
+    // focus changes is still dropped.
     let got = run_sequence("seq:ckind");
     let want = [
         "key:1:97",
@@ -181,6 +190,8 @@ fn c_abi_kind_poll_delivers_presses_and_repeats_but_never_a_release() {
         "key:1:99",
         "key:1:100",
         "key:1:4097",
+        "type:7",
+        "type:8",
         "key:1:114",
         "resize:100x30",
         "key:1:113",
