@@ -456,6 +456,13 @@ fails CI early.
   `docs/GLYPHS.md`.
 - **Not covered this round:** Windows, macOS, tmux/screen/SSH certification, Kitty
   graphics protocol. These may follow; they are not promised here.
+- **Windows is UNVERIFIED and unsupported this round.** There is no Windows CI job and no
+  Windows host run. One defect is named from reading the source, not from a run
+  ([#292](https://github.com/femboy2112/libgibson/issues/292)): crossterm 0.29 reports a Windows
+  console key-up as `KeyEventKind::Release`, LibGibson passes that kind through on Windows, and
+  the key is delivered a second time as a press, so **every key is doubled**. A blanket release
+  filter is not the fix, because an Alt+numpad character reaches the console only as a release.
+  The fix is a LibGibson-owned Windows console source (future work, needs a native Windows host).
 
 ---
 

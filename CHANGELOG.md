@@ -22,6 +22,18 @@ line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 was **released o
 (below); its source-version baseline `9a899e1` is never tagged. `GIBSON_ABI_VERSION` stays 1; MSRV
 stays 1.85.
 
+### Known limitation — Windows: every key is delivered twice, UNVERIFIED ([#292](https://github.com/femboy2112/libgibson/issues/292))
+- **On Windows a key press arrives as two `Event::Key`s.** crossterm 0.29 reports a console key-up
+  as `KeyEventKind::Release` (`parse.rs:286-290`); on Windows LibGibson passes every kind through
+  (`delivers_key_kind`) and `decode_key` ignores the kind, so the release is delivered as a second
+  press. This is read from the source: there is no Windows runtime or CI job, so it has not been
+  observed, and **Windows remains unsupported and unverified** (see `docs/RELEASE_CONTRACT.md` §6).
+- **Not changed here, deliberately.** Dropping releases on Windows would delete Alt+numpad
+  characters (Alt+0233 gives an e-acute), which the console delivers only as a `Release` carrying
+  `KeyCode::Char`. The fix is a LibGibson-owned Windows console source reading `KEY_EVENT_RECORD`s,
+  future work that needs a native Windows host. This entry is disclosure only; no runtime behavior
+  changed. A host-independent unit test pins today's behavior.
+
 ### Fixed — Go binding (`bindings/go`): a failed `NewContext` reports its own error message
 - **`NewContext` now reads the failure message on the same OS thread as the failing call.**
   The native last error is thread-local, and the wrapper fetched it with a second cgo call; Go may
