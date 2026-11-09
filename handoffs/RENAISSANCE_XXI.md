@@ -58,7 +58,7 @@ NEXT MOVE: v0.7.0 requalification (MINERVA full suite) + release gate, OR harden
 | Version | State | Qualified SHA | Blocking gate | Next action |
 |---|---|---|---|---|
 | v0.6.0 | RELEASED | `492d0fe` | — | preserve tags |
-| v0.7.0 | DEV / **HOLD** | `4bff68d` (+ the 5 PRs) | MINERVA full-suite requalification + run the release gate (version bump, artifacts, preflight, installed-SDK consumers) | merge the 5 PRs; then execute `RELEASING.md` §7 for a 0.7.0 candidate |
+| v0.7.0 | DEV / **HOLD** | `4bff68d` (+ the 5 PRs) | MINERVA full-suite requalification + run the release gate (version bump, artifacts, preflight, installed-SDK consumers) | merge the 5 PRs; then execute `RELEASING.md` §§0–6 for a 0.7.0 main-line candidate (not the §7 maintenance-line procedure) |
 | v0.8.0 | DEV | — | five-language wrapper parity (focus/size mirrors from #298 not yet in C++/Go/Python) | mirror the two new #298 symbols + constants into the wrappers |
 | v0.9.0 | PLANNED | — | platform/stress/perf envelopes | — |
 | v1.0.0 | PLANNED | — | frozen CORE contract + independent downstream acceptance | — |

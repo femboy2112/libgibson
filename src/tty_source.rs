@@ -2435,7 +2435,7 @@ mod tests {
         // Conditional recovery: with releases reported, `!` is
         // pressed (no deadline) and its release arrives named `1` (the base key), which does not
         // match, so `!` stays held — then a focus loss ends it (the terminal reports focus loss,
-        // and DEEP SIGNAL / #276 acts on it).
+        // and DEEP SIGNAL / #276 acts on it, if a focus loss is actually reported).
         let mut holds = crate::hold::HoldTracker::new(crate::hold::HoldConfig::new(1, 1));
         holds.set_releases_reported(true);
         holds.observe(0, (K::Char('!'), M::NONE)).unwrap();
