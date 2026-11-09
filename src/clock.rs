@@ -119,6 +119,12 @@ impl FixedStepClock {
 
     /// Single-step control: advances exactly one frame whether or not the clock is
     /// paused (it does not change the pause state), and returns the new time.
+    ///
+    /// The one exception is the `u64::MAX` frame ceiling: like [`advance`](Self::advance),
+    /// the counter saturates there rather than wrapping, so a step at the ceiling is a no-op
+    /// and returns the same time. A clock reaching 2^64 frames is not a reachable runtime
+    /// state (at 60 fps that is ~9.7 billion years); the saturation exists only to keep the
+    /// counter total and overflow-free.
     pub fn step_frame(&mut self) -> Duration {
         self.step_one()
     }
@@ -450,6 +456,32 @@ mod tests {
         // And a later seek never reports a time below an earlier one.
         let earlier = c.seek(1);
         assert!(c.seek(u64::MAX) >= earlier);
+    }
+
+    #[test]
+    fn step_frame_saturates_at_the_frame_ceiling_instead_of_wrapping() {
+        // The documented exception to "advances exactly one frame": at the u64::MAX
+        // ceiling the counter saturates (like `advance`), so a step is a no-op and the
+        // time does not move — it must never wrap to frame 0 (a time that runs backwards).
+        let mut c = FixedStepClock::new(Duration::from_nanos(1));
+        c.seek(u64::MAX);
+        let t_ceiling = c.now();
+        // Paused or running, the step at the ceiling cannot advance or wrap.
+        c.pause();
+        assert_eq!(c.step_frame(), t_ceiling);
+        assert_eq!(c.frame(), u64::MAX, "must not wrap past the ceiling");
+        c.resume();
+        assert_eq!(c.step_frame(), t_ceiling);
+        assert_eq!(c.frame(), u64::MAX);
+
+        // One below the ceiling, a step still advances exactly one frame up to it.
+        let d = FixedStepClock::new(Duration::from_nanos(1));
+        d.seek(u64::MAX - 1);
+        let before = d.frame();
+        let mut d = d;
+        d.step_frame();
+        assert_eq!(d.frame(), before + 1);
+        assert_eq!(d.frame(), u64::MAX);
     }
 
     #[test]
