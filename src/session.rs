@@ -975,9 +975,9 @@ mod key_release_switch_tests {
             !switched,
             "the switch must not run when the pop write fails"
         );
-        // The pop did not complete, so our push is still live on this screen: the bit MUST stay
-        // set so restore pops it, not leak it (#305 review item 1). The claim happens only after
-        // a SUCCESSFUL pop.
+        // This writer accepted no pop bytes, so the push is still live in this controlled case.
+        // The bit stays set so restore can attempt a pop. An I/O error in general does not
+        // establish whether a terminal applied a partially written or flushed command.
         assert!(
             key_releases_pushed(),
             "#305 item 1: a failed pop leaves the still-live push claimable"
@@ -1066,17 +1066,16 @@ mod key_release_switch_tests {
         };
         let r = s.switch_screen_on(&mut w, |o| o.write_all(b"SW"), true);
         assert!(r.is_err());
-        // A torn re-push may already have placed our push on the new screen's stack, so the bit
-        // MUST stay set: restore/Drop then pops it instead of leaking it (shell left in kitty
-        // mode). The opposite of a failed pop/switch, where a second pop would hit a foreign
-        // entry. The bit is set before the re-push write for exactly this (#305 review: P2).
+        // A torn re-push may have placed our push on the new screen's stack, so the bit is set
+        // before the write and restore can attempt a pop. If no push was applied, that attempt
+        // may instead pop a foreign entry; the writer does not resolve terminal ownership.
         assert!(
             key_releases_pushed(),
-            "#305/P2: a torn re-push stays poppable, not leaked"
+            "#305: the re-push claim remains set after an error"
         );
         assert!(
             take_key_releases_pushed(),
-            "restore would find the push and pop it exactly once"
+            "restore can claim the bit for one pop attempt"
         );
         assert!(s.alt_screen_active, "the switch itself succeeded");
         assert!(

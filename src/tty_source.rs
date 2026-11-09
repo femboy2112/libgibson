@@ -2402,9 +2402,10 @@ mod tests {
 
     #[test]
     fn issue_312_no_further_events_leave_the_legacy_hold_stuck() {
-        // The parser saw a legacy shifted symbol during the screen-switch epoch. Reporting is
-        // active for the hold tracker and the terminal reports the base-key release. There is no
-        // later repeat, focus loss, mode disable or unrelated key. A genuine Kitty press/release
+        // Model a legacy shifted symbol from the screen-switch epoch using the parser and hold
+        // tracker directly; this does not exercise a terminal or an actual screen transition.
+        // Reporting is active for the hold tracker and the modeled release uses the base key. There
+        // is no later repeat, focus loss, mode disable or unrelated key. A genuine Kitty press/release
         // is the control: it must not remain held.
         let legacy = terminal(decode_all(b"!\x1b[49;1:3u", true));
         assert_eq!(legacy[0], kind(K::Char('!'), M::NONE, Kind::Press));
@@ -2430,7 +2431,7 @@ mod tests {
     }
 
     #[test]
-    fn issue_312_the_stuck_hold_is_bounded_by_focus_loss() {
+    fn issue_312_focus_loss_conditionally_ends_the_stuck_hold() {
         // Conditional recovery: with releases reported, `!` is
         // pressed (no deadline) and its release arrives named `1` (the base key), which does not
         // match, so `!` stays held — then a focus loss ends it (the terminal reports focus loss,
@@ -2453,7 +2454,7 @@ mod tests {
     }
 
     #[test]
-    fn issue_312_the_stuck_hold_is_bounded_when_reporting_is_disabled() {
+    fn issue_312_disabling_reporting_conditionally_ends_the_stuck_hold() {
         // Another conditional recovery: when key-release reporting is disabled, every hold that
         // was waiting for a release (ends_at == u64::MAX) is given the inferred grace deadline, so
         // the stuck `!` times out instead of waiting forever.
