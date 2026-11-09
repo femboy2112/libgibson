@@ -83,6 +83,8 @@ What it does, in order:
 | `mount` | | `gibson_set_root_node` (consumes the tree) | `mount` |
 | `render` | | `gibson_render` | `render` |
 | `geom` | | `gibson_get_frame_size` | `geom` |
+| `terminal_size` | | `gibson_get_terminal_size` | `terminal_size` |
+| `focus_reporting` | `0` / `1` | `gibson_set_focus_reporting` (headless no-op; not evidence of terminal support) | `focus_reporting` |
 | `frame` | | `gibson_get_frame_size`, `gibson_get_frame_cells` (all cells), `gibson_get_frame_cell_glyph` for truncated cells, `gibson_get_rendered_output` | `frame` |
 | `cell` | `X Y` | `gibson_get_frame_cell` (+ glyph escape hatch) | `cell` |
 | `glyph` | `X Y` | `gibson_get_frame_cell_glyph` (size query, copy) | `glyph` |
@@ -91,6 +93,7 @@ What it does, in order:
 | `push_special` | `NAME MODS` | `gibson_push_event_kind(..., GIBSON_KEY_KIND_SPECIAL)` | `push` |
 | `push_legacy` | `U+X MODS` | `gibson_push_event` | `push` |
 | `push_paste` | `HEX` | `gibson_push_event` (PASTE) | `push` |
+| `push_focus` | `GAINED` / `LOST` | `gibson_push_event` (focus) | `push` |
 | `push_resize` | `COLS ROWS` | `gibson_push_event` (RESIZE) | `push` |
 | `poll` | `N` | N x `gibson_poll_event_kind(ctx, 0, ...)` | `event` (ids `<id>.1`..`<id>.N`) |
 | `poll_legacy` | | `gibson_poll_event` | `event` (`kind` = `ABSENT`) |
@@ -234,7 +237,7 @@ push/poll calls of `p21` (not profiled).
 |---|---|---|
 | cell, x5 languages | `PARITY_V08_PERTURB=cell`: last byte of step s06's text `!` -> `?` | `r03,s16` (both frame digests) for C, C++, Python, Go, Rust |
 | events, x5 languages | `PARITY_V08_PERTURB=events`: swap steps e01/e02 | `ORDER,e09.1,e09.2` for all five |
-| Rust resize witness | `PARITY_V08_RUST_RESIZE=unapplied`: put back the geometry `poll_from` applied (the behaviour before #293). In the recorded run this was `=native`, which skipped the consumer's explicit `set_terminal_size`; #293 removed that step | `r02,r03,r04`; r02 = `{"cols":40,"id":"r02","k":"geom","rows":12,"st":"OK"}` |
+| Rust resize witness | `PARITY_V08_RUST_RESIZE=unapplied`: put back the geometry `poll_from` applied (the behaviour before #293). In the recorded run this was `=native`, which skipped the consumer's explicit `set_terminal_size`; #293 removed that step | `r02,r03,r04,t02` in the extended script; r02 = `{"cols":40,"id":"r02","k":"geom","rows":12,"st":"OK"}` |
 | planted leak (resource gate) | `PARITY_V08_PERTURB=leak` (C): d01 drops the context without destroying it | second-half growth 18304 KB > 4096 -> EXCEEDED |
 
 The perturbations are env-gated in the consumers and never on by default. The harness unsets them

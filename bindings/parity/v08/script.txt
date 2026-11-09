@@ -16,6 +16,12 @@
 
 # ---- context + scene --------------------------------------------------------------------------
 s01 LIFE create FULLSCREEN 40 12
+t01 GEO terminal_size
+f01 EVT focus_reporting 1
+f02 EVT focus_reporting 0
+f03 EVT push_focus GAINED
+f04 EVT push_focus LOST
+f05 EVT poll 2
 s02 CELL style plain reset reset 00000
 s03 CELL style hot rgb:255,128,0 rgb:16,32,64 10010
 s04 CELL style ansi ansi:201 named:5 00100
@@ -62,6 +68,7 @@ e06 EVT push_paste 70617374653ae6bca2e5ad97e1808109746162
 e07 EVT push_resize 60 16
 e08 EVT push_char U+00E9 4
 e09 EVT poll 9
+t02 GEO terminal_size
 
 # ---- after the delivered resize: re-render at the new geometry ------------------------------------
 r01 CELL render

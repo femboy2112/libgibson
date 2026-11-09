@@ -133,7 +133,7 @@ if [ "${PARITY_V08_SKIP_CONTROLS:-0}" != 1 ]; then
     done
     # Resize regression witness (#293): the Rust consumer undoes the geometry poll_from applied,
     # as the library did before #293; the polled Resize then leaves the headless geometry at 40x12.
-    control rust-resize-unapplied rust "r02,r03,r04" PARITY_V08_RUST_RESIZE=unapplied
+    control rust-resize-unapplied rust "r02,r03,r04,t02" PARITY_V08_RUST_RESIZE=unapplied
     grep '"id":"r02"' "$WORK/ctl/rust-resize-unapplied.rust.jsonl" | sed 's/^/    witness r02: /' || true
     # Resource-gate control: the C consumer leaks its context every repetition.
     ( export PARITY_V08_PERTURB=leak; run_lang c "$REPS" ) >/dev/null 2>"$WORK/ctl/leak.c.err" || true

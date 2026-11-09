@@ -50,3 +50,13 @@ normal command package. There are currently no Go unit tests; example execution 
 smoke check, not exhaustive wrapper coverage. Linux execution was verified locally
 and in public Go 1.27.1 CI; other platforms remain unverified. The `go 1.18` module
 language directive is not a cross-platform support or Rust MSRV promise.
+
+## Geometry and focus
+
+`ctx.TerminalSize()` returns live columns and rows before rendering. A headless
+context applies an injected resize when it is polled; a failed terminal measurement
+uses the ABI's `80x24` fallback. `ctx.SetFocusReporting(true)` requests notifications;
+poll for `gibson.EventFocusGained` and `gibson.EventFocusLost`. Disable with `false`;
+`Close` restores the terminal. The request is a headless no-op and does not guarantee
+terminal support. These methods require the additive v0.7 native symbols even though
+the ABI version remains 1.

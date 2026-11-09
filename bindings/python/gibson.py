@@ -123,6 +123,8 @@ class EventType:
     KEY = 1
     PASTE = 2
     RESIZE = 3
+    FOCUS_GAINED = 7
+    FOCUS_LOST = 8
 
 class KeyKind:
     """GIBSON_KEY_KIND_*: how to read a KEY event's key_code. GIBSON_KEY_* occupy U+1001-U+100D,
@@ -853,6 +855,38 @@ class Context:
         if status != 0:
             raise RuntimeError(f"clear_rendered_output failed: status {status}")
         return n.value
+
+    def terminal_size(self):
+        """Live (cols, rows), including before render. Headless resize takes effect on poll.
+
+        Redirected output and failed or zero measurements use the ABI's 80x24 fallback.
+        """
+        fn = getattr(_lib, "gibson_get_terminal_size", None)
+        if fn is None:
+            raise RuntimeError("terminal_size requires LibGibson 0.7 or newer")
+        fn.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint16), ctypes.POINTER(ctypes.c_uint16)]
+        fn.restype = ctypes.c_int32
+        cols, rows = ctypes.c_uint16(), ctypes.c_uint16()
+        status = fn(self.handle, ctypes.byref(cols), ctypes.byref(rows))
+        if status != 0:
+            raise (self._event_error("terminal_size", status) if status == Status.ERR_INVALID_PARAM
+                   else GibsonError("terminal_size", status))
+        return cols.value, rows.value
+
+    def set_focus_reporting(self, enabled: bool):
+        """Request focus notifications; disabled on context destruction. Headless is a no-op.
+
+        Success requests reporting; it does not guarantee terminal support.
+        """
+        fn = getattr(_lib, "gibson_set_focus_reporting", None)
+        if fn is None:
+            raise RuntimeError("set_focus_reporting requires LibGibson 0.7 or newer")
+        fn.argtypes = [ctypes.c_void_p, ctypes.c_int32]
+        fn.restype = ctypes.c_int32
+        status = fn(self.handle, int(bool(enabled)))
+        if status != 0:
+            raise (self._event_error("set_focus_reporting", status) if status == Status.ERR_IO
+                   else GibsonError("set_focus_reporting", status))
 
     def frame_size(self):
         """(cols, rows) of the most recently rendered frame, or (0, 0) if there is no frame yet."""

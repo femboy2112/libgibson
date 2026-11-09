@@ -152,6 +152,10 @@ func typeName(t gibson.EventType) string {
 		return "PASTE"
 	case gibson.EventResize:
 		return "RESIZE"
+	case gibson.EventFocusGained:
+		return "FOCUS_GAINED"
+	case gibson.EventFocusLost:
+		return "FOCUS_LOST"
 	}
 	return "NONE"
 }
@@ -446,6 +450,12 @@ func (in *interp) step(s []string) {
 			st = "WRAPPER_RAISED"
 		}
 		rec{}.s("id", id).s("k", "render").s("st", st).emit(out)
+	case op == "terminal_size":
+		c, r, err := in.ctx.TerminalSize()
+		rec{}.i("cols", int64(c)).s("id", id).s("k", "terminal_size").i("rows", int64(r)).s("st", errName(err)).emit(out)
+	case op == "focus_reporting":
+		err := in.ctx.SetFocusReporting(a[0] == "1")
+		rec{}.s("id", id).s("k", "focus_reporting").s("st", errName(err)).emit(out)
 	case op == "geom":
 		c, r, err := in.ctx.FrameSize()
 		rec{}.i("cols", int64(c)).s("id", id).s("k", "geom").i("rows", int64(r)).s("st", errName(err)).emit(out)
@@ -498,6 +508,11 @@ func (in *interp) step(s []string) {
 			ev = gibson.SpecialKey(special[a[0]], uint8(atoi(a[1])))
 		case "push_paste":
 			ev = gibson.PasteText(string(unhex(a[0])))
+		case "push_focus":
+			ev.Type = gibson.EventFocusLost
+			if a[0] == "GAINED" {
+				ev.Type = gibson.EventFocusGained
+			}
 		default:
 			ev = gibson.ResizeEvent(uint16(atoi(a[0])), uint16(atoi(a[1])))
 		}

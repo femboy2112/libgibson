@@ -239,6 +239,27 @@ static void lifecycle() {
     }  // destructors: a (empty), b (closed), c (empty), d (live): no double destroy (ASan/UBSan job)
 }
 
+static void focus_and_geometry() {
+    Context ctx = headless();
+    CHECK(ctx.terminal_size() == std::make_pair(uint16_t(40), uint16_t(12)));
+    ctx.set_focus_reporting(true);
+    Event gained; gained.type = GIBSON_EVENT_FOCUS_GAINED;
+    Event lost; lost.type = GIBSON_EVENT_FOCUS_LOST;
+    ctx.push_event(gained); ctx.push_event(Event::resize(33, 9)); ctx.push_event(lost);
+    CHECK(ctx.terminal_size() == std::make_pair(uint16_t(40), uint16_t(12)));
+    CHECK(ctx.poll_event_kind().type == GIBSON_EVENT_FOCUS_GAINED);
+    CHECK(ctx.poll_event_kind().type == GIBSON_EVENT_RESIZE);
+    CHECK(ctx.terminal_size() == std::make_pair(uint16_t(33), uint16_t(9)));
+    Event e = ctx.poll_event_kind();
+    CHECK(e.type == GIBSON_EVENT_FOCUS_LOST);
+    ctx.push_event(e); CHECK(ctx.poll_event_kind() == e);
+    ctx.set_focus_reporting(false);
+    ctx.close();
+    EXPECT_THROW(ctx.terminal_size(), Error, err, CHECK(err.status() == GIBSON_ERR_INVALID_PARAM));
+    EXPECT_THROW(ctx.set_focus_reporting(true), Error, err,
+                 CHECK(err.status() == GIBSON_ERR_INVALID_PARAM); CHECK(err.last_error().empty()));
+}
+
 int main() {
     layout_and_constants();
     empty_queue();
@@ -250,6 +271,7 @@ int main() {
     push_back_unchanged();
     readback_and_capture();
     lifecycle();
+    focus_and_geometry();
     if (g_failed) {
         std::printf("%d of %d checks failed\n", g_failed, g_checks);
         return 1;
