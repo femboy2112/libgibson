@@ -45,6 +45,16 @@ and an unpacked crate; missing SDK and deliberately incorrect ABI controls faile
 expected. This was a nightly-toolchain headless run, not a release gate. Interactive and
 application examples, full diagnostic coverage, independent review and exact-head CI remain.
 
+## Draft wrapper parity
+
+Draft #325, `feat/v08-focus-size-parity`, head
+`5ff3601ec68d9cd4d928efd193732bf1dea4b80e`, projects focus and geometry into
+Python, Go and C++. At its parent `e4c1ac1dd4bd9c9315a45e2145475663bfbda1b0`, the
+staged-SDK five-language parity harness passed 84 records per language, 500 repetitions,
+replay, resource and existing mutation controls. The final head adds an automatic focus
+identity mutation control and requires its own rerun. Real terminal focus delivery,
+independent review and exact-head CI remain unverified.
+
 ## PR debt
 
 #167 was closed as already integrated by ancestry, not merged via GitHub: its head
