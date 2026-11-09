@@ -961,6 +961,18 @@ pub(crate) fn reset() {
     }
 }
 
+/// Serialises tests across modules (here and e.g. `session`) that mutate the process-global
+/// keyboard-query record (`KEYBOARD_QUERIES`) or the key-release reporting globals, so they
+/// never interleave.
+#[cfg(test)]
+static QUERIES_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Acquires [`QUERIES_LOCK`], tolerating poisoning from a panicking test.
+#[cfg(test)]
+pub(crate) fn queries_lock() -> std::sync::MutexGuard<'static, ()> {
+    QUERIES_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     //! The hostile matrix of #269, in process, on real pseudo-terminal pairs. Every
@@ -1823,6 +1835,8 @@ mod tests {
 
     #[test]
     fn kitty_272_without_naming_a_release_is_delivered_as_the_terminal_names_it() {
+        // track=false reads the process-global delivery flag; serialise with anything that sets it.
+        let _serial = queries_lock();
         let got = terminal(decode_all(b"\x1b[119:87;2u\x1b[119;1:3u", false));
         assert_eq!(
             got,
@@ -2251,13 +2265,6 @@ mod tests {
         );
     }
 
-    /// Serialises the tests that touch the process-global request record (`KEYBOARD_QUERIES`).
-    static QUERIES_LOCK: Mutex<()> = Mutex::new(());
-
-    fn queries_lock() -> std::sync::MutexGuard<'static, ()> {
-        QUERIES_LOCK.lock().unwrap_or_else(|p| p.into_inner())
-    }
-
     /// The keys a hold tracker keyed by code and modifiers (a release matches its press by
     /// equality) still holds after `events`, one tic each, with releases reported throughout.
     /// Modifier keys alone are skipped: they are never delivered.
@@ -2443,6 +2450,8 @@ mod tests {
         // The rustdoc of `set_key_release_reporting` states what reporting changes in the keys
         // delivered. Each pair: what kitty sends with flags 15, and the legacy bytes for the same
         // keystroke without them.
+        // track=false reads the process-global delivery flag; serialise with anything that sets it.
+        let _serial = queries_lock();
         let names = |bytes: &'static [u8]| -> Vec<(K, M)> {
             terminal(decode_all(bytes, false))
                 .into_iter()
