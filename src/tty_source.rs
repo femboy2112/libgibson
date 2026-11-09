@@ -1835,6 +1835,8 @@ mod tests {
 
     #[test]
     fn kitty_272_without_naming_a_release_is_delivered_as_the_terminal_names_it() {
+        // track=false reads the process-global delivery flag; serialise with anything that sets it.
+        let _serial = queries_lock();
         let got = terminal(decode_all(b"\x1b[119:87;2u\x1b[119;1:3u", false));
         assert_eq!(
             got,
@@ -2448,6 +2450,8 @@ mod tests {
         // The rustdoc of `set_key_release_reporting` states what reporting changes in the keys
         // delivered. Each pair: what kitty sends with flags 15, and the legacy bytes for the same
         // keystroke without them.
+        // track=false reads the process-global delivery flag; serialise with anything that sets it.
+        let _serial = queries_lock();
         let names = |bytes: &'static [u8]| -> Vec<(K, M)> {
             terminal(decode_all(bytes, false))
                 .into_iter()

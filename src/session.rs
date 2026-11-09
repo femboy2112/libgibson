@@ -410,13 +410,15 @@ impl TerminalSession {
     /// on the new one. Generic over the writer so the failure paths can be tested without a
     /// real terminal.
     ///
-    /// #305: the push bit is CLAIMED (via [`take_key_releases_pushed`]) *before* the pop — as
-    /// `disable`, `restore` and the panic hook already do — so if any write here fails after
-    /// the pop, the bit is already clear and no later `restore`/`Drop`/retry pops a second
-    /// time (a second pop removes another program's keyboard-stack entry). The bit is re-set
-    /// only after the new screen's push is confirmed written and flushed, so a push that never
-    /// reached the terminal is never popped. On any failure after the claim, reporting is
-    /// marked ended by [`on_key_release_push_lost`](Self::on_key_release_push_lost).
+    /// #305: the push bit is CLAIMED (via [`take_key_releases_pushed`]) the moment the pop
+    /// *succeeds*, so if the switch or re-push below then fails, no later `restore`/`Drop`/retry
+    /// pops a second time and removes another program's keyboard-stack entry. A pop that *fails*
+    /// leaves the bit set and propagates — the entry never left this screen, so restore still
+    /// pops it (review item 1). The re-push, conversely, sets the bit *before* its write, because
+    /// a torn re-push may already have placed our push on the new screen and so must stay
+    /// poppable (the same defensive unwinding the initial enable uses). A failed switch marks
+    /// reporting ended via [`on_key_release_push_lost`](Self::on_key_release_push_lost) without
+    /// touching raw mode.
     fn switch_screen_on<W: Write>(
         &mut self,
         out: &mut W,
@@ -425,12 +427,14 @@ impl TerminalSession {
     ) -> io::Result<()> {
         let follow = self.key_release_reporting_live();
         if follow {
-            // Claim before popping (#305): a failed switch below cannot strand the bit set.
+            // Pop the old screen's push. If the pop FAILS (a torn or zero-byte write), the entry
+            // never left this screen's stack, so leave the bit set and propagate — restore then
+            // pops it, no leak (#305 review item 1).
+            pop_key_releases(out)?;
+            // The pop succeeded: the entry is gone. Claim the bit now, so a failed switch or
+            // re-push below — or a later restore/Drop — does not pop a second time and remove
+            // another program's keyboard-stack entry (#305).
             take_key_releases_pushed();
-            if let Err(e) = pop_key_releases(out) {
-                self.on_key_release_push_lost();
-                return Err(e);
-            }
         }
         if let Err(e) = switch(&mut *out) {
             if follow {
@@ -944,7 +948,7 @@ mod key_release_switch_tests {
     }
 
     #[test]
-    fn pop_failure_clears_bit_and_never_reaches_the_switch() {
+    fn pop_failure_keeps_the_push_live_for_restore() {
         let _g = lock();
         let mut s = reporting_live_session();
         let mut w = NeedleFail {
@@ -966,12 +970,22 @@ mod key_release_switch_tests {
             !switched,
             "the switch must not run when the pop write fails"
         );
+        // The pop did not complete, so our push is still live on this screen: the bit MUST stay
+        // set so restore pops it, not leak it (#305 review item 1). The claim happens only after
+        // a SUCCESSFUL pop.
         assert!(
-            !key_releases_pushed(),
-            "#305: bit cleared even when the pop itself fails"
+            key_releases_pushed(),
+            "#305 item 1: a failed pop leaves the still-live push claimable"
+        );
+        assert!(
+            take_key_releases_pushed(),
+            "restore pops the still-live push exactly once"
         );
         assert!(w.buf.is_empty(), "the failed pop wrote nothing");
-        assert!(!s.key_release_reporting_enabled);
+        assert!(
+            s.key_release_reporting_enabled,
+            "a failed pop does not change reporting state"
+        );
         assert!(s.raw_mode_enabled, "raw mode preserved");
         assert!(!s.alt_screen_active);
         reset_globals();
