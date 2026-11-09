@@ -44,7 +44,7 @@
 use crate::cell::{Color, Line, RichText, Span, Style, TextAlign};
 use crate::context::Context;
 use crate::event_source::InjectedQueue;
-use crate::input::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crate::input::{Event, KeyCode, KeyEvent, KeyModifiers, KeyReleaseReporting};
 use crate::node::{Node, WrapMode};
 use crate::renderer::RenderMode;
 use crate::scheduler::RenderStats;
@@ -109,6 +109,15 @@ pub const GIBSON_EVENT_NONE: i32 = 0;
 pub const GIBSON_EVENT_KEY: i32 = 1;
 pub const GIBSON_EVENT_PASTE: i32 = 2;
 pub const GIBSON_EVENT_RESIZE: i32 = 3;
+/// A key went up (ABI v1, additive, #275): `key_code`, `modifiers` and the key kind exactly as
+/// the key's press was delivered. Only after [`gibson_set_key_release_reporting`].
+pub const GIBSON_EVENT_KEY_RELEASE: i32 = 4;
+/// The terminal confirmed key-release reporting: every key that goes up after this event is a
+/// [`GIBSON_EVENT_KEY_RELEASE`] (ABI v1, additive, #275).
+pub const GIBSON_EVENT_KEY_RELEASES_ACTIVE: i32 = 5;
+/// The terminal answered without confirming key-release reporting: keys stay press-only
+/// (ABI v1, additive, #275).
+pub const GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED: i32 = 6;
 
 /// Most undelivered events one headless context holds for [`gibson_push_event`]. A push beyond
 /// it is refused with [`GibsonStatus::ErrQueueFull`]; nothing queued is displaced.
@@ -604,6 +613,32 @@ pub unsafe extern "C" fn gibson_set_sync_updates(
     res.unwrap_or(GibsonStatus::ErrPanic)
 }
 
+/// Asks the terminal to report key releases (kitty keyboard protocol), or stops asking (#275).
+/// See `TerminalSession::set_key_release_reporting`: the answer arrives from
+/// [`gibson_poll_event`] as [`GIBSON_EVENT_KEY_RELEASES_ACTIVE`] or
+/// [`GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED`], and once active each key that goes up as a
+/// [`GIBSON_EVENT_KEY_RELEASE`]. `gibson_destroy_context` undoes it. A no-op on a headless
+/// context (push the answer and release events instead) and off a terminal.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_set_key_release_reporting(
+    ctx: *mut GibsonContextOpaque,
+    enabled: i32,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        match (*ctx).inner.session.set_key_release_reporting(enabled != 0) {
+            Ok(()) => GibsonStatus::Ok,
+            Err(e) => {
+                set_last_error(e.to_string());
+                GibsonStatus::ErrIo
+            }
+        }
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gibson_set_max_fps(
     ctx: *mut GibsonContextOpaque,
@@ -982,8 +1017,12 @@ unsafe fn poll_event_impl(
         match polled {
             Ok(Some(ev)) => {
                 match ev {
-                    Event::Key(k) => {
-                        (*out_event).event_type = GIBSON_EVENT_KEY;
+                    Event::Key(k) | Event::KeyRelease(k) => {
+                        (*out_event).event_type = if matches!(ev, Event::Key(_)) {
+                            GIBSON_EVENT_KEY
+                        } else {
+                            GIBSON_EVENT_KEY_RELEASE
+                        };
                         (*out_event).modifiers = k.modifiers.bits();
                         if !out_key_kind.is_null() {
                             out_key_kind.write(if matches!(k.code, KeyCode::Char(_)) {
@@ -1025,14 +1064,15 @@ unsafe fn poll_event_impl(
                     // The C ABI (v1) does not model mouse or focus events, and they
                     // only arise when a Rust consumer opts into capture (this C poll
                     // path never does), so they report as GIBSON_EVENT_NONE like Tick.
-                    // Keeps ABI v1 frozen (issue #126). Key releases and the answer to a
-                    // key-release reporting request likewise arise only after a Rust
-                    // consumer opts in (#275).
-                    Event::Tick
-                    | Event::Mouse(_)
-                    | Event::Focus(_)
-                    | Event::KeyRelease(_)
-                    | Event::KeyReleaseReporting(_) => {}
+                    // Keeps ABI v1 frozen (issue #126).
+                    Event::Tick | Event::Mouse(_) | Event::Focus(_) => {}
+                    // The answer to gibson_set_key_release_reporting (#275).
+                    Event::KeyReleaseReporting(KeyReleaseReporting::Active) => {
+                        (*out_event).event_type = GIBSON_EVENT_KEY_RELEASES_ACTIVE;
+                    }
+                    Event::KeyReleaseReporting(_) => {
+                        (*out_event).event_type = GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED;
+                    }
                 }
                 GibsonStatus::Ok
             }
@@ -1077,7 +1117,7 @@ fn special_key(cp: u32) -> Option<KeyCode> {
 /// type uses are initialised; for a paste, `paste_str` is null or NUL-terminated.
 unsafe fn event_from_c(ev: *const GibsonEvent, key_kind: Option<u32>) -> Result<Event, String> {
     match ptr::addr_of!((*ev).event_type).read() {
-        GIBSON_EVENT_KEY => {
+        event_type @ (GIBSON_EVENT_KEY | GIBSON_EVENT_KEY_RELEASE) => {
             let bits = ptr::addr_of!((*ev).modifiers).read();
             let modifiers = KeyModifiers::from_bits(bits)
                 .ok_or_else(|| format!("unknown modifier bits {bits:#04x}"))?;
@@ -1099,7 +1139,18 @@ unsafe fn event_from_c(ev: *const GibsonEvent, key_kind: Option<u32>) -> Result<
                     None => typed(cp)?,
                 },
             };
-            Ok(Event::Key(KeyEvent::new(code, modifiers)))
+            let k = KeyEvent::new(code, modifiers);
+            Ok(if event_type == GIBSON_EVENT_KEY {
+                Event::Key(k)
+            } else {
+                Event::KeyRelease(k)
+            })
+        }
+        GIBSON_EVENT_KEY_RELEASES_ACTIVE => {
+            Ok(Event::KeyReleaseReporting(KeyReleaseReporting::Active))
+        }
+        GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED => {
+            Ok(Event::KeyReleaseReporting(KeyReleaseReporting::Unsupported))
         }
         GIBSON_EVENT_PASTE => {
             let text = ptr::addr_of!((*ev).paste_str).read();

@@ -17,6 +17,7 @@
 mod pty_capture;
 
 use gibson::context::{Context, RenderMode};
+use gibson::ffi::*;
 use gibson::{Event, KeyCode, KeyReleaseReporting};
 use portable_pty::CommandBuilder;
 use pty_capture::Capture;
@@ -174,6 +175,129 @@ fn a_kitty_terminal_reports_releases_named_as_their_presses() {
         "popped on the alternate screen, before leaving it"
     );
     assert_eq!(count(raw, POP), 1, "popped exactly once");
+}
+
+#[test]
+fn the_c_abi_reports_the_same_releases() {
+    // The same bytes through gibson_set_key_release_reporting and gibson_poll_event_kind.
+    let mut cap = Capture::spawn(child("c"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "READY");
+    wait_bytes(&mut cap, PUSH_AND_ASK);
+    let raw = cap.raw().to_vec();
+    let push = find(&raw, PUSH_AND_ASK, 0).unwrap();
+    assert!(find(&raw, ENTER_ALT, 0).unwrap() < push);
+    send(&mut cap, KITTY_ANSWER);
+    wait_for(&mut cap, "EV reporting:Active");
+    for keys in KITTY_KEYS {
+        send(&mut cap, keys);
+    }
+    send(&mut cap, b"\x1b[113u");
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, "c");
+    assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
+    let mut want = vec!["reporting:Active".to_string()];
+    want.extend(KITTY_EVENTS.iter().map(|s| s.to_string()));
+    want.push("key:q:0".into());
+    assert_eq!(events(&cap), want);
+    let raw = cap.raw();
+    let pop = find(raw, POP, push).expect("gibson_destroy_context pops the flags");
+    assert!(pop < find(raw, LEAVE_ALT, push).unwrap());
+    assert_eq!(count(raw, POP), 1);
+}
+
+#[test]
+fn a_c_client_that_never_opts_in_sees_no_release_types_and_nothing_is_written() {
+    // A legacy C client (it never calls gibson_set_key_release_reporting) on a terminal that
+    // sends kitty-encoded keys anyway, releases included, and a stray answer. It must poll
+    // presses only: no KEY_RELEASE, no KEY_RELEASES_* type, and nothing may be written for it.
+    let mut cap = Capture::spawn(child("c-off"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "READY");
+    send(&mut cap, KITTY_ANSWER);
+    send(&mut cap, b"\x1b[119u\x1b[119;1:3u\x1b[13u\x1b[13;1:3u");
+    send(&mut cap, b"\x1b[113u");
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, "c-off");
+    assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
+    assert_eq!(events(&cap), ["key:w:0", "key:Enter:0", "key:q:0"]);
+    let raw = cap.raw();
+    assert_eq!(count(raw, b"\x1b[>"), 0, "nothing pushed");
+    assert_eq!(count(raw, b"\x1b[?u"), 0, "nothing asked");
+    assert_eq!(count(raw, POP), 0, "nothing popped");
+}
+
+#[test]
+fn a_c_client_that_disables_drops_the_late_answer_and_releases_and_can_enable_again() {
+    // gibson_set_key_release_reporting(1) then (0): the push is popped at once, the answer that
+    // arrives after it and a release are dropped, and the destroy does not pop a second time for
+    // that request. Enabling again pushes and asks anew; that answer and its releases arrive.
+    let mut cap = Capture::spawn(child("c-disable"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "READY");
+    wait_bytes(&mut cap, PUSH_AND_ASK);
+    assert_eq!(count(cap.raw(), POP), 1, "disabling popped the push");
+    send(&mut cap, KITTY_ANSWER); // late: its request was withdrawn
+    send(&mut cap, b"\x1b[119u\x1b[119;1:3u");
+    send(&mut cap, b"r");
+    wait_for(&mut cap, "REENABLED");
+    cap.collect_until(|o| count(o, PUSH_AND_ASK) >= 2)
+        .expect("enabling again pushes and asks anew");
+    send(&mut cap, KITTY_ANSWER);
+    wait_for(&mut cap, "EV reporting:Active");
+    send(&mut cap, b"\x1b[119u\x1b[119;1:3u");
+    send(&mut cap, b"\x1b[113u");
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, "c-disable");
+    assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
+    assert_eq!(
+        events(&cap),
+        [
+            "key:w:0",
+            "key:r:0",
+            "reporting:Active",
+            "key:w:0",
+            "release:w:0",
+            "key:q:0"
+        ]
+    );
+    // One pop for the disable, one at destroy for the second request: never one too many, which
+    // would remove an entry that belongs to whoever pushed before us.
+    assert_eq!(count(cap.raw(), POP), 2);
+}
+
+#[test]
+fn a_caught_panic_reaches_a_c_client_as_unsupported_before_the_new_answer() {
+    // Active, w down, then a panic on the owning thread (caught, as a gibson_* call returning
+    // GIBSON_ERR_PANIC would be) and an opt-in again. The C client must poll
+    // KEY_RELEASES_UNSUPPORTED before the new KEY_RELEASES_ACTIVE, so a hold waiting for w's
+    // release falls back to inferred.
+    let mut cap = Capture::spawn(child("c-panic"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "READY");
+    wait_bytes(&mut cap, PUSH_AND_ASK);
+    send(&mut cap, KITTY_ANSWER);
+    wait_for(&mut cap, "EV reporting:Active");
+    send(&mut cap, b"\x1b[119u");
+    wait_for(&mut cap, "EV key:w:0");
+    send(&mut cap, b"\x1b[33u");
+    wait_for(&mut cap, "REENABLED");
+    cap.collect_until(|o| count(o, PUSH_AND_ASK) >= 2)
+        .expect("enabling again pushes and asks anew");
+    send(&mut cap, KITTY_ANSWER);
+    send(&mut cap, b"\x1b[113u");
+    wait_for(&mut cap, "DONE");
+    let (cap, status) = finish(cap, "c-panic");
+    assert!(status.success(), "{:?}", String::from_utf8_lossy(cap.raw()));
+    assert_eq!(
+        events(&cap),
+        [
+            "reporting:Active",
+            "key:w:0",
+            "key:!:0",
+            "reporting:Unsupported",
+            "reporting:Active",
+            "key:q:0"
+        ]
+    );
+    // The panic hook popped the first push, gibson_destroy_context the second.
+    assert_eq!(count(cap.raw(), POP), 2);
 }
 
 #[test]
@@ -581,6 +705,100 @@ fn say(s: &str) {
     std::io::stdout().flush().unwrap();
 }
 
+/// One `gibson_poll_event_kind` of the C child: the event as an `EV` line's text (`None` for
+/// anything the tests do not print), its type and key code.
+unsafe fn c_poll(h: *mut GibsonContextOpaque) -> Option<(String, i32, u32)> {
+    let mut ev = GibsonEvent {
+        event_type: -1,
+        key_code: 0,
+        modifiers: 0,
+        _pad: [0; 3],
+        cols: 0,
+        rows: 0,
+        paste_str: std::ptr::null(),
+    };
+    let mut kind = 99u32;
+    assert_eq!(
+        gibson_poll_event_kind(h, 100, &mut ev, &mut kind),
+        GibsonStatus::Ok
+    );
+    let name = || {
+        let code = if kind == GIBSON_KEY_KIND_CHAR {
+            char::from_u32(ev.key_code).unwrap().to_string()
+        } else {
+            match ev.key_code {
+                GIBSON_KEY_LEFT => "Left".into(),
+                GIBSON_KEY_ENTER => "Enter".into(),
+                other => format!("special:{other:#x}"),
+            }
+        };
+        format!("{code}:{}", ev.modifiers)
+    };
+    let line = match ev.event_type {
+        GIBSON_EVENT_KEY => format!("key:{}", name()),
+        GIBSON_EVENT_KEY_RELEASE => format!("release:{}", name()),
+        GIBSON_EVENT_KEY_RELEASES_ACTIVE => "reporting:Active".into(),
+        GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED => "reporting:Unsupported".into(),
+        // Every other type a legacy client knows (NONE, PASTE, RESIZE) is not printed; anything
+        // else would be a type this test does not expect, and is printed as such.
+        GIBSON_EVENT_NONE | GIBSON_EVENT_PASTE | GIBSON_EVENT_RESIZE => return None,
+        other => format!("unknown-type:{other}"),
+    };
+    Some((line, ev.event_type, ev.key_code))
+}
+
+/// The C children: the protocol through the C ABI only. `c`: opted in. `c-off`: never opts in
+/// (a legacy client). `c-disable`: opts in and straight out again; `r` opts in anew. `c-panic`:
+/// opted in; `!` panics on the owning thread (caught) and opts in again.
+fn c_child(role: &str) {
+    unsafe {
+        let mut h: *mut GibsonContextOpaque = std::ptr::null_mut();
+        assert_eq!(
+            gibson_create_context(GIBSON_MODE_FULLSCREEN, &mut h),
+            GibsonStatus::Ok
+        );
+        if role != "c-off" {
+            assert_eq!(gibson_set_key_release_reporting(h, 1), GibsonStatus::Ok);
+        } else {
+            // Opting in would have entered raw mode; a legacy client's first poll does. Nothing
+            // has been typed yet (READY is not out), so this consumes nothing.
+            assert!(c_poll(h).is_none());
+        }
+        if role == "c-disable" {
+            assert_eq!(gibson_set_key_release_reporting(h, 0), GibsonStatus::Ok);
+            say("DISABLED");
+        }
+        say("READY");
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            let Some((line, ty, code)) = c_poll(h) else {
+                continue;
+            };
+            say(&format!("EV {line}"));
+            if ty != GIBSON_EVENT_KEY {
+                continue;
+            }
+            if code == u32::from('q') {
+                break;
+            }
+            if role == "c-disable" && code == u32::from('r') {
+                assert_eq!(gibson_set_key_release_reporting(h, 1), GibsonStatus::Ok);
+                say("REENABLED");
+            }
+            if role == "c-panic" && code == u32::from('!') {
+                // As a gibson_* call that panicked and returned GIBSON_ERR_PANIC would: the hook
+                // runs on the owning thread first.
+                let caught = std::panic::catch_unwind(|| panic!("caught, on the owner thread"));
+                assert!(caught.is_err());
+                assert_eq!(gibson_set_key_release_reporting(h, 1), GibsonStatus::Ok);
+                say("REENABLED");
+            }
+        }
+        gibson_destroy_context(h);
+    }
+    say("DONE");
+}
+
 /// Child for the tests above; a no-op in a normal run.
 #[test]
 fn key_release_reporting_child() {
@@ -588,6 +806,9 @@ fn key_release_reporting_child() {
         return;
     };
     let role = role.to_string_lossy().into_owned();
+    if role == "c" || role.starts_with("c-") {
+        return c_child(&role);
+    }
     let mode = if role == "inline" {
         RenderMode::Inline
     } else {

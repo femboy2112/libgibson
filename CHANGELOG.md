@@ -273,18 +273,54 @@ stays 1.85.
   delivery being one atomic step; the owning session withdraws its push with one pop (never repeated
   at restore, `Drop` or in the panic hook): at once if its own `Context` poll handed the answer out,
   otherwise on its next `Context` poll, enable, disable or screen switch, or at restore. The
-  terminal then goes back to legacy keys (one `\r` per Enter). Once the panic hook has popped the
-  flags, even for a caught panic, no release or terminal answer is delivered and `Unsupported` is
-  delivered once, by the next `Context` poll or, if the terminal answers first, just before that
-  answer by whichever poll hands it out, so it comes before the new answer even if reporting was
-  enabled again meanwhile, and a client still waiting for releases switches back to inferred holds;
-  if a `Context` poll fails to re-enter raw mode, the notice waits for the next. While reporting is
-  confirmed, or its answer is still pending, a read ending in a lone ESC waits up to 50 ms for the
-  rest of its sequence (reading what is already waiting before giving up), then is the Esc key. The
-  rustdoc now lists what flags 15 change in delivered keys (a shifted letter has no `SHIFT`, Caps
-  Lock does not change a letter, Ctrl+I/M/[ are Ctrl chords).
-- **The C ABI is unchanged** (64 symbols): a C consumer cannot enable this yet, and never sees the
-  new events.
+  terminal then goes back to the flags in force before the push (legacy keys, one `\r` per Enter,
+  unless something else, such as the host of an inline session, had pushed its own). Once the panic
+  hook has popped the flags, even for a caught panic, no release or terminal answer is delivered and
+  `Unsupported` is delivered once, by the next `Context` poll or, if the terminal answers first,
+  just before that answer by whichever poll hands it out, so it comes before the new answer even if
+  reporting was enabled again meanwhile, and a client still waiting for releases switches back to
+  inferred holds; if a `Context` poll fails to re-enter raw mode, the notice waits for the next.
+  While reporting is confirmed, or its answer is still pending, a read ending in a lone ESC waits up
+  to 50 ms for the rest of its sequence (reading what is already waiting before giving up), then is
+  the Esc key. The rustdoc now lists what flags 15 change in delivered keys (a shifted letter has no
+  `SHIFT`, Caps Lock does not change a letter, Ctrl+I/M/[ are Ctrl chords).
+- **C ABI v1, additive (64 → 65 symbols):** `gibson_set_key_release_reporting(ctx, enabled)` and
+  the event types `GIBSON_EVENT_KEY_RELEASE` (4; `key_code`, `modifiers` and the key kind exactly
+  as the press was delivered, also through `gibson_poll_event_kind`),
+  `GIBSON_EVENT_KEY_RELEASES_ACTIVE` (5) and `GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED` (6), all
+  pushable on a headless context. A consumer that never calls the new function never sees the new
+  types; existing values are unchanged. `tests/ffi_key_release.rs`; the real-PTY test drives the
+  same kitty bytes through the C ABI (role `c`), and checks that a C client that never opts in
+  polls presses only and nothing is written for it, that disabling pops at once and drops a late
+  answer and releases, and that a panic on the owning thread reaches C as
+  `KEY_RELEASES_UNSUPPORTED` before the answer to a new request. `gibson.h` states what enabling
+  and disabling do, what restore and the panic hook do, and the shifted-symbol limit
+  ([#312](https://github.com/femboy2112/libgibson/issues/312)).
+- **`fb_adapter` (node J) can use reported releases, opt-in:** `fb_adapter_config.key_releases` is
+  0 by default (the adapter is embedded in consumers, and this is an opt-in input contract), and
+  then the adapter asks nothing and ignores the release and answer events, keeping inferred holds.
+  Set to 1, it requests them on a terminal; once confirmed a key is held exactly while it is down,
+  at least one tic, and several keys that `map_key` sends to one producer key keep it held until
+  the last of them goes up (up to 8 per producer key; inferred holds stay per producer key: there
+  an alias re-arms the hold like an autorepeat), a hold begun before the confirmation keeps its
+  inferred deadline unless every key that made it is reported up, and an exact hold has no grace
+  fallback (a release that never arrives keeps it until reporting is withdrawn); a terminal
+  without the protocol keeps the grace. `fb_adapter_releases_reported`; releases and the answer
+  are recorded in the input trace (`FB_OBSERVED_*`), so a session replays exactly; the demo
+  (`--key-releases`) shows `keys exact` on its status row. The selfcheck's P3 adds a
+  reported-release leg (w held across a d chord, a one-tic tap) against the rule written out by
+  hand, a full key queue (a release waiting for room is never lost to a re-press, which is dropped
+  and counted) and a withdrawal (only holds waiting for a release are re-timed, as in
+  `gibson::hold`), w and Up mapped to one producer key, held until both are up (and re-armed as
+  one key with inferred holds), two holds mixing inferred and reported parts, each press and
+  release of the producer key counted, with the controls `p3-ignore-releases`,
+  `p3-rearm-loses-release`, `p3-shared-alias-hold`, `p3-unmatched-release`, `p3-wrap-deadline` and
+  `p3-rewrite-ended` (29 controls; hold deadlines saturate at the last tic, and a hold that has
+  ended while its release waits for queue room is not rewritten by a later release), and a leg
+  where the same script through an adapter left at the default gives the grace model's whole
+  transcript, written out by hand. `scripts/dev/kitty_key_release_e2e.sh` with `FB_DEMO=` runs the
+  demo in real kitty: the trace of the live session replays headless to the same hash, and without
+  `--key-releases` the demo records no answer and no release.
 
 ### Fixed — a key release is no longer delivered as a key press ([#285](https://github.com/femboy2112/libgibson/issues/285))
 - The public input model is press-only. A terminal speaking the kitty keyboard protocol reports an

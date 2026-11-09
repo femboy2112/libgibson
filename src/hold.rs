@@ -40,7 +40,9 @@
 //! ([`observe_release`](crate::hold::HoldTracker::observe_release), ending as
 //! [`ReleaseCause::KeyReleased`](crate::hold::ReleaseCause::KeyReleased)) or for a declared
 //! reason. So a tap lasts as long as the key was down, and keys held together stay held
-//! together. A release observed at the tic its hold started ends it one tic later: every press
+//! together. There is no deadline to fall back on: a release that never arrives (the terminal
+//! lost focus and reported none, say) keeps the hold until the caller ends it for a declared
+//! reason (`observe_event` does on a focus loss) or reporting stops. A release observed at the tic its hold started ends it one tic later: every press
 //! is held for at least one tic. A hold that started before releases were reported keeps its
 //! deadline until the key is observed again; if reporting stops, every hold that was waiting for
 //! a release falls back to the inferred rule, as if pressed at that tic.

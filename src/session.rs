@@ -526,7 +526,9 @@ impl TerminalSession {
     /// leaves them pushed and the shell then receives escape sequences for Enter; kitty's reset
     /// (Ctrl+Shift+Delete) clears them. Moving between the main and alternate screen while enabled
     /// pops the flags on the screen being left and asks again on the new one, so a second answer
-    /// follows. Disabling pops the flags and drops anything not yet delivered: an answer, a
+    /// follows. Disabling pops the flags (the one entry this session pushed, which restores the
+    /// flags in force before it: legacy keys only if nothing else, such as the host of an inline
+    /// session, had pushed its own) and drops anything not yet delivered: an answer, a
     /// release; an application tracking holds then calls
     /// [`HoldTracker::set_releases_reported(false)`](crate::hold::HoldTracker::set_releases_reported)
     /// itself. A release names its key as the press did for the 32 most recent keys still down,

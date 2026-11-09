@@ -10,9 +10,13 @@
 #          after the game exits, kitty's keyboard flags are 0 on both the main and the alternate
 #          screen (the game's push was popped); the recorded trace replays.
 #   xterm: no protocol: the answer is `keys presses`, and no release is recorded.
+# With FB_DEMO=path to an fb_adapter_demo built against an SDK with the C ABI opt-in, the same in
+# kitty through the C ABI: the answer and the releases are in the demo's input trace, the status
+# row shows "keys exact", the trace replays headless to the live run's hash, and the flags are
+# popped after exit.
 # Not run in CI (needs Xvfb, kitty, xterm, xdotool). Never touches the caller's display.
 #
-# usage: scripts/dev/kitty_key_release_e2e.sh [OUT_DIR]
+# usage: [FB_DEMO=...] scripts/dev/kitty_key_release_e2e.sh [OUT_DIR]
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=${1:-$(mktemp -d)}
@@ -62,7 +66,8 @@ key() { xdotool "$@"; }
 run_in() { # run_in TERMINAL NAME : start the game in TERMINAL, recording NAME.trace
     local term=$1 name=$2
     rm -f "$OUT/$name".*
-    local cmd="'$GAME' --record '$OUT/$name.trace' --max-seconds 25; python3 -I '$OUT/flags_after.py' '$OUT/$name.flags'; touch '$OUT/$name.done'"
+    local prog=${3:-"'$GAME' --record '$OUT/$name.trace' --max-seconds 25"}
+    local cmd="$prog; python3 -I '$OUT/flags_after.py' '$OUT/$name.flags'; touch '$OUT/$name.done'"
     if [ "$term" = kitty ]; then
         kitty --config NONE -o allow_remote_control=yes --listen-on "unix:$SOCK" \
             -o initial_window_width=1000 -o initial_window_height=700 \
@@ -93,7 +98,28 @@ key keydown w; sleep 0.3; key keyup w; sleep 0.3
 key key q
 wait_file "$OUT/xterm.done" || { echo "xterm run did not finish" >&2; exit 1; }
 
-python3 -I - "$OUT" "$GAME" <<'EOF'
+# ---------------------------------------------------------------- fb_adapter demo (C ABI)
+if [ -n "${FB_DEMO:-}" ]; then
+    # --key-releases: the adapter's opt-in (off by default, #275).
+    run_in kitty demo "'$FB_DEMO' --play --key-releases --exit-after-tics 600 --trace '$OUT/demo.trace' --report '$OUT/demo.report'"
+    key keydown Right; sleep 0.8
+    key keydown w; sleep 0.4; key keyup w     # w while Right stays down
+    sleep 0.4; key keyup Right; sleep 0.3
+    key keydown a; sleep 0.06; key keyup a
+    sleep 0.6
+    kitty @ --to "unix:$SOCK" get-text >"$OUT/demo.screen" 2>/dev/null || true
+    key key q
+    wait_file "$OUT/demo.done" || { echo "demo run did not finish" >&2; exit 1; }
+    # The same demo without the opt-in: the adapter's default keeps inferred holds and asks nothing.
+    run_in kitty demo_off "'$FB_DEMO' --play --exit-after-tics 600 --trace '$OUT/demo_off.trace' --report '$OUT/demo_off.report'"
+    key keydown w; sleep 0.4; key keyup w
+    sleep 0.4
+    kitty @ --to "unix:$SOCK" get-text >"$OUT/demo_off.screen" 2>/dev/null || true
+    key key q
+    wait_file "$OUT/demo_off.done" || { echo "demo_off run did not finish" >&2; exit 1; }
+fi
+
+FB_DEMO=${FB_DEMO:-} python3 -I - "$OUT" "$GAME" <<'EOF'
 import sys, subprocess, re
 out, game = sys.argv[1], sys.argv[2]
 fails = []
@@ -133,6 +159,31 @@ x = lines("xterm")
 check(any(l[1:] == ["keys", "presses"] for l in x), "xterm: the answer is press-only")
 check(not any(len(l) > 1 and l[1] == "release" for l in x), "xterm: no release recorded")
 check(any(len(l) > 2 and l[1] == "key" and l[2] == W for l in x), "xterm: the press of w still arrives")
+import os
+demo = os.environ.get("FB_DEMO")
+if demo:
+    tr = [l.split() for l in open(f"{out}/demo.trace").read().splitlines()]
+    kinds = [int(t[1]) for t in tr]
+    check(0x200 in kinds, "demo (C ABI): the answer KEY_RELEASES_ACTIVE is in the input trace")
+    rel = [(int(t[1]) & 0xff, int(t[2])) for t in tr if int(t[1]) & 0x100 and int(t[1]) < 0x200]
+    # the quit key's release may be recorded too (pressed and released before the loop ends)
+    keys = [(1, ord("w")), (1, ord("a")), (2, 0x1003)]
+    check(all(rel.count(k) == 1 for k in keys) and all(r in keys or r == (1, ord("q")) for r in rel),
+          f"demo (C ABI): one release each of Right, w and a ({rel})")
+    rp = dict(kv.split("=", 1) for kv in open(f"{out}/demo.report").read().split() if "=" in kv)
+    r = subprocess.run([demo, "--replay", f"{out}/demo.trace", "--tics", rp["tics"], "--key-releases"], capture_output=True, text=True)
+    m = re.search(r"hash=([0-9a-f]+)", r.stdout)
+    check(m is not None and m.group(1) == rp["hash"],
+          f"demo (C ABI): the trace replays to the live hash (live {rp['hash']}, replay {m.group(1) if m else None})")
+    check("keys exact" in open(f"{out}/demo.screen", errors="replace").read(), "demo (C ABI): the status row shows keys exact")
+    fl = open(f"{out}/demo.flags", "rb").read()
+    check(b"main \x1b[?0u" in fl and b"alt \x1b[?0u" in fl, f"demo (C ABI): flags popped on both screens after exit: {fl!r}")
+    off = [l.split() for l in open(f"{out}/demo_off.trace").read().splitlines()]
+    okinds = [int(t[1]) for t in off]
+    check(not any(k & 0x300 for k in okinds) and any(k == 1 and int(t[2]) == ord("w") for k, t in zip(okinds, off)),
+          f"demo without --key-releases: the press of w is traced, no answer and no release ({len(off)} events)")
+    check("keys exact" not in open(f"{out}/demo_off.screen", errors="replace").read(),
+          "demo without --key-releases: the status row does not show keys exact")
 print(f"evidence in {out}")
 sys.exit(1 if fails else 0)
 EOF

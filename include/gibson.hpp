@@ -267,9 +267,9 @@ public:
 };
 
 // One input event, as pushed to or polled from a headless context. Fields the type does not use are
-// 0 (poll writes them that way). `key_kind` is meaningful only when `has_kind`: a KEY event polled
-// with poll_event_kind carries GIBSON_KEY_KIND_CHAR / _SPECIAL (a typed U+1001 stays distinct from
-// GIBSON_KEY_ENTER); other types carry GIBSON_KEY_KIND_NONE. A kind-less poll (poll_event_kindless(timeout))
+// 0 (poll writes them that way). `key_kind` is meaningful only when `has_kind`: a KEY or KEY_RELEASE
+// event polled with poll_event_kind carries GIBSON_KEY_KIND_CHAR / _SPECIAL (a typed U+1001 stays
+// distinct from GIBSON_KEY_ENTER); other types carry GIBSON_KEY_KIND_NONE. A kind-less poll (poll_event_kindless(timeout))
 // leaves has_kind false. push_event uses gibson_push_event_kind iff has_kind, else gibson_push_event
 // (U+1001..U+100D are then always the special keys). `paste` is only read when `has_paste`; an
 // event with has_paste false and type PASTE is pushed with a NULL paste_str (the C ABI refuses it).
