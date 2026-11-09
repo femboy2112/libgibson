@@ -8,7 +8,9 @@ that contains it — never from the integration branch itself.
 `main` (59 → 60: `gibson_push_event`, #273; → 62: `gibson_poll_event_kind` /
 `gibson_push_event_kind`, #283). `GIBSON_ABI_VERSION` stays 1; v0.6.0 keeps 59.
 *Update 2026-11-08:* → 64: `gibson_take_rendered_output` / `gibson_clear_rendered_output` bound a
-headless context's capture (#297); → 65: `gibson_set_key_release_reporting` (#301, #303).
+headless context's capture (#297); → 65: `gibson_set_key_release_reporting` (#301, #303); → 67:
+`gibson_get_terminal_size` / `gibson_set_focus_reporting` project the terminal-size query and focus
+events into the C ABI (#298).
 
 ## What v0.6 already proves (preserved evidence, not re-litigated)
 

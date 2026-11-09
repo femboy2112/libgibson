@@ -13,7 +13,10 @@ use std::mem::{align_of, offset_of, size_of};
 
 use gibson::ffi::{
     GibsonCell, GibsonColor, GibsonEvent, GibsonStatus, GibsonStyle, GIBSON_ABI_VERSION,
-    GIBSON_CELL_GLYPH_CAP, GIBSON_EVENT_QUEUE_CAPACITY,
+    GIBSON_CELL_GLYPH_CAP, GIBSON_EVENT_FOCUS_GAINED, GIBSON_EVENT_FOCUS_LOST, GIBSON_EVENT_KEY,
+    GIBSON_EVENT_KEY_RELEASE, GIBSON_EVENT_KEY_RELEASES_ACTIVE,
+    GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED, GIBSON_EVENT_NONE, GIBSON_EVENT_PASTE,
+    GIBSON_EVENT_QUEUE_CAPACITY, GIBSON_EVENT_RESIZE,
 };
 
 /// v0.7 adds `gibson_push_event` (59 -> 60 symbols, additive): `gibson_event_t`, until now only
@@ -31,6 +34,23 @@ fn gibson_event_layout_is_frozen() {
     assert_eq!(offset_of!(GibsonEvent, cols), 12);
     assert_eq!(offset_of!(GibsonEvent, rows), 14);
     assert_eq!(offset_of!(GibsonEvent, paste_str), 16);
+}
+
+/// The event-type discriminants are a wire commitment: a C client compares `event_type` against
+/// these exact integers, so a reorder would silently misroute events across the ABI without
+/// changing any struct layout. Pinned here — including the #298 focus pair — so a future shuffle
+/// turns this suite red. 0-6 are the v0.6/#275 set; 7-8 are additive (#298), ABI version unchanged.
+#[test]
+fn event_type_discriminants_are_frozen() {
+    assert_eq!(GIBSON_EVENT_NONE, 0);
+    assert_eq!(GIBSON_EVENT_KEY, 1);
+    assert_eq!(GIBSON_EVENT_PASTE, 2);
+    assert_eq!(GIBSON_EVENT_RESIZE, 3);
+    assert_eq!(GIBSON_EVENT_KEY_RELEASE, 4);
+    assert_eq!(GIBSON_EVENT_KEY_RELEASES_ACTIVE, 5);
+    assert_eq!(GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED, 6);
+    assert_eq!(GIBSON_EVENT_FOCUS_GAINED, 7);
+    assert_eq!(GIBSON_EVENT_FOCUS_LOST, 8);
 }
 
 #[test]

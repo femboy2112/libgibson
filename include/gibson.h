@@ -176,10 +176,15 @@ typedef enum {
        key_code, modifiers and the key kind are those its press was delivered with, with the
        exceptions listed there. KEY_RELEASES_ACTIVE: the terminal confirmed the request; every key
        that goes up after this event is a KEY_RELEASE. KEY_RELEASES_UNSUPPORTED: it answered
-       without confirming, or reporting ended; keys stay press-only. */
+       without confirming, or reporting ended; keys stay press-only.
+       Focus reporting (ABI v1, additive, #298): after gibson_set_focus_reporting, the terminal
+       gaining or losing focus arrives as FOCUS_GAINED / FOCUS_LOST. Neither carries any field; a
+       polled focus event can be pushed back unchanged (gibson_push_event). */
     GIBSON_EVENT_KEY_RELEASE = 4,
     GIBSON_EVENT_KEY_RELEASES_ACTIVE = 5,
-    GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED = 6
+    GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED = 6,
+    GIBSON_EVENT_FOCUS_GAINED = 7,
+    GIBSON_EVENT_FOCUS_LOST = 8
 } gibson_event_type_t;
 
 typedef struct {
@@ -289,6 +294,11 @@ gibson_status_t gibson_set_max_fps(gibson_context_t *ctx, uint32_t fps);
    entry. A no-op on a headless context (push the events instead) and off Unix.
    GIBSON_ERR_IO if the write fails. (ABI v1, additive, #275) */
 gibson_status_t gibson_set_key_release_reporting(gibson_context_t *ctx, int32_t enabled);
+/* Asks the terminal to report focus changes, or stops asking. Once enabled, the terminal gaining or
+   losing focus is polled as GIBSON_EVENT_FOCUS_GAINED / GIBSON_EVENT_FOCUS_LOST (no fields).
+   gibson_destroy_context undoes it. A no-op on a headless context (push the focus events instead)
+   and off a terminal. GIBSON_ERR_IO if the write fails. (ABI v1, additive, #298) */
+gibson_status_t gibson_set_focus_reporting(gibson_context_t *ctx, int32_t enabled);
 /* Overrides the color depth (one of gibson_color_depth_t); unknown values return
    GIBSON_ERR_INVALID_PARAM. Call before the first render (see note at gibson_get_rendered_output).
    (ABI v1, additive) */
@@ -339,7 +349,7 @@ gibson_status_t gibson_poll_event_kind(gibson_context_t *ctx, uint32_t timeout_m
              always the special keys here; gibson_push_event_kind can push them as characters.
      PASTE:  paste_str is a non-NULL, NUL-terminated UTF-8 string; it is copied.
      RESIZE: cols and rows are both non-zero.
-     KEY_RELEASE: as KEY.  KEY_RELEASES_ACTIVE, KEY_RELEASES_UNSUPPORTED: no fields.
+     KEY_RELEASE: as KEY.  KEY_RELEASES_ACTIVE, KEY_RELEASES_UNSUPPORTED, FOCUS_GAINED, FOCUS_LOST: no fields.
    Fields the event type does not use are ignored and may be left uninitialized. Returns GIBSON_ERR_INVALID_PARAM for a NULL
    argument, a terminal (non-headless) context or an unrepresentable event, and
    GIBSON_ERR_QUEUE_FULL when GIBSON_EVENT_QUEUE_CAPACITY events are undelivered. A refused event
@@ -378,6 +388,10 @@ gibson_status_t gibson_clear_rendered_output(gibson_context_t *ctx, size_t *out_
    is no frame yet; frame_cell returns GIBSON_ERR_INVALID_PARAM for a null out, no frame, or an
    out-of-bounds (x,y). Style is quantized to the context's color depth. (ABI v1, additive) */
 gibson_status_t gibson_get_frame_size(gibson_context_t *ctx, uint16_t *out_cols, uint16_t *out_rows);
+/* Live terminal geometry (cols, rows), as opposed to the last rendered frame's: answers before the
+   first render. Headless reports its creation size, a TTY its measured size, a redirected stdout the
+   80x24 fallback. Both outputs are always non-zero. (ABI v1, additive, #298) */
+gibson_status_t gibson_get_terminal_size(gibson_context_t *ctx, uint16_t *out_cols, uint16_t *out_rows);
 gibson_status_t gibson_get_frame_cell(gibson_context_t *ctx, uint16_t x, uint16_t y, gibson_cell_t *out);
 /* Bulk readback: up to max_cells resolved cells row-major from (x,y) across row ends to the end of
    the frame; *out_written = count. Same per-cell encoding as gibson_get_frame_cell. (ABI v1, additive) */

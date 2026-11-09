@@ -44,7 +44,7 @@
 use crate::cell::{Color, Line, RichText, Span, Style, TextAlign};
 use crate::context::Context;
 use crate::event_source::InjectedQueue;
-use crate::input::{Event, KeyCode, KeyEvent, KeyModifiers, KeyReleaseReporting};
+use crate::input::{Event, FocusChange, KeyCode, KeyEvent, KeyModifiers, KeyReleaseReporting};
 use crate::node::{Node, WrapMode};
 use crate::renderer::RenderMode;
 use crate::scheduler::RenderStats;
@@ -118,6 +118,12 @@ pub const GIBSON_EVENT_KEY_RELEASES_ACTIVE: i32 = 5;
 /// The terminal answered without confirming key-release reporting: keys stay press-only
 /// (ABI v1, additive, #275).
 pub const GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED: i32 = 6;
+/// The terminal window/tab gained focus (ABI v1, additive, #298). Only after
+/// [`gibson_set_focus_reporting`]; carries no fields. A polled focus event can be pushed back.
+pub const GIBSON_EVENT_FOCUS_GAINED: i32 = 7;
+/// The terminal window/tab lost focus (ABI v1, additive, #298). The twin of
+/// [`GIBSON_EVENT_FOCUS_GAINED`]; also fieldless and round-trippable through [`gibson_push_event`].
+pub const GIBSON_EVENT_FOCUS_LOST: i32 = 8;
 
 /// Most undelivered events one headless context holds for [`gibson_push_event`]. A push beyond
 /// it is refused with [`GibsonStatus::ErrQueueFull`]; nothing queued is displaced.
@@ -639,6 +645,31 @@ pub unsafe extern "C" fn gibson_set_key_release_reporting(
     res.unwrap_or(GibsonStatus::ErrPanic)
 }
 
+/// Asks the terminal to report focus-change events, or stops asking (#298). See
+/// `TerminalSession::set_focus_reporting`: once enabled, the terminal gaining or losing focus
+/// arrives from [`gibson_poll_event`] as [`GIBSON_EVENT_FOCUS_GAINED`] / [`GIBSON_EVENT_FOCUS_LOST`]
+/// (neither carries any field). Unwound on `gibson_destroy_context`. A no-op on a headless context
+/// (push the focus events instead) and off a terminal — focus is a terminal courtesy, not a promise.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_set_focus_reporting(
+    ctx: *mut GibsonContextOpaque,
+    enabled: i32,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        match (*ctx).inner.session.set_focus_reporting(enabled != 0) {
+            Ok(()) => GibsonStatus::Ok,
+            Err(e) => {
+                set_last_error(e.to_string());
+                GibsonStatus::ErrIo
+            }
+        }
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gibson_set_max_fps(
     ctx: *mut GibsonContextOpaque,
@@ -1061,11 +1092,19 @@ unsafe fn poll_event_impl(
                         (*out_event).cols = cols;
                         (*out_event).rows = rows;
                     }
-                    // The C ABI (v1) does not model mouse or focus events, and they
-                    // only arise when a Rust consumer opts into capture (this C poll
-                    // path never does), so they report as GIBSON_EVENT_NONE like Tick.
-                    // Keeps ABI v1 frozen (issue #126).
-                    Event::Tick | Event::Mouse(_) | Event::Focus(_) => {}
+                    // Focus is now part of the ABI (v1, additive, #298): a Gained/Lost
+                    // transition projects to its fieldless event type. The window just
+                    // blinked in or out; the caller gets to know, nothing else to carry.
+                    Event::Focus(FocusChange::Gained) => {
+                        (*out_event).event_type = GIBSON_EVENT_FOCUS_GAINED;
+                    }
+                    Event::Focus(FocusChange::Lost) => {
+                        (*out_event).event_type = GIBSON_EVENT_FOCUS_LOST;
+                    }
+                    // Tick and mouse stay unmodelled by the C ABI (v1): a Rust consumer
+                    // must opt into capture for them and this C poll path never does, so
+                    // they report as GIBSON_EVENT_NONE. Keeps ABI v1 frozen (issue #126).
+                    Event::Tick | Event::Mouse(_) => {}
                     // The answer to gibson_set_key_release_reporting (#275).
                     Event::KeyReleaseReporting(KeyReleaseReporting::Active) => {
                         (*out_event).event_type = GIBSON_EVENT_KEY_RELEASES_ACTIVE;
@@ -1152,6 +1191,10 @@ unsafe fn event_from_c(ev: *const GibsonEvent, key_kind: Option<u32>) -> Result<
         GIBSON_EVENT_KEY_RELEASES_UNSUPPORTED => {
             Ok(Event::KeyReleaseReporting(KeyReleaseReporting::Unsupported))
         }
+        // Focus carries nothing, so the round-trip is pure type: push the type, poll it back
+        // (ABI v1, additive, #298). No fields are read through the pointer.
+        GIBSON_EVENT_FOCUS_GAINED => Ok(Event::Focus(FocusChange::Gained)),
+        GIBSON_EVENT_FOCUS_LOST => Ok(Event::Focus(FocusChange::Lost)),
         GIBSON_EVENT_PASTE => {
             let text = ptr::addr_of!((*ev).paste_str).read();
             if text.is_null() {
@@ -1984,6 +2027,29 @@ pub unsafe extern "C" fn gibson_get_frame_size(
             return GibsonStatus::ErrInvalidParam;
         }
         let (cols, rows) = (*ctx).inner.frame_size().unwrap_or((0, 0));
+        *out_cols = cols;
+        *out_rows = rows;
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Writes the terminal's current `(cols, rows)` into `*out_cols` / `*out_rows` (#298). Unlike
+/// [`gibson_get_frame_size`], this is the live device geometry, not the last rendered frame's, so it
+/// answers before the first render: a headless context reports the size it was created with, a TTY
+/// its measured size, and a redirected stdout the 80x24 fallback. Both outputs are always non-zero.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_get_terminal_size(
+    ctx: *mut GibsonContextOpaque,
+    out_cols: *mut u16,
+    out_rows: *mut u16,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || out_cols.is_null() || out_rows.is_null() {
+            set_last_error("Null ctx/out_cols/out_rows for gibson_get_terminal_size".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let (cols, rows) = (*ctx).inner.session.terminal_size();
         *out_cols = cols;
         *out_rows = rows;
         GibsonStatus::Ok

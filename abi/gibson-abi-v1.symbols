@@ -20,6 +20,7 @@ gibson_get_frame_cells
 gibson_get_frame_size
 gibson_get_rendered_output
 gibson_get_stats
+gibson_get_terminal_size
 gibson_insert_node_before_live
 gibson_insert_raw_lines_before_live_unchecked
 gibson_insert_rich_text_before_live
@@ -62,6 +63,7 @@ gibson_rich_text_add_line
 gibson_rich_text_free
 gibson_rich_text_new
 gibson_set_color_depth
+gibson_set_focus_reporting
 gibson_set_key_release_reporting
 gibson_set_max_fps
 gibson_set_root_node

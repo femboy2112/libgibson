@@ -22,6 +22,19 @@ line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 was **released o
 (below); its source-version baseline `9a899e1` is never tagged. `GIBSON_ABI_VERSION` stays 1; MSRV
 stays 1.85.
 
+### Added — C ABI: terminal-size query and focus events (#298)
+
+- **`gibson_get_terminal_size(ctx, *out_cols, *out_rows)`** returns the live terminal geometry
+  (as opposed to `gibson_get_frame_size`, which is the last rendered frame's), so a C consumer can
+  size up before the first render. Both outputs are always non-zero.
+- **`gibson_set_focus_reporting(ctx, enabled)`** opts into focus-change reporting; the terminal
+  gaining or losing focus then polls out as the new fieldless event types
+  **`GIBSON_EVENT_FOCUS_GAINED` (7)** / **`GIBSON_EVENT_FOCUS_LOST` (8)**. A polled focus event
+  round-trips back through `gibson_push_event`. A no-op on a headless/non-TTY context.
+- Purely additive: the exported C ABI symbol set grows **65 → 67**, `GIBSON_ABI_VERSION` stays 1,
+  and no existing symbol, constant, or struct layout changes. The Rust machinery (`Event::Focus`,
+  `TerminalSession::{terminal_size, set_focus_reporting}`) already existed; this is the C projection.
+
 ### Fixed — Go binding (`bindings/go`): a failed `NewContext` reports its own error message
 - **`NewContext` now reads the failure message on the same OS thread as the failing call.**
   The native last error is thread-local, and the wrapper fetched it with a second cgo call; Go may
