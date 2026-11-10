@@ -69,6 +69,11 @@ build c cc -std=c11 -O2 -Wall -Wextra -o "$WORK/bin/parity_v08_c" "$V08/parity_v
 build cpp c++ -std=c++17 -O2 -Wall -Wextra -o "$WORK/bin/parity_v08_cpp" "$V08/parity_v08.cpp" "${PC[@]}" -Wl,-rpath,"$LIBDIR"
 build py cp "$REPO/bindings/python/gibson.py" "$WORK/pysite/gibson.py"
 build go env -C "$V08/go" GOFLAGS=-mod=mod GOPROXY=off CGO_LDFLAGS="-Wl,-rpath,$LIBDIR" go build -o "$WORK/bin/parity_v08_go" .
+PTY_STATUS=UNVERIFIED
+if [ "$(uname -s)" = Linux ]; then
+    build focus-cpp c++ -std=c++17 -O2 -Wall -Wextra -o "$WORK/bin/focus_cpp" "$V08/focus/client.cpp" "${PC[@]}" -Wl,-rpath,"$LIBDIR"
+    build focus-go env -C "$V08/focus/go" GOFLAGS=-mod=mod GOPROXY=off CGO_LDFLAGS="-Wl,-rpath,$LIBDIR" go build -o "$WORK/bin/focus_go" .
+fi
 if [ -n "${PARITY_V08_RUST_BIN:-}" ]; then
     RUST_BIN=$PARITY_V08_RUST_BIN
     echo "  rust: using prebuilt $RUST_BIN"
@@ -168,10 +173,27 @@ PYFOCUS
     else echo "  MISSED   leak/c (rc=$rc): $line"; CTL_FAIL=1; fi
 fi
 
+# Interactive focus controls do not add records to the 84-record parity transcript. A PTY proves
+# the wrapper's requests and cleanup bytes, not the terminal's interpretation of those requests.
+echo "== interactive focus reporting =="
+if [ "$(uname -s)" = Linux ]; then
+    if [ ! -c /dev/full ] || ! python3 -c 'import os,pty; a,b=pty.openpty(); os.close(a); os.close(b)' 2>/dev/null; then
+        echo "  UNVERIFIED: /dev/full or a usable PTY is unavailable"
+    elif PYTHONPATH="$WORK/pysite" LIBGIBSON_LIBRARY="$SDK/lib/libgibson.so" \
+        python3 "$V08/focus/pty_check.py" "$WORK/bin/focus_cpp" "$WORK/bin/focus_go" \
+            "$V08/focus/client.py" "$(command -v python3)"; then
+        PTY_STATUS=PASS
+    else
+        PTY_STATUS=FAIL
+    fi
+else
+    echo "  UNVERIFIED: interactive focus PTY control is Linux-only"
+fi
+
 echo "== summary =="
 echo "  transcripts: $WORK/out"
-echo "  build_fail=$BUILD_FAIL run_fail=$RUN_FAIL matrix_rc=$MATRIX_RC control_fail=$CTL_FAIL"
-if [ "$BUILD_FAIL" != 0 ] || [ "$RUN_FAIL" != 0 ] || [ "$MATRIX_RC" != 0 ] || [ "$CTL_FAIL" != 0 ]; then
+echo "  build_fail=$BUILD_FAIL run_fail=$RUN_FAIL matrix_rc=$MATRIX_RC control_fail=$CTL_FAIL focus_pty=$PTY_STATUS"
+if [ "$BUILD_FAIL" != 0 ] || [ "$RUN_FAIL" != 0 ] || [ "$MATRIX_RC" != 0 ] || [ "$CTL_FAIL" != 0 ] || [ "$PTY_STATUS" = FAIL ]; then
     echo "parity_v08: REGRESSION"
     exit 1
 fi

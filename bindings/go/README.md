@@ -41,13 +41,13 @@ corrupting memory.
 Because this module lives in a subdirectory, a Go module release is tagged with the
 module-path prefix — `bindings/go/vX.Y.Z` (e.g. `bindings/go/v0.1.0`), **not** a bare
 `vX.Y.Z`. The tag is created only as part of a coordinated release (see
-`../../docs/RELEASING.md`). No such tag exists yet.
+`../../docs/RELEASING.md`); `bindings/go/v0.6.0` is the latest released module tag.
 
 ## Notes
 
 The module has no external Go dependencies and therefore no go.sum. The example is a
-normal command package. There are currently no Go unit tests; example execution is a
-smoke check, not exhaustive wrapper coverage. Linux execution was verified locally
+normal command package. Go unit tests cover headless event and readback paths; example
+execution is a smoke check, not exhaustive wrapper coverage. Linux execution was verified locally
 and in public Go 1.27.1 CI; other platforms remain unverified. The `go 1.18` module
 language directive is not a cross-platform support or Rust MSRV promise.
 

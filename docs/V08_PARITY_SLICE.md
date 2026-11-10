@@ -34,6 +34,12 @@ Knobs: `PARITY_V08_REPS` (default 500), `PARITY_V08_WORK` (default: fresh `mktem
 `PARITY_V08_SKIP_CONTROLS=1`. Exit 0 = no regression against `expected.json`; 1 = regression;
 2 = usage/environment error.
 
+On Linux the same harness also runs the C++, Go and Python interactive focus wrappers under a
+PTY. It checks the enable/disable/restore bytes, catches a client that skips enable, and checks
+the propagated error from an injected `/dev/full` write. This is a separate control and does not
+change the 84 transcript records. Other systems report this control as UNVERIFIED; the PTY check
+proves the requests written by the wrappers, not that a particular terminal implements them.
+
 How each consumer reaches the installed SDK:
 
 | Lang | Build / load | Surface actually used |
@@ -364,12 +370,15 @@ bypassing the binding:**
   - the INLINE mode, scrollback, `commit_*` and `insert_*_before_live`;
   - rich text and Line nodes; spinner, text_input, border box, rule, rail, stack and dim nodes;
   - layout setters, wrapping, color-depth downgrade, stats parity;
-  - terminal (TTY) contexts and timeouts;
-  - mouse and focus events (absent from ABI v1; Rust has them);
+  - general interactive TTY scenes and input timeouts (the request-byte control above is narrower);
+  - mouse events (absent from ABI v1) and focus delivery by an interactive terminal;
   - `KeyCode::BackTab` (the ABI folds it into TAB);
   - threading;
   - `gibson_push_event` on a non-headless context.
   These are UNVERIFIED by this slice.
+
+The extended headless script does inject and poll focus gained/lost events through ABI v1
+and the wrappers. That verifies their identity and ordering, not terminal support.
 * **Common mode.** C, C++, Python and Go all drive the same `libgibson.so`. Their agreement proves
   binding/ABI fidelity, not engine correctness. Rust-vs-C compares two API paths over the same engine
   source. The comparison is relative: an engine change that alters every language's output equally
