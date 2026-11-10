@@ -6,7 +6,10 @@ It installs into a new directory, without changing your system Python or requiri
 an interactive terminal.
 
 ```sh
-mkdir libgibson-first-run && cd libgibson-first-run
+(
+set -eu
+mkdir libgibson-first-run
+cd libgibson-first-run
 base=https://github.com/femboy2112/libgibson/releases/download/v0.6.0
 curl -fLO "$base/libgibson-0.6.0-linux-x86_64.tar.gz"
 curl -fLO "$base/libgibson-0.6.0-linux-x86_64.tar.gz.sha256"
@@ -28,6 +31,7 @@ with gibson.Context.headless(gibson.RenderMode.FULLSCREEN, 40, 8) as ctx:
     assert ctx.frame_cell_glyph(0, 0) == b"H"
     print("Headless frame 40x8 OK")
 PY
+)
 ```
 
 The two assertions form a small automated headless test: change the expected
