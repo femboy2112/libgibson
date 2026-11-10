@@ -8,6 +8,7 @@ use crate::session::TerminalSession;
 use crate::surface::Surface;
 use crate::transaction::TerminalTransaction;
 use std::io::{self, Write};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 
@@ -85,6 +86,7 @@ impl FrameReport {
 /// The core differential terminal renderer.
 pub struct Renderer {
     pub mode: RenderMode,
+    identity: Arc<()>,
     previous_surface: Option<Surface>,
     compiler: AnsiCompiler,
     pub live_region_height: u16,
@@ -139,6 +141,7 @@ impl Renderer {
     pub fn new(mode: RenderMode) -> Self {
         Self {
             mode,
+            identity: Arc::new(()),
             previous_surface: None,
             last_emitted_depth: None,
             compiler: AnsiCompiler::new(),
@@ -165,6 +168,10 @@ impl Renderer {
             physical_uncertain: false,
             owed_reanchor: false,
         }
+    }
+
+    pub(crate) fn identity(&self) -> Arc<()> {
+        Arc::clone(&self.identity)
     }
 
     /// Whether the last terminal write failed and the physical screen state is uncertain (the next
@@ -276,6 +283,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<(usize, usize, usize, bool, crate::painter::PaintContext)> {
+        session.ensure_render_authorized()?;
         if !session.is_tty {
             // Non-TTY / CI mode: suppress live interactive frames.
             self.last_frame_report = FrameReport::default();
@@ -601,6 +609,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<usize> {
+        session.ensure_render_authorized()?;
         if !session.is_tty {
             let mut bytes = 0usize;
             for line in lines {
@@ -771,6 +780,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<usize> {
+        session.ensure_render_authorized()?;
         let (term_cols, _) = session.terminal_size();
         let lines = render_node_to_lines_with_depth(
             node,
@@ -862,6 +872,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<(usize, InsertStrategy)> {
+        session.ensure_render_authorized()?;
         if !session.is_tty {
             let mut bytes = 0usize;
             for line in lines {
@@ -1029,6 +1040,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<(usize, InsertStrategy)> {
+        session.ensure_render_authorized()?;
         let (term_cols, _) = session.terminal_size();
         let lines = render_node_to_lines_with_depth(
             node,
@@ -1047,6 +1059,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<usize> {
+        session.ensure_render_authorized()?;
         if !session.is_tty || self.live_region_height == 0 {
             return Ok(0);
         }

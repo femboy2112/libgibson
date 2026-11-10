@@ -4,7 +4,8 @@ use crate::node::Node;
 use crate::renderer::{FrameReport, InsertStrategy, Renderer};
 use crate::scheduler::{FramePacing, FrameScheduler, RenderStats};
 use crate::session::TerminalSession;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// `RenderMode` is consumed by [`Context::new`] and [`Context::headless`], so it
@@ -14,8 +15,14 @@ pub use crate::renderer::RenderMode;
 
 /// High-level engine coordinator managing session, rendering, input, and scheduling.
 pub struct Context {
+    /// Session for this context. Replacing it does not transfer this context's
+    /// renderer state: physical stdout output is rejected after replacement.
     pub session: TerminalSession,
+    session_identity: Arc<()>,
+    /// Renderer for this context. Physical stdout output is rejected if the
+    /// renderer is replaced; create a new context instead.
     pub renderer: Renderer,
+    renderer_identity: Arc<()>,
     pub scheduler: FrameScheduler,
     root: Option<Node>,
     /// Where rendered bytes go: the process stdout for interactive contexts, or
@@ -75,15 +82,44 @@ pub struct FrameCell<'a> {
 }
 
 impl Context {
+    fn ensure_output_authorized(&self) -> io::Result<()> {
+        let physical_stdout =
+            matches!(self.output, OutputSink::Stdout) && io::stdout().is_terminal();
+        if physical_stdout && !Arc::ptr_eq(&self.session_identity, &self.session.identity()) {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "context session was replaced; create a new context for the new session",
+            ));
+        }
+        if physical_stdout && !Arc::ptr_eq(&self.renderer_identity, &self.renderer.identity()) {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "context renderer was replaced; create a new context for the new renderer",
+            ));
+        }
+        if physical_stdout && !self.session.owns_terminal_lease() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "stdout terminal has no session lease",
+            ));
+        }
+        self.session.ensure_render_authorized()
+    }
+
     pub fn new(mode: RenderMode) -> io::Result<Self> {
         let mut session = TerminalSession::new()?;
         if mode == RenderMode::Fullscreen {
             session.enter_alternate_screen()?;
         }
 
+        let session_identity = session.identity();
+        let renderer = Renderer::new(mode);
+        let renderer_identity = renderer.identity();
         Ok(Self {
             session,
-            renderer: Renderer::new(mode),
+            session_identity,
+            renderer,
+            renderer_identity,
             scheduler: FrameScheduler::new(60),
             root: None,
             output: OutputSink::Stdout,
@@ -124,9 +160,15 @@ impl Context {
     /// lower-depth terminal in a capture, override it with
     /// [`Context::set_color_depth`] or [`Context::set_capabilities`].
     pub fn headless(mode: RenderMode, cols: u16, rows: u16) -> Self {
+        let session = TerminalSession::headless(cols, rows);
+        let session_identity = session.identity();
+        let renderer = Renderer::new(mode);
+        let renderer_identity = renderer.identity();
         Self {
-            session: TerminalSession::headless(cols, rows),
-            renderer: Renderer::new(mode),
+            session,
+            session_identity,
+            renderer,
+            renderer_identity,
             scheduler: FrameScheduler::new(60),
             root: None,
             output: OutputSink::Buffer(Vec::new()),
@@ -477,6 +519,7 @@ impl Context {
     }
 
     fn render_internal(&mut self) -> io::Result<crate::painter::PaintContext> {
+        self.ensure_output_authorized()?;
         let mut root = match self.root.take() {
             Some(r) => r,
             None => {
@@ -540,6 +583,7 @@ impl Context {
     /// wrapping; embedded escape sequences are treated as literal text and
     /// cannot corrupt the terminal).
     pub fn commit_text(&mut self, text: &str) -> io::Result<()> {
+        self.ensure_output_authorized()?;
         self.renderer
             .commit_text(text, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -556,6 +600,7 @@ impl Context {
         text: &str,
         wrap: crate::node::WrapMode,
     ) -> io::Result<()> {
+        self.ensure_output_authorized()?;
         self.renderer
             .commit_text_with_mode(text, wrap, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -564,6 +609,7 @@ impl Context {
 
     /// Raw ANSI escape hatch. The caller is responsible for the payload.
     pub fn commit_raw_ansi_unchecked(&mut self, text: &str) -> io::Result<()> {
+        self.ensure_output_authorized()?;
         self.renderer
             .commit_raw_ansi_unchecked(text, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -577,6 +623,7 @@ impl Context {
 
     /// Commits a laid-out UI node directly to immutable scrollback.
     pub fn commit_node(&mut self, node: &mut Node) -> io::Result<()> {
+        self.ensure_output_authorized()?;
         self.renderer
             .commit_node(node, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -586,6 +633,7 @@ impl Context {
     /// Commits structured rich text to immutable scrollback, routed through the
     /// same wrapping/alignment engine as live nodes.
     pub fn commit_rich_text(&mut self, rich: &RichText) -> io::Result<()> {
+        self.ensure_output_authorized()?;
         self.renderer
             .commit_rich_text(rich, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -596,6 +644,7 @@ impl Context {
     /// treated as terminal byte streams and are **not** sanitized — escape
     /// sequences reach the terminal. Prefer the safe insertion methods.
     pub fn insert_raw_lines_before_live_unchecked(&mut self, lines: &[&str]) -> io::Result<()> {
+        self.ensure_output_authorized()?;
         self.renderer.insert_raw_lines_before_live_unchecked(
             lines,
             &mut self.session,
@@ -608,6 +657,7 @@ impl Context {
     /// Inserts safe, width-aware plain text into scrollback above the live region.
     /// Control characters are neutralized by the cell model.
     pub fn insert_text_before_live(&mut self, text: &str) -> io::Result<()> {
+        self.ensure_output_authorized()?;
         self.renderer
             .insert_text_before_live(text, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -623,6 +673,7 @@ impl Context {
         text: &str,
         wrap: crate::node::WrapMode,
     ) -> io::Result<()> {
+        self.ensure_output_authorized()?;
         self.renderer.insert_text_before_live_with_mode(
             text,
             wrap,
@@ -635,6 +686,7 @@ impl Context {
 
     /// Inserts a laid-out UI node into scrollback ABOVE the active live region.
     pub fn insert_node_before_live(&mut self, node: &mut Node) -> io::Result<()> {
+        self.ensure_output_authorized()?;
         self.renderer
             .insert_node_before_live(node, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -644,6 +696,7 @@ impl Context {
     /// Inserts safe rich text into scrollback ABOVE the active live region, using
     /// the width-aware layout engine.
     pub fn insert_rich_text_before_live(&mut self, rich: &RichText) -> io::Result<()> {
+        self.ensure_output_authorized()?;
         self.renderer
             .insert_rich_text_before_live(rich, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -657,6 +710,7 @@ impl Context {
 
     /// Clears the live region from the terminal without leaving artifacts.
     pub fn clear_live_region(&mut self) -> io::Result<()> {
+        self.ensure_output_authorized()?;
         self.renderer
             .clear_live_region(&mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();

@@ -10,7 +10,7 @@ use crossterm::{
 };
 use std::io::{self, stdout, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread::ThreadId;
 
 static PANIC_HOOK_SET: AtomicBool = AtomicBool::new(false);
@@ -133,7 +133,11 @@ pub enum TerminalLease {
 
 /// Manages the terminal lifecycle, raw mode, alternate screen, and restoration guards.
 pub struct TerminalSession {
+    /// Presentation flag; changing it does not acquire or release a terminal lease.
     pub is_tty: bool,
+    /// Stable instance identity, including across moves. Contexts bind their
+    /// renderer state to the session that produced it.
+    identity: Arc<()>,
     /// When true, all direct OS terminal manipulation is suppressed while the
     /// session still behaves like a TTY for the renderer. This enables
     /// byte-stream tests against a virtual terminal (e.g. `vt100`).
@@ -200,6 +204,7 @@ impl TerminalSession {
 
         let session = Self {
             is_tty,
+            identity: Arc::new(()),
             headless: false,
             headless_size: (80, 24),
             raw_mode_enabled: false,
@@ -240,6 +245,7 @@ impl TerminalSession {
     pub fn headless(cols: u16, rows: u16) -> Self {
         Self {
             is_tty: true,
+            identity: Arc::new(()),
             headless: true,
             headless_size: (cols, rows),
             raw_mode_enabled: false,
@@ -300,6 +306,26 @@ impl TerminalSession {
     /// from `Drop`): it has handed the terminal back and released its lease.
     pub(crate) fn restore_attempted(&self) -> bool {
         self.restore_attempted
+    }
+
+    /// Guard managed rendering before it changes renderer state or emits bytes.
+    /// The public `is_tty` presentation flag is not evidence of lease ownership.
+    pub(crate) fn ensure_render_authorized(&self) -> io::Result<()> {
+        if !self.headless && (self.restore_attempted || (self.is_tty && !self.owns_lease)) {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "terminal session has no active ownership lease",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn owns_terminal_lease(&self) -> bool {
+        self.owns_lease && !self.restore_attempted
+    }
+
+    pub(crate) fn identity(&self) -> Arc<()> {
+        Arc::clone(&self.identity)
     }
 
     /// Installs the process-global panic hook that best-effort restores the
@@ -749,7 +775,7 @@ impl TerminalSession {
 
     /// Hides the hardware cursor.
     pub fn hide_cursor(&mut self) -> Option<&'static [u8]> {
-        if !self.is_tty || self.cursor_hidden {
+        if !self.is_tty || self.cursor_hidden || self.ensure_render_authorized().is_err() {
             return None;
         }
         self.cursor_hidden = true;
@@ -758,7 +784,7 @@ impl TerminalSession {
 
     /// Shows the hardware cursor.
     pub fn show_cursor(&mut self) -> Option<&'static [u8]> {
-        if !self.is_tty || !self.cursor_hidden {
+        if !self.is_tty || !self.cursor_hidden || self.ensure_render_authorized().is_err() {
             return None;
         }
         self.cursor_hidden = false;
@@ -797,7 +823,7 @@ impl TerminalSession {
         // Nothing to undo on a non-terminal or headless session, and a session
         // already restored is a no-op: this is what makes Drop-after-explicit a
         // clean close instead of a second reset blob on the wire.
-        if !self.is_tty || self.headless || self.restore_attempted {
+        if self.headless || self.restore_attempted || !self.owns_lease {
             return Ok(());
         }
 
