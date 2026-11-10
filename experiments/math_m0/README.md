@@ -93,7 +93,9 @@ probe data. It is not a general rendering backend. Run it on a trusted local
 X11 desktop, then capture the window with a separate screenshot tool while it
 is open; inspecting the `OK` response alone does not prove visible pixels.
 The deliberate invalid-format query should return an error on Kitty, not be
-misreported as an unsupported-terminal test. `--config NONE` avoids changing or
+misreported as an unsupported-terminal test. An injected delete-write failure
+checks that termios restoration is attempted; it cannot guarantee restoration
+when the device itself fails or the process is forcibly terminated. `--config NONE` avoids changing or
 loading user Kitty settings. The result file must not already exist.
 
 ```sh

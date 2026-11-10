@@ -46,8 +46,10 @@ def main():
                 # Allow a separately controlled screenshot of this window.
                 time.sleep(15)
             finally:
-                os.write(fd, b'\x1b_Ga=d,d=i,i=33\x1b\\')
-                termios.tcsetattr(fd, termios.TCSANOW, original)
+                try:
+                    os.write(fd, b'\x1b_Ga=d,d=i,i=33\x1b\\')
+                finally:
+                    termios.tcsetattr(fd, termios.TCSANOW, original)
 
 
 if __name__ == '__main__':

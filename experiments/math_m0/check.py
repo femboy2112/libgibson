@@ -31,6 +31,7 @@ def order_is_valid(top, bottom):
 
 
 def main():
+    cmd(sys.executable, str(ROOT/'experiments/math_m0/check_kitty_cleanup.py'))
     m = MathTextParser('path')
     p = m.parse(r'$\frac{a+\frac{b}{c}}{d+e}$', dpi=72)
     glyphs = {chr(g[2]): g[4] for g in p.glyphs if chr(g[2]) in 'abcde'}
