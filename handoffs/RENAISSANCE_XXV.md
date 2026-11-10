@@ -7,7 +7,7 @@ not independent certification or authority to bypass a gate.
 ## Main and release
 
 - Main: `e64402526562ce0d7b6d88c0b5f7bb31152574d6`, source version `0.7.0-dev`.
-  Exact-main development CI run `42748526447` is in progress at this snapshot.
+  Exact-main development CI run `42748526447` completed successfully.
   Earlier main `0bd31616f77313e5dd3e78460601b7a776f77eaa` passed development
   CI run `42745447592`; #335 merged there and added
   `docs/MATH_TYPESETTING_ROADMAP.md`.
@@ -26,7 +26,8 @@ not independent certification or authority to bypass a gate.
   An earlier downstream v0.6-versus-development comparison had a first-run
   fault-injection test failure in the candidate. Later targeted runs on both
   versions passed, which does not erase the first failure or establish its
-  cause. A fresh, same-host A/B and a clean external witness are required.
+  cause. A fresh same-host A/B on this development commit passed as detailed
+  below; a final-candidate witness and remaining release gates are still required.
 - Node J's external GPL engine integration is recorded as a local prototype;
   the in-tree adapter does not prove that an external port was published or
   independently qualified. Obtain a defensible documented milestone decision
@@ -48,11 +49,11 @@ human or distinct-model certification.
 | #327 | `22d6d78aac28b4098e43d8cba355a6753923b8ab` | Focus retry and cleanup obligations. Reconcile with the other terminal changes and review the combined state machine. |
 | #325 | `0b922c9043c393f65d877701cb107d314b164167` | C++/Python/Go focus/geometry parity; new absolute geometry oracle and mutation controls. Rebuild from the final runtime candidate and rerun all consumers. |
 | #331 | `d1cd6016d9828000f21066bc76488ea4dbdd26a8` | Unicode lowercase-expansion pairing counterexample. Decoder-model evidence, not a physical keyboard-layout test. |
-| #336 | `e64834f2cc7fb5af63062e5aae4c3c3615d295c0` | Fixed-fixture math M0 research, reconciled with main. Partial; not a public API, security sandbox or LibGibson terminal graphics path. |
-| #337 | `0d97720bf9a8003da8502e2d9d84bd2b54d18edf` | Candidate ABI export-name provenance, hidden-index controls and alternate-target SDK staging fix. Real staging controls passed; stat-cache preflight cleanliness bypass remains open. Recheck the live head. |
+| #336 | `e64834f2cc7fb5af63062e5aae4c3c3615d295c0` | Fixed-fixture math M0 research, reconciled with main; exact-head development CI run `42748877100` passed. Partial; not a public API, security sandbox or LibGibson terminal graphics path. |
+| #337 | `ca8f3cb80557ced6e07abf473bafb12a05ed9139` | Candidate ABI provenance, alternate-target SDK staging and isolated captured-commit preflight. Mock controls pass; real full preflight, final candidate qualification and independent review remain. |
 | #323 | Review the current live head | Handoff draft; update after integration and do not merge obsolete status. |
 
-The #325, #333, #336, #337 and #338 checks were queued or in progress at this snapshot. A
+The #325, #333, #337 and #338 checks were queued or in progress at this snapshot. A
 later green result applies only to the head actually tested.
 
 ## Terminal lease: observed failures and boundaries
@@ -170,8 +171,13 @@ the SDK checksum manifest passed, and the C/C++ onboarding path test passed
 with its missing-package and legacy-expansion negative controls. The `.so`
 SHA-256 was `a776781efeaf93bbee06fcf3c22fed8206dc5f62aa303c43b28e2de1688f8423`.
 This is not five-language release-artifact or full-preflight qualification.
-The stat-cache false-clean issue remains unresolved; fresh isolated source
-qualification and review are still required.
+At #337 `ca8f3cb...`, preflight instead runs against a detached isolated clone
+of the captured commit with a fresh target; reported mock controls cover the
+reproduced stat-cache false-clean source, hidden index flags, ignored files,
+foreign target, stale crate and staging records. The real full preflight has
+not been run on this head. A writable clone, transient source modification,
+toolchain substitution and global-cache contamination remain unqualified;
+verify exact-head CI and independently review before integration.
 
 An independent local comparison reported 59 names in the v0.6.0 tag's ABI
 manifest, 67 in current main's manifest and 67 in the #337 `4e147b8...` fresh
@@ -181,6 +187,25 @@ manifest and layout-test source matched current main, and its Rust 1.98.1
 witnesses, not qualification of a final candidate or a complete signature and
 layout proof. Rerun against the final source and installed artifacts. The
 candidate ABI command checks exported symbol names only.
+
+## External consumer comparison
+
+A fresh isolated same-host A/B compared the same external-consumer source with
+the published v0.6.0 dependency and a clean archive of development main
+`e64402526562ce0d7b6d88c0b5f7bb31152574d6`. Using Rust 1.98.1, separate build
+targets, offline dependency resolution, two compiler jobs and serial tests,
+both first-attempt `cargo test --locked --offline --all-targets -- --test-threads=1`
+runs exited 0: 451 passed, 0 failed and 3 ignored across 34
+test binaries each. The earlier timing-sensitive fault-injection case passed
+on this first attempt in both lanes. Both normal headless selfchecks exited 0;
+both also exited 0 under a 512 MiB virtual-address-space limit, and the
+corresponding output matched between lanes. This is synthetic headless
+evidence, not sustained memory pressure, universal terminal behavior or a
+future release-candidate witness. Candidate lockfile resolution changed the
+library source and Windows-only transitive selections; the compared source
+trees otherwise matched. The earlier first-run failure remains historical
+evidence with unresolved cause, not an established library regression or a
+discarded flake. Raw receipts are retained privately.
 
 ## Math M0 and graphical boundary
 
