@@ -35,6 +35,14 @@ exhaustive boundary.
   `Renderer` methods accept arbitrary writers; a caller can direct a headless
   session's bytes to a terminal. A library-wide invariant cannot be claimed
   while these compatibility escape hatches remain available.
+  A separate PTY falsifier also renders a virtual frame through the Context's
+  same public Renderer and then requests that frame on the physical terminal.
+  With matched terminal capabilities, the terminal remains on its old frame
+  because the virtual frame replaced the differential cache. The explicit
+  ignored test `direct_renderer_use_must_not_poison_context_output_state`
+  records this unresolved counterexample; it currently fails when run. With
+  unmatched color depth the repaint happened, so that is not a valid negative
+  control for the matched case.
 * `Context.session` is public and can be replaced with another live session;
   the renderer may retain frame and cursor assumptions from the former owner.
   A PTY rendered-state test reproduced this. The candidate rejects Context

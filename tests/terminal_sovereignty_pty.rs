@@ -95,9 +95,7 @@ fn redirected_context_still_commits_plain_text() {
     assert!(String::from_utf8_lossy(&child.stdout).contains("REDIRECTED_CONTROL"));
 }
 
-#[test]
-fn replacing_context_session_cannot_reuse_old_renderer_state() {
-    let output = capture("session-swap");
+fn assert_swap_unchanged(output: &str) {
     let pre = output.find("\x1b]0;SWAP_PRE\x07").unwrap();
     let post = output.find("\x1b]0;SWAP_POST\x07").unwrap();
     let mut p = vt100::Parser::new(24, 80, 0);
@@ -106,31 +104,57 @@ fn replacing_context_session_cannot_reuse_old_renderer_state() {
         p.screen().contents().contains("FRAME_B"),
         "positive control"
     );
+    let snapshot = |p: &vt100::Parser| {
+        let cells: Vec<_> = (0..24)
+            .flat_map(|row| (0..80).map(move |col| p.screen().cell(row, col).unwrap().clone()))
+            .collect();
+        (
+            cells,
+            p.screen().cursor_position(),
+            p.screen().hide_cursor(),
+        )
+    };
+    let before = snapshot(&p);
     p.process(output[pre..post].as_bytes());
-    assert!(
-        p.screen().contents().contains("FRAME_B"),
-        "new owner's screen changed"
+    assert_eq!(
+        before,
+        snapshot(&p),
+        "new owner's cell/cursor state changed"
     );
     assert!(output.contains("SWAP_REJECTED=true"), "{output:?}");
+    // Mutation control: an extra cell must be visible to the state oracle.
+    p.process(b"\x1b[24;80H!");
+    assert_ne!(before, snapshot(&p), "extra-cell mutant escaped the oracle");
+}
+
+#[test]
+fn replacing_context_session_cannot_reuse_old_renderer_state() {
+    assert_swap_unchanged(&capture("session-swap"));
 }
 
 #[test]
 fn replacing_context_renderer_cannot_reuse_old_renderer_state() {
-    let output = capture("renderer-swap");
+    assert_swap_unchanged(&capture("renderer-swap"));
+}
+
+#[test]
+#[ignore = "open: direct public Renderer use can replace its physical frame cache"]
+fn direct_renderer_use_must_not_poison_context_output_state() {
+    let output = capture("renderer-direct");
     let pre = output.find("\x1b]0;SWAP_PRE\x07").unwrap();
     let post = output.find("\x1b]0;SWAP_POST\x07").unwrap();
     let mut p = vt100::Parser::new(24, 80, 0);
     p.process(output[..pre].as_bytes());
     assert!(
-        p.screen().contents().contains("FRAME_B"),
+        p.screen().contents().contains("FRAME_A"),
         "positive control"
     );
     p.process(output[pre..post].as_bytes());
     assert!(
         p.screen().contents().contains("FRAME_B"),
-        "new owner's screen changed"
+        "physical terminal retained stale frame: {}",
+        p.screen().contents()
     );
-    assert!(output.contains("SWAP_REJECTED=true"), "{output:?}");
 }
 
 #[test]
@@ -233,6 +257,26 @@ fn sovereignty_child() {
             out.write_all(b"\x1b]0;SWAP_POST\x07").unwrap();
             out.flush().unwrap();
             eprintln!("SWAP_REJECTED={rejected}");
+            owner.restore().unwrap();
+        }
+        "renderer-direct" => {
+            let mut owner = Context::fullscreen().unwrap();
+            owner.set_root(Node::text("FRAME_A", Style::default()));
+            owner.render_now().unwrap();
+            let mut out = std::io::stdout();
+            out.write_all(b"\x1b]0;SWAP_PRE\x07").unwrap();
+            out.flush().unwrap();
+            let mut virtual_session = TerminalSession::headless(80, 24);
+            virtual_session.set_capabilities(owner.session.capabilities());
+            let mut virtual_node = Node::text("FRAME_B", Style::default());
+            owner
+                .renderer
+                .render(&mut virtual_node, &mut virtual_session, &mut Vec::new())
+                .unwrap();
+            owner.set_root(Node::text("FRAME_B", Style::default()));
+            owner.render_now().unwrap();
+            out.write_all(b"\x1b]0;SWAP_POST\x07").unwrap();
+            out.flush().unwrap();
             owner.restore().unwrap();
         }
         _ => panic!("unexpected role"),
