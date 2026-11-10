@@ -65,7 +65,9 @@ stays 1.85.
   next kitty press/release, or reporting is disabled. Letters (the usual sustained/movement keys)
   fold correctly (`W`→`w`) and are unaffected. Deliberately not renamed: mapping `1`→`!` assumes a
   keyboard layout, and pairing the unmatched release with the newest orphan would mis-identify an
-  unrelated key's release. Pinned and bounded by tests in `src/tty_source.rs` (`issue_312_*`).
+  unrelated key's release. None of the recovery events is guaranteed, so this hold may persist
+  indefinitely while reporting remains active. Tests in `src/tty_source.rs` (`issue_312_*`) pin
+  the failure and conditional recovery; no finite deadline is claimed.
 
 ### Release engineering — maintenance-line releases approved ([#287](https://github.com/femboy2112/libgibson/issues/287), #291)
 - **Release Contract §1 gains an approved maintenance-line exception** (owner decision 2026-11-08,

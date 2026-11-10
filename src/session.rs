@@ -411,11 +411,12 @@ impl TerminalSession {
     /// real terminal.
     ///
     /// #305: the push bit is CLAIMED (via [`take_key_releases_pushed`]) the moment the pop
-    /// *succeeds*, so if the switch or re-push below then fails, no later `restore`/`Drop`/retry
+    /// *succeeds*, so if the switch below then fails, no later `restore`/`Drop`/retry
     /// pops a second time and removes another program's keyboard-stack entry. A pop that *fails*
-    /// leaves the bit set and propagates — the entry never left this screen, so restore still
-    /// pops it (review item 1). The re-push, conversely, sets the bit *before* its write, because
-    /// a torn re-push may already have placed our push on the new screen and so must stay
+    /// leaves the bit set and propagates, allowing restore to try a pop. A failed write or flush
+    /// does not prove whether the terminal applied that pop. The re-push sets the bit *before*
+    /// its write, because a torn re-push may already have placed our push on the new screen and
+    /// so must stay
     /// poppable (the same defensive unwinding the initial enable uses). A failed switch marks
     /// reporting ended via [`on_key_release_push_lost`](Self::on_key_release_push_lost) without
     /// touching raw mode.
@@ -433,13 +434,11 @@ impl TerminalSession {
     ) -> io::Result<()> {
         let follow = self.key_release_reporting_live();
         if follow {
-            // Pop the old screen's push. If the pop FAILS (a torn or zero-byte write), the entry
-            // never left this screen's stack, so leave the bit set and propagate — restore then
-            // pops it, no leak (#305 review item 1).
+            // Leave the bit set on failure, so restore can try to pop. A failed write or flush
+            // cannot establish whether the terminal has already applied the pop.
             pop_key_releases(out)?;
-            // The pop succeeded: the entry is gone. Claim the bit now, so a failed switch or
-            // re-push below — or a later restore/Drop — does not pop a second time and remove
-            // another program's keyboard-stack entry (#305).
+            // The pop succeeded: claim the bit now, so a failed switch does not cause a later
+            // restore/Drop to pop a second time and remove another program's entry (#305).
             take_key_releases_pushed();
         }
         if let Err(e) = switch(&mut *out) {
@@ -453,8 +452,8 @@ impl TerminalSession {
             // Set the bit BEFORE the re-push: a torn or failed re-push write may already have
             // placed our push on the new screen's stack, so it must stay poppable by restore/Drop
             // (the same defensive unwinding the initial enable uses). This is deliberately the
-            // opposite of the pop above, which clears the bit first — a torn pop must not be
-            // popped a second time, but a torn re-push must not leak unpopped (#305 review: P2).
+            // opposite of the pop above, which clears the bit after success. Neither choice
+            // guarantees ownership after an ambiguous I/O failure.
             REPORTING_MODES.fetch_or(REPORT_KEY_RELEASE, Ordering::SeqCst);
             request_key_releases(out)?;
         }
@@ -462,8 +461,8 @@ impl TerminalSession {
     }
 
     /// Reconciles session state after a key-release push was lost mid screen-switch (#305):
-    /// the `REPORT_KEY_RELEASE` bit is already clear (claimed before a failed pop, or never
-    /// re-set after a failed switch/re-push), so stop delivering releases and mark reporting
+    /// the `REPORT_KEY_RELEASE` bit is already clear after the successful pop and failed switch,
+    /// so stop delivering releases and mark reporting
     /// disabled — but do NOT touch `raw_mode_enabled`. Unlike the panic-hook path (whose
     /// `enabled && !pushed` reconciliation in [`key_release_reporting_live`] assumes the hook
     /// already dropped raw mode), raw mode is still on here, so `restore` must disable it;
@@ -976,9 +975,9 @@ mod key_release_switch_tests {
             !switched,
             "the switch must not run when the pop write fails"
         );
-        // The pop did not complete, so our push is still live on this screen: the bit MUST stay
-        // set so restore pops it, not leak it (#305 review item 1). The claim happens only after
-        // a SUCCESSFUL pop.
+        // This writer accepted no pop bytes, so the push is still live in this controlled case.
+        // The bit stays set so restore can attempt a pop. An I/O error in general does not
+        // establish whether a terminal applied a partially written or flushed command.
         assert!(
             key_releases_pushed(),
             "#305 item 1: a failed pop leaves the still-live push claimable"
@@ -995,6 +994,44 @@ mod key_release_switch_tests {
         assert!(s.raw_mode_enabled, "raw mode preserved");
         assert!(!s.alt_screen_active);
         reset_globals();
+    }
+
+    #[test]
+    fn pop_flush_failure_leaves_ownership_uncertain() {
+        struct FailFlush(Vec<u8>);
+        impl Write for FailFlush {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.0.extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Err(io::Error::other("injected flush failure"))
+            }
+        }
+        let _g = lock();
+        let mut s = reporting_live_session();
+        let mut writer = FailFlush(Vec::new());
+        let mut switched = false;
+        let result = s.switch_screen_on(
+            &mut writer,
+            |_| {
+                switched = true;
+                Ok(())
+            },
+            true,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            writer.0, b"\x1b[<u",
+            "the entire pop was accepted before flush failed"
+        );
+        assert!(!switched);
+        assert!(key_releases_pushed(), "restore will attempt another pop");
+        // This writer does not model a terminal: the bytes might have reached it. A retry can
+        // therefore pop a foreign entry. The test pins bookkeeping, not successful restoration.
+        reset_globals();
+        s.raw_mode_enabled = false;
+        s.key_release_reporting_enabled = false;
     }
 
     #[test]
@@ -1029,17 +1066,16 @@ mod key_release_switch_tests {
         };
         let r = s.switch_screen_on(&mut w, |o| o.write_all(b"SW"), true);
         assert!(r.is_err());
-        // A torn re-push may already have placed our push on the new screen's stack, so the bit
-        // MUST stay set: restore/Drop then pops it instead of leaking it (shell left in kitty
-        // mode). The opposite of a failed pop/switch, where a second pop would hit a foreign
-        // entry. The bit is set before the re-push write for exactly this (#305 review: P2).
+        // A torn re-push may have placed our push on the new screen's stack, so the bit is set
+        // before the write and restore can attempt a pop. If no push was applied, that attempt
+        // may instead pop a foreign entry; the writer does not resolve terminal ownership.
         assert!(
             key_releases_pushed(),
-            "#305/P2: a torn re-push stays poppable, not leaked"
+            "#305: the re-push claim remains set after an error"
         );
         assert!(
             take_key_releases_pushed(),
-            "restore would find the push and pop it exactly once"
+            "restore can claim the bit for one pop attempt"
         );
         assert!(s.alt_screen_active, "the switch itself succeeded");
         assert!(
