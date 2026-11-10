@@ -42,9 +42,13 @@ The check exercises all fixtures, both cell encodings, same-host repeated RGB
 hashes, malformed/unknown fixture rejection, short and oversized raw buffers,
 and a failed renderer. It compares mathtext's independent glyph/rule geometry
 against order expectations and separately checks Poppler PDF text boxes plus
-the fraction rule in the TeX raster. Reversing numerator and denominator is a
-negative ordering control. These are **partial geometry checks**, not a font
-metric or complete clipping certification. Pyte independently interprets the
+the fraction rule in the TeX raster. Matrix glyph boxes must form three ordered
+rows and columns, and the two equation rows must align at their equals signs.
+Substituting another rendered fixture and altering the tested positions are
+negative controls; these PDF checks do not prove that its raster is faithful.
+Reversing numerator and denominator is a negative ordering control. These are
+**partial geometry checks**, not an independent proof of integral shape, font
+metrics, delimiter geometry, or complete clipping. Pyte independently interprets the
 actual capture into 80×20 terminal cells; the oracle compares every half-block
 foreground/background sample, including reverse-video state, and every
 monochrome Braille glyph with the RGB input. Explicit mono colors must have
@@ -53,7 +57,11 @@ values; if both colors are `default`, the test assumes a light foreground on
 a dark background. Actual terminal palette and visual contrast are not
 measured. White/ignored-input, reversed-video, concealed text and black-on-black
 mutants are rejected against their controls. Uncalibrated SGR sequences are
-rejected before parsing, since Pyte does not model every SGR. This checks the modelled cell result, not
+rejected before parsing, since Pyte does not model every SGR. The capture
+validator accepts only the specific calibrated control sequences used by this
+experiment, including balanced synchronized updates. It rejects alternate
+screen switches, OSC, incomplete sequences and other unsupported controls.
+This checks the modelled cell result, not
 visual readability or the quality of typesetting; Pyte is not a complete
 terminal emulator and cannot validate effects it does not model.
 

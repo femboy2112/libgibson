@@ -30,6 +30,68 @@ def order_is_valid(top, bottom):
     return top < bottom
 
 
+def pdf_words(pdf, html):
+    cmd('pdftotext', '-bbox', str(pdf), str(html))
+    doc = ET.parse(html)
+    return [(e.text, {k: float(v) for k, v in e.attrib.items()})
+            for e in doc.iter() if e.tag.endswith('word')]
+
+
+def fixture_geometry(fixture, words):
+    # Independent PDF text positions; this is not a font-metric, delimiter,
+    # clipping, or raster-to-PDF equivalence oracle.
+    def unique(text):
+        found = [b for t, b in words if t == text]
+        if len(found) != 1:
+            raise ValueError(f'expected one {text!r}, got {len(found)}')
+        return found[0]
+
+    def center(box, axis):
+        return (box[axis+'Min'] + box[axis+'Max']) / 2
+
+    if fixture == 'matrix':
+        boxes = [[unique(c) for c in row] for row in ('abc', 'def', 'ghi')]
+        for row in boxes:
+            xs = [center(b, 'x') for b in row]
+            ys = [center(b, 'y') for b in row]
+            if not xs[0] < xs[1] < xs[2] or max(ys) - min(ys) > 2:
+                raise ValueError('matrix row ordering or baseline')
+        for col in range(3):
+            xs = [center(row[col], 'x') for row in boxes]
+            ys = [center(row[col], 'y') for row in boxes]
+            if not ys[0] < ys[1] < ys[2] or max(xs) - min(xs) > 4:
+                raise ValueError('matrix column ordering or alignment')
+        relevant = [b for row in boxes for b in row]
+    elif fixture == 'aligned':
+        equals = sorted((b for t, b in words if t == '='), key=lambda b: center(b, 'y'))
+        if len(equals) != 2 or abs(center(equals[0], 'x') - center(equals[1], 'x')) > 2:
+            raise ValueError('aligned equations need two vertically aligned equals signs')
+        row_text = []
+        relevant = []
+        for equal in equals:
+            row = [(t, b) for t, b in words if abs(center(b, 'y') - center(equal, 'y')) < 4]
+            row.sort(key=lambda item: center(item[1], 'x'))
+            row_text.append([t for t, _ in row])
+            relevant.extend(b for _, b in row)
+        if row_text != [['a', '+', 'b', '=', 'c'], ['c', '−', 'd', '=', 'e']]:
+            raise ValueError(f'unexpected equation rows: {row_text!r}')
+        if equals[0]['yMax'] >= equals[1]['yMin']:
+            raise ValueError('equation rows overlap')
+    else:
+        raise ValueError(f'unsupported fixture {fixture!r}')
+    if any(not (0 <= b['xMin'] < b['xMax'] <= 240 and 0 <= b['yMin'] < b['yMax'] <= 120)
+           for b in relevant):
+        raise ValueError('fixture word box outside the PDF page')
+
+
+def must_reject_geometry(fixture, words):
+    try:
+        fixture_geometry(fixture, words)
+    except ValueError:
+        return
+    raise AssertionError(f'{fixture} accepted incorrect geometry')
+
+
 def main():
     cmd(sys.executable, str(ROOT/'experiments/math_m0/check_kitty_cleanup.py'))
     m = MathTextParser('path')
@@ -67,9 +129,16 @@ def main():
         (d/'style-good.ansi').write_bytes((ansi+rows).encode())
         (d/'style-reverse.ansi').write_bytes((ansi+'\x1b[7m'+rows).encode())
         (d/'style-hidden.ansi').write_bytes((ansi+'\x1b[8m'+rows).encode())
+        (d/'style-sync.ansi').write_bytes(('\x1b[?2026h'+ansi+rows+'\x1b[?2026l').encode())
         cmd(sys.executable, str(ORACLE), str(d/'pattern.rgb'), str(d/'style-good.ansi'), 'half', env=SCREEN_ENV)
+        cmd(sys.executable, str(ORACLE), str(d/'pattern.rgb'), str(d/'style-sync.ansi'), 'half', env=SCREEN_ENV)
         cmd(sys.executable, str(ORACLE), str(d/'pattern.rgb'), str(d/'style-reverse.ansi'), 'half', ok=False, env=SCREEN_ENV)
         cmd(sys.executable, str(ORACLE), str(d/'pattern.rgb'), str(d/'style-hidden.ansi'), 'half', ok=False, env=SCREEN_ENV)
+        for name, suffix in (('alternate', b'\x1b[?1049h'), ('osc', b'\x1b]10;black\x07'),
+                             ('unfinished-sync', b'\x1b[?2026h'), ('bad-escape', b'\x1b(')):
+            mutant = d/(name+'.ansi')
+            mutant.write_bytes((ansi+rows).encode() + suffix)
+            cmd(sys.executable, str(ORACLE), str(d/'pattern.rgb'), str(mutant), 'half', ok=False, env=SCREEN_ENV)
         (d/'white.rgb').write_bytes(bytes([255])*9600)
         braille = ''.join(f'\x1b[{row};1H' + '⣿'*80 for row in range(1, 21))
         (d/'mono-good.ansi').write_bytes(('\x1b[37;40m'+braille).encode())
@@ -99,6 +168,24 @@ def main():
         image = Image.open(d/'nested'/'nested-full.png').convert('L')
         x0, x1 = int(float(words['b']['xMin'])), int(float(words['b']['xMax'])) + 1
         assert any(sum(image.getpixel((x,y)) < 128 for x in range(x0,x1)) >= 4 for y in range(lo,hi+1))
+        geometry = {fixture: pdf_words(d/fixture/(fixture+'.pdf'), d/(fixture+'-bbox.html'))
+                    for fixture in ('matrix', 'aligned', 'integral')}
+        for fixture in ('matrix', 'aligned'):
+            fixture_geometry(fixture, geometry[fixture])
+            # Substituting the integral or the other fixture cannot pass.
+            must_reject_geometry(fixture, geometry['integral'])
+            other = 'aligned' if fixture == 'matrix' else 'matrix'
+            must_reject_geometry(fixture, geometry[other])
+        # Preserve tokens but corrupt a matrix column and an equals alignment.
+        bad_matrix = [(t, dict(b)) for t, b in geometry['matrix']]
+        next(b for t, b in bad_matrix if t == 'b')['xMin'] += 50
+        next(b for t, b in bad_matrix if t == 'b')['xMax'] += 50
+        must_reject_geometry('matrix', bad_matrix)
+        bad_aligned = [(t, dict(b)) for t, b in geometry['aligned']]
+        second_equals = [b for t, b in bad_aligned if t == '='][1]
+        second_equals['xMin'] += 10
+        second_equals['xMax'] += 10
+        must_reject_geometry('aligned', bad_aligned)
         cmd(sys.executable, str(RENDER), r'\\input{/etc/passwd}', str(d), ok=False)
         cmd(sys.executable, str(RENDER), r'\\frac{', str(d), ok=False)
         (d/'short.rgb').write_bytes(b'\0')
@@ -112,7 +199,7 @@ def main():
         env = dict(ENV, PATH=str(fake)+':'+ENV['PATH'])
         cmd(sys.executable, str(RENDER), 'nested', str(d/'failed'), ok=False, env=env)
         assert not (d/'failed/nested.rgb').exists()
-    print('PASS: four fixtures, both terminal-cell oracles, blank mutant, repeat hash, fraction geometry, invalid input and failing backend controls')
+    print('PASS: four fixtures, cell oracles, terminal-control mutants, repeat hash, fraction/matrix/aligned PDF geometry, invalid input and failing backend controls')
     print('MathText fraction/integral supported; matrix/aligned rejected in installed version')
 
 if __name__ == '__main__': main()

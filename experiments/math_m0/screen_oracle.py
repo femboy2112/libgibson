@@ -3,6 +3,7 @@
 from pathlib import Path
 import re
 import sys
+import unicodedata
 import pyte
 
 BAYER = ((0, 4), (6, 2), (1, 5), (7, 3))
@@ -23,30 +24,61 @@ def luminance(color):
     return (54*r + 183*g + 19*b)//256
 
 
-def validate_sgr(data):
-    # Pyte does not model every terminal SGR (notably conceal). Fail closed on
-    # SGR we did not calibrate instead of treating an invisible cell as visible.
-    for match in re.finditer(rb'\x1b\[([0-?]*[ -/]*)([@-~])', data):
-        if match.group(2) != b'm':
-            continue
-        body = match.group(1)
-        if not re.fullmatch(rb'[0-9;]*', body):
-            raise ValueError('unsupported SGR syntax')
-        values = [int(n or b'0') for n in body.split(b';')]
-        i = 0
-        while i < len(values):
-            n = values[i]
-            if n in (38, 48):
-                if i + 1 >= len(values) or values[i+1] not in (2, 5):
-                    raise ValueError('unsupported extended color')
-                count = 3 if values[i+1] == 2 else 1
-                if i + 2 + count > len(values) or any(x > 255 for x in values[i+2:i+2+count]):
-                    raise ValueError('invalid extended color')
-                i += 2 + count
-            elif n in (0, 7, 27, 39, 49) or 30 <= n <= 37 or 40 <= n <= 47 or 90 <= n <= 97 or 100 <= n <= 107:
-                i += 1
+def validate_sgr(body):
+    if not re.fullmatch(r'[0-9;]*', body):
+        raise ValueError('unsupported SGR syntax')
+    values = [int(n or '0') for n in body.split(';')]
+    i = 0
+    while i < len(values):
+        n = values[i]
+        if n in (38, 48):
+            if i + 1 >= len(values) or values[i+1] not in (2, 5):
+                raise ValueError('unsupported extended color')
+            count = 3 if values[i+1] == 2 else 1
+            if i + 2 + count > len(values) or any(x > 255 for x in values[i+2:i+2+count]):
+                raise ValueError('invalid extended color')
+            i += 2 + count
+        elif n in (0, 7, 27, 39, 49) or 30 <= n <= 37 or 40 <= n <= 47 or 90 <= n <= 97 or 100 <= n <= 107:
+            i += 1
+        else:
+            raise ValueError(f'unsupported SGR {n}')
+
+
+def validate_capture(data):
+    # Pyte does not model every terminal operation. This capture format allows
+    # only the specific controls exercised by this fixture renderer. In
+    # particular, never silently ignore an alternate-screen or OSC command.
+    text = data.decode('utf-8')
+    pattern = re.compile(r'\x1b\[([0-?]*[ -/]*)([@-~])')
+    i = 0
+    synchronized = False
+    while i < len(text):
+        ch = text[i]
+        if ch == '\x1b':
+            match = pattern.match(text, i)
+            if not match:
+                raise ValueError('unsupported or incomplete escape sequence')
+            body, command = match.groups()
+            if command == 'm':
+                validate_sgr(body)
+            elif command == 'H' and re.fullmatch(r'(?:[0-9]+)?(?:;[0-9]*)?', body):
+                pass
+            elif (body, command) in (('?7', 'h'), ('?7', 'l'), ('?25', 'h'), ('?25', 'l')):
+                pass
+            elif (body, command) in (('?2026', 'h'), ('?2026', 'l')):
+                opening = command == 'h'
+                if synchronized == opening:
+                    raise ValueError('unbalanced synchronized update')
+                synchronized = opening
             else:
-                raise ValueError(f'unsupported SGR {n}')
+                raise ValueError(f'unsupported terminal control: {match.group(0)!r}')
+            i = match.end()
+            continue
+        if ch not in '\r\n' and unicodedata.category(ch) in ('Cc', 'Cf'):
+            raise ValueError(f'unsupported control character: {ch!r}')
+        i += 1
+    if synchronized:
+        raise ValueError('unfinished synchronized update')
 
 
 def main():
@@ -56,7 +88,7 @@ def main():
     if len(raw) != 9600:
         raise ValueError('expected exactly 9600 RGB bytes')
     capture = Path(sys.argv[2]).read_bytes()
-    validate_sgr(capture)
+    validate_capture(capture)
     screen = pyte.Screen(80, 20)
     pyte.Stream(screen).feed(capture.decode('utf-8'))
 
