@@ -14,7 +14,7 @@
 # terms (Python wheel + sdist, Go module payload) — classifiers/metadata alone are
 # not accepted as evidence.
 #
-# Requires: a C/C++ toolchain, pkg-config, python3 (venv+pip), and optionally go.
+# Requires: a C/C++ toolchain, pkg-config, python3 (venv+pip), and Go.
 # Network is used only to fetch Python build tooling and resolve the Rust
 # consumer's (already-cached) dependencies.
 #
@@ -217,7 +217,7 @@ EOF
     fi
     rm -f "$glog"
 else
-    echo "  [SKIP] go not installed"
+    bad "Go toolchain not installed; the Go consumer is required"
 fi
 
 echo "### Rust consumer (packaged crate) ###"

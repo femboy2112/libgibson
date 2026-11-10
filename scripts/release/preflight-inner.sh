@@ -120,6 +120,11 @@ if scripts/release/tests/test-cleanroom-package.sh; then
 else
     no "cleanroom crate selection controls"
 fi
+if scripts/release/tests/test-cleanroom-go.sh; then
+    ok "cleanroom Go availability and failure controls"
+else
+    no "cleanroom Go availability and failure controls"
+fi
 if scripts/release/tests/test-check-abi.sh; then
     ok "ABI checker fault controls"
 else
