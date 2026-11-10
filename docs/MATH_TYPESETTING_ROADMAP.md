@@ -73,7 +73,7 @@ Reference candidates for investigation (not selected dependencies): [Typst SVG e
 
 - A maintained, documented math presentation API, quality/capability matrix, accessible semantic output, release packaging, error/ownership contract, representative external Rust and at least one other-language consumer where the interface is supported.
 - The published feature promise is exactly the capability tested: paper-quality on **qualified** pixel-capable terminals, honest degraded fallback elsewhere. No blanket "LaTeX rendering works on every terminal".
-- Independent renderer reference tests, headless golden, physical terminal or emulator capture tests, invalid-input and adversarial resource controls, source/ABI compatibility and MSI/MSRV floors, license audit, and reproducible release artifact.
+- Independent renderer reference tests, headless golden, physical terminal or emulator capture tests, invalid-input and adversarial resource controls, source/ABI compatibility and Rust 1.85 MSRV checks, license audit, and reproducible release artifact.
 - **If any gate remains unresolved**, keep math rendering clearly experimental/optional. Do not delay unrelated stable CORE guarantees or claim math is production-ready. The owner may separately choose to make completion of this feature a release dependency after the feasibility result.
 
 ## 6. Evaluation corpus and pass/fail controls
