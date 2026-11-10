@@ -1,5 +1,8 @@
 # Renaissance XXII — current integration handoff
 
+**Historical snapshot.** For the following round and current resume instructions, see
+[`RENAISSANCE_XXIII.md`](RENAISSANCE_XXIII.md); always verify live PR heads and CI.
+
 Baseline inspected: 2026-11-09, `main` `4573d0d6e571159b376e08fb2761b4e8eaffe6f3`.
 CI run 42578229665 reports success at that SHA. Verify live state before acting.
 The published `v0.6.0` and `bindings/go/v0.6.0` tags peel to
