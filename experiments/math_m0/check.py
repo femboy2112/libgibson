@@ -43,19 +43,22 @@ def main():
     with tempfile.TemporaryDirectory(prefix='gibson-math-check-') as tmp:
         d = Path(tmp)
         for fixture in ('integral', 'nested', 'matrix', 'aligned'):
-            cmd(sys.executable, str(RENDER), fixture, str(d))
-            raw = (d/(fixture+'.rgb')).read_bytes()
+            fixture_dir = d/fixture
+            cmd(sys.executable, str(RENDER), fixture, str(fixture_dir))
+            raw = (fixture_dir/(fixture+'.rgb')).read_bytes()
             assert len(raw) == 9600 and len(set(raw)) > 2
             for mode in ('half', 'mono'):
-                out = d/(fixture+'-'+mode+'.ansi')
-                cmd(str(BIN), str(d/(fixture+'.rgb')), str(out), mode)
+                out = fixture_dir/(fixture+'-'+mode+'.ansi')
+                cmd(str(BIN), str(fixture_dir/(fixture+'.rgb')), str(out), mode)
                 data = out.read_bytes()
                 assert len(data) > 100 and (('▀' if mode == 'half' else '⣿').encode() in data)
-            assert (d/(fixture+'-half.ansi')).read_bytes() != (d/(fixture+'-mono.ansi')).read_bytes()
-        old = hashlib.sha256((d/'nested.rgb').read_bytes()).digest()
-        cmd(sys.executable, str(RENDER), 'nested', str(d))
-        assert hashlib.sha256((d/'nested.rgb').read_bytes()).digest() == old
-        cmd('pdftotext','-bbox',str(d/'nested.pdf'),str(d/'nested.html'))
+            assert (fixture_dir/(fixture+'-half.ansi')).read_bytes() != (fixture_dir/(fixture+'-mono.ansi')).read_bytes()
+        old = hashlib.sha256((d/'nested'/'nested.rgb').read_bytes()).digest()
+        cmd(sys.executable, str(RENDER), 'nested', str(d/'repeat'))
+        assert hashlib.sha256((d/'repeat'/'nested.rgb').read_bytes()).digest() == old
+        cmd(sys.executable, str(RENDER), 'nested', str(d/'nested'), ok=False)
+        assert hashlib.sha256((d/'nested'/'nested.rgb').read_bytes()).digest() == old
+        cmd('pdftotext','-bbox',str(d/'nested'/'nested.pdf'),str(d/'nested.html'))
         doc = ET.parse(d/'nested.html')
         words = {e.text: e.attrib for e in doc.iter() if e.tag.endswith('word')}
         assert order_is_valid(float(words['b']['yMax']), float(words['c']['yMin']))
@@ -63,7 +66,7 @@ def main():
         # Independent PDF text geometry plus a pixel witness of its inner rule.
         lo = int(float(words['b']['yMax'])) + 1
         hi = int(float(words['c']['yMin']))
-        image = Image.open(d/'nested-full.png').convert('L')
+        image = Image.open(d/'nested'/'nested-full.png').convert('L')
         x0, x1 = int(float(words['b']['xMin'])), int(float(words['b']['xMax'])) + 1
         assert any(sum(image.getpixel((x,y)) < 128 for x in range(x0,x1)) >= 4 for y in range(lo,hi+1))
         cmd(sys.executable, str(RENDER), r'\\input{/etc/passwd}', str(d), ok=False)

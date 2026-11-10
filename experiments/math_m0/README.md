@@ -14,8 +14,14 @@ powerful and is **not sandboxed** here: `-no-shell-escape` and process resource
 limits are not a filesystem or network security boundary. Never extend this
 script to process untrusted content without a separately tested isolation and
 input-validation design. The local trusted toolchain, PATH, working directory,
-output directory and fonts are assumed trustworthy. No fonts are vendored.
-Output files are overwritten; use a disposable output directory.
+output directory parent and fonts are assumed trustworthy. No fonts are vendored.
+The renderer refuses an existing output directory, but this is not protection
+against an attacker racing path components or replacing binaries. The capture
+consumer follows file paths and may overwrite its output; use trusted paths.
+Do not feed it FIFOs, devices or other untrusted file types. The subprocess
+limits do not bound total parent memory or escaped child processes, and the
+subprocess output pipes are buffered in memory. They do not constrain a
+malicious replacement executable or a compromised toolchain.
 
 ## Run
 
@@ -27,9 +33,9 @@ NumPy and Matplotlib. There is no new core dependency. On the evaluated host,
 cargo build --locked --example math_m0_capture -j 1
 PYTHONNOUSERSITE=1 /usr/bin/python3 experiments/math_m0/check.py
 out=$(mktemp -d)
-PYTHONNOUSERSITE=1 /usr/bin/python3 experiments/math_m0/render.py nested "$out"
-target/debug/examples/math_m0_capture "$out/nested.rgb" "$out/nested-half.ansi" half
-target/debug/examples/math_m0_capture "$out/nested.rgb" "$out/nested-mono.ansi" mono
+PYTHONNOUSERSITE=1 /usr/bin/python3 experiments/math_m0/render.py nested "$out/nested"
+target/debug/examples/math_m0_capture "$out/nested/nested.rgb" "$out/nested/nested-half.ansi" half
+target/debug/examples/math_m0_capture "$out/nested/nested.rgb" "$out/nested/nested-mono.ansi" mono
 ```
 
 The check exercises all fixtures, both cell encodings, same-host repeated RGB

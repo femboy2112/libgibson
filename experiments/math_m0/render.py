@@ -47,7 +47,9 @@ def main():
     a = p.parse_args()
     # All formula inputs above are developer-owned literals. Do not add text inputs.
     from PIL import Image
-    a.output.mkdir(parents=True, exist_ok=True)
+    # Refuse an existing destination: do not overwrite a previous result.
+    # The caller must also ensure its parent cannot be modified by an attacker.
+    a.output.mkdir()
     env = {k: os.environ[k] for k in ('PATH', 'HOME', 'LANG') if k in os.environ}
     env['SOURCE_DATE_EPOCH'] = '946684800'
     with tempfile.TemporaryDirectory(prefix='gibson-math-trusted-') as t:
