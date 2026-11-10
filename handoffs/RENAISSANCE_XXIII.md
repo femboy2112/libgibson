@@ -4,7 +4,8 @@ Round baseline: `main` `4573d0d6e571159b376e08fb2761b4e8eaffe6f3`
 (`0.7.0-dev`); development CI run 42578229665 succeeded at that SHA. #322 then
 merged as `b04e9c42d6484506373355d0a3538254d87d16ba`; development CI run 42725113594
 succeeded there. #326 subsequently merged as `9802d18b073d5eb420da176a0afcf7617e4627ae`;
-development CI run 42727174707 passed all eight jobs there; verify live main before acting.
+development CI run 42727174707 passed all eight jobs there. #324 then merged as
+`43bae9a6e50336e9a8e0d64e313a0e2d3a16e654`; its main CI is pending. Verify live state.
 The latest published prerelease is v0.6.0; both `v0.6.0` and
 `bindings/go/v0.6.0` peel to `492d0fec7727658d50b9a82025c784b7e427d6b0`.
 No v0.7.0 release candidate was qualified. Fetch and verify live state.
@@ -55,13 +56,13 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
 
 ## Integration and verification
 
-The XXI train #316, #318, #319, #317, #320, #321 is merged; do not repeat it. Drafts #325 (`9a8e5e0e4f4761aa481fd02732cbf207bd94265f`), #324
-(`9cebfa005b76dfa2feda656ddbca073a3e45fe91`), #327
-(`bfcf737db63875469169252da5370d1a2308ae3b`), and #329
-(`f7d51e861014ecb56c9668a8807473febec80374`) need
+The XXI train #316, #318, #319, #317, #320, #321 is merged; do not repeat it. Drafts #325 (`a9ac65269cddfbf595d9b087ec9586d5026d0e48`), #327
+(`22d6d78aac28b4098e43d8cba355a6753923b8ab`), and #329
+(`320f1fa1c420ff7cd18d3e22bce17e74c6eae1d8`) need
 current-head and dependency review, CI and appropriate independent review before merge.
-At the recorded heads #325 has green development CI and preflight, and #327 and #329
-have green development CI. #324 is still running CI. Distinct-model review remains absent. #324 contains five headless starters and three interactive public-Python-API applications:
+The previous #325 head had green development CI and preflight; the previous #327 and #329
+heads had green development CI. New heads merge #324 and need fresh CI. Distinct-model
+review remains absent. #324 contains five headless starters and three interactive public-Python-API applications:
 an offline echo console, a simulated dashboard and a simulated Celsius instrument with
 separate producer samples and user setpoints. A small headless C framebuffer consumer also passed against a copied staged SDK and adapter
 with a wrong-oracle negative control. Broader interactive examples and diagnostics remain
@@ -75,7 +76,8 @@ A new Linux PTY control passed for C++, Go and Python enable/disable/restore byt
 no-op negative control and an injected output error; it does not prove terminal support.
 The full parity harness passed on #325 head `32bd96fd0483444ec5d1cfb9bd89a06647dadaed`:
 84 records per language, 500 repetitions, replay, resource and mutation controls, plus the
-new PTY checks. The subsequent head merged #326 test-only changes and passed fresh hosted CI.
+new PTY checks. The next head merged #326 test-only changes and passed hosted CI; the current head adds
+merged #324 and needs fresh CI.
 Its native SDK was built from the earlier pinned baseline runtime, not a published release artifact.
 PRs #153, #154, #156–#164 and #166 were closed as already integrated by ancestry after
 checking each exact head and surviving tests/docs against the round baseline; they were not GitHub merges. #173 and
