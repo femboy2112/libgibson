@@ -29,7 +29,8 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
   writer-seam regression was red on baseline. Draft #327 (`e080e2fe585aa1cdd1e35acbfc97a3890e6c404b`
   at initial submission) adds retry bookkeeping; focused writer, keyboard-switch and FFI
   tests passed locally. A later C-ABI PTY retest of the fix passed: after an injected
-  failed enable, the retry wrote an enable request. Exact-head CI remains needed. Torn terminal writes remain physically uncertain.
+  failed enable, the retry wrote an enable request. Exact-head CI later passed at the
+  recorded #327 head. Torn terminal writes remain physically uncertain.
 - #328: a controlled Linux PTY probe on #327 observed that after a caught owner-thread
   panic, `ICANON` stayed on and a key without newline was not delivered; a no-panic control
   kept raw mode and delivered the key. A separate baseline runtime reproduction failed at
@@ -74,7 +75,7 @@ A new Linux PTY control passed for C++, Go and Python enable/disable/restore byt
 no-op negative control and an injected output error; it does not prove terminal support.
 The full parity harness passed on #325 head `32bd96fd0483444ec5d1cfb9bd89a06647dadaed`:
 84 records per language, 500 repetitions, replay, resource and mutation controls, plus the
-new PTY checks. The subsequent head only merged #326 test-only changes; it needs fresh CI.
+new PTY checks. The subsequent head merged #326 test-only changes and passed fresh hosted CI.
 Its native SDK was built from the earlier pinned baseline runtime, not a published release artifact.
 PRs #153, #154, #156–#164 and #166 were closed as already integrated by ancestry after
 checking each exact head and surviving tests/docs against the round baseline; they were not GitHub merges. #173 and
