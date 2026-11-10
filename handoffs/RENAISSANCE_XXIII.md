@@ -36,13 +36,15 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
   then-main `b04e9c42d6484506373355d0a3538254d87d16ba`, with no-panic and non-owner
   controls passing. Draft #329 restores only raw input and bracketed paste; its red-first
   PTY tests passed after the change, but screen, cursor, renderer, mouse and focus recovery
-  remain unqualified and the issue remains open. A source review found that its current
-  bracketed-paste recovery could lose the cleanup obligation after a failed write or raw-mode
+  remain unqualified and the issue remains open. A source review found that an earlier
+  revision of bracketed-paste recovery could lose the cleanup obligation after a failed write or raw-mode
   re-entry; the revised branch separates cleanup ownership from confirmed enable and passed
   red/green fault controls. An initial key-release PTY run failed because its parser dropped
   an event preceded by a paste-enable escape; a raw trace showed Unsupported in order. The
   parser now fails closed on unknown prefixes, with missing/extra/reordered controls, and the
-  full PTY suite passed 22/22. Preserve the initial failure and demand exact-head CI and review.
+  full PTY suite passed 22/22. At exact #329 head `e9ac02b`, local fault tests passed 2/2,
+  input PTY tests 5/5 and key-release PTY tests 22/22. Preserve the initial failure and
+  demand hosted exact-head CI and independent review.
 - Windows #292 is not verified. Clock #130 still needs loop/blocked-output evidence.
   HumanMusic/PCM and ABI v1 are frozen. Never infer terminal behavior from headless parity.
 
