@@ -25,6 +25,10 @@
 #include <sys/resource.h>
 #include <time.h>
 
+/* Pin these ABI numbers independently of the wrapper and transcript name mappings. */
+_Static_assert(GIBSON_EVENT_FOCUS_GAINED == 7, "focus gained ABI value must remain 7");
+_Static_assert(GIBSON_EVENT_FOCUS_LOST == 8, "focus lost ABI value must remain 8");
+
 /* ------------------------------------------------------------------ output buffer */
 typedef struct {
     char *p;

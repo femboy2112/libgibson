@@ -46,6 +46,10 @@ The comparator pins both focus-event records and the complete record order indep
 live C reference. Its lightweight controls include shared wrong-focus and shared reordered-record
 mutations, and require a changed or healed pinned gap to update the committed expectation.
 These are transcript-oracle controls; they do not establish focus delivery from a real terminal.
+The C consumer also statically pins focus event discriminants to ABI values 7 and 8, with a
+deliberately wrong-value compile control. A run using skipped controls, a prebuilt Rust binary of
+unverified provenance, or an unavailable PTY reports PARTIAL. Even a complete local relative
+parity run does not establish that the installed SDK came from the Rust consumer's source.
 
 How each consumer reaches the installed SDK:
 
@@ -62,9 +66,10 @@ SDK prefix containing whitespace, the harness supplies pkg-config with a tempora
 symlink to that SDK because some Go/cgo toolchains split its escaped flags incorrectly. It sets
 `LD_LIBRARY_PATH` to the actual SDK for the run; to run the resulting Go binaries later, set that
 variable yourself. Each run uses a fresh Go cache under its work directory so cached cgo flags do
-not retain a removed temporary symlink. On exit, the harness removes only its own verified cache
-and alias, preserving the work directory and receipts. An uncatchable process termination can leave
-temporary files. The symlink does not change the SDK's contents or bytes.
+not reuse another run's cgo search path. To avoid deleting a directory that another process may
+have replaced, the harness reports and retains its temporary cache and alias paths for separately
+audited cleanup. The work directory and receipts are retained. The symlink does not change the
+SDK's contents or bytes.
 
 Toolchains of the recorded run: gcc/g++ 13.3.0, Python 3.12.3, Go `go1.18 gccgo` (GCC 14.2.0),
 Rust 1.98.1, Linux x86_64.

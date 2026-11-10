@@ -30,10 +30,9 @@ die() { echo "parity_v08: $*" >&2; exit 2; }
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 source "$REPO/scripts/dev/parity_v08_cleanup.sh"
+source "$REPO/scripts/dev/parity_v08_status.sh"
 GO_CACHE=""
-GO_CACHE_TOKEN=""
 SDK_ALIAS_DIR=""
-SDK_ALIAS_TOKEN=""
 trap parity_cleanup EXIT
 SDK=${1:-${LIBGIBSON_SDK:-}}
 [ -n "$SDK" ] || die "usage: $0 SDK_PREFIX  (or set LIBGIBSON_SDK)"
@@ -53,7 +52,6 @@ mkdir -p "$WORK/bin" "$WORK/out" "$WORK/pysite" "$WORK/ctl"
 # cgo caches can embed pkg-config search paths. A fresh cache prevents an earlier run's temporary
 # SDK alias from being reused after that alias was removed (and works when WORK is reused).
 GO_CACHE=$(mktemp -d "$WORK/go-cache.XXXXXX")
-GO_CACHE_TOKEN=$(parity_directory_token "$GO_CACHE")
 V08=$REPO/bindings/parity/v08
 SCRIPT=$V08/script.txt
 EXPECTED=$V08/expected.json
@@ -67,10 +65,9 @@ LIBDIR=$SDK/lib
 GO_LDFLAGS="-Wl,-rpath,$LIBDIR"
 export PKG_CONFIG_PATH=$SDK/lib/pkgconfig
 if [[ "$SDK" =~ [[:space:]] ]]; then
-    # Some Go/cgo toolchains split pkg-config's escaped spaces incorrectly. The alias exists only
-    # for this run; the actual installed SDK remains the source of headers and library bytes.
+    # Some Go/cgo toolchains split pkg-config's escaped spaces incorrectly. This alias is used for
+    # this run and retained for audited cleanup; the installed SDK supplies headers/library bytes.
     SDK_ALIAS_DIR=$(mktemp -d /tmp/libgibson-parity-sdk.XXXXXX)
-    SDK_ALIAS_TOKEN=$(parity_directory_token "$SDK_ALIAS_DIR")
     ln -s -- "$SDK" "$SDK_ALIAS_DIR/sdk"
     export PKG_CONFIG_PATH=$SDK_ALIAS_DIR/sdk/lib/pkgconfig
     export LD_LIBRARY_PATH="$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
@@ -98,8 +95,10 @@ if [ "$(uname -s)" = Linux ]; then
 fi
 if [ -n "${PARITY_V08_RUST_BIN:-}" ]; then
     RUST_BIN=$PARITY_V08_RUST_BIN
+    RUST_PROVENANCE=PREBUILT_UNVERIFIED
     echo "  rust: using prebuilt $RUST_BIN"
 else
+    RUST_PROVENANCE=WORKTREE_BUILD
     build rust env -C "$REPO" "${CARGO_CMD[@]}" build --release --example parity_v08
     RUST_BIN=${CARGO_TARGET_DIR:-$REPO/target}/release/examples/parity_v08
 fi
@@ -139,13 +138,33 @@ MATRIX_RC=0
 
 # ---------------------------------------------------------------------------- negative controls
 CTL_FAIL=0
+CONTROL_STATUS=SKIPPED
 if [ "${PARITY_V08_SKIP_CONTROLS:-0}" != 1 ]; then
+    CONTROL_STATUS=PASS
     echo "== negative controls (each must be CAUGHT as a regression, with exactly the planted ids) =="
     if ! PYTHONDONTWRITEBYTECODE=1 python3 "$V08/test_compare.py"; then
         echo "  MISSED   comparator oracle controls"; CTL_FAIL=1
     fi
     if ! PYTHONDONTWRITEBYTECODE=1 python3 "$V08/test_cleanup.py"; then
         echo "  MISSED   temporary cache cleanup controls"; CTL_FAIL=1
+    fi
+    if ! PYTHONDONTWRITEBYTECODE=1 python3 "$V08/test_status.py"; then
+        echo "  MISSED   qualification summary controls"; CTL_FAIL=1
+    fi
+    # A deliberately wrong literal must fail for the intended assertion, not a missing SDK.
+    cat > "$WORK/ctl/focus-discriminant-mutant.c" <<'CFOCUS'
+#include <gibson.h>
+_Static_assert(GIBSON_EVENT_FOCUS_GAINED == 8, "FOCUS_GAINED_MUTANT");
+_Static_assert(GIBSON_EVENT_FOCUS_LOST == 7, "FOCUS_LOST_MUTANT");
+CFOCUS
+    if python3 "$REPO/onboarding/pkg-config-cc.py" cc -std=c11 -fsyntax-only \
+        "$WORK/ctl/focus-discriminant-mutant.c" >"$WORK/ctl/focus-discriminant-mutant.log" 2>&1; then
+        echo "  MISSED   focus ABI discriminant mutation"; CTL_FAIL=1
+    elif grep -q FOCUS_GAINED_MUTANT "$WORK/ctl/focus-discriminant-mutant.log" && \
+         grep -q FOCUS_LOST_MUTANT "$WORK/ctl/focus-discriminant-mutant.log"; then
+        echo "  CAUGHT   focus ABI discriminant mutation"
+    else
+        echo "  MISSED   focus ABI mutation failed for another reason"; CTL_FAIL=1
     fi
     control() { # label, lang, want, env assignment
         local label=$1 lang=$2 want=$3 assign=$4 out rc line
@@ -220,9 +239,9 @@ fi
 
 echo "== summary =="
 echo "  transcripts: $WORK/out"
-echo "  build_fail=$BUILD_FAIL run_fail=$RUN_FAIL matrix_rc=$MATRIX_RC control_fail=$CTL_FAIL focus_pty=$PTY_STATUS"
+echo "  build_fail=$BUILD_FAIL run_fail=$RUN_FAIL matrix_rc=$MATRIX_RC control_fail=$CTL_FAIL controls=$CONTROL_STATUS focus_pty=$PTY_STATUS rust=$RUST_PROVENANCE sdk_source=UNVERIFIED"
 if [ "$BUILD_FAIL" != 0 ] || [ "$RUN_FAIL" != 0 ] || [ "$MATRIX_RC" != 0 ] || [ "$CTL_FAIL" != 0 ] || [ "$PTY_STATUS" = FAIL ]; then
     echo "parity_v08: REGRESSION"
     exit 1
 fi
-echo "parity_v08: OK (no regression against expected.json)"
+parity_qualification "$CONTROL_STATUS" "$RUST_PROVENANCE" "$PTY_STATUS"
