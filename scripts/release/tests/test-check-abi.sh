@@ -43,6 +43,7 @@ git -C "$WORK/repo" -c user.name='ABI fixture' -c user.email='abi-fixture@exampl
     add scripts/release/check-abi.sh scripts/release/check-candidate-abi.sh abi/gibson-abi-v1.symbols source-marker
 git -C "$WORK/repo" -c user.name='ABI fixture' -c user.email='abi-fixture@example.invalid' \
     -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -qm 'fixture candidate'
+old_sha=$(git -C "$WORK/repo" rev-parse HEAD)
 printf '%s\n' dirty > "$WORK/repo/source-marker"
 cat > "$WORK/bin/cargo" <<'EOF'
 #!/usr/bin/env bash
@@ -71,5 +72,13 @@ fi
 if FAKE_NO_OUTPUT=1 "$candidate"; then
     echo 'FAIL: missing candidate library passed' >&2; exit 1
 fi
+printf '%s\n' newer > "$WORK/repo/source-marker"
+git -C "$WORK/repo" add source-marker
+git -C "$WORK/repo" -c user.name='ABI fixture' -c user.email='abi-fixture@example.invalid' \
+    -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -qm 'later head'
+"$candidate" "$old_sha"
+if "$candidate"; then
+    echo 'FAIL: updated HEAD was not used by the default candidate build' >&2; exit 1
+fi
 
-echo 'PASS: explicit library, clean committed-source build, stale, missing, build and nm controls'
+echo 'PASS: explicit library, pinned commit, clean source, stale, missing, build and nm controls'

@@ -18,6 +18,10 @@ cd "$REPO_ROOT"
 STABLE="${STABLE_TOOLCHAIN:-}"
 MSRV="${MSRV_TOOLCHAIN:-+1.85}"
 fail=0
+if ! candidate_sha=$(git rev-parse --verify 'HEAD^{commit}'); then
+    echo 'RELEASE PREFLIGHT: FAIL — cannot resolve candidate HEAD' >&2
+    exit 1
+fi
 
 step()  { printf '\n==== %s ====\n' "$*"; }
 ok()    { printf '  [PASS] %s\n' "$*"; }
@@ -40,6 +44,14 @@ run()   {
     if "$@" >"$log" 2>&1; then ok "$*"; else no "$*"; dump "$log"; fi
     rm -f "$log"
 }
+
+step "clean candidate checkout ($candidate_sha)"
+if checkout_status=$(git status --porcelain --untracked-files=all) && [ -z "$checkout_status" ]; then
+    ok "candidate checkout is clean"
+else
+    no "candidate checkout is dirty or cannot be inspected"
+    printf '%s\n' "$checkout_status"
+fi
 
 step "worktree whitespace"
 if git diff --check; then ok "git diff --check"; else no "git diff --check"; fi
@@ -96,7 +108,7 @@ if scripts/release/tests/test-check-abi.sh; then
 else
     no "ABI checker fault controls"
 fi
-if scripts/release/check-candidate-abi.sh; then
+if scripts/release/check-candidate-abi.sh "$candidate_sha"; then
     ok "committed candidate ABI symbol baseline"
 else
     no "committed candidate ABI symbol baseline"
@@ -125,6 +137,16 @@ for f in LICENSE-MIT LICENSE-APACHE LICENSES-THIRD-PARTY.md THIRD-PARTY-NOTICES.
     [ -f "$f" ] || { echo "  missing $f"; missing=1; }
 done
 if [ "$missing" = 0 ]; then ok "license/notice files present"; else no "license files"; fi
+
+step "candidate identity after preflight"
+if final_sha=$(git rev-parse --verify 'HEAD^{commit}') && \
+   [ "$final_sha" = "$candidate_sha" ] && \
+   checkout_status=$(git status --porcelain --untracked-files=all) && [ -z "$checkout_status" ]; then
+    ok "candidate $candidate_sha remains checked out and clean"
+else
+    no "candidate changed or checkout became dirty during preflight"
+    printf '%s\n' "${checkout_status:-}"
+fi
 
 echo
 if [ "$fail" -ne 0 ]; then echo "RELEASE PREFLIGHT: FAIL"; exit 1; fi

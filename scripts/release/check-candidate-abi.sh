@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Build the committed candidate in a fresh archive and check that library explicitly.
+# Build the supplied commit (default HEAD) in a fresh archive and check that library explicitly.
 # This checks export names only, not function signatures or struct layouts.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$ROOT"
-sha=$(git rev-parse --verify 'HEAD^{commit}')
+[[ $# -le 1 ]] || { echo 'usage: check-candidate-abi.sh [commit]' >&2; exit 2; }
+candidate=${1:-HEAD}
+sha=$(git rev-parse --verify --end-of-options "$candidate^{commit}")
 work=$(mktemp -d "${TMPDIR:-/tmp}/libgibson-abi-candidate.XXXXXXXX")
 mkdir "$work/source"
 echo "candidate ABI: source commit $sha"
