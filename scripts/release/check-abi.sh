@@ -11,8 +11,20 @@
 #
 # This is a release guard for the Linux x86_64 ABI surface, not a full
 # cross-platform binary-compatibility proof.
+# Usage: check-abi.sh --so /absolute/or/relative/library.so
+# The caller is responsible for the library's source provenance. With no argument the
+# legacy local convenience search is used; it can select a stale binary and must not be
+# used as the release witness. Neither mode checks struct layouts or function signatures.
 
 set -euo pipefail
+
+SO=""
+if [[ $# -gt 0 ]]; then
+    [[ $# == 2 && $1 == --so ]] || { echo "usage: check-abi.sh [--so library.so]" >&2; exit 2; }
+    SO=$2
+    [[ "$SO" = /* ]] || SO="$PWD/$SO"
+    [[ -f "$SO" ]] || { echo "check-abi: explicit library not found: $SO" >&2; exit 2; }
+fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
@@ -20,10 +32,12 @@ cd "$REPO_ROOT"
 BASELINE="abi/gibson-abi-v1.symbols"
 [[ -f "$BASELINE" ]] || { echo "check-abi: missing $BASELINE" >&2; exit 2; }
 
-SO=""
-for cand in target/release/libgibson.so target/debug/libgibson.so; do
-    [[ -f "$cand" ]] && { SO="$cand"; break; }
-done
+if [[ -z "$SO" ]]; then
+    echo "check-abi: local auto-selection; library provenance is UNVERIFIED" >&2
+    for cand in target/release/libgibson.so target/debug/libgibson.so; do
+        [[ -f "$cand" ]] && { SO="$cand"; break; }
+    done
+fi
 if [[ -z "$SO" ]]; then
     echo "check-abi: no libgibson.so found; building (debug)..." >&2
     cargo build >&2

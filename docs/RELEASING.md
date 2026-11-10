@@ -48,6 +48,13 @@ assertions (Python wheel/sdist and the Go module root carry the dual license),
 enforced third-party-notice freshness, and a repository-path-leak check. It must
 print `RELEASE PREFLIGHT: PASS`.
 
+The ABI symbol gate builds a fresh library from `git archive HEAD` in an isolated target
+and passes that exact path to `check-abi.sh --so`; it reports the commit and library
+digest. It checks exported names only, not C signatures or structure layouts. A release
+must separately qualify layouts and signatures, and use a clean candidate checkout for
+the other preflight steps. `check-candidate-abi.sh` retains its named temporary directory
+for audited local cleanup rather than recursively deleting it automatically.
+
 **Hangup-test execution is a separate mandatory release witness.** The four
 terminal-hangup liveness tests are marked `#[ignore]` for the normal parallel
 `cargo test` invocation and instead execute serially in the dedicated PTY CI job.
@@ -171,9 +178,10 @@ restarts at step 3, with no green run inherited from an earlier SHA.
 
 ## Disk hygiene (local dev)
 
-The release scripts each trap-clean their own temp trees, so `preflight.sh`,
-`cleanroom.sh`, `bundle.sh`, and `msrv-consumer.sh` leave nothing behind. Two things
-are **not** auto-cleaned on a dev box and accumulate across a patch train:
+`cleanroom.sh`, `bundle.sh`, and `msrv-consumer.sh` trap-clean their own temp trees.
+The ABI candidate and fault-control scripts instead report and retain their temporary
+directories for audited cleanup. On a dev box these and two other things can accumulate
+across a patch train:
 
 - **The consumer-acceptance lab clone.** When validating a candidate against the
   external Europa consumers, clone the lab into the canonical throwaway location

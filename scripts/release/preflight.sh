@@ -90,8 +90,17 @@ rm -f "$dlog"
 step "cargo package"
 run cargo $STABLE package --allow-dirty
 
-step "ABI v1 symbol baseline"
-run scripts/release/check-abi.sh
+step "ABI v1 symbol baseline (fresh build of committed candidate)"
+if scripts/release/tests/test-check-abi.sh; then
+    ok "ABI checker fault controls"
+else
+    no "ABI checker fault controls"
+fi
+if scripts/release/check-candidate-abi.sh; then
+    ok "committed candidate ABI symbol baseline"
+else
+    no "committed candidate ABI symbol baseline"
+fi
 
 step "clean-room external consumers (C, C++, Python, Go, Rust)"
 run scripts/release/cleanroom.sh
