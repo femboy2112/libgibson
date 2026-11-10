@@ -67,5 +67,7 @@ With the Python wrapper installed and `LIBGIBSON_LIBRARY` set, the Unix PTY smok
 `python onboarding/apps/test-pty.py` exercises input, responses, resize liveness,
 and terminal restoration. This does not establish support for every terminal.
 
-A framebuffer application remains separate work; passing the headless starter
+The [software framebuffer consumer](apps/framebuffer/README.md) separately
+demonstrates copying ARGB pixels through the repository's C adapter and reading
+the resulting cells from a staged SDK. It is headless; passing either headless
 smoke does not certify interactive terminal behavior.
