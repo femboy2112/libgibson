@@ -22,7 +22,8 @@
 #
 #   --prefix DIR   destination prefix (required); created if absent.
 #   --force        if <prefix> already exists and is non-empty, remove it first.
-#   --no-build     skip `cargo build --release` (use existing target/release artifacts).
+#   --no-build     skip `cargo build --release` (use existing artifacts under
+#                  ${CARGO_TARGET_DIR:-target}/release; provenance is unverified).
 
 set -euo pipefail
 
@@ -76,12 +77,26 @@ VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 note "LibGibson version: $VERSION"
 
 if [[ "$NO_BUILD" -eq 0 ]]; then
+    # Select what this Cargo invocation actually built, including configured/custom target
+    # directories or target triples. A stale repo-local target must never mask those outputs.
     note "building release artifacts (cargo build --release)..."
-    cargo build --release
+    messages=$(mktemp)
+    paths=$(mktemp)
+    trap 'rm -f -- "$messages" "$paths"' EXIT
+    cargo build --release --message-format=json > "$messages"
+    python3 scripts/release/cargo-artifact-paths.py "$messages" "$REPO_ROOT" > "$paths"
+    mapfile -d '' -t artifacts < "$paths"
+    [[ ${#artifacts[@]} -eq 2 ]] || die "cargo did not report both native libraries"
+    SO=${artifacts[0]}
+    A=${artifacts[1]}
+else
+    TARGET_DIR=${CARGO_TARGET_DIR:-"$REPO_ROOT/target"}
+    [[ "$TARGET_DIR" = /* ]] || TARGET_DIR="$REPO_ROOT/$TARGET_DIR"
+    if [[ -n ${CARGO_BUILD_TARGET:-} ]]; then TARGET_DIR="$TARGET_DIR/$CARGO_BUILD_TARGET"; fi
+    SO="$TARGET_DIR/release/libgibson.so"
+    A="$TARGET_DIR/release/libgibson.a"
+    note "--no-build: artifact provenance is UNVERIFIED ($TARGET_DIR/release)"
 fi
-
-SO="$REPO_ROOT/target/release/libgibson.so"
-A="$REPO_ROOT/target/release/libgibson.a"
 [[ -f "$SO" ]] || die "missing $SO (run without --no-build, or build release first)"
 [[ -f "$A" ]]  || die "missing $A"
 

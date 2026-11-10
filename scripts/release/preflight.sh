@@ -47,13 +47,13 @@ run()   {
 
 step "clean candidate checkout ($candidate_sha)"
 if checkout_status=$(git status --porcelain --untracked-files=all) && [ -z "$checkout_status" ]; then
-    ok "candidate checkout is clean"
+    ok "git status reports no tracked or untracked changes"
 else
     no "candidate checkout is dirty or cannot be inspected"
     printf '%s\n' "$checkout_status"
 fi
 if scripts/release/check-clean-index.py; then
-    ok "index cannot hide tracked changes from git status"
+    ok "no assume-unchanged or skip-worktree flags reported"
 else
     no "index has flags hiding tracked changes or could not be inspected"
 fi
@@ -108,6 +108,11 @@ step "cargo package"
 run cargo $STABLE package --allow-dirty
 
 step "ABI v1 symbol baseline (fresh build of committed candidate)"
+if scripts/release/tests/test-stage-sdk-target.sh; then
+    ok "SDK staging artifact-selection controls"
+else
+    no "SDK staging artifact-selection controls"
+fi
 if scripts/release/tests/test-check-abi.sh; then
     ok "ABI checker fault controls"
 else
@@ -153,7 +158,7 @@ if final_sha=$(git rev-parse --verify 'HEAD^{commit}') && \
    [ "$final_sha" = "$candidate_sha" ] && \
    checkout_status=$(git status --porcelain --untracked-files=all) && [ -z "$checkout_status" ] && \
    scripts/release/check-clean-index.py; then
-    ok "candidate $candidate_sha remains checked out and clean"
+    ok "candidate $candidate_sha remains checked out; git status reports clean"
 else
     no "candidate changed or checkout became dirty during preflight"
     printf '%s\n' "${checkout_status:-}"

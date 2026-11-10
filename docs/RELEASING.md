@@ -50,14 +50,20 @@ print `RELEASE PREFLIGHT: PASS`.
 
 Preflight records the starting HEAD and requires a clean checkout without
 assume-unchanged or skip-worktree index flags at both the start and end; it fails if
-HEAD changes. Git status does not report ignored files, so release qualification still
-uses an isolated checkout and controlled build environment. The ABI symbol gate builds that captured commit from a
+HEAD changes. Git status can also miss a same-size, same-mtime modification when index
+stat trust is weakened, and does not report ignored files. These checks are not a source
+isolation proof: release qualification still requires a fresh isolated checkout and
+controlled build environment. The ABI symbol gate builds that captured commit from a
 Git archive in an isolated target
 and passes that exact path to `check-abi.sh --so`; it reports the commit and library
 digest. It checks exported names only, not C signatures or structure layouts. A release
 must separately qualify layouts and signatures, and use a clean candidate checkout for
 the other preflight steps. `check-candidate-abi.sh` retains its named temporary directory
 for audited local cleanup rather than recursively deleting it automatically.
+
+SDK staging uses Python 3 to select the native-library paths reported by that Cargo
+build, including custom target directories. `--no-build` uses existing artifacts and
+does not establish their source provenance.
 
 **Hangup-test execution is a separate mandatory release witness.** The four
 terminal-hangup liveness tests are marked `#[ignore]` for the normal parallel
