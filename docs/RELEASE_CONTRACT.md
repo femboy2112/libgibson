@@ -541,6 +541,11 @@ The v0.6 integration — merged to `main` through #253 as `f6cd8c7`, and release
   (`Renderer::physical_state_uncertain()`) and re-establishes the screen on the next frame —
   exactly in fullscreen mode; in inline mode the torn region is abandoned to scrollback, not
   repaired. A failure that delivered no bytes is certain and retried in place.
+- **Keyboard stack transitions are best effort after I/O failure.** A failed pop write or flush
+  does not establish whether the terminal applied the pop; retrying can remove a foreign stack
+  entry. A failed re-push may have applied no push or a partial one. No atomic restoration is
+  claimed for these ambiguous cases, even though a successful pop followed by a failed screen
+  switch is accounted for without a second pop (#305).
 - **The C ABI's headless context is output-only.** In the 0.6.0 release (`release/v0.6.0-rc`, #259
   backported) `gibson_poll_event` on a headless context reports no input and never reads the
   process terminal; there is no event-injection entry point and no sub-cell pixel raster.
