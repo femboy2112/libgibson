@@ -139,6 +139,44 @@ support. **v1.0 — stable reviewed CORE:** explicit API/ABI compatibility commi
 tooling, independently verified support and a documented maintenance model. Optional graphics /
 media and sonification are not promoted without a named consumer.
 
+*Update 2026-11-09 (Renaissance XXIV audit; `main` `43bae9a`):* #298 is now merged
+(65→67 additive C ABI symbols), five-language onboarding #324 is merged and exact-main CI 8/8
+passes. Terminal lease/panic/focus repairs #329/#327/#333 and wrapper parity #325 remain
+draft and require integrated exact-head review; v0.7.0 is **not released or qualified yet**.
+The #312 shifted-key ambiguity is documented, not fixed; #326 demonstrates the missing
+press-provenance discriminator. This update supersedes the older #298-open and
+external-canary assumptions in the historical 2026-11-08 snapshot above.
+
+### v0.8–v1.0 mathematical typesetting — OWNER-REQUESTED / PLANNED
+
+**Goal:** actual mathematical-paper typography *inside LibGibson* (fractions, integrals,
+radicals, stretchy delimiters, scripts, matrices, aligned equations, labels), not a
+plain Unicode glyph string or a link to an external document. Input need not use
+LaTeX syntax; a bounded structured math representation or restricted adapter is valid.
+Tracked by [#334](https://github.com/femboy2112/libgibson/issues/334);
+the executable research plan and separate acceptance oracles are in
+[docs/MATH_TYPESETTING_ROADMAP.md](docs/MATH_TYPESETTING_ROADMAP.md).
+
+- [ ] **v0.8 feasibility:** evaluate an offline typesetter (for example MathJax/Typst SVG,
+  subject to licensing, sandbox and Rust 1.85 dependency compatibility), independently
+  verify formula geometry/baselines, render bounded pixels through the existing
+  scene and headless capture, and distinguish cell-only approximation from fidelity.
+- [ ] **v0.9 opt-in:** a real layout-aware, copyable/accessibly described math block
+  through the one renderer, with a *qualified* terminal pixel-graphics transport
+  where available, legible explicit Braille/half-block/ASCII fallback elsewhere,
+  and clipping, resize, caching, input safety and CPU/memory budgets tested.
+- [ ] **v1.0 contract:** stabilize the math presentation feature only if its physical
+  terminal, font, renderer, fidelity and external-consumer gates pass. Otherwise
+  keep it optional and experimental without delaying the unrelated CORE freeze.
+
+**No deceptive claim:** current `RgbRaster` / Braille / half-block paths provide
+useful *degraded* renditions, not automatically paper-quality typesetting.
+Kitty/Sixel/iTerm capability flags exist but protocol support is Unknown by default;
+an actual high-fidelity graphics path must be implemented and observed. Mathematical
+typesetting is presentation, not proof of the formula's truth. No implicit TeX
+command execution, network/file access, unsandboxed subprocess or MSRV bump.
+This track is **not a retroactive v0.7.0 release blocker**.
+
 ---
 
 ## v0.5.0 — Interactive Observable Instruments (RELEASED 2026-10-24, history)
@@ -666,6 +704,7 @@ This round converted earlier over-strong claims into verified behavior and expli
   - Progress bars with smooth Unicode fraction characters (`▏▎▍▌▋▊▉█`).
   - Tree views with expandable/collapsible nodes.
   - Tab headers and segmented controls.
+- [ ] **Mathematical typesetting (v0.8→v1.0, #334):** genuine font-aware 2D equation layout and display/inline math nodes, with verified image transport and honest lower-fidelity terminal fallback; see [math roadmap](docs/MATH_TYPESETTING_ROADMAP.md). Not yet implemented.
 - [ ] **Markdown and Syntax Highlighting**: streaming Markdown parser with Syntect or Tree-sitter token colorization.
 
 ---
@@ -681,7 +720,7 @@ This round converted earlier over-strong claims into verified behavior and expli
 
 ## Phase 5: Protocol Extensions & Hardening — PLANNED
 
-- [ ] **Terminal Graphics Protocols**: inline image rendering via Kitty graphics protocol, iTerm2 inline images, and Sixel graphics.
+- [ ] **Terminal Graphics Protocols**: inline image rendering via Kitty graphics protocol, iTerm2 inline images, and Sixel graphics. A qualified pixel path is a prerequisite for the paper-fidelity tier of [math typesetting](docs/MATH_TYPESETTING_ROADMAP.md); an enum reporting Unknown is not proof of support.
 - [ ] **Windows ConPTY Torture Testing**: extended automated testing under the Windows Console API and ConPTY.
 - [ ] **Multiplexer & Remote Shell Hardening**: specialized test matrix for tmux, screen, and SSH connections over high-latency networks.
 - [ ] **Property & Fuzz Testing**: `cargo-fuzz` / AFL suite exercising arbitrary Unicode sequences, arbitrary terminal byte streams, invalid ANSI input, and rapid terminal resizes.
