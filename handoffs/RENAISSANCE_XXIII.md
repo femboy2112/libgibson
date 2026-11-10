@@ -62,11 +62,11 @@ The XXI train #316, #318, #319, #317, #320, #321 is merged; do not repeat it. Dr
 current-head and dependency review, CI and appropriate independent review before merge.
 The previous #325 head had green development CI and preflight; the previous #327 and #329
 heads had green development CI. New heads merge #324 and need fresh CI. Distinct-model
-review remains absent. #324 contains five headless starters and three interactive public-Python-API applications:
+review remains absent. Merged #324 contains five headless starters and three interactive public-Python-API applications:
 an offline echo console, a simulated dashboard and a simulated Celsius instrument with
 separate producer samples and user setpoints. A small headless C framebuffer consumer also passed against a copied staged SDK and adapter
 with a wrong-oracle negative control. Broader interactive examples and diagnostics remain
-outstanding. The five-language headless smoke passed at this source head using development
+outstanding. The five-language headless smoke passed at #324 head `9cebfa0` using development
 artifacts from the earlier baseline. A red-first PTY control caught the apps painting before
 raw mode; the revised apps poll first and preserve a returned event. The first-poll event in
 the control is synthetic; real queued input is sent after raw mode. The original failure and
