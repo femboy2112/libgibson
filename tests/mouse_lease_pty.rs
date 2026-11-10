@@ -14,6 +14,8 @@ const ON: &[u8] = b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1015h\x1b[?1006h";
 const OFF: &[u8] = b"\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l";
 const ALT_ON: &[u8] = b"\x1b[?1049h";
 const ALT_OFF: &[u8] = b"\x1b[?1049l";
+const STALE_BEGIN: &[u8] = b"STALE_CALLS_BEGIN";
+const STALE_END: &[u8] = b"STALE_CALLS_END";
 
 fn capture(role: &str) -> Vec<u8> {
     let mut cmd = CommandBuilder::new(std::env::current_exe().unwrap());
@@ -53,10 +55,66 @@ fn mouse_requests(raw: &[u8]) -> Vec<&'static str> {
     requests
 }
 
+// The stale-operation interval must contain no terminal escapes at all. Looking only for the
+// concatenated crossterm command misses both individual mode requests and torn CSI prefixes.
+fn stale_calls_have_no_escapes(raw: &[u8]) -> bool {
+    let Some(start) = raw
+        .windows(STALE_BEGIN.len())
+        .position(|w| w == STALE_BEGIN)
+    else {
+        return false;
+    };
+    let start = start + STALE_BEGIN.len();
+    let Some(end) = raw[start..]
+        .windows(STALE_END.len())
+        .position(|w| w == STALE_END)
+    else {
+        return false;
+    };
+    !raw[start..start + end].contains(&0x1b)
+}
+
+#[test]
+fn stale_output_oracle_rejects_individual_and_torn_mouse_sequences() {
+    assert!(stale_calls_have_no_escapes(
+        b"STALE_CALLS_BEGIN\r\nSTALE_CALLS_END"
+    ));
+    for mode in ["1000", "1002", "1003", "1015", "1006"] {
+        for state in ['h', 'l'] {
+            let raw = format!("STALE_CALLS_BEGIN\x1b[?{mode}{state}STALE_CALLS_END");
+            assert!(
+                mouse_requests(raw.as_bytes()).is_empty(),
+                "old oracle misses individual mode"
+            );
+            assert!(
+                !stale_calls_have_no_escapes(raw.as_bytes()),
+                "{mode}{state}"
+            );
+        }
+    }
+    for prefix in [b"\x1b".as_slice(), b"\x1b[", b"\x1b[?100"] {
+        let mut raw = STALE_BEGIN.to_vec();
+        raw.extend_from_slice(prefix);
+        raw.extend_from_slice(STALE_END);
+        assert!(
+            mouse_requests(&raw).is_empty(),
+            "old full-sequence oracle misses this"
+        );
+        assert!(!stale_calls_have_no_escapes(&raw), "{prefix:?}");
+    }
+    assert!(!stale_calls_have_no_escapes(b"STALE_CALLS_BEGIN"));
+    assert!(!stale_calls_have_no_escapes(b"STALE_CALLS_END"));
+}
+
 #[test]
 fn restored_session_cannot_enable_or_disable_mouse_for_new_owner() {
     let raw = capture("stale");
     assert_eq!(mouse_requests(&raw), Vec::<&str>::new());
+    assert!(
+        stale_calls_have_no_escapes(&raw),
+        "{}",
+        String::from_utf8_lossy(&raw)
+    );
     assert!(String::from_utf8_lossy(&raw).contains("MOUSE_DONE rejected=true,true"));
 }
 
@@ -64,6 +122,18 @@ fn restored_session_cannot_enable_or_disable_mouse_for_new_owner() {
 fn current_owner_mouse_requests_and_restore_still_work() {
     let raw = capture("owner");
     assert_eq!(mouse_requests(&raw), ["on", "off", "on", "off"]);
+    for mode in ["1000", "1002", "1003", "1015", "1006"] {
+        for state in ['h', 'l'] {
+            let request = format!("\x1b[?{mode}{state}");
+            assert_eq!(
+                raw.windows(request.len())
+                    .filter(|part| *part == request.as_bytes())
+                    .count(),
+                2,
+                "owner request {mode}{state}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -71,6 +141,11 @@ fn stale_mouse_calls_cannot_hide_owner_capture_from_panic_cleanup() {
     let raw = capture("panic");
     // The hook disables the active request; ordinary restore also attempts cleanup.
     assert_eq!(mouse_requests(&raw), ["on", "off", "off"]);
+    assert!(
+        stale_calls_have_no_escapes(&raw),
+        "{}",
+        String::from_utf8_lossy(&raw)
+    );
     assert!(String::from_utf8_lossy(&raw).contains("MOUSE_DONE rejected=true,true"));
 }
 
@@ -233,8 +308,10 @@ fn mouse_lease_child() {
     if role == "panic" {
         owner.set_mouse_capture(true).unwrap();
     }
+    eprintln!("STALE_CALLS_BEGIN");
     let enable_rejected = matches!(old.set_mouse_capture(true), Err(e) if e.kind() == std::io::ErrorKind::NotConnected);
     let disable_rejected = matches!(old.set_mouse_capture(false), Err(e) if e.kind() == std::io::ErrorKind::NotConnected);
+    eprintln!("STALE_CALLS_END");
     if role == "panic" {
         assert!(std::panic::catch_unwind(|| panic!("caught owner panic")).is_err());
     }
