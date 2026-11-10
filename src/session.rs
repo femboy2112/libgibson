@@ -41,6 +41,11 @@ const REPORT_KEY_RELEASE: u8 = 0b100;
 /// [`take_key_releases_ended_notice`]). An atomic: the hook takes no lock.
 static KEY_RELEASES_ENDED: AtomicBool = AtomicBool::new(false);
 
+/// The owner-thread panic hook has attempted to leave raw input and bracketed paste. A caught
+/// panic leaves the session alive, so its next interactive entry must not trust its old flags.
+/// This notice is lease-scoped; it does not claim recovery of screen, cursor, renderer or capture.
+static PANIC_INPUT_MODES_INVALIDATED: AtomicBool = AtomicBool::new(false);
+
 /// Takes the panic hook's notice that reporting ended, for the Unix source to queue just before an
 /// answer it decodes (#275 review 8). One swap against the owner's
 /// [`take_key_releases_ended`](TerminalSession::take_key_releases_ended): exactly one of them
@@ -319,6 +324,7 @@ impl TerminalSession {
                 if TERMINAL_LEASE.load(Ordering::SeqCst) != LEASE_AVAILABLE
                     && owner_thread() == Some(std::thread::current().id())
                 {
+                    PANIC_INPUT_MODES_INVALIDATED.store(true, Ordering::SeqCst);
                     let _ = disable_raw_mode();
                     let mut out = stdout();
                     // Disable exactly the reporting modes the owner turned on; the
@@ -349,10 +355,17 @@ impl TerminalSession {
         }
     }
 
-    /// Enables raw mode and bracketed paste for interactive operation.
+    /// Enables raw mode and bracketed paste for interactive operation. If the owner-thread panic
+    /// hook ran and the panic was caught, requests both again on the next interactive entry.
+    /// This input recovery does not restore alternate-screen, cursor, renderer or capture state.
     pub fn enter_interactive(&mut self) -> io::Result<()> {
         if !self.is_tty || self.headless {
             return Ok(());
+        }
+
+        if self.owns_lease && PANIC_INPUT_MODES_INVALIDATED.swap(false, Ordering::SeqCst) {
+            self.raw_mode_enabled = false;
+            self.bracketed_paste_enabled = false;
         }
 
         // Identity, not liveness: record that input is now a live controlling
@@ -829,6 +842,7 @@ impl TerminalSession {
         if self.owns_lease {
             REPORTING_MODES.store(0, Ordering::SeqCst);
             KEY_RELEASES_ENDED.store(false, Ordering::SeqCst);
+            PANIC_INPUT_MODES_INVALIDATED.store(false, Ordering::SeqCst);
             set_owner_thread(None);
             TERMINAL_LEASE.store(LEASE_AVAILABLE, Ordering::SeqCst);
             self.owns_lease = false;
