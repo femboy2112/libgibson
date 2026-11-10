@@ -75,6 +75,109 @@ def run(name, initial, action, response, quit_key):
         os.close(slave)
 
 
+STARTUP_CHILD = r'''
+import os, runpy, sys
+path, gate_fd, first_key, attr, expected, after_attr, after_expected = sys.argv[1:]
+gate_fd = int(gate_fd)
+ns = runpy.run_path(path, run_name="startup_probe")
+original_poll = ns["Context"].poll_event
+first = True
+def poll_with_first_event(self, *args, **kwargs):
+    global first
+    event = original_poll(self, *args, **kwargs)
+    if first:
+        first = False
+        if event.event_type != ns["EventType"].NONE:
+            raise AssertionError("unexpected real event during first poll")
+        return ns["Event"].char(first_key)
+    return event
+ns["Context"].poll_event = poll_with_first_event
+main = ns["main"]
+app_globals = main.__globals__
+original_paint = app_globals["paint"]
+gated = False
+reported = False
+def gated_paint(ctx, app):
+    global gated, reported
+    if not gated:
+        gated = True
+        os.write(2, b"\nSTARTUP_GATE\n")
+        if os.read(gate_fd, 1) != b"1":
+            raise RuntimeError("startup gate closed")
+        if str(getattr(app, attr)) != expected:
+            raise AssertionError("the first polled event was not applied before painting")
+    elif not reported and str(getattr(app, after_attr)) == after_expected:
+        reported = True
+        os.write(2, b"\nSTARTUP_TYPEAHEAD_APPLIED\n")
+    return original_paint(ctx, app)
+app_globals["paint"] = gated_paint
+sys.argv = [path]
+sys.exit(main())
+'''
+
+
+def startup_typeahead(name, first_key, attr, expected, action, after_attr, after_expected, quit_key):
+    """Gate the first paint, then queue real input; inject one first-poll event for its oracle."""
+    master, slave = pty.openpty()
+    gate_read, gate_write = os.pipe()
+    before = termios.tcgetattr(slave)
+    proc = None
+    data = bytearray()
+    try:
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 15, 40, 0, 0))
+        env = dict(os.environ, TERM="xterm-256color")
+        proc = subprocess.Popen(
+            [sys.executable, "-c", STARTUP_CHILD, str(HERE / name / "app.py"),
+             str(gate_read), first_key, attr, expected, after_attr, after_expected],
+            stdin=slave, stdout=slave, stderr=slave, env=env, pass_fds=(gate_read,),
+            start_new_session=True,
+        )
+        os.close(gate_read)
+        gate_read = -1
+        deadline = time.monotonic() + 5
+
+        def collect_until(needles, start=0):
+            while time.monotonic() < deadline:
+                cursor = start
+                for needle in needles:
+                    found = data.find(needle, cursor)
+                    if found < 0:
+                        break
+                    cursor = found + len(needle)
+                else:
+                    return
+                if proc.poll() is not None:
+                    raise AssertionError(f"{name}: startup exited {proc.returncode}: {bytes(data)!r}")
+                ready, _, _ = select.select([master], [], [], 0.1)
+                if ready:
+                    data.extend(os.read(master, 65536))
+            raise AssertionError(f"{name}: startup missing {needles!r}: {bytes(data)!r}")
+
+        collect_until((b"STARTUP_GATE",))
+        if termios.tcgetattr(slave)[3] & (termios.ICANON | termios.ECHO):
+            raise AssertionError(f"{name}: first paint was reached before raw mode")
+        # No application code can run until the gate is released. The real input is therefore
+        # queued before the first frame, after the real public poll initialized the terminal.
+        os.write(master, action)
+        start = len(data)
+        os.write(gate_write, b"1")
+        collect_until((b"STARTUP_TYPEAHEAD_APPLIED",), start)
+        os.write(master, quit_key)
+        proc.wait(timeout=5)
+        if proc.returncode != 0 or termios.tcgetattr(slave)[3] != before[3]:
+            raise AssertionError(f"{name}: startup exit/restore failed: {bytes(data)!r}")
+        print(f"{name}: first event preserved, raw before paint, queued input delivered OK")
+    finally:
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if gate_read >= 0:
+            os.close(gate_read)
+        os.close(gate_write)
+        os.close(master)
+        os.close(slave)
+
+
 def reject_dumb(name):
     master, slave = pty.openpty()
     proc = None
@@ -94,6 +197,9 @@ def reject_dumb(name):
         os.close(slave)
 
 
+startup_typeahead("chat-console", "X", "draft", "X", b"hi\r", "messages", "['You: Xhi', 'Echo (local): Xhi']", b"\x1b")
+startup_typeahead("status-dashboard", "p", "paused", "True", b"p", "paused", "False", b"q")
+startup_typeahead("temperature-instrument", "+", "setpoint_tenths", "215", b"-", "setpoint_tenths", "210", b"q")
 run("chat-console", b"Offline echo console", b"hi\r", (b"Echo", b"(local):", b"hi"), b"\x1b")
 run("status-dashboard", b"Status dashboard", b"p", (b"paused",), b"q")
 run("temperature-instrument", b"Temperature instrument", b"+", (b"21.5",), b"q")

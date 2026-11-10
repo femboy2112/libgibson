@@ -100,7 +100,11 @@ def main():
         return 2
     app = Console(shutil.get_terminal_size((80, 24)).lines)
     with Context(RenderMode.FULLSCREEN) as ctx:
-        paint(ctx, app)
+        initial = ctx.poll_event(0)
+        if initial.event_type != EventType.NONE:
+            app.handle(initial)
+        if not app.done:
+            paint(ctx, app)
         while not app.done:
             ev = ctx.poll_event(100)
             if ev.event_type != EventType.NONE:

@@ -97,7 +97,11 @@ def main():
         return 2
     app = Dashboard()
     with Context(RenderMode.FULLSCREEN) as ctx:
-        paint(ctx, app)
+        initial = ctx.poll_event(0)
+        if initial.event_type != EventType.NONE:
+            app.handle(initial)
+        if not app.done:
+            paint(ctx, app)
         due = time.monotonic() + 1.0
         while not app.done:
             ev = ctx.poll_event(100)

@@ -65,7 +65,9 @@ The console does not connect to a model; the dashboard and instrument do not rea
 real telemetry.
 With the Python wrapper installed and `LIBGIBSON_LIBRARY` set, the Unix PTY smoke
 `python onboarding/apps/test-pty.py` exercises input, responses, resize liveness,
-and terminal restoration. This does not establish support for every terminal.
+and terminal restoration. Its startup control checks that raw mode is active before
+the first paint, a synthetic event returned by the initial poll is preserved, and real
+PTY input queued before that paint is handled. This does not establish support for every terminal.
 
 The [software framebuffer consumer](apps/framebuffer/README.md) separately
 demonstrates copying ARGB pixels through the repository's C adapter and reading
