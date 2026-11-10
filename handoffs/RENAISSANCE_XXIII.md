@@ -2,7 +2,9 @@
 
 Round baseline: `main` `4573d0d6e571159b376e08fb2761b4e8eaffe6f3`
 (`0.7.0-dev`); development CI run 42578229665 succeeded at that SHA. #322 then
-merged as `b04e9c42d6484506373355d0a3538254d87d16ba`; development CI run 42725113594 succeeded at that SHA; still verify live state.
+merged as `b04e9c42d6484506373355d0a3538254d87d16ba`; development CI run 42725113594
+succeeded there. #326 subsequently merged as `9802d18b073d5eb420da176a0afcf7617e4627ae`;
+verify live main and its CI before acting.
 The latest published prerelease is v0.6.0; both `v0.6.0` and
 `bindings/go/v0.6.0` peel to `492d0fec7727658d50b9a82025c784b7e427d6b0`.
 No v0.7.0 release candidate was qualified. Fetch and verify live state.
@@ -13,7 +15,7 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
   shifted `!` whose physical key was released under Kitty base key `1`, and a still-held
   exact `!` accompanied by an unrelated `1` release. A timeout driven solely by those
   observations cannot distinguish them. Exact Kitty special keys can also use internal
-  `KeyId::Code`, so that identity alone is not a legacy-format marker. Draft #326 pins
+  `KeyId::Code`, so that identity alone is not a legacy-format marker. Merged #326 pins
   these constructed protocol traces; it does not implement a fix or prove hardware-layout
   behavior. The existing indefinitely-held condition is conditional on no recovery event.
 - The #305 failed-flush boundary is best effort, not atomic restoration. Merged #322
@@ -42,10 +44,9 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
 
 ## Integration and verification
 
-The XXI train #316, #318, #319, #317, #320, #321 is merged; do not repeat it. Drafts #325 (`32bd96fd0483444ec5d1cfb9bd89a06647dadaed`), #324
-(`bd73546db5a0a12d12ca5a512ae9d23178b211c9`), #326
-(`0d7ee4f12a10b4b220d5370eb28ff310683b30cd`) and #327
-(`ab7f3562178424071a0f375078c2e4ace5934be8`, updated with #322), and #329
+The XXI train #316, #318, #319, #317, #320, #321 is merged; do not repeat it. Drafts #325 (`9a8e5e0e4f4761aa481fd02732cbf207bd94265f`), #324
+(`cf9cd26ad94d732665073bf5a549ab0b49205721`), #327
+(`bfcf737db63875469169252da5370d1a2308ae3b`), and #329
 (`1198d8e99ab7f79803343429c89e50469b94028f`) need
 current-head and dependency review, CI and appropriate independent review before merge. #324 contains five headless starters and three interactive public-Python-API applications:
 an offline echo console, a simulated dashboard and a simulated Celsius instrument with
@@ -56,8 +57,8 @@ A new Linux PTY control passed for C++, Go and Python enable/disable/restore byt
 no-op negative control and an injected output error; it does not prove terminal support.
 The full parity harness passed on #325 head `32bd96fd0483444ec5d1cfb9bd89a06647dadaed`:
 84 records per language, 500 repetitions, replay, resource and mutation controls, plus the
-new PTY checks. Its native SDK was built from the earlier pinned baseline runtime, not a
-published release artifact.
+new PTY checks. The subsequent head only merged #326 test-only changes; it needs fresh CI.
+Its native SDK was built from the earlier pinned baseline runtime, not a published release artifact.
 PRs #153, #154, #156–#164 and #166 were closed as already integrated by ancestry after
 checking each exact head and surviving tests/docs against the round baseline; they were not GitHub merges. #173 and
 #177 have divergent history and remain open. #173 contains a design handoff absent from
