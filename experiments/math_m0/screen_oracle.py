@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Compare an ANSI capture's terminal cells with the original RGB samples."""
 from pathlib import Path
+import re
 import sys
 import pyte
 
@@ -22,14 +23,42 @@ def luminance(color):
     return (54*r + 183*g + 19*b)//256
 
 
+def validate_sgr(data):
+    # Pyte does not model every terminal SGR (notably conceal). Fail closed on
+    # SGR we did not calibrate instead of treating an invisible cell as visible.
+    for match in re.finditer(rb'\x1b\[([0-?]*[ -/]*)([@-~])', data):
+        if match.group(2) != b'm':
+            continue
+        body = match.group(1)
+        if not re.fullmatch(rb'[0-9;]*', body):
+            raise ValueError('unsupported SGR syntax')
+        values = [int(n or b'0') for n in body.split(b';')]
+        i = 0
+        while i < len(values):
+            n = values[i]
+            if n in (38, 48):
+                if i + 1 >= len(values) or values[i+1] not in (2, 5):
+                    raise ValueError('unsupported extended color')
+                count = 3 if values[i+1] == 2 else 1
+                if i + 2 + count > len(values) or any(x > 255 for x in values[i+2:i+2+count]):
+                    raise ValueError('invalid extended color')
+                i += 2 + count
+            elif n in (0, 7, 27, 39, 49) or 30 <= n <= 37 or 40 <= n <= 47 or 90 <= n <= 97 or 100 <= n <= 107:
+                i += 1
+            else:
+                raise ValueError(f'unsupported SGR {n}')
+
+
 def main():
     if len(sys.argv) != 4 or sys.argv[3] not in ('half', 'mono'):
         raise SystemExit('usage: screen_oracle.py INPUT.rgb CAPTURE.ansi half|mono')
     raw = Path(sys.argv[1]).read_bytes()
     if len(raw) != 9600:
         raise ValueError('expected exactly 9600 RGB bytes')
+    capture = Path(sys.argv[2]).read_bytes()
+    validate_sgr(capture)
     screen = pyte.Screen(80, 20)
-    pyte.Stream(screen).feed(Path(sys.argv[2]).read_bytes().decode('utf-8'))
+    pyte.Stream(screen).feed(capture.decode('utf-8'))
 
     def pixel(x, y):
         i = (y * 80 + x) * 3

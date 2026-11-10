@@ -66,8 +66,10 @@ def main():
         ansi = '\x1b[38;2;255;0;0;48;2;0;0;255m'
         (d/'style-good.ansi').write_bytes((ansi+rows).encode())
         (d/'style-reverse.ansi').write_bytes((ansi+'\x1b[7m'+rows).encode())
+        (d/'style-hidden.ansi').write_bytes((ansi+'\x1b[8m'+rows).encode())
         cmd(sys.executable, str(ORACLE), str(d/'pattern.rgb'), str(d/'style-good.ansi'), 'half', env=SCREEN_ENV)
         cmd(sys.executable, str(ORACLE), str(d/'pattern.rgb'), str(d/'style-reverse.ansi'), 'half', ok=False, env=SCREEN_ENV)
+        cmd(sys.executable, str(ORACLE), str(d/'pattern.rgb'), str(d/'style-hidden.ansi'), 'half', ok=False, env=SCREEN_ENV)
         (d/'white.rgb').write_bytes(bytes([255])*9600)
         braille = ''.join(f'\x1b[{row};1H' + '⣿'*80 for row in range(1, 21))
         (d/'mono-good.ansi').write_bytes(('\x1b[37;40m'+braille).encode())

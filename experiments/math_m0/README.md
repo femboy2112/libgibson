@@ -51,8 +51,9 @@ monochrome Braille glyph with the RGB input. Explicit mono colors must have
 bright foreground and a contrast threshold using assumed standard palette
 values; if both colors are `default`, the test assumes a light foreground on
 a dark background. Actual terminal palette and visual contrast are not
-measured. White/ignored-input, reversed-video and black-on-black mutants are
-rejected against their controls. This checks the modelled cell result, not
+measured. White/ignored-input, reversed-video, concealed text and black-on-black
+mutants are rejected against their controls. Uncalibrated SGR sequences are
+rejected before parsing, since Pyte does not model every SGR. This checks the modelled cell result, not
 visual readability or the quality of typesetting; Pyte is not a complete
 terminal emulator and cannot validate effects it does not model.
 
