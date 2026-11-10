@@ -29,6 +29,12 @@ set -euo pipefail
 die() { echo "parity_v08: $*" >&2; exit 2; }
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+source "$REPO/scripts/dev/parity_v08_cleanup.sh"
+GO_CACHE=""
+GO_CACHE_TOKEN=""
+SDK_ALIAS_DIR=""
+SDK_ALIAS_TOKEN=""
+trap parity_cleanup EXIT
 SDK=${1:-${LIBGIBSON_SDK:-}}
 [ -n "$SDK" ] || die "usage: $0 SDK_PREFIX  (or set LIBGIBSON_SDK)"
 SDK=$(cd "$SDK" && pwd)
@@ -47,6 +53,7 @@ mkdir -p "$WORK/bin" "$WORK/out" "$WORK/pysite" "$WORK/ctl"
 # cgo caches can embed pkg-config search paths. A fresh cache prevents an earlier run's temporary
 # SDK alias from being reused after that alias was removed (and works when WORK is reused).
 GO_CACHE=$(mktemp -d "$WORK/go-cache.XXXXXX")
+GO_CACHE_TOKEN=$(parity_directory_token "$GO_CACHE")
 V08=$REPO/bindings/parity/v08
 SCRIPT=$V08/script.txt
 EXPECTED=$V08/expected.json
@@ -63,7 +70,7 @@ if [[ "$SDK" =~ [[:space:]] ]]; then
     # Some Go/cgo toolchains split pkg-config's escaped spaces incorrectly. The alias exists only
     # for this run; the actual installed SDK remains the source of headers and library bytes.
     SDK_ALIAS_DIR=$(mktemp -d /tmp/libgibson-parity-sdk.XXXXXX)
-    trap 'rm -f -- "$SDK_ALIAS_DIR/sdk"; rmdir -- "$SDK_ALIAS_DIR" 2>/dev/null || true' EXIT
+    SDK_ALIAS_TOKEN=$(parity_directory_token "$SDK_ALIAS_DIR")
     ln -s -- "$SDK" "$SDK_ALIAS_DIR/sdk"
     export PKG_CONFIG_PATH=$SDK_ALIAS_DIR/sdk/lib/pkgconfig
     export LD_LIBRARY_PATH="$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
@@ -136,6 +143,9 @@ if [ "${PARITY_V08_SKIP_CONTROLS:-0}" != 1 ]; then
     echo "== negative controls (each must be CAUGHT as a regression, with exactly the planted ids) =="
     if ! PYTHONDONTWRITEBYTECODE=1 python3 "$V08/test_compare.py"; then
         echo "  MISSED   comparator oracle controls"; CTL_FAIL=1
+    fi
+    if ! PYTHONDONTWRITEBYTECODE=1 python3 "$V08/test_cleanup.py"; then
+        echo "  MISSED   temporary cache cleanup controls"; CTL_FAIL=1
     fi
     control() { # label, lang, want, env assignment
         local label=$1 lang=$2 want=$3 assign=$4 out rc line
