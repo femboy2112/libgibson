@@ -1,0 +1,7 @@
+[package]
+name = "libgibson-onboarding"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.6.0" }
