@@ -55,5 +55,15 @@ uses a placeholder: run `go mod edit -replace=github.com/femboy2112/libgibson/bi
 `v0.6.0` source tag and its dependencies with Cargo. To test development artifacts,
 use the smoke script's staged-module and unpacked-crate inputs instead.
 
-Interactive terminals, resize/input, dashboard, chat, scientific-instrument, and
-framebuffer examples remain separate work; passing this smoke does not certify them.
+## Interactive applications
+
+The independently copyable [offline chat-shaped console](apps/chat-console/README.md)
+and [simulated status dashboard](apps/status-dashboard/README.md) use the public
+Python wrapper, include headless self-tests, and state their separate dependencies.
+The console does not connect to a model; the dashboard does not read real telemetry.
+With the Python wrapper installed and `LIBGIBSON_LIBRARY` set, the Unix PTY smoke
+`python onboarding/apps/test-pty.py` exercises input, responses, resize liveness,
+and terminal restoration. This does not establish support for every terminal.
+
+Scientific-instrument and framebuffer applications remain separate work; passing
+the headless starter smoke does not certify interactive terminal behavior.
