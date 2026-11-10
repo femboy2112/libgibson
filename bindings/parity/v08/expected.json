@@ -1,6 +1,10 @@
 {
   "format": 1,
   "comment": "Committed expectation for scripts/dev/parity_v08.sh. differs_* list the record ids that are KNOWN to differ (documented gaps, docs/V08_PARITY_SLICE.md); any other difference is a regression. Labels: SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIED, each with a one-line evidence pointer. record_ids is the complete, ordered set every transcript must contain exactly once. pinned holds the exact record each allowlisted difference must still be, so a change inside a known gap is a regression too.",
+  "absolute": {
+    "f05.1": "{\"cols\":0,\"id\":\"f05.1\",\"k\":\"event\",\"key_code\":0,\"kind\":\"NONE\",\"mods\":0,\"paste\":\"\",\"rows\":0,\"st\":\"OK\",\"type\":\"FOCUS_GAINED\"}",
+    "f05.2": "{\"cols\":0,\"id\":\"f05.2\",\"k\":\"event\",\"key_code\":0,\"kind\":\"NONE\",\"mods\":0,\"paste\":\"\",\"rows\":0,\"st\":\"OK\",\"type\":\"FOCUS_LOST\"}"
+  },
   "reference": "c",
   "differs_from_c": {
     "c": [],

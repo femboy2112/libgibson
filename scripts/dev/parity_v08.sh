@@ -119,6 +119,9 @@ MATRIX_RC=0
 CTL_FAIL=0
 if [ "${PARITY_V08_SKIP_CONTROLS:-0}" != 1 ]; then
     echo "== negative controls (each must be CAUGHT as a regression, with exactly the planted ids) =="
+    if ! PYTHONDONTWRITEBYTECODE=1 python3 "$V08/test_compare.py"; then
+        echo "  MISSED   comparator oracle controls"; CTL_FAIL=1
+    fi
     control() { # label, lang, want, env assignment
         local label=$1 lang=$2 want=$3 assign=$4 out rc line
         out="$WORK/ctl/$label.$lang.jsonl"

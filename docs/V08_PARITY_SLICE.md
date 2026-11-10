@@ -40,6 +40,11 @@ the propagated error from an injected `/dev/full` write. This is a separate cont
 change the 84 transcript records. Other systems report this control as UNVERIFIED; the PTY check
 proves the requests written by the wrappers, not that a particular terminal implements them.
 
+The comparator pins both focus-event records and the complete record order independently of the
+live C reference. Its lightweight controls include shared wrong-focus and shared reordered-record
+mutations, and require a changed or healed pinned gap to update the committed expectation.
+These are transcript-oracle controls; they do not establish focus delivery from a real terminal.
+
 How each consumer reaches the installed SDK:
 
 | Lang | Build / load | Surface actually used |
