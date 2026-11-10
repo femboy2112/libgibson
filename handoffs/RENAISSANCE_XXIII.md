@@ -54,7 +54,7 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
 ## Integration and verification
 
 The XXI train #316, #318, #319, #317, #320, #321 is merged; do not repeat it. Drafts #325 (`9a8e5e0e4f4761aa481fd02732cbf207bd94265f`), #324
-(`51782c2b44e767a1a9cc55f5868090ebccb311c7`), #327
+(`9cebfa005b76dfa2feda656ddbca073a3e45fe91`), #327
 (`bfcf737db63875469169252da5370d1a2308ae3b`), and #329
 (`f7d51e861014ecb56c9668a8807473febec80374`) need
 current-head and dependency review, CI and appropriate independent review before merge. #324 contains five headless starters and three interactive public-Python-API applications:
