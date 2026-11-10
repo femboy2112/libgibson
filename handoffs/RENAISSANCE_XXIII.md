@@ -61,8 +61,12 @@ current-head and dependency review, CI and appropriate independent review before
 an offline echo console, a simulated dashboard and a simulated Celsius instrument with
 separate producer samples and user setpoints. A small headless C framebuffer consumer also passed against a copied staged SDK and adapter
 with a wrong-oracle negative control. Broader interactive examples and diagnostics remain
-outstanding. Its SDK path with
-spaces regression is fixed on the current branch and has real C/C++ and negative controls.
+outstanding. The five-language headless smoke passed at this source head using development
+artifacts from the earlier baseline. A red-first PTY control caught the apps painting before
+raw mode; the revised apps poll first and preserve a returned event. The first-poll event in
+the control is synthetic; real queued input is sent after raw mode. The original failure and
+a later differential-render test-oracle failure were retained. The SDK path with spaces
+regression is fixed and has real C/C++ and negative controls.
 A new Linux PTY control passed for C++, Go and Python enable/disable/restore bytes, a
 no-op negative control and an injected output error; it does not prove terminal support.
 The full parity harness passed on #325 head `32bd96fd0483444ec5d1cfb9bd89a06647dadaed`:
