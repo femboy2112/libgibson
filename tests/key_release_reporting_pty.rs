@@ -342,6 +342,66 @@ fn without_the_opt_in_nothing_is_written_and_no_release_is_delivered() {
 }
 
 #[test]
+fn restored_session_cannot_enable_focus_reporting() {
+    let mut cap = Capture::spawn(child("focus-restored"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "FOCUS-AFTER-RESTORE");
+    let (cap, status) = finish(cap, "focus-restored");
+    assert!(status.success());
+    assert_eq!(
+        count(cap.raw(), b"\x1b[?1004h"),
+        0,
+        "restored session must not enable focus"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn failed_restore_also_prevents_focus_reenable() {
+    let mut cap = Capture::spawn(
+        child("focus-failed-restore"),
+        80,
+        24,
+        Duration::from_secs(40),
+    );
+    wait_for(&mut cap, "FOCUS-AFTER-FAILED-RESTORE");
+    let (cap, status) = finish(cap, "focus-failed-restore");
+    assert!(status.success());
+    let raw = cap.raw();
+    let before = find(raw, b"FOCUS-RESTORE-FAILED", 0).expect("failed restore observed");
+    let after = find(raw, b"FOCUS-AFTER-FAILED-RESTORE", before).expect("request completed");
+    assert!(
+        find(&raw[before..after], b"\x1b[?1004h", 0).is_none(),
+        "no enable after failed restore"
+    );
+}
+
+#[test]
+fn caught_owner_panic_retries_focus_reporting() {
+    let mut cap = Capture::spawn(child("focus-caught-panic"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "FOCUS-RETRIED");
+    let (cap, status) = finish(cap, "focus-caught-panic");
+    assert!(status.success());
+    let raw = cap.raw();
+    let enabled = find(raw, b"\x1b[?1004h", 0).expect("initial focus enable");
+    let before = find(raw, b"FOCUS-BEFORE", enabled).expect("initial enable completed");
+    let hook_disable = find(raw, b"\x1b[?1004l", before).expect("panic hook disabled focus");
+    let caught = find(raw, b"FOCUS-CAUGHT", hook_disable).expect("panic caught after disable");
+    let retried =
+        find(raw, b"\x1b[?1004h", caught).expect("caught panic requires a new focus request");
+    let marker = find(raw, b"FOCUS-RETRIED", retried).expect("retry completed");
+    assert!(
+        find(raw, b"\x1b[?1004l", marker).is_some(),
+        "restore disables focus again"
+    );
+    assert_eq!(count(raw, b"\x1b[?1004h"), 2, "exactly two enables");
+    assert_eq!(
+        count(raw, b"\x1b[?1004l"),
+        2,
+        "hook and restore each disable"
+    );
+}
+
+#[test]
 fn the_panic_hook_pops_the_flags_before_leaving_the_alternate_screen() {
     let mut cap = Capture::spawn(child("panic"), 80, 24, Duration::from_secs(40));
     wait_for(&mut cap, "READY");
@@ -815,6 +875,42 @@ fn key_release_reporting_child() {
         RenderMode::Fullscreen
     };
     let mut ctx = Context::new(mode).expect("terminal context");
+    #[cfg(target_os = "linux")]
+    if role == "focus-failed-restore" {
+        use std::os::fd::AsRawFd;
+        ctx.session.set_focus_reporting(true).unwrap();
+        // In this dedicated child, redirect only stdout to a writer that fails every write.
+        // Restore must report its failure yet still release ownership and latch the attempt.
+        let saved = unsafe { libc::dup(libc::STDOUT_FILENO) };
+        assert!(saved >= 0);
+        let full = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/full")
+            .unwrap();
+        assert!(unsafe { libc::dup2(full.as_raw_fd(), libc::STDOUT_FILENO) } >= 0);
+        let failed = ctx.restore();
+        assert!(unsafe { libc::dup2(saved, libc::STDOUT_FILENO) } >= 0);
+        unsafe { libc::close(saved) };
+        assert!(failed.is_err(), "the restore fault must be observed");
+        say("FOCUS-RESTORE-FAILED");
+        let retry = ctx.session.set_focus_reporting(true);
+        let still_owned = ctx.session.focus_reporting_enabled();
+        say("FOCUS-AFTER-FAILED-RESTORE");
+        assert_eq!(retry.unwrap_err().kind(), std::io::ErrorKind::NotConnected);
+        assert!(!still_owned);
+        ctx.session.set_focus_reporting(false).unwrap();
+        return;
+    }
+    if role == "focus-restored" {
+        ctx.restore().unwrap();
+        let retry = ctx.session.set_focus_reporting(true);
+        let still_owned = ctx.session.focus_reporting_enabled();
+        say("FOCUS-AFTER-RESTORE");
+        assert_eq!(retry.unwrap_err().kind(), std::io::ErrorKind::NotConnected);
+        assert!(!still_owned);
+        ctx.session.set_focus_reporting(false).unwrap();
+        return;
+    }
     if role == "restored" {
         ctx.restore().unwrap();
         ctx.session.set_key_release_reporting(true).unwrap();
@@ -823,6 +919,17 @@ fn key_release_reporting_child() {
         return;
     }
     ctx.session.enter_interactive().unwrap();
+    if role == "focus-caught-panic" {
+        ctx.session.set_focus_reporting(true).unwrap();
+        say("FOCUS-BEFORE");
+        let caught = std::panic::catch_unwind(|| panic!("caught, on the focus owner thread"));
+        assert!(caught.is_err());
+        say("FOCUS-CAUGHT");
+        ctx.session.set_focus_reporting(true).unwrap();
+        say("FOCUS-RETRIED");
+        ctx.restore().unwrap();
+        return;
+    }
     if role == "foreign-free" || role == "foreign-headless" {
         ctx.session.set_key_release_reporting(true).unwrap();
         say("READY");

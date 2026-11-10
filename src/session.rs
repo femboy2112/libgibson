@@ -35,6 +35,10 @@ const REPORT_MOUSE: u8 = 0b01;
 const REPORT_FOCUS: u8 = 0b10;
 const REPORT_KEY_RELEASE: u8 = 0b100;
 
+// The panic hook cannot borrow the owning session. It sets this notice before attempting its
+// focus disable so a caught panic cannot leave the session believing its previous enable is live.
+static FOCUS_REPORTING_INVALIDATED: AtomicBool = AtomicBool::new(false);
+
 /// Set by the panic hook when it ends key-release reporting; taken once, by the owner's next
 /// `Context` poll or by the Unix source before the next answer it decodes, which then delivers
 /// `KeyReleaseReporting::Unsupported` (see [`TerminalSession::take_key_releases_ended`] and
@@ -339,6 +343,7 @@ impl TerminalSession {
                     }
                     let modes = REPORTING_MODES.load(Ordering::SeqCst);
                     if modes & REPORT_FOCUS != 0 {
+                        FOCUS_REPORTING_INVALIDATED.store(true, Ordering::SeqCst);
                         let _ = execute!(out, DisableFocusChange);
                     }
                     if modes & REPORT_MOUSE != 0 {
@@ -511,11 +516,23 @@ impl TerminalSession {
 
     /// Requests or disables focus-change reporting, tracked for cleanup like
     /// [`set_mouse_capture`](TerminalSession::set_mouse_capture). If a write or flush fails,
-    /// the terminal state is unknown and the next enable retries the request. A successful write
-    /// does not establish that the terminal supports focus reporting.
+    /// the terminal state is unknown and the next enable retries the request. A caught owner-thread
+    /// panic also invalidates the prior request. A successful write does not establish that the
+    /// terminal supports focus reporting. Headless and non-TTY sessions are no-ops; enabling a
+    /// restored interactive session returns `NotConnected`, and disabling it is a no-op.
     pub fn set_focus_reporting(&mut self, enable: bool) -> io::Result<()> {
         if !self.is_tty || self.headless {
             return Ok(());
+        }
+        if !self.owns_lease || self.restore_attempted {
+            return if enable {
+                Err(io::Error::new(
+                    io::ErrorKind::NotConnected,
+                    "terminal session is not active",
+                ))
+            } else {
+                Ok(())
+            };
         }
         self.set_focus_reporting_with_writer(enable, &mut stdout())
     }
@@ -525,6 +542,9 @@ impl TerminalSession {
         enable: bool,
         out: &mut impl Write,
     ) -> io::Result<()> {
+        if FOCUS_REPORTING_INVALIDATED.swap(false, Ordering::SeqCst) {
+            self.focus_reporting_confirmed = false;
+        }
         if (enable && self.focus_reporting_confirmed) || (!enable && !self.focus_reporting_enabled)
         {
             return Ok(());
@@ -853,6 +873,7 @@ impl TerminalSession {
         // returned Err), not a reason to wedge the lease shut (issue #11, B1/B2).
         if self.owns_lease {
             REPORTING_MODES.store(0, Ordering::SeqCst);
+            FOCUS_REPORTING_INVALIDATED.store(false, Ordering::SeqCst);
             KEY_RELEASES_ENDED.store(false, Ordering::SeqCst);
             set_owner_thread(None);
             TERMINAL_LEASE.store(LEASE_AVAILABLE, Ordering::SeqCst);
