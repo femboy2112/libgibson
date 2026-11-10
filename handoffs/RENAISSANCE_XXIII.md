@@ -30,11 +30,13 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
   failed enable, the retry wrote an enable request. Exact-head CI remains needed. Torn terminal writes remain physically uncertain.
 - #328: a controlled Linux PTY probe on #327 observed that after a caught owner-thread
   panic, `ICANON` stayed on and a key without newline was not delivered; a no-panic control
-  kept raw mode and delivered the key. The source mechanism predates #327, though a separate
-  baseline runtime reproduction also failed at current main with no-panic and non-owner
+  kept raw mode and delivered the key. A separate baseline runtime reproduction failed at
+  current main, with no-panic and non-owner
   controls passing. Draft #329 restores only raw input and bracketed paste; its red-first
   PTY tests passed after the change, but screen, cursor, renderer, mouse and focus recovery
-  remain unqualified and the issue remains open.
+  remain unqualified and the issue remains open. A source review found that its current
+  bracketed-paste recovery can lose the cleanup obligation after a failed write or raw-mode
+  re-entry; #329 is on HOLD pending a fault-controlled correction.
 - Windows #292 is not verified. Clock #130 still needs loop/blocked-output evidence.
   HumanMusic/PCM and ABI v1 are frozen. Never infer terminal behavior from headless parity.
 
@@ -52,7 +54,10 @@ examples remain outstanding. Its SDK path with
 spaces regression is fixed on the current branch and has real C/C++ and negative controls.
 A new Linux PTY control passed for C++, Go and Python enable/disable/restore bytes, a
 no-op negative control and an injected output error; it does not prove terminal support.
-The full parity harness has not yet been rerun on the updated head.
+The full parity harness passed on #325 head `32bd96fd0483444ec5d1cfb9bd89a06647dadaed`:
+84 records per language, 500 repetitions, replay, resource and mutation controls, plus the
+new PTY checks. Its native SDK was built from the earlier pinned baseline runtime, not a
+published release artifact.
 PRs #153, #154, #156–#164 and #166 were closed as already integrated by ancestry after
 checking each exact head and surviving tests/docs against the round baseline; they were not GitHub merges. #173 and
 #177 have divergent history and remain open. #173 contains a design handoff absent from
