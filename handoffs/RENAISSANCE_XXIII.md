@@ -33,7 +33,7 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
 - #328: a controlled Linux PTY probe on #327 observed that after a caught owner-thread
   panic, `ICANON` stayed on and a key without newline was not delivered; a no-panic control
   kept raw mode and delivered the key. A separate baseline runtime reproduction failed at
-  current main, with no-panic and non-owner
+  then-main `b04e9c42d6484506373355d0a3538254d87d16ba`, with no-panic and non-owner
   controls passing. Draft #329 restores only raw input and bracketed paste; its red-first
   PTY tests passed after the change, but screen, cursor, renderer, mouse and focus recovery
   remain unqualified and the issue remains open. A source review found that its current
