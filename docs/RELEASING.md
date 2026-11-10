@@ -48,8 +48,10 @@ assertions (Python wheel/sdist and the Go module root carry the dual license),
 enforced third-party-notice freshness, and a repository-path-leak check. It must
 print `RELEASE PREFLIGHT: PASS`.
 
-Preflight records the starting HEAD and requires a clean checkout at both the start and
-end; it fails if HEAD changes. The ABI symbol gate builds that captured commit from a
+Preflight records the starting HEAD and requires a clean checkout without
+assume-unchanged or skip-worktree index flags at both the start and end; it fails if
+HEAD changes. Git status does not report ignored files, so release qualification still
+uses an isolated checkout and controlled build environment. The ABI symbol gate builds that captured commit from a
 Git archive in an isolated target
 and passes that exact path to `check-abi.sh --so`; it reports the commit and library
 digest. It checks exported names only, not C signatures or structure layouts. A release

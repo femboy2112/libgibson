@@ -52,6 +52,11 @@ else
     no "candidate checkout is dirty or cannot be inspected"
     printf '%s\n' "$checkout_status"
 fi
+if scripts/release/check-clean-index.py; then
+    ok "index cannot hide tracked changes from git status"
+else
+    no "index has flags hiding tracked changes or could not be inspected"
+fi
 
 step "worktree whitespace"
 if git diff --check; then ok "git diff --check"; else no "git diff --check"; fi
@@ -108,6 +113,11 @@ if scripts/release/tests/test-check-abi.sh; then
 else
     no "ABI checker fault controls"
 fi
+if scripts/release/tests/test-check-clean-index.sh; then
+    ok "release index flag fault controls"
+else
+    no "release index flag fault controls"
+fi
 if scripts/release/check-candidate-abi.sh "$candidate_sha"; then
     ok "committed candidate ABI symbol baseline"
 else
@@ -141,7 +151,8 @@ if [ "$missing" = 0 ]; then ok "license/notice files present"; else no "license 
 step "candidate identity after preflight"
 if final_sha=$(git rev-parse --verify 'HEAD^{commit}') && \
    [ "$final_sha" = "$candidate_sha" ] && \
-   checkout_status=$(git status --porcelain --untracked-files=all) && [ -z "$checkout_status" ]; then
+   checkout_status=$(git status --porcelain --untracked-files=all) && [ -z "$checkout_status" ] && \
+   scripts/release/check-clean-index.py; then
     ok "candidate $candidate_sha remains checked out and clean"
 else
     no "candidate changed or checkout became dirty during preflight"
