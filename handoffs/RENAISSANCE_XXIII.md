@@ -38,7 +38,9 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
   PTY tests passed after the change, but screen, cursor, renderer, mouse and focus recovery
   remain unqualified and the issue remains open. A source review found that its current
   bracketed-paste recovery can lose the cleanup obligation after a failed write or raw-mode
-  re-entry; #329 is on HOLD pending a fault-controlled correction.
+  re-entry; #329 is on HOLD pending a fault-controlled correction. A later first-attempt
+  key-release PTY regression run also failed: the expected Unsupported notice was absent;
+  compare with the same test on main before classifying the cause. Preserve that failure.
 - Windows #292 is not verified. Clock #130 still needs loop/blocked-output evidence.
   HumanMusic/PCM and ABI v1 are frozen. Never infer terminal behavior from headless parity.
 
