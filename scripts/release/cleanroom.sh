@@ -27,6 +27,7 @@ cd "$REPO_ROOT"
 CARGO="${CARGO:-cargo}"
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/libgibson-cleanroom.XXXXXX")"
+WORK="$(cd "$WORK" && pwd -P)"
 SDK="$WORK/sdk"
 godir=""   # set only if the Go consumer is built; referenced under `set -u` later
 fail=0
@@ -221,9 +222,7 @@ fi
 
 echo "### Rust consumer (packaged crate) ###"
 rpkg="$(mktemp)"
-if $CARGO package --allow-dirty >"$rpkg" 2>&1; then
-    crate="target/package/libgibson-$VERSION.crate"
-    tar xzf "$crate" -C "$WORK"
+if CARGO_TARGET_DIR="$WORK/package-target" scripts/release/package-cleanroom-crate.sh "$WORK" "$VERSION" >"$rpkg" 2>&1; then
     rdir="$WORK/rustconsumer"; mkdir -p "$rdir/src"
     cat > "$rdir/Cargo.toml" <<EOF
 [package]

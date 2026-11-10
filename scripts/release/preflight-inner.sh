@@ -115,6 +115,11 @@ if scripts/release/tests/test-stage-sdk-target.sh; then
 else
     no "SDK staging artifact-selection controls"
 fi
+if scripts/release/tests/test-cleanroom-package.sh; then
+    ok "cleanroom crate selection controls"
+else
+    no "cleanroom crate selection controls"
+fi
 if scripts/release/tests/test-check-abi.sh; then
     ok "ABI checker fault controls"
 else
