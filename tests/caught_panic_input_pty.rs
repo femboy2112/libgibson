@@ -113,6 +113,87 @@ fn caught_owner_panic_with_focus_requested_still_recovers_input() {
     assert_eq!(count(&raw, PASTE_OFF), 2);
 }
 
+// Re-entering raw input before synchronizing the ended Kitty request must not
+// allow that later reconciliation to erase the new raw-mode cleanup obligation.
+#[test]
+fn key_reporting_reconciliation_after_reentry_preserves_raw_cleanup() {
+    for role in ["direct", "disable", "poll-from", "reenable", "sync-before"] {
+        let mut cmd = CommandBuilder::new(std::env::current_exe().unwrap());
+        cmd.args(["--exact", "key_reconciliation_child", "--nocapture"]);
+        cmd.env("GIBSON_KEY_RECONCILIATION_CHILD", role);
+        let mut cap = Capture::spawn(cmd, 80, 24, Duration::from_secs(15));
+        wait_for(&mut cap, b"KEY_RECONCILIATION_RESULT");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let status = loop {
+            cap.collect_for(Duration::from_millis(20)).unwrap();
+            if let Some(status) = cap.try_wait().unwrap() {
+                break status;
+            }
+            assert!(Instant::now() < deadline, "child did not exit");
+        };
+        cap.collect_all().unwrap();
+        assert!(
+            status.success(),
+            "{role}: {}",
+            String::from_utf8_lossy(cap.raw())
+        );
+        assert!(
+            contains(cap.raw(), b"KEY_RECONCILIATION_RESULT initial_raw=1 post_panic_cooked=1 reentered_raw=1 after_sync_raw=1 restored=1"),
+            "{role}: {}",
+            String::from_utf8_lossy(cap.raw())
+        );
+    }
+}
+
+#[test]
+fn key_reconciliation_child() {
+    let Ok(role) = std::env::var("GIBSON_KEY_RECONCILIATION_CHILD") else {
+        return;
+    };
+    fn flags() -> libc::tcflag_t {
+        let mut state = std::mem::MaybeUninit::<libc::termios>::uninit();
+        assert_eq!(
+            unsafe { libc::tcgetattr(libc::STDIN_FILENO, state.as_mut_ptr()) },
+            0
+        );
+        unsafe { state.assume_init() }.c_lflag & (libc::ICANON | libc::ECHO)
+    }
+    let cooked = libc::ICANON | libc::ECHO;
+    let mut ctx = Context::new(RenderMode::Inline).unwrap();
+    ctx.session.set_key_release_reporting(true).unwrap();
+    let initial_raw = flags() == 0;
+    assert!(std::panic::catch_unwind(|| panic!("caught owner panic")).is_err());
+    let post_panic_cooked = flags() == cooked;
+    if role == "sync-before" {
+        ctx.session.set_key_release_reporting(false).unwrap();
+    }
+    ctx.enter_interactive().unwrap();
+    let reentered_raw = flags() == 0;
+    match role.as_str() {
+        "direct" | "sync-before" => {}
+        "disable" => ctx.session.set_key_release_reporting(false).unwrap(),
+        "poll-from" => {
+            let mut source = gibson::event_source::ScriptedSource::from_events(vec![]);
+            assert!(matches!(
+                ctx.poll_from(&mut source, Duration::ZERO).unwrap(),
+                Some(Event::KeyReleaseReporting(
+                    gibson::input::KeyReleaseReporting::Unsupported
+                ))
+            ));
+            assert!(ctx
+                .poll_from(&mut source, Duration::ZERO)
+                .unwrap()
+                .is_none());
+        }
+        "reenable" => ctx.session.set_key_release_reporting(true).unwrap(),
+        _ => panic!("unknown role"),
+    }
+    let after_sync_raw = flags() == 0;
+    ctx.restore().unwrap();
+    let restored = flags() == cooked;
+    eprintln!("KEY_RECONCILIATION_RESULT initial_raw={} post_panic_cooked={} reentered_raw={} after_sync_raw={} restored={}", u8::from(initial_raw), u8::from(post_panic_cooked), u8::from(reentered_raw), u8::from(after_sync_raw), u8::from(restored));
+}
+
 // A restored session must never regain the terminal behind a later owner's back.
 // Each role has a separate PTY/process, so a failed assertion cannot contaminate another case.
 #[test]

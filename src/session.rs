@@ -510,12 +510,9 @@ impl TerminalSession {
 
     /// Reconciles session state after a key-release push was lost mid screen-switch (#305):
     /// the `REPORT_KEY_RELEASE` bit is already clear after the successful pop and failed switch,
-    /// so stop delivering releases and mark reporting
-    /// disabled — but do NOT touch `raw_mode_enabled`. Unlike the panic-hook path (whose
-    /// `enabled && !pushed` reconciliation in [`key_release_reporting_live`] assumes the hook
-    /// already dropped raw mode), raw mode is still on here, so `restore` must disable it;
-    /// setting `enabled = false` also keeps the next `key_release_reporting_live` out of that
-    /// branch.
+    /// so stop delivering releases and mark reporting disabled. Raw mode is still on, so its
+    /// cleanup obligation must stay intact. Panic-triggered input invalidation is handled
+    /// separately on the next interactive entry.
     fn on_key_release_push_lost(&mut self) {
         self.key_release_reporting_enabled = false;
         crate::input::set_key_releases_delivered(false);
@@ -692,9 +689,9 @@ impl TerminalSession {
         if self.key_release_reporting_enabled && !key_releases_pushed() {
             self.key_release_reporting_enabled = false;
             crate::input::set_key_releases_delivered(false);
-            // The hook pops only after disabling raw mode: say so, so that enabling again (which
-            // enters interactive mode first) restores raw mode rather than trusting a stale flag.
-            self.raw_mode_enabled = false;
+            // The panic-input notice independently reconciles raw mode on interactive entry.
+            // That entry may already have re-enabled raw mode before Kitty is reconciled;
+            // clearing its bookkeeping here would forget a live cleanup obligation.
         } else if self.key_release_reporting_enabled && !crate::input::key_releases_delivered() {
             // An `Unsupported` answer was handed out (by whichever poll): withdraw this session's
             // push, once (claimed, so restore, `Drop` and the panic hook never pop it again).
@@ -726,8 +723,8 @@ impl TerminalSession {
     /// Whether the panic hook ended key-release reporting and nobody has said so yet (#275); true
     /// once per end, for the lease owner only, unless the Unix source took the notice first to
     /// queue it before an answer ([`take_key_releases_ended_notice`]). The poll then delivers
-    /// `Unsupported`, so a client still waiting for releases switches back to inferred holds. Notes the end here too: raw mode is
-    /// marked off (the hook left it), so the poll's `enter_interactive` restores it.
+    /// `Unsupported`, so a client still waiting for releases switches back to inferred holds.
+    /// Raw input is reconciled independently on the next interactive entry.
     /// Re-enabling does not clear it: the client must see `Unsupported` before any later answer.
     pub(crate) fn take_key_releases_ended(&mut self) -> bool {
         if !self.owns_lease || !KEY_RELEASES_ENDED.swap(false, Ordering::SeqCst) {
