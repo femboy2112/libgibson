@@ -4,7 +4,21 @@ import gibson
 
 mode = sys.argv[1]
 ctx = gibson.Context()
-if mode == "io_error":
+if mode == "events":
+    if ctx.poll_event(0).event_type != gibson.EventType.NONE:
+        raise AssertionError("unexpected initial event")
+    ctx.set_focus_reporting(True)  # The PTY peer sends two input sequences after this.
+    first = ctx.poll_event(2000)
+    second = ctx.poll_event(2000)
+    extra = ctx.poll_event(0)
+    if (first.event_type, second.event_type, extra.event_type) != (
+            gibson.EventType.FOCUS_GAINED, gibson.EventType.FOCUS_LOST, gibson.EventType.NONE):
+        print("FOCUS_ORDER_MISMATCH", file=sys.stderr)
+        ctx.close()
+        sys.exit(5)
+    ctx.close()
+    print("FOCUS_INPUT_OK", file=sys.stderr)
+elif mode == "io_error":
     write_fd = os.open("/dev/full", os.O_WRONLY)
     os.dup2(write_fd, 1)
     os.close(write_fd)

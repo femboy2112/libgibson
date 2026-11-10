@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check wrapper focus request bytes on Linux PTYs; this does not certify terminal support."""
+"""Check wrapper requests and emulated focus input on Linux PTYs, not terminal support."""
 import errno
 import os
 import pty
@@ -17,11 +17,13 @@ def run(command, mode):
     master, slave = pty.openpty()
     child = None
     try:
-        child = subprocess.Popen(command + [mode], stdin=slave, stdout=slave, stderr=subprocess.PIPE,
+        client_mode = "events" if mode == "events_reverse" else mode
+        child = subprocess.Popen(command + [client_mode], stdin=slave, stdout=slave, stderr=subprocess.PIPE,
                                  close_fds=True)
         os.close(slave)
         slave = -1
         output = bytearray()
+        sent = False
         deadline = time.monotonic() + 10
         while True:
             left = deadline - time.monotonic()
@@ -40,13 +42,23 @@ def run(command, mode):
                 if not chunk:
                     break
                 output.extend(chunk)
+                if mode in ("events", "events_reverse") and not sent and b"\x1b[?1004h" in output:
+                    # Client's first poll enters raw mode before this enable request. These are
+                    # deliberately emulated terminal bytes, not evidence of terminal support.
+                    os.write(master, b"\x1b[O\x1b[I" if mode == "events_reverse" else b"\x1b[I\x1b[O")
+                    sent = True
                 if len(output) > 1024 * 1024:
                     child.kill()
                     child.communicate()
                     raise AssertionError(f"{command[0]} {mode}: excessive output")
         _, err = child.communicate(timeout=max(0.1, deadline - time.monotonic()))
-        if child.returncode != 0:
+        if mode == "events_reverse":
+            if not sent or child.returncode != 5 or b"FOCUS_ORDER_MISMATCH" not in err:
+                raise AssertionError(f"{command[0]} reversed input escaped: exit {child.returncode}, stderr={err!r}")
+        elif child.returncode != 0:
             raise AssertionError(f"{command[0]} {mode}: exit {child.returncode}, stderr={err!r}")
+        elif mode == "events" and not sent:
+            raise AssertionError(f"{command[0]} did not request focus input")
         return FOCUS.findall(output), err
     finally:
         if child is not None and child.poll() is None:
@@ -71,7 +83,11 @@ def main():
         failed, err = run(command, "io_error")
         if b"EXPECTED_IO_ERROR" not in err or failed:
             raise AssertionError((lang, "I/O error not reported", failed, err))
-        print(f"  {lang}: PTY bytes={got!r}; no-op={mutant!r}; ENOSPC=reported: PASS")
+        events, err = run(command, "events")
+        if events != [EXPECTED[0], EXPECTED[1]] or b"FOCUS_INPUT_OK" not in err:
+            raise AssertionError((lang, "emulated focus input failed", events, err))
+        run(command, "events_reverse")
+        print(f"  {lang}: PTY request bytes, emulated focus order, reverse-order and ENOSPC controls: PASS")
 
 
 if __name__ == "__main__":

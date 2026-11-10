@@ -36,9 +36,11 @@ Knobs: `PARITY_V08_REPS` (default 500), `PARITY_V08_WORK` (default: fresh `mktem
 
 On Linux the same harness also runs the C++, Go and Python interactive focus wrappers under a
 PTY. It checks the enable/disable/restore bytes, catches a client that skips enable, and checks
-the propagated error from an injected `/dev/full` write. This is a separate control and does not
-change the 84 transcript records. Other systems report this control as UNVERIFIED; the PTY check
-proves the requests written by the wrappers, not that a particular terminal implements them.
+the propagated error from an injected `/dev/full` write. The PTY peer also writes emulated
+focus-gained and focus-lost input after raw input is initialized; each wrapper must poll them in
+order, and a reversed-input control must fail. This is a separate control and does not change the
+84 transcript records. Other systems report it as UNVERIFIED. The peer's emulated input and the
+request bytes do not prove that a particular terminal emits or supports focus events.
 
 The comparator pins both focus-event records and the complete record order independently of the
 live C reference. Its lightweight controls include shared wrong-focus and shared reordered-record
@@ -53,7 +55,14 @@ How each consumer reaches the installed SDK:
 | C++ | `c++ -std=c++17 ...` same pkg-config + rpath | `gibson.hpp`: `gibson::Node` RAII, `Context::abi_compatible()`, `Context::headless`, `set_root`, `render`, `push_event`, `poll_event_kind` / `poll_event_kindless(timeout)`, `frame_size`, `frame_cell(s)`, `frame_cell_glyph` / `full_glyph`, `rendered_output`, `close`, with `Error` / `QueueFullError`. Raw C only for what the wrapper cannot express (NULL pointers, `destroy(NULL)`, `set_color_depth`, `Node::text` of invalid UTF-8): 9 probes, `l02` |
 | Python | a copy of `bindings/python/gibson.py` on `PYTHONPATH` (temp dir), `LIBGIBSON_LIBRARY=<sdk>/lib/libgibson.so` | `gibson.py`: `Context.headless`, `Node`, `GibsonStyle`, `set_root`, `render`, `frame_size`, `frame_cells`, `frame_cell`, `frame_cell_glyph`, `rendered_output`, `push_event`, `poll_event` (with `Event`, `Key`, `KeyKind`), `close`. Probes the wrapper cannot express (NULL pointers, foreign contexts, `destroy(NULL)`): raw ctypes on the same `.so` (`gibson._lib._name`) |
 | Go | `go build` (cgo, `#cgo pkg-config: libgibson`), `GOFLAGS=-mod=mod GOPROXY=off`, rpath via `CGO_LDFLAGS`; `replace` to `bindings/go` | `bindings/go`: `CheckABI`, `NewHeadlessContext`, `NewColNode`, `NewStyledTextNode` + `gibson.Style`, `SetRootNode`, `Render`, `PushEvent`, `PollEventKind` / `PollEvent`, `FrameSize`, `FrameCell(s)`, `FrameCellGlyph` / `FullGlyph`, `RenderedOutput`, `Close`, `*gibson.Error`. Raw cgo only for what the wrapper cannot express (NULL pointers, `destroy(NULL)`, `set_color_depth`, the `cells_oob` out-param): 8 probes, `l02`, via `Context.UnsafeHandle()` |
-| Rust | `cargo +1.98.1 build --release --example parity_v08` (this worktree's source = the SDK's source) | the native crate API: `Context::headless`, `Node`, `Style`, `InjectedQueue` + `Context::poll_from`, `Context::frame_size`/`frame_cell`/`rendered_bytes` (`TerminalSession::set_terminal_size` only in the `unapplied` resize control, since #293). No `gibson::ffi` call |
+| Rust | `cargo +1.98.1 build --release --example parity_v08` (this worktree's source; the SDK's source provenance must be verified separately) | the native crate API: `Context::headless`, `Node`, `Style`, `InjectedQueue` + `Context::poll_from`, `Context::frame_size`/`frame_cell`/`rendered_bytes` (`TerminalSession::set_terminal_size` only in the `unapplied` resize control, since #293). No `gibson::ffi` call |
+
+The C/C++ compiler helper parses pkg-config's escaped flags without shell word splitting. For an
+SDK prefix containing whitespace, the harness supplies pkg-config with a temporary whitespace-free
+symlink to that SDK because some Go/cgo toolchains split its escaped flags incorrectly. It sets
+`LD_LIBRARY_PATH` to the actual SDK for the run; to run the resulting Go binaries later, set that
+variable yourself. Each run uses a fresh Go cache under its work directory so cached cgo flags do
+not retain a removed temporary symlink. The symlink does not change the SDK's contents or bytes.
 
 Toolchains of the recorded run: gcc/g++ 13.3.0, Python 3.12.3, Go `go1.18 gccgo` (GCC 14.2.0),
 Rust 1.98.1, Linux x86_64.

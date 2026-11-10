@@ -21,6 +21,28 @@ func main() {
 	mode := os.Args[1]
 	ctx, err := gibson.NewContext(gibson.ModeInline)
 	must(err)
+	if mode == "events" {
+		initial, initialErr := ctx.PollEventKind(0)
+		must(initialErr)
+		if initial.Type != gibson.EventNone {
+			os.Exit(6)
+		}
+		must(ctx.SetFocusReporting(true)) // The PTY peer sends input sequences after this.
+		first, e1 := ctx.PollEventKind(2000)
+		must(e1)
+		second, e2 := ctx.PollEventKind(2000)
+		must(e2)
+		extra, e3 := ctx.PollEventKind(0)
+		must(e3)
+		if first.Type != gibson.EventFocusGained || second.Type != gibson.EventFocusLost || extra.Type != gibson.EventNone {
+			ctx.Close()
+			fmt.Fprintln(os.Stderr, "FOCUS_ORDER_MISMATCH")
+			os.Exit(5)
+		}
+		ctx.Close()
+		fmt.Fprintln(os.Stderr, "FOCUS_INPUT_OK")
+		return
+	}
 	if mode == "io_error" {
 		fd, openErr := syscall.Open("/dev/full", syscall.O_WRONLY, 0)
 		must(openErr)

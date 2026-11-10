@@ -9,7 +9,9 @@
 # lib/pkgconfig/libgibson.pc. C and C++ compile against it via pkg-config and link with an rpath to
 # its libdir; Python imports a copy of bindings/python/gibson.py (the module the wheel ships) from a
 # temp dir and loads the SDK's libgibson.so via LIBGIBSON_LIBRARY; Go builds with cgo + pkg-config
-# (GOPROXY=off); the Rust consumer is the gibson crate API (cargo example parity_v08).
+# (GOPROXY=off); when the SDK path contains whitespace, Go uses LD_LIBRARY_PATH during this run
+# and a temporary whitespace-free pkg-config alias. The Rust consumer is the gibson crate API
+# (cargo example parity_v08).
 #
 # Environment:
 #   PARITY_V08_REPS      in-process repetitions for the resource run (default 500)
@@ -42,6 +44,9 @@ if [ "$REPS" -lt 500 ]; then
 fi
 WORK=${PARITY_V08_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/parity_v08.XXXXXX")}
 mkdir -p "$WORK/bin" "$WORK/out" "$WORK/pysite" "$WORK/ctl"
+# cgo caches can embed pkg-config search paths. A fresh cache prevents an earlier run's temporary
+# SDK alias from being reused after that alias was removed (and works when WORK is reused).
+GO_CACHE=$(mktemp -d "$WORK/go-cache.XXXXXX")
 V08=$REPO/bindings/parity/v08
 SCRIPT=$V08/script.txt
 EXPECTED=$V08/expected.json
@@ -51,9 +56,19 @@ read -r -a CARGO_CMD <<<"${PARITY_V08_CARGO:-cargo +1.98.1}"
 # The main runs use the script exactly as committed.
 unset PARITY_V08_PERTURB PARITY_V08_RUST_RESIZE
 
+LIBDIR=$SDK/lib
+GO_LDFLAGS="-Wl,-rpath,$LIBDIR"
 export PKG_CONFIG_PATH=$SDK/lib/pkgconfig
-LIBDIR=$(pkg-config --variable=libdir libgibson)
-read -r -a PC <<<"$(pkg-config --cflags --libs libgibson)"
+if [[ "$SDK" =~ [[:space:]] ]]; then
+    # Some Go/cgo toolchains split pkg-config's escaped spaces incorrectly. The alias exists only
+    # for this run; the actual installed SDK remains the source of headers and library bytes.
+    SDK_ALIAS_DIR=$(mktemp -d /tmp/libgibson-parity-sdk.XXXXXX)
+    trap 'rm -f -- "$SDK_ALIAS_DIR/sdk"; rmdir -- "$SDK_ALIAS_DIR" 2>/dev/null || true' EXIT
+    ln -s -- "$SDK" "$SDK_ALIAS_DIR/sdk"
+    export PKG_CONFIG_PATH=$SDK_ALIAS_DIR/sdk/lib/pkgconfig
+    export LD_LIBRARY_PATH="$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    GO_LDFLAGS=""
+fi
 echo "parity_v08: SDK=$SDK (libgibson $(pkg-config --modversion libgibson)) WORK=$WORK REPS=$REPS"
 echo "parity_v08: libgibson.so sha256 $(sha256sum "$LIBDIR/libgibson.so" | cut -d' ' -f1)"
 
@@ -65,14 +80,14 @@ build() { # name, command...
         echo "  BUILD FAILED: $name (see $WORK/out/build_$name.log)"; BUILD_FAIL=1; fi
 }
 echo "== build =="
-build c cc -std=c11 -O2 -Wall -Wextra -o "$WORK/bin/parity_v08_c" "$V08/parity_v08.c" "${PC[@]}" -Wl,-rpath,"$LIBDIR"
-build cpp c++ -std=c++17 -O2 -Wall -Wextra -o "$WORK/bin/parity_v08_cpp" "$V08/parity_v08.cpp" "${PC[@]}" -Wl,-rpath,"$LIBDIR"
+build c python3 "$REPO/onboarding/pkg-config-cc.py" cc -std=c11 -O2 -Wall -Wextra -o "$WORK/bin/parity_v08_c" "$V08/parity_v08.c" -Wl,-rpath,"$LIBDIR"
+build cpp python3 "$REPO/onboarding/pkg-config-cc.py" c++ -std=c++17 -O2 -Wall -Wextra -o "$WORK/bin/parity_v08_cpp" "$V08/parity_v08.cpp" -Wl,-rpath,"$LIBDIR"
 build py cp "$REPO/bindings/python/gibson.py" "$WORK/pysite/gibson.py"
-build go env -C "$V08/go" GOFLAGS=-mod=mod GOPROXY=off CGO_LDFLAGS="-Wl,-rpath,$LIBDIR" go build -o "$WORK/bin/parity_v08_go" .
+build go env -C "$V08/go" GOFLAGS=-mod=mod GOPROXY=off GOCACHE="$GO_CACHE" CGO_LDFLAGS="$GO_LDFLAGS" go build -o "$WORK/bin/parity_v08_go" .
 PTY_STATUS=UNVERIFIED
 if [ "$(uname -s)" = Linux ]; then
-    build focus-cpp c++ -std=c++17 -O2 -Wall -Wextra -o "$WORK/bin/focus_cpp" "$V08/focus/client.cpp" "${PC[@]}" -Wl,-rpath,"$LIBDIR"
-    build focus-go env -C "$V08/focus/go" GOFLAGS=-mod=mod GOPROXY=off CGO_LDFLAGS="-Wl,-rpath,$LIBDIR" go build -o "$WORK/bin/focus_go" .
+    build focus-cpp python3 "$REPO/onboarding/pkg-config-cc.py" c++ -std=c++17 -O2 -Wall -Wextra -o "$WORK/bin/focus_cpp" "$V08/focus/client.cpp" -Wl,-rpath,"$LIBDIR"
+    build focus-go env -C "$V08/focus/go" GOFLAGS=-mod=mod GOPROXY=off GOCACHE="$GO_CACHE" CGO_LDFLAGS="$GO_LDFLAGS" go build -o "$WORK/bin/focus_go" .
 fi
 if [ -n "${PARITY_V08_RUST_BIN:-}" ]; then
     RUST_BIN=$PARITY_V08_RUST_BIN
