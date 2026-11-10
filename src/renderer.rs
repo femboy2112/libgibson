@@ -87,6 +87,11 @@ impl FrameReport {
 pub struct Renderer {
     pub mode: RenderMode,
     identity: Arc<()>,
+    // A Context records this before and after its own output operations. Direct
+    // public Renderer output may have used an arbitrary writer, so the Context
+    // must not reuse the resulting differential state as physical truth.
+    output_generation: u64,
+    output_generation_exhausted: bool,
     previous_surface: Option<Surface>,
     compiler: AnsiCompiler,
     pub live_region_height: u16,
@@ -142,6 +147,8 @@ impl Renderer {
         Self {
             mode,
             identity: Arc::new(()),
+            output_generation: 0,
+            output_generation_exhausted: false,
             previous_surface: None,
             last_emitted_depth: None,
             compiler: AnsiCompiler::new(),
@@ -172,6 +179,30 @@ impl Renderer {
 
     pub(crate) fn identity(&self) -> Arc<()> {
         Arc::clone(&self.identity)
+    }
+
+    pub(crate) fn output_generation(&self) -> Option<u64> {
+        (!self.output_generation_exhausted).then_some(self.output_generation)
+    }
+
+    pub(crate) fn physical_fingerprint(
+        &self,
+    ) -> (RenderMode, u16, u16, u16, Option<bool>, AnchorState) {
+        (
+            self.mode,
+            self.live_region_height,
+            self.last_cursor_y,
+            self.last_cursor_x,
+            self.last_cursor_visible,
+            self.anchor,
+        )
+    }
+
+    fn begin_output(&mut self) {
+        match self.output_generation.checked_add(1) {
+            Some(next) => self.output_generation = next,
+            None => self.output_generation_exhausted = true,
+        }
     }
 
     /// Whether the last terminal write failed and the physical screen state is uncertain (the next
@@ -283,6 +314,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<(usize, usize, usize, bool, crate::painter::PaintContext)> {
+        self.begin_output();
         session.ensure_render_authorized()?;
         if !session.is_tty {
             // Non-TTY / CI mode: suppress live interactive frames.
@@ -609,6 +641,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<usize> {
+        self.begin_output();
         session.ensure_render_authorized()?;
         if !session.is_tty {
             let mut bytes = 0usize;
@@ -691,6 +724,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<usize> {
+        self.begin_output();
         let lines: Vec<&str> = text.lines().collect();
         self.write_committed_lines(&lines, session, writer)
     }
@@ -708,6 +742,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<()> {
+        self.begin_output();
         self.commit_text(text, session, writer).map(|_| ())
     }
 
@@ -720,6 +755,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<usize> {
+        self.begin_output();
         self.commit_text_with_mode(text, WrapMode::WordWrap, session, writer)
     }
 
@@ -737,6 +773,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<usize> {
+        self.begin_output();
         let (term_cols, _) = session.terminal_size();
         let render_width = wrap_render_width(text, wrap, term_cols);
         let mut node = Node::text_wrapped(text, Style::default(), wrap);
@@ -759,6 +796,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<usize> {
+        self.begin_output();
         let (term_cols, _) = session.terminal_size();
         let mut node = Node::rich_text_wrapped(rich.clone(), WrapMode::WordWrap);
         node.layout_style.width = crate::node::Dimension::Length(term_cols as f32);
@@ -780,6 +818,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<usize> {
+        self.begin_output();
         session.ensure_render_authorized()?;
         let (term_cols, _) = session.terminal_size();
         let lines = render_node_to_lines_with_depth(
@@ -808,6 +847,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<(usize, InsertStrategy)> {
+        self.begin_output();
         self.insert_lines_before_live(lines, session, writer)
     }
 
@@ -820,6 +860,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<(usize, InsertStrategy)> {
+        self.begin_output();
         self.insert_text_before_live_with_mode(text, WrapMode::WordWrap, session, writer)
     }
 
@@ -837,6 +878,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<(usize, InsertStrategy)> {
+        self.begin_output();
         let (term_cols, _) = session.terminal_size();
         let render_width = wrap_render_width(text, wrap, term_cols);
         let mut node = Node::text_wrapped(text, Style::default(), wrap);
@@ -859,6 +901,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<(usize, InsertStrategy)> {
+        self.begin_output();
         let (term_cols, _) = session.terminal_size();
         let mut node = Node::rich_text_wrapped(rich.clone(), WrapMode::WordWrap);
         node.layout_style.width = crate::node::Dimension::Length(term_cols as f32);
@@ -1040,6 +1083,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<(usize, InsertStrategy)> {
+        self.begin_output();
         session.ensure_render_authorized()?;
         let (term_cols, _) = session.terminal_size();
         let lines = render_node_to_lines_with_depth(
@@ -1059,6 +1103,7 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<usize> {
+        self.begin_output();
         session.ensure_render_authorized()?;
         if !session.is_tty || self.live_region_height == 0 {
             return Ok(0);

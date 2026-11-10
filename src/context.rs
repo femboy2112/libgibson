@@ -1,7 +1,7 @@
 use crate::cell::RichText;
 use crate::input::{poll_event, Event, KeyReleaseReporting};
 use crate::node::Node;
-use crate::renderer::{FrameReport, InsertStrategy, Renderer};
+use crate::renderer::{AnchorState, FrameReport, InsertStrategy, Renderer};
 use crate::scheduler::{FramePacing, FrameScheduler, RenderStats};
 use crate::session::TerminalSession;
 use std::io::{self, IsTerminal, Write};
@@ -15,14 +15,21 @@ pub use crate::renderer::RenderMode;
 
 /// High-level engine coordinator managing session, rendering, input, and scheduling.
 pub struct Context {
-    /// Session for this context. Replacing it does not transfer this context's
-    /// renderer state: physical stdout output is rejected after replacement.
+    /// Session for this context. Replacing it after output begins does not
+    /// transfer the renderer's destination state; later context output is
+    /// rejected. A fresh headless context may be configured before first output.
     pub session: TerminalSession,
     session_identity: Arc<()>,
-    /// Renderer for this context. Physical stdout output is rejected if the
-    /// renderer is replaced; create a new context instead.
+    /// Renderer for this context. Direct changes to its public physical-state
+    /// fields or calls to its output methods make destination state ambiguous.
+    /// Once output begins, replacement does too. Later context output is
+    /// rejected; restore and create a new context. Standalone renderer users
+    /// must manage their own output destination and cannot assume different
+    /// writers match.
     pub renderer: Renderer,
     renderer_identity: Arc<()>,
+    renderer_generation: Option<u64>,
+    renderer_fingerprint: (RenderMode, u16, u16, u16, Option<bool>, AnchorState),
     pub scheduler: FrameScheduler,
     root: Option<Node>,
     /// Where rendered bytes go: the process stdout for interactive contexts, or
@@ -82,19 +89,41 @@ pub struct FrameCell<'a> {
 }
 
 impl Context {
+    fn frame_state_owned(&self) -> bool {
+        Arc::ptr_eq(&self.renderer_identity, &self.renderer.identity())
+            && Arc::ptr_eq(&self.session_identity, &self.session.identity())
+            && self.renderer_generation.is_some()
+            && self.renderer_generation == self.renderer.output_generation()
+            && self.renderer_fingerprint == self.renderer.physical_fingerprint()
+    }
+
     fn ensure_output_authorized(&self) -> io::Result<()> {
         let physical_stdout =
             matches!(self.output, OutputSink::Stdout) && io::stdout().is_terminal();
-        if physical_stdout && !Arc::ptr_eq(&self.session_identity, &self.session.identity()) {
+        // A freshly constructed virtual context may be configured before its
+        // first output. Once used, its renderer/session belong to that sink.
+        let unbound_virtual = matches!(self.output, OutputSink::Buffer(_))
+            && self.renderer_generation == Some(0)
+            && self.renderer.output_generation() == Some(0);
+        if !unbound_virtual && !Arc::ptr_eq(&self.session_identity, &self.session.identity()) {
             return Err(io::Error::new(
                 io::ErrorKind::NotConnected,
                 "context session was replaced; create a new context for the new session",
             ));
         }
-        if physical_stdout && !Arc::ptr_eq(&self.renderer_identity, &self.renderer.identity()) {
+        if !unbound_virtual && !Arc::ptr_eq(&self.renderer_identity, &self.renderer.identity()) {
             return Err(io::Error::new(
                 io::ErrorKind::NotConnected,
                 "context renderer was replaced; create a new context for the new renderer",
+            ));
+        }
+        if self.renderer_generation.is_none()
+            || self.renderer_generation != self.renderer.output_generation()
+            || self.renderer_fingerprint != self.renderer.physical_fingerprint()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "context renderer was modified outside the context; create a new context",
             ));
         }
         if physical_stdout && !self.session.owns_terminal_lease() {
@@ -106,6 +135,21 @@ impl Context {
         self.session.ensure_render_authorized()
     }
 
+    fn managed_output<T>(
+        &mut self,
+        f: impl FnOnce(&mut Renderer, &mut TerminalSession, &mut OutputSink) -> io::Result<T>,
+    ) -> io::Result<T> {
+        self.ensure_output_authorized()?;
+        self.renderer_identity = self.renderer.identity();
+        self.session_identity = self.session.identity();
+        let result = f(&mut self.renderer, &mut self.session, &mut self.output);
+        // Record even on an ordinary error: counted-write recovery belongs to
+        // this target. A panic skips this assignment and thus fails closed.
+        self.renderer_generation = self.renderer.output_generation();
+        self.renderer_fingerprint = self.renderer.physical_fingerprint();
+        result
+    }
+
     pub fn new(mode: RenderMode) -> io::Result<Self> {
         let mut session = TerminalSession::new()?;
         if mode == RenderMode::Fullscreen {
@@ -115,11 +159,15 @@ impl Context {
         let session_identity = session.identity();
         let renderer = Renderer::new(mode);
         let renderer_identity = renderer.identity();
+        let renderer_generation = renderer.output_generation();
+        let renderer_fingerprint = renderer.physical_fingerprint();
         Ok(Self {
             session,
             session_identity,
             renderer,
             renderer_identity,
+            renderer_generation,
+            renderer_fingerprint,
             scheduler: FrameScheduler::new(60),
             root: None,
             output: OutputSink::Stdout,
@@ -164,11 +212,15 @@ impl Context {
         let session_identity = session.identity();
         let renderer = Renderer::new(mode);
         let renderer_identity = renderer.identity();
+        let renderer_generation = renderer.output_generation();
+        let renderer_fingerprint = renderer.physical_fingerprint();
         Self {
             session,
             session_identity,
             renderer,
             renderer_identity,
+            renderer_generation,
+            renderer_fingerprint,
             scheduler: FrameScheduler::new(60),
             root: None,
             output: OutputSink::Buffer(Vec::new()),
@@ -208,13 +260,21 @@ impl Context {
     /// Coordinates of the cells changed by the most recent frame (empty unless
     /// [`Context::set_capture_damage`] was enabled).
     pub fn last_dirty_cells(&self) -> &[(u16, u16)] {
-        self.renderer.last_dirty_cells()
+        if self.frame_state_owned() {
+            self.renderer.last_dirty_cells()
+        } else {
+            &[]
+        }
     }
 
     /// The `(cols, rows)` geometry of the most recently rendered frame, or `None` before the first
-    /// render. A headless context always has a frame after [`Context::render`]; a stdout-backed
-    /// context in a non-TTY process stays `None` (its render is a suppressed no-op).
+    /// render. Returns `None` if direct renderer use or replacement has made the
+    /// context's frame ownership uncertain. A stdout-backed context in a non-TTY
+    /// process also stays `None` (its render is a suppressed no-op).
     pub fn frame_size(&self) -> Option<(u16, u16)> {
+        if !self.frame_state_owned() {
+            return None;
+        }
         self.renderer
             .last_frame_surface()
             .map(|s| (s.width, s.height))
@@ -226,6 +286,9 @@ impl Context {
     /// after painting does not retouch an already-emitted frame; it takes effect on the next
     /// repaint (Gate F2). `None` if there is no frame yet or `(x, y)` is out of bounds.
     pub fn frame_cell(&self, x: u16, y: u16) -> Option<FrameCell<'_>> {
+        if !self.frame_state_owned() {
+            return None;
+        }
         let surface = self.renderer.last_frame_surface()?;
         let cell = surface.get(x, y)?;
         // Quantize with the depth the frame was EMITTED at, not a depth requested after painting.
@@ -416,7 +479,11 @@ impl Context {
     /// the renderer already computed, so a consumer needs no second
     /// layout/paint/diff pass to observe it.
     pub fn last_exact_changed_cells(&self) -> usize {
-        self.renderer.last_exact_changed()
+        if self.frame_state_owned() {
+            self.renderer.last_exact_changed()
+        } else {
+            0
+        }
     }
 
     /// Timing/accounting snapshot for the most recent live frame (#64).
@@ -425,7 +492,11 @@ impl Context {
     /// write covers the blocking writer write/flush. Neither duration claims to
     /// measure terminal-compositor or physical display presentation.
     pub fn last_frame_report(&self) -> FrameReport {
-        self.renderer.last_frame_report()
+        if self.frame_state_owned() {
+            self.renderer.last_frame_report()
+        } else {
+            FrameReport::default()
+        }
     }
 
     /// Visible text of the most recently composed live frame, one `String` per
@@ -434,7 +505,11 @@ impl Context {
     /// bytes from [`Context::rendered_bytes`] / [`Context::take_output`] and lets
     /// headless tests assert on visible text without a private terminal emulator.
     pub fn last_frame_lines(&self) -> Vec<String> {
-        self.renderer.last_frame_lines()
+        if self.frame_state_owned() {
+            self.renderer.last_frame_lines()
+        } else {
+            Vec::new()
+        }
     }
 
     /// Minimal, non-async runtime step — the core of the **canonical interactive
@@ -539,9 +614,9 @@ impl Context {
         };
 
         let start = Instant::now();
-        let result = self
-            .renderer
-            .render(&mut root, &mut self.session, &mut self.output);
+        let result = self.managed_output(|renderer, session, output| {
+            renderer.render(&mut root, session, output)
+        });
         let duration = start.elapsed();
 
         self.root = Some(root);
@@ -584,8 +659,9 @@ impl Context {
     /// cannot corrupt the terminal).
     pub fn commit_text(&mut self, text: &str) -> io::Result<()> {
         self.ensure_output_authorized()?;
-        self.renderer
-            .commit_text(text, &mut self.session, &mut self.output)?;
+        self.managed_output(|renderer, session, output| {
+            renderer.commit_text(text, session, output)
+        })?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -601,8 +677,9 @@ impl Context {
         wrap: crate::node::WrapMode,
     ) -> io::Result<()> {
         self.ensure_output_authorized()?;
-        self.renderer
-            .commit_text_with_mode(text, wrap, &mut self.session, &mut self.output)?;
+        self.managed_output(|renderer, session, output| {
+            renderer.commit_text_with_mode(text, wrap, session, output)
+        })?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -610,8 +687,9 @@ impl Context {
     /// Raw ANSI escape hatch. The caller is responsible for the payload.
     pub fn commit_raw_ansi_unchecked(&mut self, text: &str) -> io::Result<()> {
         self.ensure_output_authorized()?;
-        self.renderer
-            .commit_raw_ansi_unchecked(text, &mut self.session, &mut self.output)?;
+        self.managed_output(|renderer, session, output| {
+            renderer.commit_raw_ansi_unchecked(text, session, output)
+        })?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -624,8 +702,9 @@ impl Context {
     /// Commits a laid-out UI node directly to immutable scrollback.
     pub fn commit_node(&mut self, node: &mut Node) -> io::Result<()> {
         self.ensure_output_authorized()?;
-        self.renderer
-            .commit_node(node, &mut self.session, &mut self.output)?;
+        self.managed_output(|renderer, session, output| {
+            renderer.commit_node(node, session, output)
+        })?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -634,8 +713,9 @@ impl Context {
     /// same wrapping/alignment engine as live nodes.
     pub fn commit_rich_text(&mut self, rich: &RichText) -> io::Result<()> {
         self.ensure_output_authorized()?;
-        self.renderer
-            .commit_rich_text(rich, &mut self.session, &mut self.output)?;
+        self.managed_output(|renderer, session, output| {
+            renderer.commit_rich_text(rich, session, output)
+        })?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -645,11 +725,9 @@ impl Context {
     /// sequences reach the terminal. Prefer the safe insertion methods.
     pub fn insert_raw_lines_before_live_unchecked(&mut self, lines: &[&str]) -> io::Result<()> {
         self.ensure_output_authorized()?;
-        self.renderer.insert_raw_lines_before_live_unchecked(
-            lines,
-            &mut self.session,
-            &mut self.output,
-        )?;
+        self.managed_output(|renderer, session, output| {
+            renderer.insert_raw_lines_before_live_unchecked(lines, session, output)
+        })?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -658,8 +736,9 @@ impl Context {
     /// Control characters are neutralized by the cell model.
     pub fn insert_text_before_live(&mut self, text: &str) -> io::Result<()> {
         self.ensure_output_authorized()?;
-        self.renderer
-            .insert_text_before_live(text, &mut self.session, &mut self.output)?;
+        self.managed_output(|renderer, session, output| {
+            renderer.insert_text_before_live(text, session, output)
+        })?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -674,12 +753,9 @@ impl Context {
         wrap: crate::node::WrapMode,
     ) -> io::Result<()> {
         self.ensure_output_authorized()?;
-        self.renderer.insert_text_before_live_with_mode(
-            text,
-            wrap,
-            &mut self.session,
-            &mut self.output,
-        )?;
+        self.managed_output(|renderer, session, output| {
+            renderer.insert_text_before_live_with_mode(text, wrap, session, output)
+        })?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -687,8 +763,9 @@ impl Context {
     /// Inserts a laid-out UI node into scrollback ABOVE the active live region.
     pub fn insert_node_before_live(&mut self, node: &mut Node) -> io::Result<()> {
         self.ensure_output_authorized()?;
-        self.renderer
-            .insert_node_before_live(node, &mut self.session, &mut self.output)?;
+        self.managed_output(|renderer, session, output| {
+            renderer.insert_node_before_live(node, session, output)
+        })?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -697,8 +774,9 @@ impl Context {
     /// the width-aware layout engine.
     pub fn insert_rich_text_before_live(&mut self, rich: &RichText) -> io::Result<()> {
         self.ensure_output_authorized()?;
-        self.renderer
-            .insert_rich_text_before_live(rich, &mut self.session, &mut self.output)?;
+        self.managed_output(|renderer, session, output| {
+            renderer.insert_rich_text_before_live(rich, session, output)
+        })?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -711,8 +789,9 @@ impl Context {
     /// Clears the live region from the terminal without leaving artifacts.
     pub fn clear_live_region(&mut self) -> io::Result<()> {
         self.ensure_output_authorized()?;
-        self.renderer
-            .clear_live_region(&mut self.session, &mut self.output)?;
+        self.managed_output(|renderer, session, output| {
+            renderer.clear_live_region(session, output)
+        })?;
         self.sync_renderer_metrics();
         Ok(())
     }

@@ -138,7 +138,6 @@ fn replacing_context_renderer_cannot_reuse_old_renderer_state() {
 }
 
 #[test]
-#[ignore = "open: direct public Renderer use can replace its physical frame cache"]
 fn direct_renderer_use_must_not_poison_context_output_state() {
     let output = capture("renderer-direct");
     let pre = output.find("\x1b]0;SWAP_PRE\x07").unwrap();
@@ -149,11 +148,234 @@ fn direct_renderer_use_must_not_poison_context_output_state() {
         p.screen().contents().contains("FRAME_A"),
         "positive control"
     );
+    let before = p.screen().clone();
     p.process(&output.as_bytes()[pre..post]);
+    for row in 0..24 {
+        for col in 0..80 {
+            assert_eq!(before.cell(row, col), p.screen().cell(row, col));
+        }
+    }
+    assert_eq!(before.cursor_position(), p.screen().cursor_position());
+    assert_eq!(before.hide_cursor(), p.screen().hide_cursor());
+    assert!(output.contains("DIRECT_REJECTED=true"), "{output:?}");
+}
+
+#[test]
+fn managed_frames_still_diff_and_public_physical_fields_fail_closed() {
+    let mut ctx = Context::headless(gibson::RenderMode::Fullscreen, 40, 8);
+    ctx.set_root(Node::text("STABLE", Style::default()));
+    ctx.render_now().unwrap();
+    assert!(!ctx.rendered_bytes().is_empty());
+    ctx.take_rendered_bytes();
+    ctx.render_now().unwrap();
+    assert!(ctx.rendered_bytes().is_empty(), "same target should diff");
+    ctx.renderer.last_cursor_x = ctx.renderer.last_cursor_x.wrapping_add(1);
+    assert!(ctx.render_now().is_err());
+    assert!(ctx.rendered_bytes().is_empty());
+}
+
+#[test]
+fn changing_public_physical_fields_before_output_fails_closed() {
+    for field in 0..6 {
+        let mut ctx = Context::headless(gibson::RenderMode::Fullscreen, 40, 8);
+        match field {
+            0 => ctx.renderer.mode = gibson::RenderMode::Inline,
+            1 => ctx.renderer.live_region_height = 1,
+            2 => ctx.renderer.last_cursor_x = 1,
+            3 => ctx.renderer.last_cursor_y = 1,
+            4 => ctx.renderer.last_cursor_visible = Some(true),
+            5 => {
+                ctx.renderer.anchor = gibson::renderer::AnchorState::Stable {
+                    cols: 40,
+                    rows: 8,
+                    live_height: 1,
+                }
+            }
+            _ => unreachable!(),
+        }
+        ctx.set_root(Node::text("MUST NOT EMIT", Style::default()));
+        assert!(ctx.render_now().is_err(), "field {field}");
+        assert!(ctx.rendered_bytes().is_empty());
+    }
+}
+
+#[test]
+fn direct_output_with_same_session_and_another_writer_fails_closed() {
+    let mut ctx = Context::headless(gibson::RenderMode::Fullscreen, 40, 8);
+    ctx.set_root(Node::text("FIRST", Style::default()));
+    ctx.render_now().unwrap();
+    let mut other = Vec::new();
+    let mut node = Node::text("SECOND", Style::default());
+    ctx.renderer
+        .render(&mut node, &mut ctx.session, &mut other)
+        .unwrap();
+    assert!(!other.is_empty());
+    assert_eq!(ctx.frame_size(), None);
+    assert!(ctx.frame_cell(0, 0).is_none());
+    assert!(ctx.last_frame_lines().is_empty());
+    ctx.set_root(Node::text("SECOND", Style::default()));
+    assert!(ctx.render_now().is_err());
+}
+
+#[test]
+fn swapping_used_headless_renderers_cannot_confuse_destinations() {
+    let mut a = Context::headless(gibson::RenderMode::Fullscreen, 40, 8);
+    let mut b = Context::headless(gibson::RenderMode::Fullscreen, 40, 8);
+    a.set_root(Node::text("FRAME_A", Style::default()));
+    b.set_root(Node::text("FRAME_B", Style::default()));
+    a.render_now().unwrap();
+    b.render_now().unwrap();
+    std::mem::swap(&mut a.renderer, &mut b.renderer);
+    let before = a.rendered_bytes().to_vec();
+    a.set_root(Node::text("FRAME_B", Style::default()));
+    assert!(a.render_now().is_err());
+    assert_eq!(a.rendered_bytes(), before);
+}
+
+#[test]
+#[allow(deprecated)] // Exercise the public compatibility alias as well.
+fn every_direct_output_entry_invalidates_managed_output() {
+    use gibson::{cell::RichText, node::WrapMode};
+    for operation in 0..12 {
+        let mut ctx = Context::headless(gibson::RenderMode::Fullscreen, 40, 8);
+        ctx.set_root(Node::text("BASE", Style::default()));
+        ctx.render_now().unwrap();
+        let before = ctx.rendered_bytes().to_vec();
+        let mut other_session = TerminalSession::headless(40, 8);
+        let mut other = Vec::new();
+        let mut node = Node::text("OTHER", Style::default());
+        let rich = RichText::raw("OTHER");
+        match operation {
+            0 => {
+                let _ =
+                    ctx.renderer
+                        .commit_raw_ansi_unchecked("OTHER", &mut other_session, &mut other);
+            }
+            1 => {
+                let _ = ctx.renderer.commit("OTHER", &mut other_session, &mut other);
+            }
+            2 => {
+                let _ = ctx
+                    .renderer
+                    .commit_text("OTHER", &mut other_session, &mut other);
+            }
+            3 => {
+                let _ = ctx.renderer.commit_text_with_mode(
+                    "OTHER",
+                    WrapMode::WordWrap,
+                    &mut other_session,
+                    &mut other,
+                );
+            }
+            4 => {
+                let _ = ctx
+                    .renderer
+                    .commit_rich_text(&rich, &mut other_session, &mut other);
+            }
+            5 => {
+                let _ = ctx
+                    .renderer
+                    .commit_node(&mut node, &mut other_session, &mut other);
+            }
+            6 => {
+                let _ = ctx.renderer.insert_raw_lines_before_live_unchecked(
+                    &["OTHER"],
+                    &mut other_session,
+                    &mut other,
+                );
+            }
+            7 => {
+                let _ =
+                    ctx.renderer
+                        .insert_text_before_live("OTHER", &mut other_session, &mut other);
+            }
+            8 => {
+                let _ = ctx.renderer.insert_text_before_live_with_mode(
+                    "OTHER",
+                    WrapMode::WordWrap,
+                    &mut other_session,
+                    &mut other,
+                );
+            }
+            9 => {
+                let _ = ctx.renderer.insert_rich_text_before_live(
+                    &rich,
+                    &mut other_session,
+                    &mut other,
+                );
+            }
+            10 => {
+                let _ =
+                    ctx.renderer
+                        .insert_node_before_live(&mut node, &mut other_session, &mut other);
+            }
+            11 => {
+                let _ = ctx
+                    .renderer
+                    .clear_live_region(&mut other_session, &mut other);
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            ctx.commit_text("MUST NOT EMIT").is_err(),
+            "operation {operation}"
+        );
+        assert_eq!(ctx.rendered_bytes(), before, "operation {operation}");
+    }
+}
+
+// This records the unresolved standalone API boundary. Unlike Context, direct
+// Renderer calls have no stable destination identity in their Write argument.
+#[test]
+#[ignore = "open: standalone Renderer diffs across unrelated writers"]
+fn standalone_renderer_must_not_share_cache_between_writers() {
+    let mut renderer = gibson::Renderer::new(gibson::RenderMode::Fullscreen);
+    let mut session = TerminalSession::headless(80, 24);
+    let mut physical = Vec::new();
+    let mut other = Vec::new();
+    let mut a = Node::text("FRAME_A", Style::default());
+    renderer
+        .render(&mut a, &mut session, &mut physical)
+        .unwrap();
+    let mut virtual_b = Node::text("FRAME_B", Style::default());
+    renderer
+        .render(&mut virtual_b, &mut session, &mut other)
+        .unwrap();
+    let mut physical_b = Node::text("FRAME_B", Style::default());
+    renderer
+        .render(&mut physical_b, &mut session, &mut physical)
+        .unwrap();
+    let mut reference = Vec::new();
+    let mut fresh = gibson::Renderer::new(gibson::RenderMode::Fullscreen);
+    let mut fresh_session = TerminalSession::headless(80, 24);
+    let mut expected_node = Node::text("FRAME_B", Style::default());
+    fresh
+        .render(&mut expected_node, &mut fresh_session, &mut reference)
+        .unwrap();
+    let mut actual = vt100::Parser::new(24, 80, 0);
+    let mut expected = vt100::Parser::new(24, 80, 0);
+    actual.process(&physical);
+    expected.process(&reference);
     assert!(
-        p.screen().contents().contains("FRAME_B"),
-        "physical terminal retained stale frame: {}",
-        p.screen().contents()
+        expected.screen().contents().contains("FRAME_B"),
+        "reference control"
+    );
+    for row in 0..24 {
+        for col in 0..80 {
+            assert_eq!(
+                actual.screen().cell(row, col),
+                expected.screen().cell(row, col),
+                "cell {row},{col}"
+            );
+        }
+    }
+    assert_eq!(
+        actual.screen().cursor_position(),
+        expected.screen().cursor_position()
+    );
+    assert_eq!(
+        actual.screen().hide_cursor(),
+        expected.screen().hide_cursor()
     );
 }
 
@@ -274,9 +496,10 @@ fn sovereignty_child() {
                 .render(&mut virtual_node, &mut virtual_session, &mut Vec::new())
                 .unwrap();
             owner.set_root(Node::text("FRAME_B", Style::default()));
-            owner.render_now().unwrap();
+            let rejected = owner.render_now().is_err();
             out.write_all(b"\x1b]0;SWAP_POST\x07").unwrap();
             out.flush().unwrap();
+            eprintln!("DIRECT_REJECTED={rejected}");
             owner.restore().unwrap();
         }
         _ => panic!("unexpected role"),
