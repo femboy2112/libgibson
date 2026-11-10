@@ -45,7 +45,8 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
   full PTY suite passed 22/22. At exact #329 head `e9ac02b`, local fault tests passed 2/2,
   input PTY tests 5/5 and key-release PTY tests 22/22. Preserve the initial failure and
   demand hosted exact-head CI and independent review. Hosted CI on `e9ac02b` failed
-  Clippy `while_let_loop`; the new head rewrites that loop and awaits fresh CI. A local
+  Clippy `while_let_loop`; head `f7d51e8` rewrites that loop and its eight hosted
+  development CI jobs passed. A local
   targeted Clippy check passed with two pre-existing audio lint categories explicitly
   allowed; this is not a full Clippy pass.
 - Windows #292 is not verified. Clock #130 still needs loop/blocked-output evidence.
@@ -57,7 +58,9 @@ The XXI train #316, #318, #319, #317, #320, #321 is merged; do not repeat it. Dr
 (`9cebfa005b76dfa2feda656ddbca073a3e45fe91`), #327
 (`bfcf737db63875469169252da5370d1a2308ae3b`), and #329
 (`f7d51e861014ecb56c9668a8807473febec80374`) need
-current-head and dependency review, CI and appropriate independent review before merge. #324 contains five headless starters and three interactive public-Python-API applications:
+current-head and dependency review, CI and appropriate independent review before merge.
+At the recorded heads #325 has green development CI and preflight, and #327 and #329
+have green development CI. #324 is still running CI. Distinct-model review remains absent. #324 contains five headless starters and three interactive public-Python-API applications:
 an offline echo console, a simulated dashboard and a simulated Celsius instrument with
 separate producer samples and user setpoints. A small headless C framebuffer consumer also passed against a copied staged SDK and adapter
 with a wrong-oracle negative control. Broader interactive examples and diagnostics remain
