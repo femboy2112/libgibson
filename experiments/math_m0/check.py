@@ -13,7 +13,10 @@ from matplotlib.mathtext import MathTextParser
 ROOT = Path(__file__).resolve().parents[2]
 RENDER = ROOT/'experiments/math_m0/render.py'
 BIN = ROOT/'target/debug/examples/math_m0_capture'
+ORACLE = ROOT/'experiments/math_m0/screen_oracle.py'
 ENV = dict(os.environ, PYTHONNOUSERSITE='1')
+SCREEN_ENV = dict(ENV)
+SCREEN_ENV.pop('PYTHONNOUSERSITE', None)
 
 
 def cmd(*args, ok=True, env=ENV):
@@ -46,13 +49,21 @@ def main():
             fixture_dir = d/fixture
             cmd(sys.executable, str(RENDER), fixture, str(fixture_dir))
             raw = (fixture_dir/(fixture+'.rgb')).read_bytes()
-            assert len(raw) == 9600 and len(set(raw)) > 2
+            assert len(raw) == 9600 and min(raw) < 200
             for mode in ('half', 'mono'):
                 out = fixture_dir/(fixture+'-'+mode+'.ansi')
                 cmd(str(BIN), str(fixture_dir/(fixture+'.rgb')), str(out), mode)
                 data = out.read_bytes()
-                assert len(data) > 100 and (('▀' if mode == 'half' else '⣿').encode() in data)
+                assert len(data) > 100
+                cmd(sys.executable, str(ORACLE), str(fixture_dir/(fixture+'.rgb')), str(out), mode, env=SCREEN_ENV)
             assert (fixture_dir/(fixture+'-half.ansi')).read_bytes() != (fixture_dir/(fixture+'-mono.ansi')).read_bytes()
+        # Blank/ignored-input mutant: terminal output is valid, but it must not
+        # match the real nested-fraction samples under either screen oracle.
+        (d/'blank.rgb').write_bytes(bytes([255])*9600)
+        for mode in ('half', 'mono'):
+            cmd(str(BIN), str(d/'blank.rgb'), str(d/('blank-'+mode+'.ansi')), mode)
+            cmd(sys.executable, str(ORACLE), str(d/'blank.rgb'), str(d/('blank-'+mode+'.ansi')), mode, env=SCREEN_ENV)
+            cmd(sys.executable, str(ORACLE), str(d/'nested'/'nested.rgb'), str(d/('blank-'+mode+'.ansi')), mode, ok=False, env=SCREEN_ENV)
         old = hashlib.sha256((d/'nested'/'nested.rgb').read_bytes()).digest()
         cmd(sys.executable, str(RENDER), 'nested', str(d/'repeat'))
         assert hashlib.sha256((d/'repeat'/'nested.rgb').read_bytes()).digest() == old
@@ -82,7 +93,7 @@ def main():
         env = dict(ENV, PATH=str(fake)+':'+ENV['PATH'])
         cmd(sys.executable, str(RENDER), 'nested', str(d/'failed'), ok=False, env=env)
         assert not (d/'failed/nested.rgb').exists()
-    print('PASS: four fixed fixtures, both cell modes, repeat hash, independent fraction geometry, malformed/oversize/failing backend controls')
+    print('PASS: four fixtures, both terminal-cell oracles, blank mutant, repeat hash, fraction geometry, invalid input and failing backend controls')
     print('MathText fraction/integral supported; matrix/aligned rejected in installed version')
 
 if __name__ == '__main__': main()

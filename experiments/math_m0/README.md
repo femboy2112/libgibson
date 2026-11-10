@@ -26,7 +26,7 @@ malicious replacement executable or a compromised toolchain.
 ## Run
 
 Requires Rust/Cargo and local `pdflatex`, `pdftoppm`, `pdftotext`, Pillow,
-NumPy and Matplotlib. There is no new core dependency. On the evaluated host,
+NumPy, Matplotlib and pyte. There is no new core dependency. On the evaluated host,
 `PYTHONNOUSERSITE=1` avoids an incompatible user-site NumPy installation.
 
 ```sh
@@ -44,9 +44,12 @@ and a failed renderer. It compares mathtext's independent glyph/rule geometry
 against order expectations and separately checks Poppler PDF text boxes plus
 the fraction rule in the TeX raster. Reversing numerator and denominator is a
 negative ordering control. These are **partial geometry checks**, not a font
-metric or complete clipping certification. The capture check verifies nonempty
-cell output and distinct representations; it is not a reconstructed-screen
-visual oracle.
+metric or complete clipping certification. Pyte independently interprets the
+actual capture into 80×20 terminal cells; the oracle compares every half-block
+foreground/background sample and every monochrome Braille glyph with the RGB
+input. A white/ignored-input capture passes against white pixels but fails
+against the nested-fraction source. This checks the cell result, not visual
+readability or the quality of typesetting.
 
 ## Findings on the observed host
 
@@ -65,10 +68,13 @@ visual oracle.
   establishes legibility at 40×15, full-page layout, clipping behavior or an
   equivalent mathematical fallback. Retaining source is necessary because
   visual identity can be lost.
-- No connected graphical terminal was available to observe pixel delivery;
-  support remains **Unknown**. A Kitty executable or TERM value alone does
-  not prove a working graphics transport. No paper-quality terminal output is
-  claimed.
+- A separate, real Kitty 0.32.2 X11 probe returned `OK` for an RGB image
+  query and an error for deliberately invalid image format 99. A screenshot
+  of that Kitty window contained 23,108 red pixels from a 12×12 red image
+  placed at 20×8 cells. This is a controlled protocol probe, **not** a
+  LibGibson rendering path, a formula display, or proof of image teardown,
+  clipping, resize or long-session behavior. No paper-quality terminal output
+  is claimed. Other terminals remain unqualified.
 - Arbitrary input, SVG parsing, hostile SVG, filesystem/network isolation,
   fonts unavailable, recursion, full resource envelopes, Rust 1.85, long
   documents, resize and graphics protocol lifecycle remain unqualified. The
@@ -79,3 +85,23 @@ Next experiment: use a restricted semantic AST and genuinely isolated worker,
 compare independently sourced vector metrics and clipping, and feed its bounded
 pixels through a renderer-owned image protocol observed on a real terminal.
 Keep semantic source available even when the pixel transport is unsupported.
+
+## Separate real Kitty experiment
+
+This optional command opens a temporary terminal window and sends only fixed
+probe data. It is not a general rendering backend. Run it on a trusted local
+X11 desktop, then capture the window with a separate screenshot tool while it
+is open; inspecting the `OK` response alone does not prove visible pixels.
+The deliberate invalid-format query should return an error on Kitty, not be
+misreported as an unsupported-terminal test. `--config NONE` avoids changing or
+loading user Kitty settings. The result file must not already exist.
+
+```sh
+out=$(mktemp -d)
+kitty --config NONE --title LIBGIBSON-M0-CAPABILITY-PROBE \
+  /usr/bin/python3 experiments/math_m0/kitty_probe.py "$out/responses.bin"
+```
+
+A window screenshot was separately measured using ImageMagick and Pillow.
+This observation does not upgrade LibGibson's capability status: the library
+does not yet own this image protocol path.
