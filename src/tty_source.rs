@@ -2381,6 +2381,48 @@ mod tests {
     }
 
     #[test]
+    fn issue_312_origin_is_not_recoverable_from_the_delivered_observations() {
+        // Legacy US-style shift+1 was released; in the other trace a genuinely exact `!`
+        // remains down while the unrelated base key `1` was released. A layout may have `!`
+        // as its unshifted key, so this exact key can have base identity 33, independent of 49.
+        let legacy = terminal(decode_all(b"!\x1b[49;1:3u", true));
+        let exact = terminal(decode_all(b"\x1b[33;1u\x1b[49;1:3u", true));
+        assert_eq!(legacy, exact);
+        assert_eq!(legacy[0], kind(K::Char('!'), M::NONE, Kind::Press));
+        assert_eq!(legacy[1], kind(K::Char('1'), M::NONE, Kind::Release));
+
+        // An exact consumer should keep `!` down while the genuinely exact key is held.
+        // The tracker sees identical data in the legacy case, where `!` has already gone up.
+        // A deadline selected solely from these events cannot satisfy both cases. This is true
+        // for any delay, including one that depends on the unrelated `1` release.
+        assert_eq!(still_held(&legacy), vec![(K::Char('!'), M::NONE)]);
+        assert_eq!(still_held(&exact), vec![(K::Char('!'), M::NONE)]);
+
+        // Positive control: the later actual release of the exact `!` is named as its press and
+        // clears it; the earlier unrelated base-key release must not be assigned to `!`.
+        let exact_up = terminal(decode_all(b"\x1b[33;1u\x1b[49;1:3u\x1b[33;1:3u", true));
+        assert_eq!(&exact_up[..2], &exact);
+        assert_eq!(exact_up[2], kind(K::Char('!'), M::NONE, Kind::Release));
+        assert!(still_held(&exact_up).is_empty());
+    }
+
+    #[test]
+    fn issue_312_code_identity_is_not_a_legacy_wire_format_marker() {
+        // Kitty can report press/release kinds for special keys without `CSI ... u`: the parser
+        // emits an ordinary Event for both, so TtySource uses KeyId::Code for the exact arrow.
+        // Treating every Code record as legacy would time out a real exact held arrow.
+        let mut parser = Parser::default();
+        parser.advance(b"\x1b[1;1:1A\x1b[1;1:3A", false);
+        let events: Vec<_> = parser.collect();
+        assert!(matches!(
+            events.as_slice(),
+            [InternalEvent::Event(CtEvent::Key(a)), InternalEvent::Event(CtEvent::Key(b))]
+                if a.code == K::Up && a.kind == Kind::Press
+                && b.code == K::Up && b.kind == Kind::Release
+        ));
+    }
+
+    #[test]
     fn issue_312_a_shifted_symbol_from_the_legacy_switch_window_releases_under_its_base_key() {
         // DOCUMENTED LIMITATION (#312). A shifted symbol pressed while the terminal is briefly in
         // legacy mode — the pop/re-push window of a screen switch — arrives as the bare byte `!`,
