@@ -2,7 +2,7 @@
 
 Round baseline: `main` `4573d0d6e571159b376e08fb2761b4e8eaffe6f3`
 (`0.7.0-dev`); development CI run 42578229665 succeeded at that SHA. #322 then
-merged as `b04e9c42d6484506373355d0a3538254d87d16ba`; verify its main CI live.
+merged as `b04e9c42d6484506373355d0a3538254d87d16ba`; development CI run 42725113594 succeeded at that SHA; still verify live state.
 The latest published prerelease is v0.6.0; both `v0.6.0` and
 `bindings/go/v0.6.0` peel to `492d0fec7727658d50b9a82025c784b7e427d6b0`.
 No v0.7.0 release candidate was qualified. Fetch and verify live state.
@@ -31,7 +31,10 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
 - #328: a controlled Linux PTY probe on #327 observed that after a caught owner-thread
   panic, `ICANON` stayed on and a key without newline was not delivered; a no-panic control
   kept raw mode and delivered the key. The source mechanism predates #327, though a separate
-  baseline runtime reproduction has not yet been run. This remains open.
+  baseline runtime reproduction also failed at current main with no-panic and non-owner
+  controls passing. Draft #329 restores only raw input and bracketed paste; its red-first
+  PTY tests passed after the change, but screen, cursor, renderer, mouse and focus recovery
+  remain unqualified and the issue remains open.
 - Windows #292 is not verified. Clock #130 still needs loop/blocked-output evidence.
   HumanMusic/PCM and ABI v1 are frozen. Never infer terminal behavior from headless parity.
 
@@ -40,7 +43,8 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
 The XXI train #316, #318, #319, #317, #320, #321 is merged; do not repeat it. Drafts #325 (`32bd96fd0483444ec5d1cfb9bd89a06647dadaed`), #324
 (`bd73546db5a0a12d12ca5a512ae9d23178b211c9`), #326
 (`0d7ee4f12a10b4b220d5370eb28ff310683b30cd`) and #327
-(`ab7f3562178424071a0f375078c2e4ace5934be8`, updated with #322) need
+(`ab7f3562178424071a0f375078c2e4ace5934be8`, updated with #322), and #329
+(`1198d8e99ab7f79803343429c89e50469b94028f`) need
 current-head and dependency review, CI and appropriate independent review before merge. #324 contains five headless starters and three interactive public-Python-API applications:
 an offline echo console, a simulated dashboard and a simulated Celsius instrument with
 separate producer samples and user setpoints. A framebuffer application and other requested
