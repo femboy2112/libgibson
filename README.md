@@ -210,6 +210,9 @@ animation is throttled by `ctx.animation_interval()`.
 
 ### Native SDK (C / C++ / Python / Go)
 
+For five executable headless starters and a staged-artifact smoke check, see
+[`onboarding/README.md`](onboarding/README.md).
+
 The release attaches `libgibson-0.6.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
 `libgibson.a`, the versioned shared object (`libgibson.so.1` + a `libgibson.so` dev
 symlink), and a relocatable `pkg-config` file.
