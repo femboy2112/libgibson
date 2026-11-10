@@ -96,5 +96,7 @@ def reject_dumb(name):
 
 run("chat-console", b"Offline echo console", b"hi\r", (b"Echo", b"(local):", b"hi"), b"\x1b")
 run("status-dashboard", b"Status dashboard", b"p", (b"paused",), b"q")
+run("temperature-instrument", b"Temperature instrument", b"+", (b"21.5",), b"q")
 reject_dumb("chat-console")
 reject_dumb("status-dashboard")
+reject_dumb("temperature-instrument")
