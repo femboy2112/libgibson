@@ -385,22 +385,42 @@ impl TerminalSession {
         Ok(())
     }
 
-    /// Enters alternate screen mode (fullscreen).
+    /// Enters alternate screen mode (fullscreen). A restored session no longer owns the
+    /// terminal and returns `NotConnected` rather than changing a later owner's screen.
     pub fn enter_alternate_screen(&mut self) -> io::Result<()> {
-        if !self.is_tty || self.headless || self.alt_screen_active {
+        if !self.is_tty || self.headless {
+            return Ok(());
+        }
+        self.ensure_mode_owner()?;
+        if self.alt_screen_active {
             return Ok(());
         }
         let mut out = stdout();
         self.switch_screen_on(&mut out, |o| execute!(o, EnterAlternateScreen), true)
     }
 
-    /// Leaves alternate screen mode.
+    /// Leaves alternate screen mode; a restored session returns `NotConnected`.
     pub fn leave_alternate_screen(&mut self) -> io::Result<()> {
-        if !self.is_tty || !self.alt_screen_active {
+        if !self.is_tty || self.headless {
+            return Ok(());
+        }
+        self.ensure_mode_owner()?;
+        if !self.alt_screen_active {
             return Ok(());
         }
         let mut out = stdout();
         self.switch_screen_on(&mut out, |o| execute!(o, LeaveAlternateScreen), false)
+    }
+
+    /// A relinquished interactive session must not operate on a later owner's terminal.
+    fn ensure_mode_owner(&self) -> io::Result<()> {
+        if self.restore_attempted || !self.owns_lease {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "terminal session has released its ownership lease",
+            ));
+        }
+        Ok(())
     }
 
     /// Relocates this process's key-release push across a screen switch, then performs the
@@ -480,9 +500,14 @@ impl TerminalSession {
     /// it — unlike the raw `input::set_mouse_capture` free function, whose
     /// enable leaks on any early return or panic. Idempotent; a no-op on a non-TTY
     /// or headless session. On enable the flag is set *before* the write, so even a
-    /// failed or partial enable is still disabled on restore.
+    /// failed or partial enable is still disabled on restore. A restored interactive session
+    /// returns `NotConnected` without changing the current owner's reporting modes.
     pub fn set_mouse_capture(&mut self, enable: bool) -> io::Result<()> {
-        if !self.is_tty || self.headless || enable == self.mouse_capture_enabled {
+        if !self.is_tty || self.headless {
+            return Ok(());
+        }
+        self.ensure_mode_owner()?;
+        if enable == self.mouse_capture_enabled {
             return Ok(());
         }
         let mut out = stdout();
