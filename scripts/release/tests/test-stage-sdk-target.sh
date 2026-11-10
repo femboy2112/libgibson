@@ -48,10 +48,18 @@ export PATH="$work/bin:$PATH" CARGO_TARGET_DIR="$work/custom target"
 [[ $(cat "$work/sdk/lib/libgibson.so.1") == fresh ]] || { echo 'FAIL: staged stale shared library' >&2; exit 1; }
 [[ $(cat "$work/sdk/lib/libgibson.a") == fresh ]] || { echo 'FAIL: staged stale static library' >&2; exit 1; }
 for changed in so a; do
-    if FAKE_MUTATE_SELECTED="$changed" "$work/repo/scripts/release/stage-sdk.sh" --prefix "$work/mutated-$changed" >/dev/null; then
-        echo "FAIL: changed selected $changed artifact was accepted" >&2; exit 1
-    fi
-    [[ ! -e "$work/mutated-$changed" ]] || { echo 'FAIL: staging started after artifact mutation' >&2; exit 1; }
+    FAKE_MUTATE_SELECTED="$changed" "$work/repo/scripts/release/stage-sdk.sh" --prefix "$work/mutated-$changed" >/dev/null || {
+        echo "FAIL: staging rejected mutation of the original $changed artifact" >&2; exit 1;
+    }
+    [[ $(cat "$CARGO_TARGET_DIR/release/libgibson.$changed") == mutated ]] || {
+        echo "FAIL: $changed mutation control did not run" >&2; exit 1;
+    }
+    [[ $(cat "$work/mutated-$changed/lib/libgibson.so.1") == fresh ]] || {
+        echo 'FAIL: changed shared library reached staged SDK' >&2; exit 1;
+    }
+    [[ $(cat "$work/mutated-$changed/lib/libgibson.a") == fresh ]] || {
+        echo 'FAIL: changed static library reached staged SDK' >&2; exit 1;
+    }
 done
 if FAKE_MISSING=1 "$work/repo/scripts/release/stage-sdk.sh" --prefix "$work/missing" >/dev/null; then
     echo 'FAIL: missing fresh artifact fell back to stale library' >&2; exit 1

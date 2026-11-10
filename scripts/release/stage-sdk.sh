@@ -117,8 +117,8 @@ NATIVE_STATIC_LIBS="$(cargo rustc --release --crate-type staticlib -- --print na
     | sed -n 's/^note: native-static-libs: //p' | head -1 || true)"
 [[ -n "$NATIVE_STATIC_LIBS" ]] || NATIVE_STATIC_LIBS="-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc"
 note "native-static-libs: $NATIVE_STATIC_LIBS"
-cmp -s -- "$selected_so" "$scratch/libgibson.so" || die "selected shared library changed after the build"
-cmp -s -- "$selected_a" "$scratch/libgibson.a" || die "selected static library changed after the build"
+# Cargo's metadata query may legitimately rebuild its own target artifacts.
+# Install the snapshots checked immediately after selection, never those later files.
 SO="$scratch/libgibson.so"
 A="$scratch/libgibson.a"
 

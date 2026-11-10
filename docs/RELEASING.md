@@ -65,9 +65,10 @@ for audited local cleanup rather than recursively deleting it automatically.
 
 SDK staging uses Python 3 to select the native-library paths reported by that Cargo
 build, including custom target directories. It makes private copies of the selected
-files before the subsequent native-link-flags query, checks the originals still match
-after that query, and stages the copies. This detects changes observed at those checks;
-it is not a defense against a hostile toolchain or concurrent process. `--no-build`
+files before the subsequent native-link-flags query, checks each copy against its
+original immediately, and stages the copies. The query may legitimately rebuild the
+originals. These checks are not a defense against a hostile toolchain or concurrent
+process. `--no-build`
 uses existing artifacts and does not establish their source provenance.
 
 **Hangup-test execution is a separate mandatory release witness.** The four
