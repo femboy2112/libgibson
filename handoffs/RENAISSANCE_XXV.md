@@ -48,8 +48,8 @@ human or distinct-model certification.
 | #327 | `22d6d78aac28b4098e43d8cba355a6753923b8ab` | Focus retry and cleanup obligations. Reconcile with the other terminal changes and review the combined state machine. |
 | #325 | `0b922c9043c393f65d877701cb107d314b164167` | C++/Python/Go focus/geometry parity; new absolute geometry oracle and mutation controls. Rebuild from the final runtime candidate and rerun all consumers. |
 | #331 | `d1cd6016d9828000f21066bc76488ea4dbdd26a8` | Unicode lowercase-expansion pairing counterexample. Decoder-model evidence, not a physical keyboard-layout test. |
-| #336 | `49482bf6b63cb831dec2f3aade9fb722fc358885` | Fixed-fixture math M0 research. Partial; not a public API, security sandbox or LibGibson terminal graphics path. |
-| #337 | `26a59b221a9c55ae7d694b5bea1777bcfdfdfad0` | Candidate ABI export-name provenance and hidden-index controls. A stat-cache cleanliness bypass is reproduced and an alternate-target stale-SDK risk is source-reviewed; fixes are in progress. Recheck the live head. |
+| #336 | `e64834f2cc7fb5af63062e5aae4c3c3615d295c0` | Fixed-fixture math M0 research, reconciled with main. Partial; not a public API, security sandbox or LibGibson terminal graphics path. |
+| #337 | `0d97720bf9a8003da8502e2d9d84bd2b54d18edf` | Candidate ABI export-name provenance, hidden-index controls and alternate-target SDK staging fix. Real staging controls passed; stat-cache preflight cleanliness bypass remains open. Recheck the live head. |
 | #323 | Review the current live head | Handoff draft; update after integration and do not merge obsolete status. |
 
 The #325, #333, #336, #337 and #338 checks were queued or in progress at this snapshot. A
@@ -161,8 +161,17 @@ tracked file without hidden flags: with `core.trustctime=false` and
 both `git status` and the index checker. A separate source audit found that
 `stage-sdk.sh` can build into an alternate `CARGO_TARGET_DIR` yet copy ignored
 stale libraries from the default `target/release`, so cleanroom consumers may
-test the wrong SDK. Fixes are in progress. The earlier build result does not
-validate the revised head or the full preflight.
+test the wrong SDK. #337 head `0d97720...` changes staging to use artifacts
+reported by Cargo; fake-tool controls cover stale defaults and ambiguous or
+missing artifact records. A real Rust 1.98.1 release staging run at that head
+reported exit 0 with both custom target and external prefix paths containing
+spaces; staged `.so` and `.a` matched Cargo's target artifacts byte-for-byte,
+the SDK checksum manifest passed, and the C/C++ onboarding path test passed
+with its missing-package and legacy-expansion negative controls. The `.so`
+SHA-256 was `a776781efeaf93bbee06fcf3c22fed8206dc5f62aa303c43b28e2de1688f8423`.
+This is not five-language release-artifact or full-preflight qualification.
+The stat-cache false-clean issue remains unresolved; fresh isolated source
+qualification and review are still required.
 
 An independent local comparison reported 59 names in the v0.6.0 tag's ABI
 manifest, 67 in current main's manifest and 67 in the #337 `4e147b8...` fresh
