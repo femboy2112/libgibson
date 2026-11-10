@@ -34,6 +34,10 @@ PY
 )
 ```
 
+The block runs in a subshell. To continue experimenting afterward, run
+`cd libgibson-first-run` and export `LIBGIBSON_LIBRARY="$PWD/libgibson-0.6.0-linux-x86_64/lib/libgibson.so.1"`
+again in your shell.
+
 The two assertions form a small automated headless test: change the expected
 `b"H"` to another byte to check that a failing test is detected. Headless success
 does not establish your terminal's interactive capabilities.
