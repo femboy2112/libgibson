@@ -34,6 +34,20 @@ interleaving needs a real PTY reproduction. Draft #327 handles focus retry and m
 be reviewed in combination with #329 after the latter is qualified; do not collapse
 cleanup obligation and successful request, or imply terminal capability support.
 
+Historical draft queue (all HOLD; fetch and check exact heads before acting):
+
+1. #329: `f1dd2b3ad2bc21dbcafb5f1a8176498c2eccace0` — input recovery and
+   stale-session entry guard; independent review and remaining fault controls.
+2. #327: `22d6d78aac28b4098e43d8cba355a6753923b8ab` — focus retry; integrate
+   against qualified #329 and review the combined terminal state machine.
+3. #325: `25358ab98fce26d9e47e644e09c5834a23a859c8` — wrapper projection;
+   refresh against runtime fixes and qualify full installed parity.
+4. #331: `d1cd6016d9828000f21066bc76488ea4dbdd26a8` — Unicode decoder-model
+   boundary; review and exact-head CI.
+5. #332: `db583a9663d09942941c6457f06a8d880233f5ad` — released-SDK first
+   five minutes; review and exact-head CI.
+6. #323: this handoff branch; recheck its live head and reconcile after integration.
+
 ## Key provenance and parity
 
 Issue #312 was reopened because its stated acceptance requires a matching release
