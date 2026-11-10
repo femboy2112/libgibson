@@ -37,23 +37,26 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
   controls passing. Draft #329 restores only raw input and bracketed paste; its red-first
   PTY tests passed after the change, but screen, cursor, renderer, mouse and focus recovery
   remain unqualified and the issue remains open. A source review found that its current
-  bracketed-paste recovery can lose the cleanup obligation after a failed write or raw-mode
-  re-entry; #329 is on HOLD pending a fault-controlled correction. A later first-attempt
-  key-release PTY regression run also failed: the expected Unsupported notice was absent;
-  compare with the same test on main before classifying the cause. Preserve that failure.
+  bracketed-paste recovery could lose the cleanup obligation after a failed write or raw-mode
+  re-entry; the revised branch separates cleanup ownership from confirmed enable and passed
+  red/green fault controls. An initial key-release PTY run failed because its parser dropped
+  an event preceded by a paste-enable escape; a raw trace showed Unsupported in order. The
+  parser now fails closed on unknown prefixes, with missing/extra/reordered controls, and the
+  full PTY suite passed 22/22. Preserve the initial failure and demand exact-head CI and review.
 - Windows #292 is not verified. Clock #130 still needs loop/blocked-output evidence.
   HumanMusic/PCM and ABI v1 are frozen. Never infer terminal behavior from headless parity.
 
 ## Integration and verification
 
 The XXI train #316, #318, #319, #317, #320, #321 is merged; do not repeat it. Drafts #325 (`9a8e5e0e4f4761aa481fd02732cbf207bd94265f`), #324
-(`cf9cd26ad94d732665073bf5a549ab0b49205721`), #327
+(`51782c2b44e767a1a9cc55f5868090ebccb311c7`), #327
 (`bfcf737db63875469169252da5370d1a2308ae3b`), and #329
-(`1198d8e99ab7f79803343429c89e50469b94028f`) need
+(`e9ac02bab0d65d18e414744ebe8d472bda86e05f`) need
 current-head and dependency review, CI and appropriate independent review before merge. #324 contains five headless starters and three interactive public-Python-API applications:
 an offline echo console, a simulated dashboard and a simulated Celsius instrument with
-separate producer samples and user setpoints. A framebuffer application and other requested
-examples remain outstanding. Its SDK path with
+separate producer samples and user setpoints. A small headless C framebuffer consumer also passed against a copied staged SDK and adapter
+with a wrong-oracle negative control. Broader interactive examples and diagnostics remain
+outstanding. Its SDK path with
 spaces regression is fixed on the current branch and has real C/C++ and negative controls.
 A new Linux PTY control passed for C++, Go and Python enable/disable/restore bytes, a
 no-op negative control and an injected output error; it does not prove terminal support.
