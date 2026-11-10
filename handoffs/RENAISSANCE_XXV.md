@@ -6,9 +6,16 @@ not independent certification or authority to bypass a gate.
 
 ## Main and release
 
-- Main: `0bd31616f77313e5dd3e78460601b7a776f77eaa`, source version `0.7.0-dev`.
-  Exact-main development CI run `42745447592` completed successfully. #335
-  merged at this commit and added `docs/MATH_TYPESETTING_ROADMAP.md`.
+- Main: `e64402526562ce0d7b6d88c0b5f7bb31152574d6`, source version `0.7.0-dev`.
+  Exact-main development CI run `42748526447` is in progress at this snapshot.
+  Earlier main `0bd31616f77313e5dd3e78460601b7a776f77eaa` passed development
+  CI run `42745447592`; #335 merged there and added
+  `docs/MATH_TYPESETTING_ROADMAP.md`.
+- #332 merged at current main after development CI run `42747338050` passed
+  on exact head `704c91bdd3fcfad8e3da4903e65877c6b9ec06fd`. Its released
+  artifact headless guide was exercised with download, native checksum, wheel
+  virtual environment and rendered-cell acceptance; a wrong-glyph control
+  failed as intended. It is not candidate artifact or terminal qualification.
 - Latest published GitHub engineering prerelease: `v0.6.0` and the Go module
   tag `bindings/go/v0.6.0` peel to
   `492d0fec7727658d50b9a82025c784b7e427d6b0`.
@@ -35,18 +42,17 @@ human or distinct-model certification.
 
 | PR | Head | Scope and remaining decision |
 |---|---|---|
-| #333 | `290f7089c43aab21d7403277da300cffa0e8523b` | Mouse retry and stale mouse/screen guards. Exact-head CI run `42738708564` passed. Does not alone establish terminal sovereignty. |
-| #338 | `71a382ebcaf95e30690f61badbf954dbdfc9c5cc` | Draft based on #333, terminal ownership follow-up. **HOLD:** a deliberately ignored direct-renderer PTY counterexample fails when explicitly run; identity gates do not establish renderer-state ownership. |
+| #333 | `e9ba3e6f34b08a022ea933c0842c50a4c237649a` | Mouse retry and stale mouse/screen guards; main was merged into the branch and fresh CI is queued. Earlier head `290f708...` passed CI run `42738708564`; that result is not current-head evidence. Does not alone establish terminal sovereignty. |
+| #338 | `7156134c98ce20dfe8c96b7f62bbb2c06c8ad817` | Draft based on #333, updated with its new head; fresh CI is queued. **HOLD:** on earlier head `8610ff7...` a deliberately ignored direct-renderer PTY counterexample failed when explicitly run. Recheck on current head; identity gates do not establish renderer-state ownership. |
 | #329 | `f1dd2b3ad2bc21dbcafb5f1a8176498c2eccace0` | Caught-owner-panic raw input and bracketed-paste re-entry. Input-only; #328 remains open for wider lifecycle concerns. |
 | #327 | `22d6d78aac28b4098e43d8cba355a6753923b8ab` | Focus retry and cleanup obligations. Reconcile with the other terminal changes and review the combined state machine. |
 | #325 | `0b922c9043c393f65d877701cb107d314b164167` | C++/Python/Go focus/geometry parity; new absolute geometry oracle and mutation controls. Rebuild from the final runtime candidate and rerun all consumers. |
 | #331 | `d1cd6016d9828000f21066bc76488ea4dbdd26a8` | Unicode lowercase-expansion pairing counterexample. Decoder-model evidence, not a physical keyboard-layout test. |
-| #332 | `704c91bdd3fcfad8e3da4903e65877c6b9ec06fd` | Ready for review, not draft: released-artifact first-test guide. Fresh download, native checksum, wheel virtual environment and rendered-cell acceptance reported successful; wrong-glyph control failed as intended. Exact-head CI pending at snapshot. |
 | #336 | `49482bf6b63cb831dec2f3aade9fb722fc358885` | Fixed-fixture math M0 research. Partial; not a public API, security sandbox or LibGibson terminal graphics path. |
-| #337 | `4e147b8bfacde2658c8cdf3e41cfec62b9e18f7d` | Candidate ABI export-name provenance, with red-first fake-tool controls. An independently reproduced `assume-unchanged` preflight bypass is being addressed; recheck the live head and review. |
+| #337 | `26a59b221a9c55ae7d694b5bea1777bcfdfdfad0` | Candidate ABI export-name provenance and hidden-index controls. A stat-cache cleanliness bypass is reproduced and an alternate-target stale-SDK risk is source-reviewed; fixes are in progress. Recheck the live head. |
 | #323 | Review the current live head | Handoff draft; update after integration and do not merge obsolete status. |
 
-The #325, #332, #336, #337 and #338 checks were still in progress at this snapshot. A
+The #325, #333, #336, #337 and #338 checks were queued or in progress at this snapshot. A
 later green result applies only to the head actually tested.
 
 ## Terminal lease: observed failures and boundaries
@@ -65,7 +71,12 @@ earlier head `c7b288327d2c94b0046f1271efc0b4e86b19ed33`, the author reported
 30 focused PTY tests, locked Rust 1.85 library check and stable 1.98.1 library
 Clippy with warnings denied passing. A nightly Clippy run failed on three
 warnings in unchanged audio code; the full library suite was stopped early.
-Do not promote these results to green full-suite evidence. Public
+Exact-head CI at `71a382ebcaf95e30690f61badbf954dbdfc9c5cc` then failed on
+four Clippy warnings in the new PTY tests. The later `8610ff7b...` commit fixes
+those warnings; the author reports local Rust 1.98.1 test-target Clippy and
+the PTY suite pass. After merging updated #333, the head is `7156134c...` and
+fresh exact-head CI is pending. Do not promote these results to green
+full-suite evidence. Public
 `Context.session` and `Context.renderer` replacement
 can carry stale physical-screen assumptions; the experiment guards managed
 output after replacement and requires compatibility review. Public unmanaged
@@ -73,7 +84,7 @@ input helpers and direct `Renderer` APIs with caller-provided writers remain
 explicit escape hatches, including headless rendering to a physical terminal.
 Do not claim a universal library-wide lease invariant while they remain.
 
-At #338's recorded head, a separate same-family reviewer proposed a direct
+At #338's earlier head `8610ff7b...`, a separate same-family reviewer proposed a direct
 renderer counterexample. A real PTY experiment matched the virtual session's
 color capabilities to the physical one, rendered through the same public
 renderer into a virtual buffer, then requested that frame through the context.
@@ -143,12 +154,24 @@ candidate release build using Rust/Cargo 1.98.1 and explicit symbol check was
 reported exit 0 with 67 of 67 baseline names and shared-library SHA-256
 `a776781efeaf93bbee06fcf3c22fed8206dc5f62aa303c43b28e2de1688f8423`.
 After that witness, an independent same-family review reproduced a preflight
-cleanliness bypass involving Git's `assume-unchanged` flag; a fix is in flight.
-The earlier build result does not validate the revised head or the full
-preflight. Verify that witness and rerun on the final release candidate. The latter
-command checks exported symbol names only, not signatures or structure
-layout. Confirm C ABI v1 compatibility separately and keep the 67-export
-baseline unless a reviewed additive change is explicitly adopted.
+cleanliness bypass involving Git's `assume-unchanged` flag; #337's `26a59b2...`
+head adds flag controls. A further same-family review reproduced a false-clean
+tracked file without hidden flags: with `core.trustctime=false` and
+`core.checkstat=minimal`, a same-size content change with restored mtime passed
+both `git status` and the index checker. A separate source audit found that
+`stage-sdk.sh` can build into an alternate `CARGO_TARGET_DIR` yet copy ignored
+stale libraries from the default `target/release`, so cleanroom consumers may
+test the wrong SDK. Fixes are in progress. The earlier build result does not
+validate the revised head or the full preflight.
+
+An independent local comparison reported 59 names in the v0.6.0 tag's ABI
+manifest, 67 in current main's manifest and 67 in the #337 `4e147b8...` fresh
+library: no released names were missing. Candidate #338's FFI, C header,
+manifest and layout-test source matched current main, and its Rust 1.98.1
+`ffi_abi_layout_freeze` run reportedly passed 7/7. These are bounded earlier
+witnesses, not qualification of a final candidate or a complete signature and
+layout proof. Rerun against the final source and installed artifacts. The
+candidate ABI command checks exported symbol names only.
 
 ## Math M0 and graphical boundary
 
