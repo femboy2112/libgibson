@@ -2,6 +2,8 @@
   "format": 1,
   "comment": "Committed expectation for scripts/dev/parity_v08.sh. differs_* list the record ids that are KNOWN to differ (documented gaps, docs/V08_PARITY_SLICE.md); any other difference is a regression. Labels: SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIED, each with a one-line evidence pointer. record_ids is the complete, ordered set every transcript must contain exactly once. pinned holds the exact record each allowlisted difference must still be, so a change inside a known gap is a regression too.",
   "absolute": {
+    "t01": "{\"cols\":40,\"id\":\"t01\",\"k\":\"terminal_size\",\"rows\":12,\"st\":\"OK\"}",
+    "t02": "{\"cols\":60,\"id\":\"t02\",\"k\":\"terminal_size\",\"rows\":16,\"st\":\"OK\"}",
     "f05.1": "{\"cols\":0,\"id\":\"f05.1\",\"k\":\"event\",\"key_code\":0,\"kind\":\"NONE\",\"mods\":0,\"paste\":\"\",\"rows\":0,\"st\":\"OK\",\"type\":\"FOCUS_GAINED\"}",
     "f05.2": "{\"cols\":0,\"id\":\"f05.2\",\"k\":\"event\",\"key_code\":0,\"kind\":\"NONE\",\"mods\":0,\"paste\":\"\",\"rows\":0,\"st\":\"OK\",\"type\":\"FOCUS_LOST\"}"
   },
@@ -210,8 +212,8 @@
         "s15/r02 byte-identical via Context.FrameSize, with the RESIZE pushed and polled through PushEvent/PollEventKind; t01/t02 live geometry before render and after polled resize"
       ],
       "rust": [
-        "PARTIAL",
-        "r02 matches only with an explicit ctx.session.set_terminal_size after poll_from; witness: poll_from alone leaves r02 at 40x12; t01/t02 live geometry before render and after polled resize"
+        "SUPPORTED",
+        "since #293, poll_from applies the delivered resize without an explicit set_terminal_size; t01/t02 show headless geometry before render and after the resize"
       ]
     },
     "CELL": {

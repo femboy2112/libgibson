@@ -43,6 +43,26 @@ class ComparatorControls(unittest.TestCase):
         self.assertEqual(json.loads(expected["absolute"]["f05.2"])["type"], "FOCUS_LOST")
         self.assertLess(expected["record_ids"].index("f05.1"), expected["record_ids"].index("f05.2"))
 
+    def test_committed_geometry_oracle_rejects_common_mode_wrong_sizes(self):
+        expected = json.loads((Path(__file__).parent / "expected.json").read_text(encoding="utf-8"))
+        for rid, cols, rows in (("t01", 40, 12), ("t02", 60, 16)):
+            with self.subTest(record=rid):
+                self.assertEqual(
+                    json.loads(expected["absolute"][rid]),
+                    {"cols": cols, "id": rid, "k": "terminal_size", "rows": rows, "st": "OK"},
+                )
+                good = expected["absolute"][rid]
+                wrong = json.loads(good)
+                wrong.update(cols=1, rows=1)
+                wrong = json.dumps(wrong, sort_keys=True, separators=(",", ":"))
+                fixture = {
+                    "record_ids": [rid],
+                    "differs_from_c": {"c": []},
+                    "absolute": {rid: good},
+                }
+                self.assertFalse(compare.check_against("c", good + "\n", good + "\n", fixture, {}, [])[1])
+                self.assertTrue(compare.check_against("c", wrong + "\n", wrong + "\n", fixture, {}, [])[1])
+
     def test_common_mode_wrong_focus_is_rejected(self):
         wrong = self.text(self.gained, line("f05.2", "FOCUS_GAINED"), self.c_gap)
         self.assertIn("f05.2", self.check("c", wrong, wrong)[0])

@@ -208,6 +208,34 @@ PYFOCUS
     else
         echo "  MISSED   focus/py (rc=$rc): $line"; CTL_FAIL=1
     fi
+    # Identical wrong geometry in the C reference and a wrapper must not cancel out.
+    for lang in c py; do
+        python3 - "$WORK/out/$lang.a.jsonl" "$WORK/ctl/geometry-common.$lang.jsonl" <<'PYGEOMETRY'
+import json, sys
+seen = set()
+with open(sys.argv[1], encoding="utf-8") as src, open(sys.argv[2], "w", encoding="utf-8") as out:
+    for line in src:
+        row = json.loads(line)
+        if row.get("id") in ("t01", "t02"):
+            if row["id"] in seen:
+                raise SystemExit("duplicate geometry control record")
+            seen.add(row["id"])
+            row.update(cols=1, rows=1)
+            line = json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+        out.write(line)
+if seen != {"t01", "t02"}:
+    raise SystemExit("missing geometry control record")
+PYGEOMETRY
+    done
+    rc=0
+    line=$("${COMPARE[@]}" check --script "$SCRIPT" --expected "$EXPECTED" \
+        --ref "$WORK/ctl/geometry-common.c.jsonl" --lang py \
+        --transcript "$WORK/ctl/geometry-common.py.jsonl" --want t01,t02 | tail -n 1) || rc=$?
+    if [ "$rc" = 1 ] && [[ $line == *EXACT ]]; then
+        echo "  CAUGHT   common-mode geometry: $line"
+    else
+        echo "  MISSED   common-mode geometry (rc=$rc): $line"; CTL_FAIL=1
+    fi
     # Resize regression witness (#293): the Rust consumer undoes the geometry poll_from applied,
     # as the library did before #293; the polled Resize then leaves the headless geometry at 40x12.
     control rust-resize-unapplied rust "r02,r03,r04,t02" PARITY_V08_RUST_RESIZE=unapplied
