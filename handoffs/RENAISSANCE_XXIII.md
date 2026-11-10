@@ -4,7 +4,7 @@ Round baseline: `main` `4573d0d6e571159b376e08fb2761b4e8eaffe6f3`
 (`0.7.0-dev`); development CI run 42578229665 succeeded at that SHA. #322 then
 merged as `b04e9c42d6484506373355d0a3538254d87d16ba`; development CI run 42725113594
 succeeded there. #326 subsequently merged as `9802d18b073d5eb420da176a0afcf7617e4627ae`;
-verify live main and its CI before acting.
+development CI run 42727174707 is pending; verify its result and live main before acting.
 The latest published prerelease is v0.6.0; both `v0.6.0` and
 `bindings/go/v0.6.0` peel to `492d0fec7727658d50b9a82025c784b7e427d6b0`.
 No v0.7.0 release candidate was qualified. Fetch and verify live state.
@@ -44,7 +44,10 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
   parser now fails closed on unknown prefixes, with missing/extra/reordered controls, and the
   full PTY suite passed 22/22. At exact #329 head `e9ac02b`, local fault tests passed 2/2,
   input PTY tests 5/5 and key-release PTY tests 22/22. Preserve the initial failure and
-  demand hosted exact-head CI and independent review.
+  demand hosted exact-head CI and independent review. Hosted CI on `e9ac02b` failed
+  Clippy `while_let_loop`; the new head rewrites that loop and awaits fresh CI. A local
+  targeted Clippy check passed with two pre-existing audio lint categories explicitly
+  allowed; this is not a full Clippy pass.
 - Windows #292 is not verified. Clock #130 still needs loop/blocked-output evidence.
   HumanMusic/PCM and ABI v1 are frozen. Never infer terminal behavior from headless parity.
 
@@ -53,7 +56,7 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
 The XXI train #316, #318, #319, #317, #320, #321 is merged; do not repeat it. Drafts #325 (`9a8e5e0e4f4761aa481fd02732cbf207bd94265f`), #324
 (`51782c2b44e767a1a9cc55f5868090ebccb311c7`), #327
 (`bfcf737db63875469169252da5370d1a2308ae3b`), and #329
-(`e9ac02bab0d65d18e414744ebe8d472bda86e05f`) need
+(`f7d51e861014ecb56c9668a8807473febec80374`) need
 current-head and dependency review, CI and appropriate independent review before merge. #324 contains five headless starters and three interactive public-Python-API applications:
 an offline echo console, a simulated dashboard and a simulated Celsius instrument with
 separate producer samples and user setpoints. A small headless C framebuffer consumer also passed against a copied staged SDK and adapter
