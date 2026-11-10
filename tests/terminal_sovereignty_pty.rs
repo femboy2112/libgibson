@@ -99,7 +99,7 @@ fn assert_swap_unchanged(output: &str) {
     let pre = output.find("\x1b]0;SWAP_PRE\x07").unwrap();
     let post = output.find("\x1b]0;SWAP_POST\x07").unwrap();
     let mut p = vt100::Parser::new(24, 80, 0);
-    p.process(output[..pre].as_bytes());
+    p.process(&output.as_bytes()[..pre]);
     assert!(
         p.screen().contents().contains("FRAME_B"),
         "positive control"
@@ -115,7 +115,7 @@ fn assert_swap_unchanged(output: &str) {
         )
     };
     let before = snapshot(&p);
-    p.process(output[pre..post].as_bytes());
+    p.process(&output.as_bytes()[pre..post]);
     assert_eq!(
         before,
         snapshot(&p),
@@ -144,12 +144,12 @@ fn direct_renderer_use_must_not_poison_context_output_state() {
     let pre = output.find("\x1b]0;SWAP_PRE\x07").unwrap();
     let post = output.find("\x1b]0;SWAP_POST\x07").unwrap();
     let mut p = vt100::Parser::new(24, 80, 0);
-    p.process(output[..pre].as_bytes());
+    p.process(&output.as_bytes()[..pre]);
     assert!(
         p.screen().contents().contains("FRAME_A"),
         "positive control"
     );
-    p.process(output[pre..post].as_bytes());
+    p.process(&output.as_bytes()[pre..post]);
     assert!(
         p.screen().contents().contains("FRAME_B"),
         "physical terminal retained stale frame: {}",
