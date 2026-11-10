@@ -46,10 +46,15 @@ the fraction rule in the TeX raster. Reversing numerator and denominator is a
 negative ordering control. These are **partial geometry checks**, not a font
 metric or complete clipping certification. Pyte independently interprets the
 actual capture into 80×20 terminal cells; the oracle compares every half-block
-foreground/background sample and every monochrome Braille glyph with the RGB
-input. A white/ignored-input capture passes against white pixels but fails
-against the nested-fraction source. This checks the cell result, not visual
-readability or the quality of typesetting.
+foreground/background sample, including reverse-video state, and every
+monochrome Braille glyph with the RGB input. Explicit mono colors must have
+bright foreground and a contrast threshold using assumed standard palette
+values; if both colors are `default`, the test assumes a light foreground on
+a dark background. Actual terminal palette and visual contrast are not
+measured. White/ignored-input, reversed-video and black-on-black mutants are
+rejected against their controls. This checks the modelled cell result, not
+visual readability or the quality of typesetting; Pyte is not a complete
+terminal emulator and cannot validate effects it does not model.
 
 ## Findings on the observed host
 

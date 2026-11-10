@@ -6,6 +6,20 @@ import pyte
 
 BAYER = ((0, 4), (6, 2), (1, 5), (7, 3))
 BITS = ((1, 8), (2, 16), (4, 32), (64, 128))
+NAMED = {'black': '000000', 'red': 'cd0000', 'green': '00cd00',
+         'brown': 'cdcd00', 'blue': '0000ee', 'magenta': 'cd00cd',
+         'cyan': '00cdcd', 'white': 'e5e5e5'}
+
+
+def luminance(color):
+    color = NAMED.get(color, color)
+    if len(color) != 6:
+        raise ValueError(f'unsupported color for mono contrast: {color!r}')
+    try:
+        r, g, b = (int(color[i:i+2], 16) for i in (0, 2, 4))
+    except ValueError as e:
+        raise ValueError(f'unsupported color for mono contrast: {color!r}') from e
+    return (54*r + 183*g + 19*b)//256
 
 
 def main():
@@ -24,17 +38,27 @@ def main():
     for y in range(20):
         for x in range(80):
             cell = screen.buffer[y][x]
+            if cell.bold or cell.italics or cell.underscore or cell.strikethrough or cell.blink:
+                raise ValueError(f'unsupported text decoration at {(x,y)}')
             if sys.argv[3] == 'half':
                 if cell.data == '▀':
-                    got = (cell.fg, cell.bg)
-                elif cell.data == ' ':  # a blank with the same background for both samples
-                    got = (cell.bg, cell.bg)
+                    got = (cell.bg, cell.fg) if cell.reverse else (cell.fg, cell.bg)
+                elif cell.data == ' ':  # visual background fills both half samples
+                    bg = cell.fg if cell.reverse else cell.bg
+                    got = (bg, bg)
                 else:
                     raise ValueError(f'unexpected half-block glyph at {(x,y)}: {cell.data!r}')
                 want = tuple(bytes(pixel(x, 2*y+dy)).hex() for dy in (0, 1))
                 if got != want:
                     raise ValueError(f'pixel mismatch at {(x,y)}: got {got}, expected {want}')
             else:
+                if cell.reverse:
+                    raise ValueError(f'reverse video changes mono density at {(x,y)}')
+                if (cell.fg, cell.bg) != ('default', 'default'):
+                    # A single default color has unknown luminance. For both
+                    # explicit colors require a bright dot on a dark ground.
+                    if 'default' in (cell.fg, cell.bg) or luminance(cell.fg) - luminance(cell.bg) < 80:
+                        raise ValueError(f'insufficient or unknown mono contrast at {(x,y)}')
                 bits = 0
                 for dy in range(4):
                     r, g, b = pixel(x, 2*y+dy//2)

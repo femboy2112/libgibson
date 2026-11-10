@@ -58,6 +58,22 @@ def main():
                 assert len(data) > 100
                 cmd(sys.executable, str(ORACLE), str(fixture_dir/(fixture+'.rgb')), str(out), mode, env=SCREEN_ENV)
             assert (fixture_dir/(fixture+'-half.ansi')).read_bytes() != (fixture_dir/(fixture+'-mono.ansi')).read_bytes()
+        # Discriminating terminal-style controls: a reverse-video mutant swaps
+        # the half-block samples; a black-on-black mono mutant hides the dots.
+        pattern = bytes([255, 0, 0])*80 + bytes([0, 0, 255])*80
+        (d/'pattern.rgb').write_bytes(pattern*20)
+        rows = ''.join(f'\x1b[{row};1H' + '▀'*80 for row in range(1, 21))
+        ansi = '\x1b[38;2;255;0;0;48;2;0;0;255m'
+        (d/'style-good.ansi').write_bytes((ansi+rows).encode())
+        (d/'style-reverse.ansi').write_bytes((ansi+'\x1b[7m'+rows).encode())
+        cmd(sys.executable, str(ORACLE), str(d/'pattern.rgb'), str(d/'style-good.ansi'), 'half', env=SCREEN_ENV)
+        cmd(sys.executable, str(ORACLE), str(d/'pattern.rgb'), str(d/'style-reverse.ansi'), 'half', ok=False, env=SCREEN_ENV)
+        (d/'white.rgb').write_bytes(bytes([255])*9600)
+        braille = ''.join(f'\x1b[{row};1H' + '⣿'*80 for row in range(1, 21))
+        (d/'mono-good.ansi').write_bytes(('\x1b[37;40m'+braille).encode())
+        (d/'mono-hidden.ansi').write_bytes(('\x1b[30;40m'+braille).encode())
+        cmd(sys.executable, str(ORACLE), str(d/'white.rgb'), str(d/'mono-good.ansi'), 'mono', env=SCREEN_ENV)
+        cmd(sys.executable, str(ORACLE), str(d/'white.rgb'), str(d/'mono-hidden.ansi'), 'mono', ok=False, env=SCREEN_ENV)
         # Blank/ignored-input mutant: terminal output is valid, but it must not
         # match the real nested-fraction samples under either screen oracle.
         (d/'blank.rgb').write_bytes(bytes([255])*9600)
