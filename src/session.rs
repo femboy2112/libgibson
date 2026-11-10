@@ -35,6 +35,10 @@ const REPORT_MOUSE: u8 = 0b01;
 const REPORT_FOCUS: u8 = 0b10;
 const REPORT_KEY_RELEASE: u8 = 0b100;
 
+/// The owner-thread panic hook attempted to disable mouse reporting. A caught panic leaves
+/// cleanup owed, but the next enable must issue a fresh request rather than trust the old one.
+static PANIC_MOUSE_CAPTURE_INVALIDATED: AtomicBool = AtomicBool::new(false);
+
 /// Set by the panic hook when it ends key-release reporting; taken once, by the owner's next
 /// `Context` poll or by the Unix source before the next answer it decodes, which then delivers
 /// `KeyReleaseReporting::Unsupported` (see [`TerminalSession::take_key_releases_ended`] and
@@ -143,6 +147,8 @@ pub struct TerminalSession {
     /// the panic hook unwind it (the raw `input::set_mouse_capture` free function
     /// does not, so its enable leaks on any early return or panic).
     mouse_capture_enabled: bool,
+    /// A mouse-enable write and flush completed since the last uncertain transition.
+    mouse_capture_confirmed: bool,
     /// Opt-in focus-change reporting is on, tracked and unwound for the same reason.
     focus_reporting_enabled: bool,
     /// Opt-in key-release reporting is on (#275): kitty keyboard flags pushed on the current
@@ -201,6 +207,7 @@ impl TerminalSession {
             cursor_hidden: false,
             bracketed_paste_enabled: false,
             mouse_capture_enabled: false,
+            mouse_capture_confirmed: false,
             focus_reporting_enabled: false,
             key_release_reporting_enabled: false,
             sync_updates_enabled: true,
@@ -240,6 +247,7 @@ impl TerminalSession {
             cursor_hidden: false,
             bracketed_paste_enabled: false,
             mouse_capture_enabled: false,
+            mouse_capture_confirmed: false,
             focus_reporting_enabled: false,
             key_release_reporting_enabled: false,
             sync_updates_enabled: true,
@@ -337,6 +345,7 @@ impl TerminalSession {
                         let _ = execute!(out, DisableFocusChange);
                     }
                     if modes & REPORT_MOUSE != 0 {
+                        PANIC_MOUSE_CAPTURE_INVALIDATED.store(true, Ordering::SeqCst);
                         let _ = execute!(out, DisableMouseCapture);
                     }
                     let _ = execute!(out, Show, LeaveAlternateScreen, DisableBracketedPaste);
@@ -500,22 +509,38 @@ impl TerminalSession {
     /// it — unlike the raw `input::set_mouse_capture` free function, whose
     /// enable leaks on any early return or panic. Idempotent; a no-op on a non-TTY
     /// or headless session. On enable the flag is set *before* the write, so even a
-    /// failed or partial enable is still disabled on restore. A restored interactive session
-    /// returns `NotConnected` without changing the current owner's reporting modes.
+    /// failed or partial enable is still disabled on restore. An unconfirmed enable, an uncertain
+    /// disable, or a caught owner-thread panic causes the next enable to send a fresh request.
+    /// Success means the request was written and flushed, not that the terminal supports it.
+    /// A restored interactive session returns `NotConnected` without changing the current owner's
+    /// reporting modes.
     pub fn set_mouse_capture(&mut self, enable: bool) -> io::Result<()> {
         if !self.is_tty || self.headless {
             return Ok(());
         }
         self.ensure_mode_owner()?;
-        if enable == self.mouse_capture_enabled {
-            return Ok(());
+        self.set_mouse_capture_on(enable, &mut stdout())
+    }
+
+    fn set_mouse_capture_on(&mut self, enable: bool, out: &mut impl Write) -> io::Result<()> {
+        if self.owns_lease && PANIC_MOUSE_CAPTURE_INVALIDATED.swap(false, Ordering::SeqCst) {
+            self.mouse_capture_confirmed = false;
         }
-        let mut out = stdout();
         if enable {
+            if self.mouse_capture_confirmed {
+                return Ok(());
+            }
+            // Retain cleanup ownership even if any part of the write or flush fails.
             self.mouse_capture_enabled = true;
             REPORTING_MODES.fetch_or(REPORT_MOUSE, Ordering::SeqCst);
             execute!(out, EnableMouseCapture)?;
+            self.mouse_capture_confirmed = true;
         } else {
+            if !self.mouse_capture_enabled {
+                return Ok(());
+            }
+            // A failed disable could have taken effect; do not treat the old enable as confirmed.
+            self.mouse_capture_confirmed = false;
             execute!(out, DisableMouseCapture)?;
             self.mouse_capture_enabled = false;
             REPORTING_MODES.fetch_and(!REPORT_MOUSE, Ordering::SeqCst);
@@ -523,9 +548,11 @@ impl TerminalSession {
         Ok(())
     }
 
-    /// Whether session-owned mouse-capture reporting is currently enabled.
+    /// Whether the session's most recent mouse-enable request was written and flushed without
+    /// an intervening uncertain transition. This does not establish terminal support.
     pub fn mouse_capture_enabled(&self) -> bool {
-        self.mouse_capture_enabled
+        self.mouse_capture_confirmed
+            && !(self.owns_lease && PANIC_MOUSE_CAPTURE_INVALIDATED.load(Ordering::SeqCst))
     }
 
     /// Enables or disables focus-change reporting, tracked and unwound exactly like
@@ -815,6 +842,7 @@ impl TerminalSession {
         if self.mouse_capture_enabled {
             record(execute!(out, DisableMouseCapture));
             self.mouse_capture_enabled = false;
+            self.mouse_capture_confirmed = false;
         }
 
         if self.cursor_hidden {
@@ -854,6 +882,7 @@ impl TerminalSession {
         if self.owns_lease {
             REPORTING_MODES.store(0, Ordering::SeqCst);
             KEY_RELEASES_ENDED.store(false, Ordering::SeqCst);
+            PANIC_MOUSE_CAPTURE_INVALIDATED.store(false, Ordering::SeqCst);
             set_owner_thread(None);
             TERMINAL_LEASE.store(LEASE_AVAILABLE, Ordering::SeqCst);
             self.owns_lease = false;
@@ -1125,5 +1154,195 @@ mod key_release_switch_tests {
             "#305 nag: a failed switch must not route into the branch that drops raw mode"
         );
         reset_globals();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod mouse_capture_fault_tests {
+    use super::*;
+
+    const ON: &[u8] = b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1015h\x1b[?1006h";
+    const OFF: &[u8] = b"\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l";
+
+    struct RestoreMouseBit(bool);
+    impl Drop for RestoreMouseBit {
+        fn drop(&mut self) {
+            if self.0 {
+                REPORTING_MODES.fetch_or(REPORT_MOUSE, Ordering::SeqCst);
+            } else {
+                REPORTING_MODES.fetch_and(!REPORT_MOUSE, Ordering::SeqCst);
+            }
+        }
+    }
+
+    struct FailPartial(Vec<u8>);
+    impl Write for FailPartial {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if !self.0.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "injected partial write",
+                ));
+            }
+            let n = bytes.len().min(4);
+            self.0.extend_from_slice(&bytes[..n]);
+            Ok(n)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct FailFlush(Vec<u8>);
+    impl Write for FailFlush {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "injected flush failure",
+            ))
+        }
+    }
+
+    fn check_failed_enable(partial: bool) {
+        let _serial = crate::tty_source::queries_lock();
+        let _restore = RestoreMouseBit(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_MOUSE != 0);
+        let mut s = TerminalSession::headless(80, 24);
+        REPORTING_MODES.fetch_and(!REPORT_MOUSE, Ordering::SeqCst);
+        if partial {
+            let mut out = FailPartial(Vec::new());
+            assert!(s.set_mouse_capture_on(true, &mut out).is_err());
+            assert!(!out.0.is_empty() && out.0.len() < ON.len());
+        } else {
+            let mut out = FailFlush(Vec::new());
+            assert!(s.set_mouse_capture_on(true, &mut out).is_err());
+            assert_eq!(out.0, ON);
+        }
+        assert!(s.mouse_capture_enabled, "cleanup remains owed");
+        assert_ne!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_MOUSE, 0);
+        let mut retry = Vec::new();
+        s.set_mouse_capture_on(true, &mut retry).unwrap();
+        assert_eq!(retry, ON, "retry must reissue the entire enable");
+        let mut duplicate = Vec::new();
+        s.set_mouse_capture_on(true, &mut duplicate).unwrap();
+        assert!(duplicate.is_empty());
+        let mut cleanup = Vec::new();
+        s.set_mouse_capture_on(false, &mut cleanup).unwrap();
+        assert_eq!(cleanup, OFF);
+    }
+
+    #[test]
+    fn failed_enable_partial_write_retries_and_retains_cleanup() {
+        check_failed_enable(true);
+    }
+
+    #[test]
+    fn failed_enable_flush_retries_and_retains_cleanup() {
+        check_failed_enable(false);
+    }
+
+    #[test]
+    fn failed_disable_flush_makes_enable_retry_and_preserves_cleanup() {
+        let _serial = crate::tty_source::queries_lock();
+        let _restore = RestoreMouseBit(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_MOUSE != 0);
+        let mut s = TerminalSession::headless(80, 24);
+        s.set_mouse_capture_on(true, &mut Vec::new()).unwrap();
+        let mut fail = FailFlush(Vec::new());
+        assert!(s.set_mouse_capture_on(false, &mut fail).is_err());
+        assert_eq!(fail.0, OFF);
+        assert!(s.mouse_capture_enabled, "failed disable retains cleanup");
+        assert_ne!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_MOUSE, 0);
+        let mut retry = Vec::new();
+        s.set_mouse_capture_on(true, &mut retry).unwrap();
+        assert_eq!(retry, ON, "failed disable made the prior enable uncertain");
+        let mut cleanup = Vec::new();
+        s.set_mouse_capture_on(false, &mut cleanup).unwrap();
+        assert_eq!(cleanup, OFF);
+    }
+
+    #[test]
+    fn failed_enable_can_be_cleaned_up_without_an_enable_retry() {
+        let _serial = crate::tty_source::queries_lock();
+        let _restore = RestoreMouseBit(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_MOUSE != 0);
+        for partial in [true, false] {
+            let mut s = TerminalSession::headless(80, 24);
+            if partial {
+                assert!(s
+                    .set_mouse_capture_on(true, &mut FailPartial(Vec::new()))
+                    .is_err());
+            } else {
+                assert!(s
+                    .set_mouse_capture_on(true, &mut FailFlush(Vec::new()))
+                    .is_err());
+            }
+            let mut cleanup = Vec::new();
+            s.set_mouse_capture_on(false, &mut cleanup).unwrap();
+            assert_eq!(cleanup, OFF);
+            assert_eq!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_MOUSE, 0);
+        }
+    }
+
+    #[test]
+    fn failed_disable_retries_disable_and_keeps_cleanup_until_success() {
+        let _serial = crate::tty_source::queries_lock();
+        let _restore = RestoreMouseBit(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_MOUSE != 0);
+        let mut s = TerminalSession::headless(80, 24);
+        s.set_mouse_capture_on(true, &mut Vec::new()).unwrap();
+        assert!(s
+            .set_mouse_capture_on(false, &mut FailFlush(Vec::new()))
+            .is_err());
+        assert!(
+            !s.mouse_capture_enabled(),
+            "failed disable is not confirmed"
+        );
+        assert_ne!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_MOUSE, 0);
+        let mut cleanup = Vec::new();
+        s.set_mouse_capture_on(false, &mut cleanup).unwrap();
+        assert_eq!(cleanup, OFF);
+        assert_eq!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_MOUSE, 0);
+    }
+
+    #[test]
+    fn restore_clears_mouse_panic_notice_before_next_lease() {
+        const CHILD: &str = "GIBSON_MOUSE_NOTICE_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            // Isolated process: exercise the real restore path without disturbing the test runner's
+            // process-global lease or terminal. Its stdout is redirected by the parent below.
+            let mut owner = TerminalSession::headless(80, 24);
+            owner.headless = false;
+            owner.owns_lease = true;
+            TERMINAL_LEASE.store(LEASE_OWNED, Ordering::SeqCst);
+            set_owner_thread(Some(std::thread::current().id()));
+            PANIC_MOUSE_CAPTURE_INVALIDATED.store(true, Ordering::SeqCst);
+            owner.restore().unwrap();
+            assert!(!PANIC_MOUSE_CAPTURE_INVALIDATED.load(Ordering::SeqCst));
+            assert_eq!(TerminalSession::lease_state(), TerminalLease::Available);
+            let mut next = TerminalSession::headless(80, 24);
+            next.owns_lease = true;
+            next.mouse_capture_confirmed = true;
+            assert!(
+                next.mouse_capture_enabled(),
+                "old notice affected the next owner"
+            );
+            next.owns_lease = false;
+            return;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "session::mouse_capture_fault_tests::restore_clears_mouse_panic_notice_before_next_lease",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }

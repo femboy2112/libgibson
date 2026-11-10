@@ -74,6 +74,27 @@ fn stale_mouse_calls_cannot_hide_owner_capture_from_panic_cleanup() {
     assert!(String::from_utf8_lossy(&raw).contains("MOUSE_DONE rejected=true,true"));
 }
 
+#[test]
+fn caught_owner_panic_allows_a_fresh_mouse_request() {
+    let raw = capture("panic-retry");
+    assert_eq!(mouse_requests(&raw), ["on", "off", "on", "off"]);
+    assert!(String::from_utf8_lossy(&raw).contains("MOUSE_DONE invalidated=true,confirmed=true"));
+}
+
+#[test]
+fn non_owner_panic_does_not_invalidate_mouse_request() {
+    let raw = capture("worker-retry");
+    assert_eq!(mouse_requests(&raw), ["on", "off"]);
+    assert!(String::from_utf8_lossy(&raw).contains("MOUSE_DONE confirmed=true,true"));
+}
+
+#[test]
+fn owner_after_a_caught_panic_has_fresh_mouse_state() {
+    let raw = capture("panic-sequential");
+    assert_eq!(mouse_requests(&raw), ["on", "off", "off", "on", "off"]);
+    assert!(String::from_utf8_lossy(&raw).contains("MOUSE_DONE confirmed=true,true"));
+}
+
 fn screen_requests(raw: &[u8]) -> Vec<&'static str> {
     let mut requests = Vec::new();
     for i in 0..raw.len() {
@@ -172,6 +193,41 @@ fn mouse_lease_child() {
         owner.set_mouse_capture(true).unwrap();
         owner.restore().unwrap();
         eprintln!("MOUSE_DONE owner");
+        return;
+    }
+    if role == "panic-retry" {
+        owner.set_mouse_capture(true).unwrap();
+        assert!(std::panic::catch_unwind(|| panic!("caught owner panic")).is_err());
+        let invalidated = !owner.mouse_capture_enabled();
+        owner.set_mouse_capture(true).unwrap();
+        let confirmed = owner.mouse_capture_enabled();
+        owner.restore().unwrap();
+        eprintln!("MOUSE_DONE invalidated={invalidated},confirmed={confirmed}");
+        return;
+    }
+    if role == "worker-retry" {
+        owner.set_mouse_capture(true).unwrap();
+        assert!(std::thread::spawn(|| panic!("caught worker panic"))
+            .join()
+            .is_err());
+        let before_retry = owner.mouse_capture_enabled();
+        owner.set_mouse_capture(true).unwrap();
+        let after_retry = owner.mouse_capture_enabled();
+        owner.restore().unwrap();
+        eprintln!("MOUSE_DONE confirmed={before_retry},{after_retry}");
+        return;
+    }
+    if role == "panic-sequential" {
+        owner.set_mouse_capture(true).unwrap();
+        assert!(std::panic::catch_unwind(|| panic!("caught owner panic")).is_err());
+        owner.restore().unwrap();
+        let mut next = TerminalSession::new().unwrap();
+        next.set_mouse_capture(true).unwrap();
+        let before_retry = next.mouse_capture_enabled();
+        next.set_mouse_capture(true).unwrap();
+        let after_retry = next.mouse_capture_enabled();
+        next.restore().unwrap();
+        eprintln!("MOUSE_DONE confirmed={before_retry},{after_retry}");
         return;
     }
     if role == "panic" {
