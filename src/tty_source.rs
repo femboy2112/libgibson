@@ -746,8 +746,9 @@ impl PressedKeys {
     /// key's next kitty press/release (which moves the record), or reporting is disabled. It is
     /// deliberately NOT renamed: base `1` cannot be mapped back to `!` without assuming a keyboard
     /// layout, and pairing the unmatched release with the newest orphan would mis-identify an
-    /// unrelated key's release. ASCII uppercase letters fold (`W`->`w`), but Unicode lowercase
-    /// may expand to multiple characters, so it cannot match a single base key in every layout.
+    /// unrelated key's release. A legacy `W` pairs when the terminal reports `w` as its base;
+    /// Unicode lowercase may expand to multiple characters, so it cannot match a single base key
+    /// in every layout.
     /// None of those recovery events is guaranteed: the hold can persist indefinitely while
     /// reporting stays active. The `issue_312_*` tests pin both the failure and conditional recovery.
     fn find_down(&self, id: KeyId, code: CtKeyCode) -> Option<usize> {
@@ -2429,9 +2430,9 @@ mod tests {
         // legacy mode — the pop/re-push window of a screen switch — arrives as the bare byte `!`,
         // which carries no physical-key identity. With no intervening kitty autorepeat to move the
         // record to the kitty identity (contrast the test above), kitty reports its release under
-        // the base key `1`. Shift does not lowercase a symbol, so `!` does not fold to `1` (ASCII
-        // capitals do: `W`->`w`), nothing matches, and the release is delivered as decoded (`1`). A held-key
-        // model therefore keeps `!` held unless a recovery event occurs. A layout-agnostic rename is
+        // the base key `1`. Shift does not lowercase a symbol, so `!` does not fold to `1`, nothing
+        // matches, and the release is delivered as decoded (`1`). A held-key model therefore keeps
+        // `!` held unless a recovery event occurs. A layout-agnostic rename is
         // impossible: base `1` cannot be mapped back to the shifted `!` without assuming a keyboard
         // layout, and pairing the unmatched release with the newest orphan would mis-identify an
         // unrelated key's release. Some non-ASCII letters are also unmatched; see the next test.
@@ -2454,7 +2455,7 @@ mod tests {
         assert_eq!(got[1], kind(K::Char('i'), M::NONE, Kind::Release));
         assert_eq!(still_held(&got), vec![(K::Char('İ'), M::SHIFT)]);
 
-        // Positive control: the one-code-point ASCII fold keeps the legacy press's name.
+        // Positive control: legacy `W` pairs when the terminal reports `w` as its base.
         let ascii = terminal(decode_all(b"W\x1b[119;1:3u", true));
         assert_eq!(ascii[0], kind(K::Char('W'), M::SHIFT, Kind::Press));
         assert_eq!(ascii[1], kind(K::Char('W'), M::SHIFT, Kind::Release));

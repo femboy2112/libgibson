@@ -62,8 +62,9 @@ stays 1.85.
   delivered correctly as a press, but kitty reports its release under the base key (`1`); shift does
   not lowercase a symbol, so the release cannot be matched to the press layout-agnostically and is
   delivered as `1`.** A held-key model therefore keeps the symbol held until a focus loss, the key's
-  next kitty press/release, or reporting is disabled. ASCII uppercase letters fold (`W`→`w`), but
-  not all Unicode letters do: the default lowercase of `İ` is two code points, so it does not match
+  next kitty press/release, or reporting is disabled. A legacy `W` pairs when the terminal reports
+  `w` as its base. Not all Unicode letters pair this way: the default lowercase of `İ` is two code
+  points, so it does not match
   a single `i` base key. The `İ` case is covered by a decoder model, not a real-layout terminal test.
   Deliberately not renamed: mapping `1`→`!` assumes a
   keyboard layout, and pairing the unmatched release with the newest orphan would mis-identify an
