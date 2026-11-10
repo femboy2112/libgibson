@@ -74,18 +74,45 @@ fn count(hay: &[u8], needle: &[u8]) -> usize {
     hay.windows(needle.len()).filter(|w| *w == needle).count()
 }
 
-fn events(cap: &Capture) -> Vec<String> {
-    String::from_utf8_lossy(cap.raw())
+fn event_lines(raw: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(raw)
         .split(['\r', '\n'])
-        // An `Unsupported` answer is followed at once by the pop that withdraws the push, written
-        // just before the child prints the event.
+        // A pop or bracketed-paste re-enable can be written immediately before the event line,
+        // without a newline. Strip only these known terminal prefixes, never arbitrary bytes.
         .filter_map(|l| {
-            l.trim()
-                .trim_start_matches("\x1b[<u")
-                .strip_prefix("EV ")
-                .map(str::to_string)
+            let mut rest = l.trim();
+            loop {
+                if let Some(next) = rest
+                    .strip_prefix("\x1b[<u")
+                    .or_else(|| rest.strip_prefix("\x1b[?2004h"))
+                {
+                    rest = next;
+                } else {
+                    break;
+                }
+            }
+            rest.strip_prefix("EV ").map(str::to_string)
         })
         .collect()
+}
+
+fn events(cap: &Capture) -> Vec<String> {
+    event_lines(cap.raw())
+}
+
+#[test]
+fn event_line_decoder_preserves_missing_extra_and_reordered_events() {
+    let reference = ["reporting:Active", "reporting:Unsupported", "key:w:0"];
+    let good =
+        b"EV reporting:Active\r\n\x1b[<u\x1b[?2004hEV reporting:Unsupported\r\nEV key:w:0\r\n";
+    assert_eq!(event_lines(good), reference);
+    let missing = b"EV reporting:Active\r\nEV key:w:0\r\n";
+    let extra = b"EV reporting:Active\r\nEV reporting:Unsupported\r\nEV key:q:0\r\nEV key:w:0\r\n";
+    let reordered = b"EV reporting:Active\r\nEV key:w:0\r\nEV reporting:Unsupported\r\n";
+    for mutant in [missing.as_slice(), extra.as_slice(), reordered.as_slice()] {
+        assert_ne!(event_lines(mutant), reference);
+    }
+    assert!(event_lines(b"\x1b[?9999hEV key:w:0\r\n").is_empty());
 }
 
 fn finish(mut cap: Capture, role: &str) -> (Capture, portable_pty::ExitStatus) {
@@ -457,7 +484,9 @@ fn after_a_caught_panic_no_release_is_delivered() {
             "reporting:Unsupported",
             "key:w:0",
             "key:q:0"
-        ]
+        ],
+        "raw PTY bytes: {:?}",
+        String::from_utf8_lossy(cap.raw())
     );
     assert_eq!(count(cap.raw(), POP), 1, "the hook's pop only");
 }
