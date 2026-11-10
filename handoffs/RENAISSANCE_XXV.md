@@ -12,7 +12,9 @@ not independent certification or authority to bypass a gate.
   CI run `42745447592`; #335 merged there and added
   `docs/MATH_TYPESETTING_ROADMAP.md`.
 - #332 merged at current main after development CI run `42747338050` passed
-  on exact head `704c91bdd3fcfad8e3da4903e65877c6b9ec06fd`. Its released
+  for head `704c91bdd3fcfad8e3da4903e65877c6b9ec06fd`. CI checked out
+  synthetic merge `2c40a48521fd543e2927b6745e1d58f61158ce1d`, whose tree
+  `8ad1a4bd8428d8a4899684bd68696372b20b558b` equals the head tree. Its released
   artifact headless guide was exercised with download, native checksum, wheel
   virtual environment and rendered-cell acceptance; a wrong-glyph control
   failed as intended. It is not candidate artifact or terminal qualification.
@@ -43,18 +45,34 @@ human or distinct-model certification.
 
 | PR | Head | Scope and remaining decision |
 |---|---|---|
-| #333 | `e9ba3e6f34b08a022ea933c0842c50a4c237649a` | Mouse retry and stale mouse/screen guards; main was merged into the branch and fresh CI is queued. Earlier head `290f708...` passed CI run `42738708564`; that result is not current-head evidence. Does not alone establish terminal sovereignty. |
-| #338 | `7156134c98ce20dfe8c96b7f62bbb2c06c8ad817` | Draft based on #333, updated with its new head; fresh CI is queued. **HOLD:** on earlier head `8610ff7...` a deliberately ignored direct-renderer PTY counterexample failed when explicitly run. Recheck on current head; identity gates do not establish renderer-state ownership. |
+| #333 | `e9ba3e6f34b08a022ea933c0842c50a4c237649a` | Mouse retry and stale mouse/screen guards; head-associated development CI run `42748559384` passed 8/8 on a same-tree synthetic merge. Does not alone establish terminal sovereignty. |
+| #338 | `7156134c98ce20dfe8c96b7f62bbb2c06c8ad817` | Draft based on #333; head-associated development CI run `42748580954` passed 8/8 on a same-tree synthetic merge. **HOLD:** a deliberately ignored direct-renderer PTY counterexample was explicitly rerun and failed on this head. Identity gates do not establish renderer-state ownership. |
 | #329 | `f1dd2b3ad2bc21dbcafb5f1a8176498c2eccace0` | Caught-owner-panic raw input and bracketed-paste re-entry. Input-only; #328 remains open for wider lifecycle concerns. |
 | #327 | `22d6d78aac28b4098e43d8cba355a6753923b8ab` | Focus retry and cleanup obligations. Reconcile with the other terminal changes and review the combined state machine. |
-| #325 | `0b922c9043c393f65d877701cb107d314b164167` | C++/Python/Go focus/geometry parity; new absolute geometry oracle and mutation controls. Rebuild from the final runtime candidate and rerun all consumers. |
+| #325 | `0b922c9043c393f65d877701cb107d314b164167` | C++/Python/Go focus/geometry parity; head-associated CI and preflight passed on an older synthetic merge with a different tree. Rebuild from the final runtime candidate and rerun all consumers. |
 | #331 | `d1cd6016d9828000f21066bc76488ea4dbdd26a8` | Unicode lowercase-expansion pairing counterexample. Decoder-model evidence, not a physical keyboard-layout test. |
-| #336 | `e64834f2cc7fb5af63062e5aae4c3c3615d295c0` | Fixed-fixture math M0 research, reconciled with main; exact-head development CI run `42748877100` passed. Partial; not a public API, security sandbox or LibGibson terminal graphics path. |
-| #337 | `ca8f3cb80557ced6e07abf473bafb12a05ed9139` | Candidate ABI provenance, alternate-target SDK staging and isolated captured-commit preflight. Mock controls pass; real full preflight, final candidate qualification and independent review remain. |
+| #336 | `e64834f2cc7fb5af63062e5aae4c3c3615d295c0` | Fixed-fixture math M0 research, reconciled with main; head-associated development CI run `42748877100` passed on a same-tree synthetic merge. Partial; not a public API, security sandbox or LibGibson terminal graphics path. |
+| #337 | `ca8f3cb80557ced6e07abf473bafb12a05ed9139` | Candidate ABI provenance, alternate-target SDK staging and isolated captured-commit preflight. Development CI and publication-free preflight passed; the latter tested a synthetic merge commit with the same tree, not the head commit. Final candidate qualification and independent review remain. |
 | #323 | Review the current live head | Handoff draft; update after integration and do not merge obsolete status. |
 
-The #325, #333, #337 and #338 checks were queued or in progress at this snapshot. A
-later green result applies only to the head actually tested.
+PR checks can execute a
+synthetic merge rather than the head commit. Verify the actual checkout SHA and
+tree, not only the GitHub head association, when assessing every check.
+
+For #333, CI checked out synthetic merge
+`e7f258935f96e8b9a84fb4d7134bbd74a5128bd5`; it and its PR head share tree
+`99b77e07107eb9daf1a02a0bfdab7aad1fe50307`. For #338, CI checked out
+`32c0d51a2fd3a7685c7d82fe4027d454d4f74dd2`; it and its PR head share tree
+`756e76ad933bc758ad1191f4b4faee253c053e39`. For #336, CI checked out
+`8faf4cdd48def29b8393b128ee76ad745cabaacc`; it and its PR head share tree
+`39ed352e73783e2571636448010c4ad9391d6cfc`. These are same-tree witnesses,
+not executions of the corresponding head commits.
+
+For #325, head-associated CI run `42746034136` checked out synthetic merge
+`459047ce86f5ee170174380897d311e050722ebc` against previous main `0bd316...`.
+Its tree `e2de4d4d7864256b5788b7fe05e71a5e22219ed5` differs from the PR
+head tree `ae7e2ec72ab82369f4f2b28b5fe6285aa1fb453e`; main has since advanced.
+The green run is therefore neither a head-tree nor current-base witness.
 
 ## Terminal lease: observed failures and boundaries
 
@@ -75,8 +93,9 @@ warnings in unchanged audio code; the full library suite was stopped early.
 Exact-head CI at `71a382ebcaf95e30690f61badbf954dbdfc9c5cc` then failed on
 four Clippy warnings in the new PTY tests. The later `8610ff7b...` commit fixes
 those warnings; the author reports local Rust 1.98.1 test-target Clippy and
-the PTY suite pass. After merging updated #333, the head is `7156134c...` and
-fresh exact-head CI is pending. Do not promote these results to green
+the PTY suite pass. After merging updated #333, development CI associated with
+head `7156134c...` passed 8/8 on the same-tree synthetic merge described above;
+the separate ignored failure below remains. Do not promote these results to green
 full-suite evidence. Public
 `Context.session` and `Context.renderer` replacement
 can carry stale physical-screen assumptions; the experiment guards managed
@@ -90,7 +109,8 @@ renderer counterexample. A real PTY experiment matched the virtual session's
 color capabilities to the physical one, rendered through the same public
 renderer into a virtual buffer, then requested that frame through the context.
 The old physical frame remained. An explicit ignored test fails on that
-scenario; different color capabilities triggered a repaint and were a
+scenario; the same test was rerun and failed at `7156134c...`. Different color
+capabilities triggered a repaint and were a
 misleading positive control. The updated swap tests compare all 1,920 cells
 and cursor state and detect a planted extra-cell mutation. These are reported
 tests at the stated head, not proof of general terminal capability. Run:
@@ -174,8 +194,16 @@ This is not five-language release-artifact or full-preflight qualification.
 At #337 `ca8f3cb...`, preflight instead runs against a detached isolated clone
 of the captured commit with a fresh target; reported mock controls cover the
 reproduced stat-cache false-clean source, hidden index flags, ignored files,
-foreign target, stale crate and staging records. The real full preflight has
-not been run on this head. A writable clone, transient source modification,
+foreign target, stale crate and staging records. Development CI run
+`42749977128` and publication-free preflight run `42749977158` passed for
+#337 head `ca8f3cb...`; both checked out the synthetic PR merge
+`b1077efff46f718bee7557260bab24b36a5bb53b`, with parents current main and
+the PR head. Both synthetic merge and PR head have tree
+`4ad917f74c111df31939a5da9e7940286318efb6`; this is same-tree evidence,
+not a run on the exact head commit or final release candidate. The preflight
+log reports passing Clippy with warnings denied, locked and fresh-resolution
+Rust 1.85 checks, the candidate symbol baseline and `cleanroom.sh`. A writable
+clone, transient source modification,
 toolchain substitution and global-cache contamination remain unqualified;
 verify exact-head CI and independently review before integration.
 
