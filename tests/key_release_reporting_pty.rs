@@ -81,15 +81,11 @@ fn event_lines(raw: &[u8]) -> Vec<String> {
         // without a newline. Strip only these known terminal prefixes, never arbitrary bytes.
         .filter_map(|l| {
             let mut rest = l.trim();
-            loop {
-                if let Some(next) = rest
-                    .strip_prefix("\x1b[<u")
-                    .or_else(|| rest.strip_prefix("\x1b[?2004h"))
-                {
-                    rest = next;
-                } else {
-                    break;
-                }
+            while let Some(next) = rest
+                .strip_prefix("\x1b[<u")
+                .or_else(|| rest.strip_prefix("\x1b[?2004h"))
+            {
+                rest = next;
             }
             if let Some(event) = rest.strip_prefix("EV ") {
                 Some(event.to_string())
