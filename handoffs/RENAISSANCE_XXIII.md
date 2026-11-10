@@ -28,18 +28,23 @@ No v0.7.0 release candidate was qualified. Fetch and verify live state.
   at initial submission) adds retry bookkeeping; focused writer, keyboard-switch and FFI
   tests passed locally. A later C-ABI PTY retest of the fix passed: after an injected
   failed enable, the retry wrote an enable request. Exact-head CI remains needed. Torn terminal writes remain physically uncertain.
+- #328: a controlled Linux PTY probe on #327 observed that after a caught owner-thread
+  panic, `ICANON` stayed on and a key without newline was not delivered; a no-panic control
+  kept raw mode and delivered the key. The source mechanism predates #327, though a separate
+  baseline runtime reproduction has not yet been run. This remains open.
 - Windows #292 is not verified. Clock #130 still needs loop/blocked-output evidence.
   HumanMusic/PCM and ABI v1 are frozen. Never infer terminal behavior from headless parity.
 
 ## Integration and verification
 
 The XXI train #316, #318, #319, #317, #320, #321 is merged; do not repeat it. Drafts #325 (`32bd96fd0483444ec5d1cfb9bd89a06647dadaed`), #324
-(`eecdd341465d4268f6dc99b13ef0fd1aa25a0caf`), #326
+(`bd73546db5a0a12d12ca5a512ae9d23178b211c9`), #326
 (`0d7ee4f12a10b4b220d5370eb28ff310683b30cd`) and #327
-(`ceb375e54c27622581162f6e31ea6224181accaf`, based before #322) need
-current-head and dependency review, CI and appropriate independent review before merge. #324 contains five headless starters and two interactive public-Python-API applications:
-an offline echo console and a simulated dashboard. Scientific, framebuffer, and other
-requested application examples remain outstanding. Its SDK path with
+(`ab7f3562178424071a0f375078c2e4ace5934be8`, updated with #322) need
+current-head and dependency review, CI and appropriate independent review before merge. #324 contains five headless starters and three interactive public-Python-API applications:
+an offline echo console, a simulated dashboard and a simulated Celsius instrument with
+separate producer samples and user setpoints. A framebuffer application and other requested
+examples remain outstanding. Its SDK path with
 spaces regression is fixed on the current branch and has real C/C++ and negative controls.
 A new Linux PTY control passed for C++, Go and Python enable/disable/restore bytes, a
 no-op negative control and an injected output error; it does not prove terminal support.
@@ -73,8 +78,10 @@ Recheck every PR's exact head, its base and all check runs. Serialize heavyweigh
 use isolated writable target directories and preserve test output and actual exit status.
 Keep private consumer paths, environment details and receipts out of public issues and files.
 
-The downstream v0.6 baseline test run passed 451 tests with 3 ignored and a separate
-headless self-check passed. Its corresponding development run uses the round-baseline
-runtime `4573d0d6e571159b376e08fb2761b4e8eaffe6f3`, not the later main SHA; consult
-the local private receipts for completion and comparison. Do not treat this as an
-exact-current-main release candidate gate.
+The downstream v0.6 and development test runs each passed 451 tests with 3 ignored,
+and both headless self-checks passed normally and with a 512 MiB virtual-address cap.
+This cap is not a full low-memory-pressure test. The development run used round-baseline
+runtime `4573d0d6e571159b376e08fb2761b4e8eaffe6f3`, not the later main SHA. Its lock
+resolution changed several Windows-only dependency edges; Windows itself was not tested.
+The ignored tests and private raw receipts remain distinct from a release gate. Do not
+treat this as an exact-current-main release candidate qualification.
