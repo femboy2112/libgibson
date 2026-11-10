@@ -4,7 +4,7 @@ Round baseline: `main` `4573d0d6e571159b376e08fb2761b4e8eaffe6f3`
 (`0.7.0-dev`); development CI run 42578229665 succeeded at that SHA. #322 then
 merged as `b04e9c42d6484506373355d0a3538254d87d16ba`; development CI run 42725113594
 succeeded there. #326 subsequently merged as `9802d18b073d5eb420da176a0afcf7617e4627ae`;
-development CI run 42727174707 is pending; verify its result and live main before acting.
+development CI run 42727174707 passed all eight jobs there; verify live main before acting.
 The latest published prerelease is v0.6.0; both `v0.6.0` and
 `bindings/go/v0.6.0` peel to `492d0fec7727658d50b9a82025c784b7e427d6b0`.
 No v0.7.0 release candidate was qualified. Fetch and verify live state.
@@ -74,6 +74,16 @@ checking each exact head and surviving tests/docs against the round baseline; th
 #177 have divergent history and remain open. #173 contains a design handoff absent from
 main; #177 contains a scene-editor example and PTY tests absent from main. Remote branches
 were retained.
+
+## Raster measurement
+
+On `9802d18b073d5eb420da176a0afcf7617e4627ae`, the existing release-mode
+`raster_ingest_bench` self-check passed, and a 120-frame matrix used a 320×200 source at
+80×24, 120×40 and 200×60. The truecolor half-block median total pipeline times were
+1,013 / 2,335 / 5,568 microseconds respectively on this host. Output went to a drained
+pipe, not a terminal; these are not display FPS claims. The malformed-grid control exited 2.
+This measures the full-frame path only; compare controlled dirty workloads before deciding
+whether #129 warrants a new ABI. Raw machine-specific receipts remain local.
 
 For v0.7.0 retain HOLD until the complete exact-candidate release gates, five installed
 consumers, genuine external v0.6-versus-candidate canary, PTY/hangup checks, performance,
