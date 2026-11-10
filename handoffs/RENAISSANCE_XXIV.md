@@ -33,6 +33,10 @@ mode methods on restored sessions can still affect a later owner. Its proposed
 interleaving needs a real PTY reproduction. Draft #327 handles focus retry and must
 be reviewed in combination with #329 after the latter is qualified; do not collapse
 cleanup obligation and successful request, or imply terminal capability support.
+An exploratory `git merge-tree --write-tree` of those draft heads reported a content
+conflict in `src/session.rs`, in their appended test modules. Resolve and review the
+full combined state after #329 integration, then rerun the fault and PTY matrices;
+the dry run is not an integration or a qualification.
 
 Historical draft queue (all HOLD; fetch and check exact heads before acting):
 
