@@ -15,7 +15,13 @@ printf stale > "$work/repo/target/release/libgibson.a"
 cat > "$work/bin/cargo" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ $1 == rustc ]]; then echo 'note: native-static-libs: -lc' >&2; exit 0; fi
+if [[ $1 == rustc ]]; then
+    case ${FAKE_MUTATE_SELECTED:-none} in
+        so) printf mutated > "$CARGO_TARGET_DIR/release/libgibson.so" ;;
+        a) printf mutated > "$CARGO_TARGET_DIR/release/libgibson.a" ;;
+    esac
+    echo 'note: native-static-libs: -lc' >&2; exit 0
+fi
 [[ $1 == build ]]
 target=$CARGO_TARGET_DIR
 if [[ ${FAKE_TRIPLE:-0} == 1 ]]; then target="$target/fake-triple"; fi
@@ -41,6 +47,12 @@ export PATH="$work/bin:$PATH" CARGO_TARGET_DIR="$work/custom target"
 "$work/repo/scripts/release/stage-sdk.sh" --prefix "$work/sdk" >/dev/null
 [[ $(cat "$work/sdk/lib/libgibson.so.1") == fresh ]] || { echo 'FAIL: staged stale shared library' >&2; exit 1; }
 [[ $(cat "$work/sdk/lib/libgibson.a") == fresh ]] || { echo 'FAIL: staged stale static library' >&2; exit 1; }
+for changed in so a; do
+    if FAKE_MUTATE_SELECTED="$changed" "$work/repo/scripts/release/stage-sdk.sh" --prefix "$work/mutated-$changed" >/dev/null; then
+        echo "FAIL: changed selected $changed artifact was accepted" >&2; exit 1
+    fi
+    [[ ! -e "$work/mutated-$changed" ]] || { echo 'FAIL: staging started after artifact mutation' >&2; exit 1; }
+done
 if FAKE_MISSING=1 "$work/repo/scripts/release/stage-sdk.sh" --prefix "$work/missing" >/dev/null; then
     echo 'FAIL: missing fresh artifact fell back to stale library' >&2; exit 1
 fi

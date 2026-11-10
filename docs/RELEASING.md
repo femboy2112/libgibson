@@ -64,8 +64,11 @@ the other preflight steps. `check-candidate-abi.sh` retains its named temporary 
 for audited local cleanup rather than recursively deleting it automatically.
 
 SDK staging uses Python 3 to select the native-library paths reported by that Cargo
-build, including custom target directories. `--no-build` uses existing artifacts and
-does not establish their source provenance.
+build, including custom target directories. It makes private copies of the selected
+files before the subsequent native-link-flags query, checks the originals still match
+after that query, and stages the copies. This detects changes observed at those checks;
+it is not a defense against a hostile toolchain or concurrent process. `--no-build`
+uses existing artifacts and does not establish their source provenance.
 
 **Hangup-test execution is a separate mandatory release witness.** The four
 terminal-hangup liveness tests are marked `#[ignore]` for the normal parallel

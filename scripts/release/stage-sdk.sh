@@ -76,13 +76,18 @@ VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 [[ -n "$VERSION" ]] || die "could not read version from Cargo.toml"
 note "LibGibson version: $VERSION"
 
+# Keep immutable-by-convention copies in a private directory between Cargo's
+# artifact report and installation. This does not sandbox a hostile process or
+# establish the provenance of --no-build inputs.
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/libgibson-sdk-artifacts.XXXXXXXX")
+trap 'rm -f -- "$scratch/messages" "$scratch/paths" "$scratch/libgibson.so" "$scratch/libgibson.a"; rmdir -- "$scratch" 2>/dev/null || true' EXIT
+
 if [[ "$NO_BUILD" -eq 0 ]]; then
     # Select what this Cargo invocation actually built, including configured/custom target
     # directories or target triples. A stale repo-local target must never mask those outputs.
     note "building release artifacts (cargo build --release)..."
-    messages=$(mktemp)
-    paths=$(mktemp)
-    trap 'rm -f -- "$messages" "$paths"' EXIT
+    messages="$scratch/messages"
+    paths="$scratch/paths"
     cargo build --release --message-format=json > "$messages"
     python3 scripts/release/cargo-artifact-paths.py "$messages" "$REPO_ROOT" > "$paths"
     mapfile -d '' -t artifacts < "$paths"
@@ -99,6 +104,12 @@ else
 fi
 [[ -f "$SO" ]] || die "missing $SO (run without --no-build, or build release first)"
 [[ -f "$A" ]]  || die "missing $A"
+selected_so=$SO
+selected_a=$A
+cp -- "$selected_so" "$scratch/libgibson.so"
+cp -- "$selected_a" "$scratch/libgibson.a"
+cmp -s -- "$selected_so" "$scratch/libgibson.so" || die "shared library changed while being copied"
+cmp -s -- "$selected_a" "$scratch/libgibson.a" || die "static library changed while being copied"
 
 # Best-effort discovery of the native system libraries a STATIC consumer must add.
 # Dynamic (.so) consumers do not need these; they go into Libs.private for --static.
@@ -106,6 +117,10 @@ NATIVE_STATIC_LIBS="$(cargo rustc --release --crate-type staticlib -- --print na
     | sed -n 's/^note: native-static-libs: //p' | head -1 || true)"
 [[ -n "$NATIVE_STATIC_LIBS" ]] || NATIVE_STATIC_LIBS="-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc"
 note "native-static-libs: $NATIVE_STATIC_LIBS"
+cmp -s -- "$selected_so" "$scratch/libgibson.so" || die "selected shared library changed after the build"
+cmp -s -- "$selected_a" "$scratch/libgibson.a" || die "selected static library changed after the build"
+SO="$scratch/libgibson.so"
+A="$scratch/libgibson.a"
 
 # Fresh prefix.
 if [[ -e "$PREFIX" ]]; then
