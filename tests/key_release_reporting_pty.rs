@@ -91,7 +91,15 @@ fn event_lines(raw: &[u8]) -> Vec<String> {
                     break;
                 }
             }
-            rest.strip_prefix("EV ").map(str::to_string)
+            if let Some(event) = rest.strip_prefix("EV ") {
+                Some(event.to_string())
+            } else if rest.contains("EV ") {
+                // A line containing an event marker behind an unknown prefix must remain in the
+                // vector and fail the oracle, rather than silently hiding an extra event.
+                Some(format!("UNRECOGNIZED EVENT LINE: {rest:?}"))
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -109,10 +117,18 @@ fn event_line_decoder_preserves_missing_extra_and_reordered_events() {
     let missing = b"EV reporting:Active\r\nEV key:w:0\r\n";
     let extra = b"EV reporting:Active\r\nEV reporting:Unsupported\r\nEV key:q:0\r\nEV key:w:0\r\n";
     let reordered = b"EV reporting:Active\r\nEV key:w:0\r\nEV reporting:Unsupported\r\n";
-    for mutant in [missing.as_slice(), extra.as_slice(), reordered.as_slice()] {
+    let unknown_extra = b"EV reporting:Active\r\nEV reporting:Unsupported\r\n\x1b[?9999hEV key:q:0\r\nEV key:w:0\r\n";
+    for mutant in [
+        missing.as_slice(),
+        extra.as_slice(),
+        reordered.as_slice(),
+        unknown_extra.as_slice(),
+    ] {
         assert_ne!(event_lines(mutant), reference);
     }
-    assert!(event_lines(b"\x1b[?9999hEV key:w:0\r\n").is_empty());
+    let unknown = event_lines(b"\x1b[?9999hEV key:w:0\r\n");
+    assert_eq!(unknown.len(), 1);
+    assert_ne!(unknown[0], "key:w:0");
 }
 
 fn finish(mut cap: Capture, role: &str) -> (Capture, portable_pty::ExitStatus) {
