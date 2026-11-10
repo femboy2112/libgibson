@@ -143,3 +143,20 @@ Other recorded open heads, all needing live verification and reconciliation:
 The explicit standalone command is expected to fail until a destination
 contract is implemented. Fake-writer, fake-Go and PDF-geometry controls do not
 replace real terminal capability evidence or exact release artifacts.
+
+## Late CI and integration review
+
+- Head-associated #329 development run `42925559795` passed 8/8, but
+  checked out synthetic merge `637ee665243a729f3e8096f80d28c9edd05542d9`.
+  Its tree differs from head `974bc1264008fc76a2f984025f9f6ca99a34d596`;
+  it is not an exact-head execution. Reconcile against updated main and rerun.
+- Read-only merge analysis found actual `session.rs` conflicts between #333
+  and #329, and between #333 and #327. Keep the distinct panic mouse and input
+  notifications, independent mouse/focus confirmation and cleanup flags,
+  and both sets of fault tests. A textual merge does not qualify the combined
+  lifecycle.
+- Unverified inherited concern: #327 can request focus before entering raw
+  input, including after a caught panic. A PTY experiment should inject focus
+  sequences before polling, check echo/canonical flags and event order, and
+  compare explicit raw entry and no-panic controls. Do not characterize this
+  hypothesis as a reproduced regression or terminal support.
