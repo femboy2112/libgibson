@@ -368,6 +368,13 @@ impl TerminalSession {
             return Ok(());
         }
 
+        if self.restore_attempted || !self.owns_lease {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "enter_interactive after restore: this session has released the terminal",
+            ));
+        }
+
         self.reconcile_panic_input_modes();
 
         // Identity, not liveness: record that input is now a live controlling
@@ -1165,6 +1172,40 @@ mod panic_input_fault_tests {
                 "injected flush failure",
             ))
         }
+    }
+
+    struct PartialThenFail(Vec<u8>);
+    impl Write for PartialThenFail {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if self.0.is_empty() {
+                let n = bytes.len().min(3);
+                self.0.extend_from_slice(&bytes[..n]);
+                Ok(n)
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "injected partial write",
+                ))
+            }
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn partial_paste_enable_write_retains_cleanup_and_retries() {
+        let mut session = TerminalSession::headless(80, 24);
+        let mut fail = PartialThenFail(Vec::new());
+        assert!(session.enable_bracketed_paste_on(&mut fail).is_err());
+        assert_eq!(fail.0, b"\x1b[?");
+        assert!(session.bracketed_paste_enabled);
+        let mut retry = Vec::new();
+        session.enable_bracketed_paste_on(&mut retry).unwrap();
+        assert_eq!(retry, b"\x1b[?2004h");
+        let mut cleanup = Vec::new();
+        session.disable_bracketed_paste_on(&mut cleanup).unwrap();
+        assert_eq!(cleanup, b"\x1b[?2004l");
     }
 
     #[test]

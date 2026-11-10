@@ -113,6 +113,93 @@ fn caught_owner_panic_with_focus_requested_still_recovers_input() {
     assert_eq!(count(&raw, PASTE_OFF), 2);
 }
 
+// A restored session must never regain the terminal behind a later owner's back.
+// Each role has a separate PTY/process, so a failed assertion cannot contaminate another case.
+#[test]
+fn relinquished_context_poll_and_session_entry_cannot_touch_a_new_owner() {
+    for role in ["poll", "session", "poll-pending-panic"] {
+        let mut cmd = CommandBuilder::new(std::env::current_exe().unwrap());
+        cmd.args(["--exact", "relinquished_session_child", "--nocapture"]);
+        cmd.env("GIBSON_RELINQUISHED_INPUT_CHILD", role);
+        let mut cap = Capture::spawn(cmd, 80, 24, Duration::from_secs(15));
+        wait_for(&mut cap, b"RELINQUISHED_RESULT");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let status = loop {
+            cap.collect_for(Duration::from_millis(20)).unwrap();
+            if let Some(status) = cap.try_wait().unwrap() {
+                break status;
+            }
+            assert!(Instant::now() < deadline, "child did not exit");
+        };
+        cap.collect_all().unwrap();
+        assert!(
+            status.success(),
+            "{role}: {}",
+            String::from_utf8_lossy(cap.raw())
+        );
+        assert!(
+            contains(
+                cap.raw(),
+                b"RELINQUISHED_RESULT rejected=1 canonical=1 owner_raw=1 restored=1"
+            ),
+            "{role}: {}",
+            String::from_utf8_lossy(cap.raw())
+        );
+    }
+}
+
+#[test]
+fn relinquished_session_child() {
+    let Ok(role) = std::env::var("GIBSON_RELINQUISHED_INPUT_CHILD") else {
+        return;
+    };
+    fn flags() -> libc::tcflag_t {
+        let mut state = std::mem::MaybeUninit::<libc::termios>::uninit();
+        assert_eq!(
+            unsafe { libc::tcgetattr(libc::STDIN_FILENO, state.as_mut_ptr()) },
+            0
+        );
+        let state = unsafe { state.assume_init() };
+        state.c_lflag & (libc::ICANON | libc::ECHO)
+    }
+    let mut old = Context::new(RenderMode::Inline).unwrap();
+    old.enter_interactive().unwrap();
+    old.restore().unwrap();
+    assert_eq!(
+        flags(),
+        libc::ICANON | libc::ECHO,
+        "restore must leave canonical input and echo enabled"
+    );
+    let mut owner = Context::new(RenderMode::Inline).unwrap();
+    if role == "poll-pending-panic" {
+        owner.enter_interactive().unwrap();
+        assert!(std::panic::catch_unwind(|| panic!("new owner panic (caught)")).is_err());
+        assert_eq!(
+            flags(),
+            libc::ICANON | libc::ECHO,
+            "panic hook must disable raw mode"
+        );
+    }
+    let rejected = match role.as_str() {
+        "poll" | "poll-pending-panic" => old.poll_event(Duration::ZERO).is_err(),
+        "session" => old.session.enter_interactive().is_err(),
+        _ => unreachable!(),
+    };
+    let still_canonical = flags() == libc::ICANON | libc::ECHO;
+    // Polling the owner must still consume its own panic notification and recover raw mode.
+    owner.poll_event(Duration::ZERO).unwrap();
+    let owner_raw = flags() == 0;
+    owner.restore().unwrap();
+    let restored = flags() == libc::ICANON | libc::ECHO;
+    eprintln!(
+        "RELINQUISHED_RESULT rejected={} canonical={} owner_raw={} restored={}",
+        u8::from(rejected),
+        u8::from(still_canonical),
+        u8::from(owner_raw),
+        u8::from(restored)
+    );
+}
+
 #[test]
 fn caught_panic_input_child() {
     let Ok(role) = std::env::var(CHILD) else {
