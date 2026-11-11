@@ -11,11 +11,12 @@ repository = "https://github.com/femboy2112/libgibson"
 
 # The published crate ships the Rust library plus the C header (for native-library
 # builders) and the license/readme/design docs. The engineering-demo corpus
-# (examples/, integration tests + goldens, internal docs/, dev scripts, and the
+# (examples/, experiments/, integration tests + goldens, internal docs/, dev scripts, and the
 # language bindings — which are delivered via the separate native SDK) stays in the
 # repository but is NOT part of the crate. See docs/RELEASE_CONTRACT.md.
 exclude = [
     "/examples",
+    "/experiments",
     "/tests",
     "/docs",
     "/scripts",
