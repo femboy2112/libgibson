@@ -227,3 +227,75 @@ fn fresh_context_reestablishes_cursor_visibility() {
     actual.process(ctx.rendered_bytes());
     assert!(!actual.screen().hide_cursor());
 }
+
+#[test]
+fn bound_inline_growth_establishes_new_rows() {
+    let mut session = TerminalSession::headless(20, 8);
+    let mut renderer = Renderer::new(RenderMode::Inline);
+    let mut bytes = Vec::new();
+    let mut bound = renderer.bind_target(&mut session, &mut bytes).unwrap();
+    bound.set_capture_damage(true);
+    bound
+        .render(&mut Node::text("A", Style::default()))
+        .unwrap();
+    let mut grown = Node::col()
+        .child(Node::text("A", Style::default()))
+        .child(Node::text("X", Style::default()));
+    let (dirty, _, _, _, _) = bound.render(&mut grown).unwrap();
+    assert!(dirty >= 20);
+    assert_eq!(
+        bound
+            .last_dirty_cells()
+            .iter()
+            .filter(|&&(_, y)| y == 1)
+            .count(),
+        20
+    );
+    let mut actual = vt100::Parser::new(8, 20, 0);
+    actual.process(b"\x1b[2J\x1b[2;1HOLD_CONTENT\x1b[5;1HPRESERVE\x1b[H");
+    actual.process(&bytes);
+    assert_eq!(actual.screen().cell(1, 0).unwrap().contents(), "X");
+    assert_eq!(actual.screen().cell(1, 1).unwrap().contents(), "");
+    assert_eq!(actual.screen().cell(4, 0).unwrap().contents(), "P");
+}
+
+#[test]
+fn inline_growth_to_blank_row_still_clears_that_row() {
+    let mut session = TerminalSession::headless(20, 8);
+    let mut renderer = Renderer::new(RenderMode::Inline);
+    let mut bytes = Vec::new();
+    let mut bound = renderer.bind_target(&mut session, &mut bytes).unwrap();
+    bound
+        .render(&mut Node::text("A", Style::default()))
+        .unwrap();
+    let mut grown = Node::col()
+        .child(Node::text("A", Style::default()))
+        .child(Node::text(" ", Style::default()));
+    let (_, _, emitted, _, _) = bound.render(&mut grown).unwrap();
+    assert!(emitted > 0, "blank growth must not be skipped");
+    let mut actual = vt100::Parser::new(8, 20, 0);
+    actual.process(b"\x1b[2J\x1b[2;1HOLD_CONTENT\x1b[H");
+    actual.process(&bytes);
+    for col in 0..20 {
+        assert_eq!(actual.screen().cell(1, col).unwrap().contents(), "");
+    }
+}
+
+#[test]
+fn inline_restyle_preserves_rows_below_live_region() {
+    let mut session = TerminalSession::headless(20, 8);
+    let mut renderer = Renderer::new(RenderMode::Inline);
+    let mut bytes = Vec::new();
+    let mut bound = renderer.bind_target(&mut session, &mut bytes).unwrap();
+    bound
+        .render(&mut Node::text("A", Style::default()))
+        .unwrap();
+    bound.set_color_depth(gibson::capability::ColorDepth::Ansi16);
+    bound
+        .render(&mut Node::text("A", Style::default()))
+        .unwrap();
+    let mut actual = vt100::Parser::new(8, 20, 0);
+    actual.process(b"\x1b[2J\x1b[5;1HPRESERVE\x1b[H");
+    actual.process(&bytes);
+    assert_eq!(actual.screen().cell(4, 0).unwrap().contents(), "P");
+}

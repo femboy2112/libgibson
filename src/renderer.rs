@@ -585,8 +585,34 @@ impl Renderer {
             recover || self.cursor_visibility_uncertain || initial_target || is_full_repaint;
         let clears_canvas = self.mode == RenderMode::Fullscreen
             && (reanchor || restyle || recover || is_full_repaint);
+        let clears_inline = self.mode == RenderMode::Inline
+            && ((is_full_repaint && self.has_bound_target()) || restyle);
+        let cleared_inline_height = if restyle {
+            self.live_region_height.max(surface_height)
+        } else {
+            surface_height
+        };
+        let grows_inline = self.mode == RenderMode::Inline
+            && !is_full_repaint
+            && self.live_region_height > 0
+            && surface_height > self.live_region_height;
+        let dirty_coords = if grows_inline {
+            let mut cells = diff.logical_dirty_cells();
+            cells.retain(|&(_, y)| y < self.live_region_height || y >= surface_height);
+            cells.extend(
+                (self.live_region_height..surface_height)
+                    .flat_map(|y| (0..surface_width).map(move |x| (x, y))),
+            );
+            Some(cells)
+        } else {
+            None
+        };
         let dirty_cells = if clears_canvas {
             total_cells
+        } else if clears_inline {
+            surface_width as usize * cleared_inline_height as usize
+        } else if let Some(cells) = &dirty_coords {
+            cells.len()
         } else {
             diff.logical_dirty_count()
         };
@@ -595,6 +621,12 @@ impl Renderer {
                 (0..surface_height)
                     .flat_map(|y| (0..surface_width).map(move |x| (x, y)))
                     .collect()
+            } else if clears_inline {
+                (0..cleared_inline_height)
+                    .flat_map(|y| (0..surface_width).map(move |x| (x, y)))
+                    .collect()
+            } else if let Some(cells) = dirty_coords {
+                cells
             } else {
                 diff.logical_dirty_cells()
             };
@@ -609,7 +641,7 @@ impl Renderer {
             || self.last_cursor_visible != Some(desired_visible)
             || self.last_cursor_desired != paint_ctx.cursor_position;
 
-        if diff.is_empty() && !is_full_repaint && !cursor_state_changed {
+        if diff.is_empty() && !is_full_repaint && !cursor_state_changed && !grows_inline {
             self.last_frame_report = FrameReport {
                 exact_changed_cells: self.last_exact_changed,
                 affected_cells: 0,
@@ -732,11 +764,22 @@ impl Renderer {
                     }
                     self.compiler.reset_cursor(0, 0);
                     if restyle {
-                        // Depth changed mid-session: clear the live region from its top
-                        // before repainting, so no cell keeps its old-depth SGR. No row
-                        // (re)allocation here — the region already exists, so this never
-                        // ghosts (unlike the first-frame `is_full_repaint` path).
-                        tx.push(b"\x1b[J");
+                        // Clear only the existing live rows, preserving unrelated
+                        // content below them; then return to the region's top.
+                        tx.push(b"\x1b[0m");
+                        for row in 0..self.live_region_height {
+                            tx.push(b"\x1b[2K");
+                            if row + 1 < self.live_region_height {
+                                tx.push(b"\r\n");
+                            }
+                        }
+                        if self.live_region_height > 1 {
+                            write!(tx.buffer, "\x1b[{}A\r", self.live_region_height - 1).ok();
+                        } else {
+                            tx.push(b"\r");
+                        }
+                        self.compiler.current_style = Style::default();
+                        self.compiler.reset_cursor(0, 0);
                     }
 
                     // If live region grew, emit newlines at bottom to allocate extra rows
@@ -749,8 +792,9 @@ impl Renderer {
                             write!(tx.buffer, "\x1b[{}B", self.live_region_height - 1).ok();
                         }
                         for _ in 0..extra {
-                            tx.push(b"\r\n");
+                            tx.push(b"\r\n\x1b[0m\x1b[2K");
                         }
+                        self.compiler.current_style = Style::default();
                         write!(tx.buffer, "\x1b[{}A\r", surface_height - 1).ok();
                         self.compiler.reset_cursor(0, 0);
                     }
