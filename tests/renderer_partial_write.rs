@@ -123,12 +123,21 @@ fn f3_other() -> Node {
 }
 
 /// The full clean byte stream of frame 2 after frame 1 (to know every cut point).
-fn frame2_len(mode: RenderMode) -> usize {
-    with_target(mode, H, |target, state| {
+fn frame2_stream(mode: RenderMode, rows: u16) -> Vec<u8> {
+    with_target(mode, rows, |target, state| {
         render(target, f1()).unwrap();
-        take(state);
+        let initial = take(state);
         render(target, f2()).unwrap();
-        take(state).len()
+        let second = take(state);
+        assert!(!second.is_empty(), "the cut-point matrix must not be empty");
+        let mut p = Parser::new(rows, W, 0);
+        p.process(&initial);
+        p.process(&second);
+        assert!(
+            p.screen().contents().contains("BRAVO"),
+            "healthy frame 2 control"
+        );
+        second
     })
 }
 
@@ -155,15 +164,22 @@ fn snapshot(p: &Parser) -> Vec<String> {
     out
 }
 
-fn clean_fullscreen(f3: fn() -> Node) -> Vec<String> {
+fn clean_fullscreen(f3: fn() -> Node, expected: &str) -> Vec<String> {
     with_target(RenderMode::Fullscreen, H, |target, state| {
         render(target, f3()).unwrap();
         let mut p = Parser::new(H, W, 0);
         p.process(&take(state));
+        assert!(p.screen().contents().contains("alpha alpha alpha"));
+        assert!(p.screen().contents().contains(expected));
+        let cell = p.screen().cell(1, 0).unwrap();
+        assert_ne!(cell.fgcolor(), vt100::Color::Default);
+        if expected == "charlie" {
+            assert!(cell.bold());
+        }
         snapshot(&p)
     })
 }
-fn torn_fullscreen(n: usize, f3: fn() -> Node) -> (Vec<String>, bool) {
+fn torn_fullscreen(n: usize, f3: fn() -> Node, frame2: &[u8]) -> (Vec<String>, bool) {
     with_target(RenderMode::Fullscreen, H, |target, state| {
         render(target, f1()).unwrap();
         let mut term = take(state);
@@ -171,6 +187,7 @@ fn torn_fullscreen(n: usize, f3: fn() -> Node) -> (Vec<String>, bool) {
         let failed = render(target, f2()).is_err();
         let torn = take(state);
         assert_eq!(torn.len(), n, "fault must reach its requested cut");
+        assert_eq!(torn, frame2[..n], "the injected prefix must match frame 2");
         term.extend_from_slice(&torn);
         heal(state);
         render(target, f3()).unwrap();
@@ -183,11 +200,12 @@ fn torn_fullscreen(n: usize, f3: fn() -> Node) -> (Vec<String>, bool) {
 
 #[test]
 fn fullscreen_recovers_exactly_after_a_torn_frame_at_every_cut_point_reverting_frame() {
-    let want = clean_fullscreen(f3_revert);
-    let len = frame2_len(RenderMode::Fullscreen);
+    let want = clean_fullscreen(f3_revert, "plain status line");
+    let frame2 = frame2_stream(RenderMode::Fullscreen, H);
+    let len = frame2.len();
     let mut bad = Vec::new();
     for n in 0..len {
-        let (got, failed) = torn_fullscreen(n, f3_revert);
+        let (got, failed) = torn_fullscreen(n, f3_revert, &frame2);
         assert!(
             failed,
             "a writer that stops at {n}/{len} bytes must fail the render"
@@ -201,11 +219,12 @@ fn fullscreen_recovers_exactly_after_a_torn_frame_at_every_cut_point_reverting_f
 
 #[test]
 fn fullscreen_recovers_exactly_after_a_torn_frame_at_every_cut_point_new_frame() {
-    let want = clean_fullscreen(f3_other);
-    let len = frame2_len(RenderMode::Fullscreen);
+    let want = clean_fullscreen(f3_other, "charlie");
+    let frame2 = frame2_stream(RenderMode::Fullscreen, H);
+    let len = frame2.len();
     let mut bad = Vec::new();
     for n in 0..len {
-        let (got, failed) = torn_fullscreen(n, f3_other);
+        let (got, failed) = torn_fullscreen(n, f3_other, &frame2);
         assert!(failed);
         if got != want {
             bad.push(n);
@@ -225,18 +244,16 @@ fn inline_abandons_the_torn_region_and_draws_the_next_frame_intact() {
         render(target, f3_other()).unwrap();
         let mut p = Parser::new(40, W, 0);
         p.process(&take(state));
+        assert!(p.screen().contents().contains("alpha alpha alpha"));
+        assert!(p.screen().contents().contains("charlie"));
         let (crow, _) = p.screen().cursor_position();
         p.screen()
             .rows(0, W)
             .take(crow as usize + 1)
             .collect::<Vec<String>>()
     });
-    let len = with_target(RenderMode::Inline, 40, |target, state| {
-        render(target, f1()).unwrap();
-        take(state);
-        render(target, f2()).unwrap();
-        take(state).len()
-    });
+    let frame2 = frame2_stream(RenderMode::Inline, 40);
+    let len = frame2.len();
     let mut bad = Vec::new();
     for n in 0..len {
         let actual = with_target(RenderMode::Inline, 40, |target, state| {
@@ -246,6 +263,7 @@ fn inline_abandons_the_torn_region_and_draws_the_next_frame_intact() {
             assert!(render(target, f2()).is_err());
             let torn = take(state);
             assert_eq!(torn.len(), n);
+            assert_eq!(torn, frame2[..n]);
             term.extend_from_slice(&torn);
             heal(state);
             render(target, f3_other()).unwrap();
