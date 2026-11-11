@@ -5,6 +5,9 @@ refs and inspect actual CI checkout commits before acting. Same-model-family
 agent reviews are useful additional source passes, not independent human or
 independent-model certification.
 
+The XXVII update at the end supersedes older #333 head and check status in
+this historical record. This handoff remains a draft and is not on main.
+
 ## Main and release
 
 At the recorded snapshot, main is `e64402526562ce0d7b6d88c0b5f7bb31152574d6`,
@@ -170,3 +173,53 @@ replace real terminal capability evidence or exact release artifacts.
   `cb1e6bfdfbccf0e45af05229d116d607610a448d`, whose tree equals the PR head
   tree. These are not the future tagged commit, and separate ABI history,
   signature/layout and final-candidate consumer checks still apply.
+
+## XXVII update — stale screen control and renderer work in progress
+
+At this snapshot, main is still `e64402526562ce0d7b6d88c0b5f7bb31152574d6`;
+there have been no merges in this update. The latest published release remains
+the `v0.6.0` GitHub prerelease; both that tag and the Go module tag peel to
+`492d0fec7727658d50b9a82025c784b7e427d6b0`. v0.7 is HOLD, with no qualified
+release candidate. Verify these refs and the checks again before acting.
+
+- #333 now points to `d9b2c2a648c4408084e24359d0cf6226574006eb`. The
+  stale-screen PTY test brackets the two stale operations and rejects any
+  escape in that interval. Synthetic controls check complete
+  alternate-screen requests and torn prefixes. An injected torn `ESC[?104`
+  inside the real PTY interval passed the earlier full-request oracle (exit 0)
+  and failed the strengthened oracle (exit 101); the normal focused suite
+  passed 12/12 (exit 0). The local agent who implemented the test is from the
+  same model family as the other reviews. This is not independent human or
+  different-model certification. The new head requires finished CI and a
+  review before any merge; earlier CI qualified only the earlier head.
+- #338 remains at `8c027a5fe98229bef7d6aed1da699f63ba9f24cd`, based on the
+  earlier #333 head. Its standalone A/B/A writer acceptance test is still
+  ignored in ordinary CI and failed when explicitly run on that head. The
+  Context fail-closed path does not present FRAME_B and does not resolve the
+  standalone writer contract. A cursor-recovery investigation is uncommitted
+  and in progress; it has no qualifying PR head or test verdict here. Do not
+  assume those local changes are retained in the remote branch or treat them
+  as a verified fix. Reconcile #333 without rewriting history and qualify the
+  resulting exact #338 head only after the failing control and wider writer,
+  cursor, partial-write and lifecycle matrix pass.
+- #330 and #328 stay open, as does the #312 physical-key provenance issue.
+  Continue #333, #329 and #327 serially, preserving independent panic notices,
+  cleanup obligations and request confirmations. A same-model-family pass is
+  not an external certification. No fresh external-consumer canary or new
+  release qualification is claimed here.
+
+Reproduce the #333 controls from its specified head:
+
+```sh
+cargo +1.98.1 test --locked --test mouse_lease_pty -- --test-threads=1
+GIBSON_TEST_STALE_SCREEN_TORN=1 cargo +1.98.1 test --locked \
+  --test mouse_lease_pty restored_session_cannot_switch_a_new_owners_screen \
+  -- --exact --test-threads=1
+```
+
+The second command is an intentional mutation and must fail; remove the
+environment variable to run the acceptance suite. For #338, run the explicit
+standalone control shown earlier, with its `--ignored` flag while it remains
+ignored. Do not confuse the planted torn-sequence control with proof that the
+terminal applies a particular protocol or that a physically torn write is
+atomic.
