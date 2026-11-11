@@ -136,6 +136,9 @@ pub struct Renderer {
     /// the SGR the compiler thinks is set, the cursor, the inline region) is void. The next frame
     /// re-establishes everything instead of diffing against a belief that is no longer true.
     physical_uncertain: bool,
+    // Inline history operations can recover their region independently of
+    // cursor visibility. Keep that uncertainty until a frame sets visibility.
+    cursor_visibility_uncertain: bool,
     /// A frame that had to RE-ANCHOR (the terminal geometry changed) failed without delivering a
     /// byte: the geometry was already observed, so the retry must still owe the canvas reset the
     /// resize required (RXIV review finding 3). Cleared when a frame lands.
@@ -173,6 +176,7 @@ impl Renderer {
             last_exact_changed: 0,
             last_frame_report: FrameReport::default(),
             physical_uncertain: false,
+            cursor_visibility_uncertain: false,
             owed_reanchor: false,
         }
     }
@@ -205,10 +209,10 @@ impl Renderer {
         }
     }
 
-    /// Whether the last terminal write failed and the physical screen state is uncertain (the next
-    /// frame will re-establish it). See [`Renderer::render`].
+    /// Whether a failed terminal write left the screen or cursor visibility
+    /// uncertain. A successful frame re-establishes the renderer's state.
     pub fn physical_state_uncertain(&self) -> bool {
-        self.physical_uncertain
+        self.physical_uncertain || self.cursor_visibility_uncertain
     }
 
     /// Record a failed commit: the terminal may hold any prefix of the bytes that were attempted.
@@ -216,6 +220,7 @@ impl Renderer {
     /// state and let the next frame re-establish it (RXIV Gate G3).
     fn poison_physical_state(&mut self) {
         self.physical_uncertain = true;
+        self.cursor_visibility_uncertain = true;
         self.previous_surface = None;
         self.last_cursor_visible = None;
         self.last_cursor_desired = None;
@@ -388,6 +393,7 @@ impl Renderer {
         // RXIV Gate G3: after a failed (possibly torn) commit the canvas holds unknown content, so a
         // fullscreen recovery frame clears it exactly like a reanchor does.
         let recover = self.physical_uncertain;
+        let force_cursor = recover || self.cursor_visibility_uncertain;
         let clears_canvas = self.mode == RenderMode::Fullscreen && (reanchor || restyle || recover);
         let dirty_cells = if clears_canvas {
             total_cells
@@ -409,7 +415,8 @@ impl Renderer {
         // Cursor visibility/position are part of physical truth: an unchanged
         // framebuffer does not imply "nothing needs emitting".
         let desired_visible = paint_ctx.cursor_position.is_some();
-        let cursor_state_changed = self.last_cursor_visible != Some(desired_visible)
+        let cursor_state_changed = self.cursor_visibility_uncertain
+            || self.last_cursor_visible != Some(desired_visible)
             || self.last_cursor_desired != paint_ctx.cursor_position;
 
         if diff.is_empty() && !is_full_repaint && !cursor_state_changed {
@@ -436,6 +443,7 @@ impl Renderer {
             self.last_cursor_y,
             self.live_region_height,
         );
+        let cursor_hidden_before = session.cursor_hidden_for_render();
         let mut tx = TerminalTransaction::new(writer, session.sync_updates());
         tx.begin();
 
@@ -466,11 +474,17 @@ impl Renderer {
                     self.compiler.move_to(cx, cy, &mut tx.buffer);
                     self.last_cursor_x = cx;
                     self.last_cursor_y = cy;
-                    if let Some(cmd) = session.show_cursor() {
+                    let cursor_command = session.show_cursor();
+                    if force_cursor {
+                        tx.push(b"\x1b[?25h");
+                    } else if let Some(cmd) = cursor_command {
                         tx.push(cmd);
                     }
                 } else {
-                    if let Some(cmd) = session.hide_cursor() {
+                    let cursor_command = session.hide_cursor();
+                    if force_cursor {
+                        tx.push(b"\x1b[?25l");
+                    } else if let Some(cmd) = cursor_command {
                         tx.push(cmd);
                     }
                 }
@@ -544,7 +558,10 @@ impl Renderer {
                     self.compiler.move_to(cx, cy, &mut tx.buffer);
                     self.last_cursor_x = cx;
                     self.last_cursor_y = cy;
-                    if let Some(cmd) = session.show_cursor() {
+                    let cursor_command = session.show_cursor();
+                    if force_cursor {
+                        tx.push(b"\x1b[?25h");
+                    } else if let Some(cmd) = cursor_command {
                         tx.push(cmd);
                     }
                 } else {
@@ -552,7 +569,10 @@ impl Renderer {
                     self.compiler.move_to(0, bottom_y, &mut tx.buffer);
                     self.last_cursor_x = 0;
                     self.last_cursor_y = bottom_y;
-                    if let Some(cmd) = session.hide_cursor() {
+                    let cursor_command = session.hide_cursor();
+                    if force_cursor {
+                        tx.push(b"\x1b[?25l");
+                    } else if let Some(cmd) = cursor_command {
                         tx.push(cmd);
                     }
                 }
@@ -570,6 +590,7 @@ impl Renderer {
             match tx.commit_counted() {
                 Ok(n) => n,
                 Err(f) if f.is_certain_noop() => {
+                    session.reconcile_failed_cursor_write(cursor_hidden_before, false);
                     // Not one byte of this frame reached the writer: the screen is exactly what
                     // the renderer believes. Undo this frame's emission-state advance so a retry
                     // diffs in place (Gate F1's in-place restyle survives) — and if this frame was
@@ -586,6 +607,7 @@ impl Renderer {
                     return Err(f.error);
                 }
                 Err(f) => {
+                    session.reconcile_failed_cursor_write(cursor_hidden_before, true);
                     // A prefix (or an unconfirmed flush) may have reached the terminal (Gate G3):
                     // never claim it was left unchanged — void the physical belief so the next
                     // frame re-establishes the screen.
@@ -610,6 +632,7 @@ impl Renderer {
 
         self.previous_surface = Some(next_surface);
         self.physical_uncertain = false;
+        self.cursor_visibility_uncertain = false;
         self.owed_reanchor = false;
         // Physical-emission truth, advanced only now that the transaction committed: the cells on
         // screen carry this depth's SGR. A failed commit returns via `?` above and leaves the prior
@@ -959,6 +982,7 @@ impl Renderer {
             && !any_line_exceeds_width
             && self.previous_surface.is_some();
 
+        let cursor_hidden_before = session.cursor_hidden_for_render();
         let mut tx = TerminalTransaction::new(writer, session.sync_updates());
         tx.begin();
         let strategy;
@@ -996,7 +1020,8 @@ impl Renderer {
                 let bytes = self.compiler.compile(&diff);
                 tx.push(&bytes);
 
-                // Restore the exact requested cursor position/visibility.
+                // Restore the requested cursor position and, if known, visibility.
+                // Existing cursor uncertainty survives until a successful frame.
                 if self.last_cursor_visible == Some(true) {
                     self.compiler
                         .move_to(self.last_cursor_x, self.last_cursor_y, &mut tx.buffer);
@@ -1052,8 +1077,12 @@ impl Renderer {
         let bytes = match tx.commit_counted() {
             Ok(n) => n,
             // Nothing reached the writer: the terminal is unchanged, the belief stays valid.
-            Err(f) if f.is_certain_noop() => return Err(f.error),
+            Err(f) if f.is_certain_noop() => {
+                session.reconcile_failed_cursor_write(cursor_hidden_before, false);
+                return Err(f.error);
+            }
             Err(f) => {
+                session.reconcile_failed_cursor_write(cursor_hidden_before, true);
                 // Possibly torn (Gate G3): void the physical belief before propagating.
                 self.poison_physical_state();
                 return Err(f.error);

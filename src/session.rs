@@ -791,6 +791,22 @@ impl TerminalSession {
         Some(b"\x1b[?25h")
     }
 
+    // Rendering builds a transaction before writing it. Cursor bookkeeping
+    // must follow the write result, not merely the construction of bytes.
+    pub(crate) fn cursor_hidden_for_render(&self) -> bool {
+        self.cursor_hidden
+    }
+
+    pub(crate) fn reconcile_failed_cursor_write(&mut self, before: bool, uncertain: bool) {
+        // A partially delivered hide may still need cleanup; a partially
+        // delivered show may not have reached the terminal at all.
+        self.cursor_hidden = if uncertain {
+            before || self.cursor_hidden
+        } else {
+            before
+        };
+    }
+
     /// Sets whether synchronized-update mode (CSI ? 2026) is used.
     pub fn set_sync_updates(&mut self, enabled: bool) {
         self.sync_updates_enabled = enabled;

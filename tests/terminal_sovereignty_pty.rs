@@ -380,6 +380,253 @@ fn standalone_renderer_must_not_share_cache_between_writers() {
 }
 
 #[test]
+fn cursor_visibility_is_retried_after_write_and_flush_failures() {
+    use std::io::{self, Write};
+    struct Fault {
+        limit: usize,
+        sink: Vec<u8>,
+        fail_flush: bool,
+    }
+    impl Write for Fault {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            if self.limit == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "scripted write failure",
+                ));
+            }
+            let n = b.len().min(self.limit);
+            self.sink.extend_from_slice(&b[..n]);
+            self.limit -= n;
+            Ok(n)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            if self.fail_flush {
+                Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "scripted flush failure",
+                ))
+            } else {
+                Ok(())
+            }
+        }
+    }
+    fn frame(visible: bool) -> Node {
+        if visible {
+            Node::text_input("FRAME", 5, None, Style::default())
+        } else {
+            Node::text("FRAME", Style::default())
+        }
+    }
+    for mode in [gibson::RenderMode::Fullscreen, gibson::RenderMode::Inline] {
+        for visible in [false, true] {
+            for (limit, fail_flush, deliver) in [
+                (0, false, true),
+                (1, false, true),
+                (usize::MAX, true, true),
+                (usize::MAX, true, false),
+            ] {
+                let mut renderer = gibson::Renderer::new(mode);
+                let mut session = TerminalSession::headless(80, 24);
+                let mut initial = Vec::new();
+                renderer
+                    .render(&mut frame(!visible), &mut session, &mut initial)
+                    .unwrap();
+                let mut fault = Fault {
+                    limit,
+                    sink: Vec::new(),
+                    fail_flush,
+                };
+                assert!(renderer
+                    .render(&mut frame(visible), &mut session, &mut fault)
+                    .is_err());
+                let mut retry = Vec::new();
+                renderer
+                    .render(&mut frame(visible), &mut session, &mut retry)
+                    .unwrap();
+                let mut actual = vt100::Parser::new(24, 80, 0);
+                actual.process(&initial);
+                if deliver {
+                    actual.process(&fault.sink);
+                }
+                actual.process(&retry);
+                assert!(actual.screen().contents().contains("FRAME"));
+                assert_eq!(
+                    actual.screen().hide_cursor(),
+                    !visible,
+                    "{mode:?}, visible={visible}, limit={limit}, flush={fail_flush}, deliver={deliver}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn cursor_visibility_recovers_at_every_frame_write_cut() {
+    use std::io::{self, Write};
+    struct Cut {
+        left: usize,
+        bytes: Vec<u8>,
+    }
+    impl Write for Cut {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            if self.left == 0 {
+                return Err(io::Error::new(io::ErrorKind::BrokenPipe, "cut"));
+            }
+            let n = self.left.min(b.len());
+            self.bytes.extend_from_slice(&b[..n]);
+            self.left -= n;
+            Ok(n)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    fn frame(visible: bool) -> Node {
+        if visible {
+            Node::text_input("FRAME", 5, None, Style::default())
+        } else {
+            Node::text("FRAME", Style::default())
+        }
+    }
+    for mode in [gibson::RenderMode::Fullscreen, gibson::RenderMode::Inline] {
+        for visible in [false, true] {
+            let mut measure = gibson::Renderer::new(mode);
+            let mut session = TerminalSession::headless(80, 24);
+            measure
+                .render(&mut frame(!visible), &mut session, &mut Vec::new())
+                .unwrap();
+            let mut target = Vec::new();
+            measure
+                .render(&mut frame(visible), &mut session, &mut target)
+                .unwrap();
+            assert!(target
+                .windows(6)
+                .any(|w| w == if visible { b"\x1b[?25h" } else { b"\x1b[?25l" }));
+            for cut in 0..target.len() {
+                let mut renderer = gibson::Renderer::new(mode);
+                let mut session = TerminalSession::headless(80, 24);
+                let mut initial = Vec::new();
+                renderer
+                    .render(&mut frame(!visible), &mut session, &mut initial)
+                    .unwrap();
+                let mut fault = Cut {
+                    left: cut,
+                    bytes: Vec::new(),
+                };
+                assert!(renderer
+                    .render(&mut frame(visible), &mut session, &mut fault)
+                    .is_err());
+                let mut retry = Vec::new();
+                renderer
+                    .render(&mut frame(visible), &mut session, &mut retry)
+                    .unwrap();
+                let mut actual = vt100::Parser::new(24, 80, 0);
+                for bytes in [&initial, &fault.bytes, &retry] {
+                    actual.process(bytes);
+                }
+                assert_eq!(
+                    actual.screen().hide_cursor(),
+                    !visible,
+                    "mode={mode:?}, visible={visible}, cut={cut}/{}",
+                    target.len()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn inline_history_does_not_forget_uncertain_cursor_visibility() {
+    use std::io::{self, Write};
+    struct Fault {
+        remaining: usize,
+        bytes: Vec<u8>,
+        fail_flush: bool,
+    }
+    impl Write for Fault {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            if self.remaining == 0 {
+                return Err(io::Error::new(io::ErrorKind::BrokenPipe, "torn"));
+            }
+            let n = self.remaining.min(b.len());
+            self.bytes.extend_from_slice(&b[..n]);
+            self.remaining -= n;
+            Ok(n)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            if self.fail_flush {
+                Err(io::Error::new(io::ErrorKind::BrokenPipe, "flush"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+    fn frame(visible: bool) -> Node {
+        if visible {
+            Node::text_input("FRAME", 5, None, Style::default())
+        } else {
+            Node::text("FRAME", Style::default())
+        }
+    }
+    for visible in [false, true] {
+        for insert in [false, true] {
+            for (remaining, fail_flush, deliver) in [
+                (1, false, true),
+                (usize::MAX, true, true),
+                (usize::MAX, true, false),
+            ] {
+                let mut renderer = gibson::Renderer::new(gibson::RenderMode::Inline);
+                let mut session = TerminalSession::headless(80, 24);
+                let mut initial = Vec::new();
+                renderer
+                    .render(&mut frame(!visible), &mut session, &mut initial)
+                    .unwrap();
+                let mut fault = Fault {
+                    remaining,
+                    bytes: Vec::new(),
+                    fail_flush,
+                };
+                assert!(renderer
+                    .render(&mut frame(visible), &mut session, &mut fault)
+                    .is_err());
+                let mut history = Vec::new();
+                if insert {
+                    renderer
+                        .insert_text_before_live("history", &mut session, &mut history)
+                        .unwrap();
+                } else {
+                    renderer
+                        .commit_text("history", &mut session, &mut history)
+                        .unwrap();
+                }
+                assert!(
+                    renderer.physical_state_uncertain(),
+                    "cursor remains uncertain"
+                );
+                let mut retry = Vec::new();
+                renderer
+                    .render(&mut frame(visible), &mut session, &mut retry)
+                    .unwrap();
+                assert!(!renderer.physical_state_uncertain());
+                let mut actual = vt100::Parser::new(24, 80, 0);
+                actual.process(&initial);
+                if deliver {
+                    actual.process(&fault.bytes);
+                }
+                actual.process(&history);
+                actual.process(&retry);
+                assert_eq!(
+                    actual.screen().hide_cursor(),
+                    !visible,
+                    "visible={visible}, insert={insert}, flush={fail_flush}, deliver={deliver}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn sovereignty_child() {
     let Ok(role) = std::env::var(CHILD) else {
         return;
