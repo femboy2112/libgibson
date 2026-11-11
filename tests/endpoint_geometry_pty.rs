@@ -33,8 +33,13 @@ fn pty(cols: u16, rows: u16) -> (OwnedFd, OwnedFd) {
 }
 
 fn child(role: &str, b_size: (u16, u16)) -> Output {
-    let (_master_a, slave_a) = pty(40, 15);
-    let (_master_b, slave_b) = pty(b_size.0, b_size.1);
+    let (master_a, slave_a) = pty(40, 15);
+    let (master_b, slave_b) = pty(b_size.0, b_size.1);
+    let master_a_fd = unsafe { libc::fcntl(master_a.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 32) };
+    let master_b_fd = unsafe { libc::fcntl(master_b.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 32) };
+    assert!(master_a_fd >= 32 && master_b_fd >= 32);
+    let _master_a_owned = unsafe { OwnedFd::from_raw_fd(master_a_fd) };
+    let _master_b_owned = unsafe { OwnedFd::from_raw_fd(master_b_fd) };
     // Avoid collisions with the standard library's child-side descriptor setup.
     let b_fd = unsafe { libc::fcntl(slave_b.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 32) };
     assert!(b_fd >= 32);
@@ -55,7 +60,11 @@ fn child(role: &str, b_size: (u16, u16)) -> Output {
     unsafe {
         let controlling = role == "controlling" || role == "resize-control";
         command.pre_exec(move || {
-            if libc::setsid() == -1 || libc::dup2(b_fd, 4) != 4 {
+            if libc::setsid() == -1
+                || libc::dup2(b_fd, 4) != 4
+                || libc::dup2(master_a_fd, 5) != 5
+                || libc::dup2(master_b_fd, 6) != 6
+            {
                 return Err(std::io::Error::last_os_error());
             }
             if controlling && libc::ioctl(0, libc::TIOCSCTTY, 0) == -1 {
@@ -150,6 +159,26 @@ fn resize_event_matches_the_acquired_output_geometry() {
 }
 
 #[test]
+fn input_follows_acquired_terminal_even_if_stdin_is_retargeted_before_first_poll() {
+    for role in ["input-control", "input-open-first", "input-retarget-first"] {
+        let result = child(role, (120, 40));
+        let err = String::from_utf8_lossy(&result.stderr);
+        eprintln!("{role}: {err}");
+        assert!(result.status.success(), "{role}: {err}");
+        assert!(err.contains("OBSERVED=Char('x')"), "{role}: {err}");
+    }
+}
+
+#[test]
+fn queued_input_survives_stdin_retarget_before_first_poll() {
+    let result = child("input-queued-first", (120, 40));
+    let err = String::from_utf8_lossy(&result.stderr);
+    eprintln!("input-queued-first: {err}");
+    assert!(result.status.success(), "{err}");
+    assert!(err.contains("OBSERVED=Char('x')"), "{err}");
+}
+
+#[test]
 fn prior_unmanaged_inflight_poll_must_not_report_a_different_terminal() {
     let result = child("resize-inflight", (120, 40));
     let err = String::from_utf8_lossy(&result.stderr);
@@ -192,6 +221,99 @@ fn geometry_child() {
             host_raw && physical_raw,
             "session released host-owned raw mode"
         );
+        return;
+    }
+    if role.starts_with("input-") {
+        let saved_a = unsafe { libc::dup(0) };
+        assert!(saved_a >= 0);
+        let mut b_before = std::mem::MaybeUninit::<libc::termios>::uninit();
+        assert_eq!(unsafe { libc::tcgetattr(4, b_before.as_mut_ptr()) }, 0);
+        let b_before = unsafe { b_before.assume_init() };
+        let mut b_raw = b_before;
+        unsafe { libc::cfmakeraw(&mut b_raw) };
+        assert_eq!(unsafe { libc::tcsetattr(4, libc::TCSANOW, &b_raw) }, 0);
+        let mut context = gibson::Context::fullscreen().unwrap();
+        context.enter_interactive().unwrap();
+        if role == "input-open-first" {
+            assert!(context.poll_event(Duration::ZERO).unwrap().is_none());
+        }
+        let a_input = b"x\r\n\n";
+        let b_input = b"y\r\n\n";
+        if role == "input-queued-first" {
+            assert_eq!(
+                unsafe { libc::write(5, a_input.as_ptr().cast(), a_input.len()) },
+                4
+            );
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                let mut queued: libc::c_int = 0;
+                assert_eq!(
+                    unsafe { libc::ioctl(saved_a, libc::FIONREAD, &mut queued) },
+                    0
+                );
+                if queued >= 4 {
+                    eprintln!("A_QUEUED_BEFORE_RETARGET={queued}");
+                    break;
+                }
+                assert!(Instant::now() < deadline, "A input never became readable");
+                std::thread::yield_now();
+            }
+        }
+        if role != "input-control" {
+            assert_eq!(unsafe { libc::dup2(4, 0) }, 0);
+        }
+        if role != "input-queued-first" {
+            assert_eq!(
+                unsafe { libc::write(5, a_input.as_ptr().cast(), a_input.len()) },
+                4
+            );
+        }
+        assert_eq!(
+            unsafe { libc::write(6, b_input.as_ptr().cast(), b_input.len()) },
+            4
+        );
+        let observed: Vec<_> = (0..4)
+            .map(|_| context.poll_event(Duration::from_secs(2)))
+            .collect();
+        let extra = context.poll_event(Duration::ZERO);
+        if role == "input-queued-first" {
+            let mut queued: libc::c_int = 0;
+            assert_eq!(
+                unsafe { libc::ioctl(saved_a, libc::FIONREAD, &mut queued) },
+                0
+            );
+            eprintln!("A_QUEUED_AFTER_POLL={queued}");
+        }
+        // Return stdin to A before cleanup; separately restore B's termios.
+        assert_eq!(unsafe { libc::dup2(saved_a, 0) }, 0);
+        let restored = context.restore();
+        assert_eq!(unsafe { libc::tcsetattr(4, libc::TCSANOW, &b_before) }, 0);
+        unsafe { libc::close(saved_a) };
+        restored.unwrap();
+        assert!(extra.unwrap().is_none(), "duplicate or extra key event");
+        let keys: Vec<_> = observed
+            .into_iter()
+            .map(|event| {
+                let event = event.unwrap().expect("input marker missing");
+                let gibson::Event::Key(key) = event else {
+                    panic!("unexpected event: {event:?}");
+                };
+                key
+            })
+            .collect();
+        eprintln!("OBSERVED={:?} KEYS={keys:?}", keys[0].code);
+        let key = |code, modifiers| gibson::input::KeyEvent { code, modifiers };
+        use gibson::input::{KeyCode, KeyModifiers};
+        assert_eq!(
+            &keys[1..],
+            &[
+                key(KeyCode::Enter, KeyModifiers::empty()),
+                key(KeyCode::Char('j'), KeyModifiers::CONTROL),
+                key(KeyCode::Char('j'), KeyModifiers::CONTROL),
+            ],
+            "CR and LF/Ctrl+J semantics changed"
+        );
+        assert_eq!(keys[0].code, KeyCode::Char('x'), "read replacement input");
         return;
     }
     if role.starts_with("raw-") {

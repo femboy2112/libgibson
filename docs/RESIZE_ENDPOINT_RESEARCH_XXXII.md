@@ -59,3 +59,35 @@ lease observation is not an atomic ownership transfer; do not promote it as a
 complete solution. It also allocates a boxed reader on every Unix poll; idle and
 high-rate input costs have not been measured. Keep the original renderer A/B/A and immutable ANSI golden
 controls, inline/history behavior, old installed clients and Rust 1.85 gates.
+
+## Input selection timing — XXXIII follow-up
+
+An additional Linux PTY probe uses distinct, independently raw terminals A and B,
+with no controlling terminal. It enters managed raw input on A, then tests stdin
+replacement with B before or after the first poll. Different markers are sent to
+both PTY masters. In the unchanged-stdin control and when the source is opened
+before replacement, the poll reads A's `x`. When stdin is replaced before source
+creation, it reads B's `y`. In a separate queued-input case, `FIONREAD` confirms
+four bytes on A before retargeting and all four still pending after the poll has
+returned B's events. The fixture restores stdin to A before session cleanup and
+restores B's separate termios, so this isolates input selection from #344's raw
+restore defect. The same two-input-control result and the A-queue observation were reproduced
+using the fixture against main `823d606b81b820c9b0f8374861f13ee16304a98e`.
+This adversarial descriptor replacement does not establish a failure for
+applications that keep stdin stable.
+
+The same stream checks CR as Enter, and two LF bytes as two Ctrl+J events, with
+no extra event observed by a zero-timeout poll after the stream. At this Unix
+byte interface LF and Ctrl+J are the same byte; the probe does not claim to
+recover physical keystroke provenance. The branch retains both requested
+A-identity controls as ordinary failing tests. Pinning the descriptor at
+acquisition could address this timing difference, but needs coordinated review
+of unmanaged in-flight polls, queued input, host raw ownership, panic recovery,
+hangup, raw restoration, FFI and failure behavior before it is a fix.
+
+Commands (each failing acceptance is intentional, exit 101):
+
+```sh
+cargo +1.98.1 test --locked --test endpoint_geometry_pty input -- --nocapture --test-threads=1
+cargo +1.98.1 test --locked --test endpoint_geometry_pty queued_input_survives_stdin_retarget_before_first_poll -- --exact --nocapture --test-threads=1
+```
