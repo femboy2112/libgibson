@@ -199,6 +199,10 @@ impl BoundTarget<'_> {
     pub fn live_region_height(&self) -> u16 {
         self.renderer.live_region_height
     }
+    /// Most recently committed cursor row relative to the live region.
+    pub fn last_cursor_y(&self) -> u16 {
+        self.renderer.last_cursor_y
+    }
     /// Number of renderer anchor resynchronizations.
     pub fn anchor_resyncs(&self) -> u64 {
         self.renderer.anchor_resyncs
@@ -236,6 +240,12 @@ impl BoundTarget<'_> {
     }
     pub fn commit_text(&mut self, text: &str) -> io::Result<usize> {
         self.run(|r, s, w| r.commit_text(text, s, w))
+    }
+    /// Bound projection of the legacy safe-text commit alias.
+    #[deprecated(note = "use `commit_text`, `commit_rich_text`, or `commit_node`")]
+    #[allow(deprecated)]
+    pub fn commit(&mut self, text: &str) -> io::Result<()> {
+        self.run(|r, s, w| r.commit(text, s, w))
     }
     pub fn commit_text_with_mode(&mut self, text: &str, wrap: WrapMode) -> io::Result<usize> {
         self.run(|r, s, w| r.commit_text_with_mode(text, wrap, s, w))
