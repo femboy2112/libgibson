@@ -138,24 +138,31 @@ def check_against(lang, text, ref_text, expected, dims, out_lines):
         problems.append("UNEXPECTED record %s" % rid)
     for rid in dups:
         problems.append("DUPLICATE record %s" % rid)
-    differing, order_ok = diff_ids(ref_text, text)
+    differing, ref_order_ok = diff_ids(ref_text, text)
+    # Reference and candidate can share the same ordering bug: also enforce the committed order.
+    order_ok = ref_order_ok and ids == want_ids
     allowed = set(expected["differs_from_c"].get(lang, []))
     new = sorted(set(differing) - allowed)
     healed = sorted(allowed - set(differing))
     # A known gap is pinned to its exact record: a change inside it is a regression too.
     pinned = expected.get("pinned", {}).get(lang, {})
     recs, _ = records(text)
-    for rid in sorted(allowed & set(differing)):
+    for rid in sorted(allowed):
         if rid in recs and recs[rid] != pinned.get(rid):
             new.append(rid)
             problems.append("CHANGED inside known gap %s (%s): pinned record differs" % (rid, dim_of(dims, rid)))
-    new = sorted(set(new) | set(missing) | set(dups))
+    # Selected independent oracles prevent identical errors in all API paths from cancelling.
+    for rid, value in expected.get("absolute", {}).items():
+        if rid in recs and recs[rid] != value:
+            new.append(rid)
+            problems.append("CHANGED absolute record %s (%s)" % (rid, dim_of(dims, rid)))
+    new = sorted(set(new) | set(missing) | set(dups) | set(healed))
     if not order_ok:
-        problems.append("record ORDER differs from the reference")
+        problems.append("record ORDER differs from the reference or committed order")
     for rid in sorted(set(differing) - allowed):
         problems.append("NEW difference vs c at %s (%s)" % (rid, dim_of(dims, rid)))
     for rid in healed:
-        out_lines.append("  note: %s: expected difference at %s no longer present (expected.json is stale)" % (lang, rid))
+        problems.append("DISAPPEARED known gap %s (%s): expected difference vs c requires expectation review" % (rid, dim_of(dims, rid)))
     return new, problems, order_ok
 
 
@@ -183,7 +190,8 @@ def cmd_check(args):
 
 
 def cmd_matrix(args):
-    expected = json.load(open(args.expected, encoding="utf-8"))
+    with open(args.expected, encoding="utf-8") as expectation:
+        expected = json.load(expectation)
     dims = step_dims(args.script)
     d = args.dir
     regress = []
@@ -220,7 +228,8 @@ def cmd_matrix(args):
             regress.append("%s: NEW difference vs rust at %s" % (lang, rid))
             dim_ok[lang][dim_of(dims, rid)] = False
         for rid in sorted(want_r - set(dr)) if rust else []:
-            notes.append("  note: %s: expected difference vs rust at %s no longer present (expected.json is stale)" % (lang, rid))
+            regress.append("%s: DISAPPEARED known gap vs rust at %s: requires expectation review" % (lang, rid))
+            dim_ok[lang][dim_of(dims, rid)] = False
         nrec = len(t.splitlines())
         summary.append((lang, nrec, dc, order_c, dr, order_r))
 

@@ -25,6 +25,10 @@
 #include <sys/resource.h>
 #include <time.h>
 
+/* Pin these ABI numbers independently of the wrapper and transcript name mappings. */
+_Static_assert(GIBSON_EVENT_FOCUS_GAINED == 7, "focus gained ABI value must remain 7");
+_Static_assert(GIBSON_EVENT_FOCUS_LOST == 8, "focus lost ABI value must remain 8");
+
 /* ------------------------------------------------------------------ output buffer */
 typedef struct {
     char *p;
@@ -142,6 +146,8 @@ static const char *type_name(int32_t t) {
     case GIBSON_EVENT_KEY: return "KEY";
     case GIBSON_EVENT_PASTE: return "PASTE";
     case GIBSON_EVENT_RESIZE: return "RESIZE";
+    case GIBSON_EVENT_FOCUS_GAINED: return "FOCUS_GAINED";
+    case GIBSON_EVENT_FOCUS_LOST: return "FOCUS_LOST";
     default: return "NONE";
     }
 }
@@ -467,6 +473,14 @@ static void run_script(Step *steps, int nsteps, Buf *out) {
             int st = gibson_render(S.ctx);
             rec_str(&r, "id", id); rec_str(&r, "k", "render"); rec_str(&r, "st", st_name(st));
             rec_emit(out, &r);
+        } else if (!strcmp(op, "terminal_size")) {
+            uint16_t c = 0, rr = 0;
+            int st = gibson_get_terminal_size(S.ctx, &c, &rr);
+            rec_int(&r, "cols", c); rec_str(&r, "id", id); rec_str(&r, "k", "terminal_size"); rec_int(&r, "rows", rr);
+            rec_str(&r, "st", st_name(st)); rec_emit(out, &r);
+        } else if (!strcmp(op, "focus_reporting")) {
+            int st = gibson_set_focus_reporting(S.ctx, atoi(a[0]));
+            rec_str(&r, "id", id); rec_str(&r, "k", "focus_reporting"); rec_str(&r, "st", st_name(st)); rec_emit(out, &r);
         } else if (!strcmp(op, "geom")) {
             uint16_t c = 0, rr = 0;
             int st = gibson_get_frame_size(S.ctx, &c, &rr);
@@ -558,6 +572,9 @@ static void run_script(Step *steps, int nsteps, Buf *out) {
                 size_t n = unhex(a[0], paste, sizeof paste - 1);
                 paste[n] = 0;
                 ev.event_type = GIBSON_EVENT_PASTE; ev.paste_str = (const char *)paste;
+                st = gibson_push_event(S.ctx, &ev);
+            } else if (!strcmp(op, "push_focus")) {
+                ev.event_type = !strcmp(a[0], "GAINED") ? GIBSON_EVENT_FOCUS_GAINED : GIBSON_EVENT_FOCUS_LOST;
                 st = gibson_push_event(S.ctx, &ev);
             } else { /* push_resize */
                 ev.event_type = GIBSON_EVENT_RESIZE; ev.cols = (uint16_t)atoi(a[0]); ev.rows = (uint16_t)atoi(a[1]);
