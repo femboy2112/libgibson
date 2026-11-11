@@ -20,37 +20,72 @@
 //!   then intact immediately above the parked cursor. The renderer never claims the torn terminal
 //!   was left unchanged.
 
-use gibson::renderer::{RenderMode, Renderer};
+use gibson::renderer::{BoundTarget, RenderMode, Renderer};
 use gibson::session::TerminalSession;
 use gibson::{Color, Node, Style};
+use std::cell::RefCell;
 use std::io::{self, Write};
+use std::rc::Rc;
 use vt100::Parser;
 
 const W: u16 = 24;
 const H: u16 = 6;
 
-/// A writer that accepts exactly `budget` bytes, then fails every write.
-struct FailAfter {
-    budget: usize,
-    sink: Vec<u8>,
+/// One stable destination with separately controlled fault injection.
+#[derive(Default)]
+struct WriterState {
+    budget: Option<usize>,
+    accepted: Vec<u8>,
 }
-
-impl Write for FailAfter {
+struct ControlledWriter(Rc<RefCell<WriterState>>);
+impl Write for ControlledWriter {
     fn write(&mut self, b: &[u8]) -> io::Result<usize> {
-        if self.budget == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "scripted torn write",
-            ));
+        let mut state = self.0.borrow_mut();
+        let n = match state.budget {
+            Some(0) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "scripted torn write",
+                ))
+            }
+            Some(left) => b.len().min(left),
+            None => b.len(),
+        };
+        state.accepted.extend_from_slice(&b[..n]);
+        if let Some(left) = &mut state.budget {
+            *left -= n;
         }
-        let n = b.len().min(self.budget);
-        self.sink.extend_from_slice(&b[..n]);
-        self.budget -= n;
         Ok(n)
     }
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
+}
+fn with_target<T>(
+    mode: RenderMode,
+    rows: u16,
+    f: impl FnOnce(&mut BoundTarget<'_>, &Rc<RefCell<WriterState>>) -> T,
+) -> T {
+    let mut renderer = Renderer::new(mode);
+    let mut session = TerminalSession::headless(W, rows);
+    let state = Rc::new(RefCell::new(WriterState::default()));
+    let mut writer = ControlledWriter(state.clone());
+    let mut target = renderer.bind_target(&mut session, &mut writer).unwrap();
+    f(&mut target, &state)
+}
+fn take(state: &Rc<RefCell<WriterState>>) -> Vec<u8> {
+    std::mem::take(&mut state.borrow_mut().accepted)
+}
+fn arm(state: &Rc<RefCell<WriterState>>, budget: usize) {
+    let mut s = state.borrow_mut();
+    assert!(s.accepted.is_empty(), "drain before fault injection");
+    s.budget = Some(budget);
+}
+fn heal(state: &Rc<RefCell<WriterState>>) {
+    state.borrow_mut().budget = None;
+}
+fn render(target: &mut BoundTarget<'_>, mut node: Node) -> io::Result<()> {
+    target.render(&mut node).map(|_| ())
 }
 
 fn frame(lines: &[(&str, Style)]) -> Node {
@@ -87,24 +122,14 @@ fn f3_other() -> Node {
     ])
 }
 
-fn render(
-    r: &mut Renderer,
-    s: &mut TerminalSession,
-    node: Node,
-    w: &mut dyn Write,
-) -> io::Result<()> {
-    let mut node = node;
-    r.render(&mut node, s, w).map(|_| ())
-}
-
 /// The full clean byte stream of frame 2 after frame 1 (to know every cut point).
 fn frame2_len(mode: RenderMode) -> usize {
-    let (mut r, mut s) = (Renderer::new(mode), TerminalSession::headless(W, H));
-    let mut sink = Vec::new();
-    render(&mut r, &mut s, f1(), &mut sink).unwrap();
-    let mut two = Vec::new();
-    render(&mut r, &mut s, f2(), &mut two).unwrap();
-    two.len()
+    with_target(mode, H, |target, state| {
+        render(target, f1()).unwrap();
+        take(state);
+        render(target, f2()).unwrap();
+        take(state).len()
+    })
 }
 
 /// Screen snapshot: per-cell glyph + the attributes that matter.
@@ -131,34 +156,29 @@ fn snapshot(p: &Parser) -> Vec<String> {
 }
 
 fn clean_fullscreen(f3: fn() -> Node) -> Vec<String> {
-    let (mut r, mut s) = (
-        Renderer::new(RenderMode::Fullscreen),
-        TerminalSession::headless(W, H),
-    );
-    let mut bytes = Vec::new();
-    render(&mut r, &mut s, f3(), &mut bytes).unwrap();
-    let mut p = Parser::new(H, W, 0);
-    p.process(&bytes);
-    snapshot(&p)
+    with_target(RenderMode::Fullscreen, H, |target, state| {
+        render(target, f3()).unwrap();
+        let mut p = Parser::new(H, W, 0);
+        p.process(&take(state));
+        snapshot(&p)
+    })
 }
-
 fn torn_fullscreen(n: usize, f3: fn() -> Node) -> (Vec<String>, bool) {
-    let (mut r, mut s) = (
-        Renderer::new(RenderMode::Fullscreen),
-        TerminalSession::headless(W, H),
-    );
-    let mut term = Vec::new();
-    render(&mut r, &mut s, f1(), &mut term).unwrap();
-    let mut torn = FailAfter {
-        budget: n,
-        sink: Vec::new(),
-    };
-    let failed = render(&mut r, &mut s, f2(), &mut torn).is_err();
-    term.extend_from_slice(&torn.sink);
-    render(&mut r, &mut s, f3(), &mut term).unwrap();
-    let mut p = Parser::new(H, W, 0);
-    p.process(&term);
-    (snapshot(&p), failed)
+    with_target(RenderMode::Fullscreen, H, |target, state| {
+        render(target, f1()).unwrap();
+        let mut term = take(state);
+        arm(state, n);
+        let failed = render(target, f2()).is_err();
+        let torn = take(state);
+        assert_eq!(torn.len(), n, "fault must reach its requested cut");
+        term.extend_from_slice(&torn);
+        heal(state);
+        render(target, f3()).unwrap();
+        term.extend_from_slice(&take(state));
+        let mut p = Parser::new(H, W, 0);
+        p.process(&term);
+        (snapshot(&p), failed)
+    })
 }
 
 #[test]
@@ -176,12 +196,7 @@ fn fullscreen_recovers_exactly_after_a_torn_frame_at_every_cut_point_reverting_f
             bad.push(n);
         }
     }
-    assert!(
-        bad.is_empty(),
-        "after a torn frame 2 the screen did not converge to frame 3 for {} of {len} cut points (first {:?})",
-        bad.len(),
-        &bad[..bad.len().min(8)]
-    );
+    assert!(bad.is_empty(), "after a torn frame 2 the screen did not converge to frame 3 for {} of {len} cut points (first {:?})", bad.len(), &bad[..bad.len().min(8)]);
 }
 
 #[test]
@@ -190,7 +205,8 @@ fn fullscreen_recovers_exactly_after_a_torn_frame_at_every_cut_point_new_frame()
     let len = frame2_len(RenderMode::Fullscreen);
     let mut bad = Vec::new();
     for n in 0..len {
-        let (got, _) = torn_fullscreen(n, f3_other);
+        let (got, failed) = torn_fullscreen(n, f3_other);
+        assert!(failed);
         if got != want {
             bad.push(n);
         }
@@ -203,57 +219,45 @@ fn fullscreen_recovers_exactly_after_a_torn_frame_at_every_cut_point_new_frame()
     );
 }
 
-/// Inline: after a torn write the torn region is abandoned (honestly uncertain) and frame 3 is drawn
-/// intact in a fresh region ending at the parked cursor.
 #[test]
 fn inline_abandons_the_torn_region_and_draws_the_next_frame_intact() {
-    // The clean inline frame-3 rows (a fresh region at the top of an empty terminal).
-    let clean_rows = {
-        let (mut r, mut s) = (
-            Renderer::new(RenderMode::Inline),
-            TerminalSession::headless(W, 40),
-        );
-        let mut bytes = Vec::new();
-        render(&mut r, &mut s, f3_other(), &mut bytes).unwrap();
+    let clean_rows = with_target(RenderMode::Inline, 40, |target, state| {
+        render(target, f3_other()).unwrap();
         let mut p = Parser::new(40, W, 0);
-        p.process(&bytes);
+        p.process(&take(state));
         let (crow, _) = p.screen().cursor_position();
-        let rows: Vec<String> = p.screen().rows(0, W).take(crow as usize + 1).collect();
-        rows
-    };
-    let len = {
-        let (mut r, mut s) = (
-            Renderer::new(RenderMode::Inline),
-            TerminalSession::headless(W, 40),
-        );
-        let mut sink = Vec::new();
-        render(&mut r, &mut s, f1(), &mut sink).unwrap();
-        let mut two = Vec::new();
-        render(&mut r, &mut s, f2(), &mut two).unwrap();
-        two.len()
-    };
+        p.screen()
+            .rows(0, W)
+            .take(crow as usize + 1)
+            .collect::<Vec<String>>()
+    });
+    let len = with_target(RenderMode::Inline, 40, |target, state| {
+        render(target, f1()).unwrap();
+        take(state);
+        render(target, f2()).unwrap();
+        take(state).len()
+    });
     let mut bad = Vec::new();
     for n in 0..len {
-        let (mut r, mut s) = (
-            Renderer::new(RenderMode::Inline),
-            TerminalSession::headless(W, 40),
-        );
-        let mut term = Vec::new();
-        render(&mut r, &mut s, f1(), &mut term).unwrap();
-        let mut torn = FailAfter {
-            budget: n,
-            sink: Vec::new(),
-        };
-        assert!(render(&mut r, &mut s, f2(), &mut torn).is_err());
-        term.extend_from_slice(&torn.sink);
-        render(&mut r, &mut s, f3_other(), &mut term).unwrap();
-        let mut p = Parser::new(40, W, 0);
-        p.process(&term);
-        let (crow, _) = p.screen().cursor_position();
-        let k = clean_rows.len();
-        let all: Vec<String> = p.screen().rows(0, W).collect();
-        let start = (crow as usize + 1).saturating_sub(k);
-        if all[start..=crow as usize] != clean_rows[..] {
+        let actual = with_target(RenderMode::Inline, 40, |target, state| {
+            render(target, f1()).unwrap();
+            let mut term = take(state);
+            arm(state, n);
+            assert!(render(target, f2()).is_err());
+            let torn = take(state);
+            assert_eq!(torn.len(), n);
+            term.extend_from_slice(&torn);
+            heal(state);
+            render(target, f3_other()).unwrap();
+            term.extend_from_slice(&take(state));
+            let mut p = Parser::new(40, W, 0);
+            p.process(&term);
+            let (crow, _) = p.screen().cursor_position();
+            let all: Vec<String> = p.screen().rows(0, W).collect();
+            let start = (crow as usize + 1).saturating_sub(clean_rows.len());
+            all[start..=crow as usize].to_vec()
+        });
+        if actual != clean_rows {
             bad.push(n);
         }
     }
@@ -265,161 +269,123 @@ fn inline_abandons_the_torn_region_and_draws_the_next_frame_intact() {
     );
 }
 
-/// The uncertainty is observable and cleared only by a successful re-establishing frame.
 #[test]
 fn a_failed_commit_marks_the_physical_state_uncertain_until_a_frame_lands() {
-    let (mut r, mut s) = (
-        Renderer::new(RenderMode::Fullscreen),
-        TerminalSession::headless(W, H),
-    );
-    let mut ok = Vec::new();
-    render(&mut r, &mut s, f1(), &mut ok).unwrap();
-    assert!(!r.physical_state_uncertain());
-    let mut torn = FailAfter {
-        budget: 7,
-        sink: Vec::new(),
-    };
-    assert!(render(&mut r, &mut s, f2(), &mut torn).is_err());
-    assert!(
-        r.physical_state_uncertain(),
-        "a torn write is never reported as harmless"
-    );
-    // A second failure keeps it uncertain.
-    let mut dead = FailAfter {
-        budget: 0,
-        sink: Vec::new(),
-    };
-    assert!(render(&mut r, &mut s, f2(), &mut dead).is_err());
-    assert!(r.physical_state_uncertain());
-    let mut ok2 = Vec::new();
-    render(&mut r, &mut s, f2(), &mut ok2).unwrap();
-    assert!(!r.physical_state_uncertain());
-    assert!(
-        ok2.windows(4).any(|w| w == b"\x1b[2J"),
-        "the recovery frame re-establishes the canvas"
-    );
+    with_target(RenderMode::Fullscreen, H, |target, state| {
+        render(target, f1()).unwrap();
+        take(state);
+        assert!(!target.physical_state_uncertain());
+        arm(state, 7);
+        assert!(render(target, f2()).is_err());
+        assert_eq!(take(state).len(), 7);
+        assert!(
+            target.physical_state_uncertain(),
+            "a torn write is never reported as harmless"
+        );
+        arm(state, 0);
+        assert!(render(target, f2()).is_err());
+        assert!(take(state).is_empty());
+        assert!(target.physical_state_uncertain());
+        heal(state);
+        render(target, f2()).unwrap();
+        assert!(!target.physical_state_uncertain());
+        assert!(
+            take(state).windows(4).any(|w| w == b"\x1b[2J"),
+            "the recovery frame re-establishes the canvas"
+        );
+    });
 }
 
-/// A failure that delivered ZERO bytes is CERTAIN (the terminal is unchanged): the renderer stays
-/// certain and the retry diffs in place — the RXI Gate F1 in-place restyle contract. Only a prefix
-/// (or an unconfirmed flush) makes the physical state uncertain.
 #[test]
 fn a_failure_that_delivered_nothing_keeps_the_physical_state_certain() {
     for mode in [RenderMode::Fullscreen, RenderMode::Inline] {
-        let (mut r, mut s) = (Renderer::new(mode), TerminalSession::headless(W, H));
-        let mut term = Vec::new();
-        render(&mut r, &mut s, f1(), &mut term).unwrap();
-        let mut dead = FailAfter {
-            budget: 0,
-            sink: Vec::new(),
-        };
-        assert!(render(&mut r, &mut s, f2(), &mut dead).is_err());
-        assert!(dead.sink.is_empty());
-        assert!(!r.physical_state_uncertain(), "{mode:?}: nothing was sent");
-        let mut retry = Vec::new();
-        render(&mut r, &mut s, f2(), &mut retry).unwrap();
-        assert!(
-            !retry.windows(4).any(|w| w == b"\x1b[2J"),
-            "{mode:?}: a certain no-op failure needs no canvas reset"
-        );
+        with_target(mode, H, |target, state| {
+            render(target, f1()).unwrap();
+            take(state);
+            arm(state, 0);
+            assert!(render(target, f2()).is_err());
+            assert!(take(state).is_empty());
+            assert!(
+                !target.physical_state_uncertain(),
+                "{mode:?}: nothing was sent"
+            );
+            heal(state);
+            render(target, f2()).unwrap();
+            let retry = take(state);
+            assert!(
+                !retry.windows(4).any(|w| w == b"\x1b[2J"),
+                "{mode:?}: a certain no-op failure needs no canvas reset"
+            );
+        });
     }
 }
 
-// ---- RXIV review findings 3–5 (independent adversarial review of b70aa5c), red-first ----------
-
-/// Finding 3: a RESIZE frame whose commit delivered nothing still owes the canvas reset the resize
-/// required. Restoring the emission state must not drop that obligation (the retry would otherwise
-/// leave reflowed old content in cells the fresh diff elides).
 #[test]
 fn review_a_zero_byte_failed_resize_frame_keeps_its_canvas_reset() {
-    let (mut r, mut s) = (
-        Renderer::new(RenderMode::Fullscreen),
-        TerminalSession::headless(W, H),
-    );
-    let mut ok = Vec::new();
-    render(&mut r, &mut s, f1(), &mut ok).unwrap();
-    s.set_terminal_size(W - 4, H);
-    let mut dead = FailAfter {
-        budget: 0,
-        sink: Vec::new(),
-    };
-    assert!(render(&mut r, &mut s, f2(), &mut dead).is_err());
-    let mut retry = Vec::new();
-    render(&mut r, &mut s, f2(), &mut retry).unwrap();
-    assert!(
-        retry.windows(4).any(|w| w == b"\x1b[2J"),
-        "the retried resize frame must still clear the canvas"
-    );
+    with_target(RenderMode::Fullscreen, H, |target, state| {
+        render(target, f1()).unwrap();
+        take(state);
+        target.set_terminal_size(W - 4, H);
+        arm(state, 0);
+        assert!(render(target, f2()).is_err());
+        assert!(take(state).is_empty());
+        heal(state);
+        render(target, f2()).unwrap();
+        assert!(
+            take(state).windows(4).any(|w| w == b"\x1b[2J"),
+            "the retried resize frame must still clear the canvas"
+        );
+    });
 }
 
-/// Finding 4: in FULLSCREEN mode a successful scrollback commit does not re-establish the canvas,
-/// so it must not clear the "physical state uncertain" mark left by a torn frame.
 #[test]
 fn review_a_fullscreen_commit_does_not_clear_the_uncertainty() {
-    let (mut r, mut s) = (
-        Renderer::new(RenderMode::Fullscreen),
-        TerminalSession::headless(W, H),
-    );
-    let mut ok = Vec::new();
-    render(&mut r, &mut s, f1(), &mut ok).unwrap();
-    let mut torn = FailAfter {
-        budget: 9,
-        sink: Vec::new(),
-    };
-    assert!(render(&mut r, &mut s, f2(), &mut torn).is_err());
-    let mut committed = Vec::new();
-    r.commit_text("a committed line", &mut s, &mut committed)
-        .unwrap();
-    assert!(r.physical_state_uncertain());
-    let mut next = Vec::new();
-    render(&mut r, &mut s, f3_other(), &mut next).unwrap();
-    assert!(
-        next.windows(4).any(|w| w == b"\x1b[2J"),
-        "the canvas is still re-established after the commit"
-    );
+    with_target(RenderMode::Fullscreen, H, |target, state| {
+        render(target, f1()).unwrap();
+        take(state);
+        arm(state, 9);
+        assert!(render(target, f2()).is_err());
+        assert_eq!(take(state).len(), 9);
+        heal(state);
+        target.commit_text("a committed line").unwrap();
+        take(state);
+        assert!(target.physical_state_uncertain());
+        render(target, f3_other()).unwrap();
+        assert!(
+            take(state).windows(4).any(|w| w == b"\x1b[2J"),
+            "the canvas is still re-established after the commit"
+        );
+    });
 }
 
-/// Finding 5: a torn frame can leave auto-wrap OFF (`?7l` delivered, `?7h` not). Every recovery
-/// path must re-enable it before writing, or scrollback lines are clipped permanently.
 #[test]
 fn review_recovery_re_enables_autowrap_before_writing() {
-    let (mut r, mut s) = (
-        Renderer::new(RenderMode::Inline),
-        TerminalSession::headless(W, 40),
-    );
-    let mut ok = Vec::new();
-    render(&mut r, &mut s, f1(), &mut ok).unwrap();
-    // Cut frame 2 right after its `?7l`.
-    let cut = {
-        let (mut r2, mut s2) = (
-            Renderer::new(RenderMode::Inline),
-            TerminalSession::headless(W, 40),
-        );
-        let mut a = Vec::new();
-        render(&mut r2, &mut s2, f1(), &mut a).unwrap();
-        let mut b = Vec::new();
-        render(&mut r2, &mut s2, f2(), &mut b).unwrap();
+    let cut = with_target(RenderMode::Inline, 40, |target, state| {
+        render(target, f1()).unwrap();
+        take(state);
+        render(target, f2()).unwrap();
+        let b = take(state);
         b.windows(5)
             .position(|w| w == b"\x1b[?7l")
             .expect("frame 2 disables autowrap")
             + 5
-    };
-    let mut torn = FailAfter {
-        budget: cut,
-        sink: Vec::new(),
-    };
-    assert!(render(&mut r, &mut s, f2(), &mut torn).is_err());
-    let mut committed = Vec::new();
-    r.commit_text(
-        "a long committed line that is wider than the terminal",
-        &mut s,
-        &mut committed,
-    )
-    .unwrap();
-    let wrap_on = committed.windows(5).position(|w| w == b"\x1b[?7h");
-    let text_at = committed.windows(6).position(|w| w == b"a long");
-    assert!(
-        matches!((wrap_on, text_at), (Some(w), Some(t)) if w < t),
-        "auto-wrap must be re-enabled before the committed text"
-    );
+    });
+    with_target(RenderMode::Inline, 40, |target, state| {
+        render(target, f1()).unwrap();
+        take(state);
+        arm(state, cut);
+        assert!(render(target, f2()).is_err());
+        assert_eq!(take(state).len(), cut);
+        heal(state);
+        target
+            .commit_text("a long committed line that is wider than the terminal")
+            .unwrap();
+        let committed = take(state);
+        let wrap_on = committed.windows(5).position(|w| w == b"\x1b[?7h");
+        let text_at = committed.windows(6).position(|w| w == b"a long");
+        assert!(
+            matches!((wrap_on, text_at), (Some(w), Some(t)) if w < t),
+            "auto-wrap must be re-enabled before the committed text"
+        );
+    });
 }
