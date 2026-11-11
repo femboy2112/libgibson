@@ -2,6 +2,18 @@
 use gibson::*;
 use std::time::Duration;
 
+// Keep one writer bound for every frame while inspecting only the newly emitted bytes.
+struct Capture<'a>(&'a std::cell::RefCell<Vec<u8>>);
+impl std::io::Write for Capture<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.borrow_mut().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 fn panel() -> Node {
     Node::panel("ORDINARY", BorderType::Single, Style::new().fg(Color::Cyan))
         .width(22.0)
@@ -260,11 +272,11 @@ fn scene_bundle_removal_restores_exact_original_and_local_damage() {
     let clean = render(build(&director), 120, 32);
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut terminal = TerminalSession::headless(120, 32);
-    let mut wire = Vec::new();
-    renderer
-        .render(&mut build(&director), &mut terminal, &mut wire)
-        .unwrap();
-    wire.clear();
+    let wire = std::cell::RefCell::new(Vec::new());
+    let mut writer = Capture(&wire);
+    let mut bound = renderer.bind_target(&mut terminal, &mut writer).unwrap();
+    bound.render(&mut build(&director)).unwrap();
+    wire.borrow_mut().clear();
     director.update(Duration::ZERO, &[StoryEvent::command("on")]);
     let infected = render(build(&director), 120, 32);
     let diff = compute_diff(Some(&clean), &infected);
@@ -273,9 +285,7 @@ fn scene_bundle_removal_restores_exact_original_and_local_damage() {
         .exact_changed_cells()
         .iter()
         .all(|&(x, y)| (7..29).contains(&x) && (3..9).contains(&y)));
-    let (_, _, bytes, _, _) = renderer
-        .render(&mut build(&director), &mut terminal, &mut wire)
-        .unwrap();
+    let (_, _, bytes, _, _) = bound.render(&mut build(&director)).unwrap();
     assert!(bytes > 0);
     assert!(bytes < 1800);
     eprintln!(
@@ -283,17 +293,13 @@ fn scene_bundle_removal_restores_exact_original_and_local_damage() {
         diff.exact_changed_cell_count(),
         diff.affected_cell_count()
     );
-    wire.clear();
-    let (_, _, bytes, _, _) = renderer
-        .render(&mut build(&director), &mut terminal, &mut wire)
-        .unwrap();
+    wire.borrow_mut().clear();
+    let (_, _, bytes, _, _) = bound.render(&mut build(&director)).unwrap();
     assert_eq!(bytes, 0);
-    assert!(wire.is_empty());
+    assert!(wire.borrow().is_empty());
     director.update(Duration::ZERO, &[StoryEvent::command("off")]);
     assert_eq!(render(build(&director), 120, 32), clean);
-    renderer
-        .render(&mut build(&director), &mut terminal, &mut wire)
-        .unwrap();
+    bound.render(&mut build(&director)).unwrap();
 }
 #[test]
 fn identity_postprocess_matches_clipped_panel_on_every_edge() {
@@ -667,26 +673,22 @@ fn ordinary_panel_frontier_has_local_damage_and_frozen_frame_is_free() {
         .all(|&(x, y)| (12..14).contains(&x) && (3..9).contains(&y)));
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut terminal = TerminalSession::headless(120, 32);
-    let mut wire = Vec::new();
-    renderer
-        .render(&mut make(0.25), &mut terminal, &mut wire)
-        .unwrap();
-    wire.clear();
-    let (_, _, bytes, _, _) = renderer
-        .render(&mut make(0.30), &mut terminal, &mut wire)
-        .unwrap();
+    let wire = std::cell::RefCell::new(Vec::new());
+    let mut writer = Capture(&wire);
+    let mut bound = renderer.bind_target(&mut terminal, &mut writer).unwrap();
+    bound.render(&mut make(0.25)).unwrap();
+    wire.borrow_mut().clear();
+    let (_, _, bytes, _, _) = bound.render(&mut make(0.30)).unwrap();
     eprintln!(
         "scoped panel frontier: exact={} affected={} wire={bytes}",
         diff.exact_changed_cell_count(),
         diff.affected_cell_count()
     );
     assert!(bytes > 0 && bytes < 400);
-    wire.clear();
-    let (_, _, bytes, _, _) = renderer
-        .render(&mut make(0.30), &mut terminal, &mut wire)
-        .unwrap();
+    wire.borrow_mut().clear();
+    let (_, _, bytes, _, _) = bound.render(&mut make(0.30)).unwrap();
     assert_eq!(bytes, 0);
-    assert!(wire.is_empty());
+    assert!(wire.borrow().is_empty());
     let frozen = compute_diff(Some(&after), &after);
     assert_eq!(frozen.exact_changed_cell_count(), 0);
     assert_eq!(frozen.affected_cell_count(), 0);

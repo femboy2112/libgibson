@@ -107,14 +107,9 @@ fn translating_one_entity_yields_bounded_damage() {
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(cols, rows);
     let mut out = Vec::new();
-
-    renderer
-        .render(&mut build(ms(0)), &mut session, &mut out)
-        .unwrap();
-    out.clear();
-    let (dirty, total, _bytes, _, _) = renderer
-        .render(&mut build(ms(160)), &mut session, &mut out)
-        .unwrap();
+    let mut bound = renderer.bind_target(&mut session, &mut out).unwrap();
+    bound.render(&mut build(ms(0))).unwrap();
+    let (dirty, total, _bytes, _, _) = bound.render(&mut build(ms(160))).unwrap();
 
     assert!(total > 0);
     // One 6-cell sprite moved ~9 cells: the damage must be a small fraction of

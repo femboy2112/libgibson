@@ -6,6 +6,17 @@ use gibson::{
 };
 use std::time::Duration;
 
+struct Capture<'a>(&'a std::cell::RefCell<Vec<u8>>);
+impl std::io::Write for Capture<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.borrow_mut().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 fn ms(value: u64) -> Duration {
     Duration::from_millis(value)
 }
@@ -257,41 +268,27 @@ fn one_entity_infection_is_local_and_a_frozen_frame_costs_zero_bytes() {
     let presentation = evaluate(&scene, &effect, Duration::ZERO);
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(48, 16);
-    let mut output = Vec::new();
-    renderer
-        .render(
-            &mut scene.to_node(&Presentation::new(), 48.0, 16.0),
-            &mut session,
-            &mut output,
-        )
+    let output = std::cell::RefCell::new(Vec::new());
+    let mut writer = Capture(&output);
+    let mut bound = renderer.bind_target(&mut session, &mut writer).unwrap();
+    bound
+        .render(&mut scene.to_node(&Presentation::new(), 48.0, 16.0))
         .unwrap();
-    output.clear();
-    let (dirty, _, bytes, _, _) = renderer
-        .render(
-            &mut scene.to_node(&presentation, 48.0, 16.0),
-            &mut session,
-            &mut output,
-        )
+    output.borrow_mut().clear();
+    let (dirty, _, bytes, _, _) = bound
+        .render(&mut scene.to_node(&presentation, 48.0, 16.0))
         .unwrap();
     assert!(dirty > 0 && dirty <= 16 * 3, "affected footprint = {dirty}");
     assert!(bytes > 0);
-    output.clear();
-    let (_, _, bytes, _, _) = renderer
-        .render(
-            &mut scene.to_node(&presentation, 48.0, 16.0),
-            &mut session,
-            &mut output,
-        )
+    output.borrow_mut().clear();
+    let (_, _, bytes, _, _) = bound
+        .render(&mut scene.to_node(&presentation, 48.0, 16.0))
         .unwrap();
     assert_eq!(bytes, 0);
-    assert!(output.is_empty());
-    output.clear();
-    let (dirty, _, _, _, _) = renderer
-        .render(
-            &mut scene.to_node(&Presentation::new(), 48.0, 16.0),
-            &mut session,
-            &mut output,
-        )
+    assert!(output.borrow().is_empty());
+    output.borrow_mut().clear();
+    let (dirty, _, _, _, _) = bound
+        .render(&mut scene.to_node(&Presentation::new(), 48.0, 16.0))
         .unwrap();
     assert!(dirty > 0 && dirty <= 16 * 3);
 }
