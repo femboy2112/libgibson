@@ -6,7 +6,8 @@
 
 use gibson::{TerminalLease, TerminalSession};
 use std::io::Write;
-use std::os::unix::io::AsRawFd;
+#[path = "../tests/common/disconnected_output.rs"]
+mod disconnected_output;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -256,14 +257,10 @@ fn worker_panic() {
     std::process::exit(0);
 }
 
-/// Issue #11 / B1: an explicit restore whose terminal WRITES fail must still
-/// attempt every cleanup step and report the first error. We own the terminal,
-/// enter raw mode + alt screen, then redirect fd 1 (stdout) to `/dev/full` so
-/// every write returns ENOSPC, and call `restore()`. Results are reported on fd 2
-/// (stderr, still the PTY) since stdout is now a black hole. Raw-mode restoration
-/// goes through a termios ioctl, not fd 1, so it must succeed even though the
-/// writes fail — proving "every remaining cleanup step is still attempted".
+/// Issue #11 / B1: disconnect the captured output PTY while stdin/stderr remain live.
+/// Restore must report the output error, restore raw input and release the lease.
 fn restore_output_failure() {
+    let mut output_fault = disconnected_output::OutputFault::new().expect("output PTY");
     let mut session = TerminalSession::new().expect("must acquire the terminal");
     session.enter_interactive().expect("enter interactive");
     session
@@ -273,19 +270,21 @@ fn restore_output_failure() {
 
     let raw_before = crossterm::terminal::is_raw_mode_enabled().unwrap_or(false);
     eprintln!("RAW_BEFORE={raw_before}");
+    assert_eq!(kernel_input_flags() & (libc::ICANON | libc::ECHO), 0);
+    eprintln!("KERNEL_RAW_BEFORE=true");
 
-    // Redirect stdout (fd 1) to /dev/full: writes now fail with ENOSPC. stderr
-    // (fd 2) still points at the PTY, so our markers survive the black hole.
-    let devfull = std::fs::OpenOptions::new()
-        .write(true)
-        .open("/dev/full")
-        .expect("open /dev/full");
-    let rc = unsafe { libc::dup2(devfull.as_raw_fd(), 1) };
-    assert!(rc != -1, "dup2 /dev/full onto stdout failed");
-
+    output_fault.disconnect();
     let result = session.restore();
+    output_fault
+        .restore_stdout()
+        .expect("restore reporting stdout");
 
     let raw_after = crossterm::terminal::is_raw_mode_enabled().unwrap_or(true);
+    assert_eq!(
+        kernel_input_flags() & (libc::ICANON | libc::ECHO),
+        libc::ICANON | libc::ECHO
+    );
+    eprintln!("KERNEL_RAW_AFTER=false");
     let lease_after = TerminalSession::lease_state();
     match &result {
         Ok(()) => eprintln!("RESTORE_RESULT=OK"),
@@ -320,4 +319,14 @@ fn host_hook_chain() {
     let _ = std::io::stdout().flush();
 
     panic!("owner panic to exercise the chained hooks");
+}
+
+fn kernel_input_flags() -> libc::tcflag_t {
+    let mut termios = std::mem::MaybeUninit::<libc::termios>::uninit();
+    // SAFETY: stdin remains the live reporting PTY throughout this child fixture.
+    assert_eq!(
+        unsafe { libc::tcgetattr(libc::STDIN_FILENO, termios.as_mut_ptr()) },
+        0
+    );
+    unsafe { termios.assume_init() }.c_lflag
 }

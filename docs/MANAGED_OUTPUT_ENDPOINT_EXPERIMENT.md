@@ -55,3 +55,31 @@ The old-source red runs and review counterexamples are preserved in local receip
 
 No stable endpoint API, default graphics transport or release approval follows
 from these scoped tests. Preserve the old ANSI golden and every surviving oracle.
+
+## Compatibility classification and fault calibration
+
+The first seven-target legacy PTY run returned 68 passes and two failures:
+`failed_restore_also_prevents_focus_reenable` and
+`restore_reports_output_failure_but_still_tears_down`. Both redirected fd 1 to
+`/dev/full` after creating the session. That changes an alias, not the captured
+output endpoint; restoration correctly reached the still-live original terminal.
+These are **TEST HARNESS MIGRATION** failures under the proposed pinned-output
+contract, while retaining the old output-routing contract is an explicit Rust
+behavior/compatibility decision. The earlier buffered-output and non-TTY findings
+were actual prototype regressions, repaired with red/green controls.
+
+The migrated fixtures select a dedicated output PTY before construction, retain
+original stdin/stderr for observation, then close its actual master and observe
+kernel HUP within a bound. The original error, raw-mode cleanup, lease release
+and stale-focus assertions remain. Additional kernel termios observations prevent
+bookkeeping alone from satisfying raw cleanup. All seven targets then passed:
+70 passed, zero failed, zero ignored. Keeping the output master alive deliberately
+makes the error oracle fail with `RESTORE_RESULT=OK`; removing that mutation
+restores the passing test. Targeted ordinary Clippy passed. No oracle was hidden
+behind an ignore and the ANSI golden was not rewritten.
+
+Before combining this branch with newer main, also inspect the installed wrapper
+focus fault clients: their fd-1-to-`/dev/full` technique must target the captured
+endpoint if this contract is adopted. A green parity run on main's existing
+stdout behavior is not evidence for this experimental output path. Full installed
+compatibility, geometry/input and the parent renderer API remain promotion gates.
