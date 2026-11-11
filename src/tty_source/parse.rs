@@ -9,7 +9,8 @@
 //! 1. `crate::event::…` imports become `crossterm::event::…` (the public types the
 //!    decoder builds), and `InternalEvent` is defined here instead of imported.
 //! 2. `crate::terminal::sys::is_raw_mode_enabled()` becomes [`raw_mode_enabled`], which
-//!    reads crossterm's public `terminal::is_raw_mode_enabled` (the same flag).
+//!    reads the lease's raw state (`crate::input_endpoint::raw_active`, #345), which includes a
+//!    host's crossterm raw mode.
 //! 3. The `#[cfg(feature = "bracketed-paste")]` gates are removed: crossterm enables that
 //!    feature by default and LibGibson relies on paste events, so the code is always on.
 //!
@@ -73,11 +74,14 @@ pub(crate) enum InternalEvent {
     PrimaryDeviceAttributes,
 }
 
-/// Whether crossterm's raw mode is on: the flag upstream reads through
-/// `crate::terminal::sys::is_raw_mode_enabled`. LibGibson enters raw mode through
-/// crossterm (`src/session.rs`), so this is the same state.
+/// Whether raw mode is on: the flag upstream reads through
+/// `crate::terminal::sys::is_raw_mode_enabled`. A managed session enters raw mode on its own
+/// acquired descriptor (`crate::input_endpoint`, #345), which crossterm's flag does not track;
+/// a host that entered raw mode through crossterm itself is still seen through crossterm's.
 fn raw_mode_enabled() -> bool {
-    crossterm::terminal::is_raw_mode_enabled().unwrap_or(false)
+    // The lease's raw mode, or a host's crossterm raw mode (a stale crossterm record left by
+    // a retargeted lease is not counted).
+    crate::input_endpoint::raw_active()
 }
 
 // Event parsing

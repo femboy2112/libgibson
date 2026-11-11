@@ -607,7 +607,23 @@ static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::
 /// stdin's shared description keeps its flags. Where the identity cannot be proven (another OS,
 /// no `/proc`, an exclusive-mode terminal that refuses a second open, a multiplexer alias),
 /// stdin itself is read, blocking: the pre-#269 exposure to that lost-readiness race.
+///
+/// Under a managed session the descriptor is the session's **acquired** input endpoint
+/// (`crate::input_endpoint`, #345), never descriptor 0 as it is now: a stdin replaced after
+/// acquisition is not read in the acquired terminal's place.
 fn terminal_input_fd(stdin_is_terminal: bool) -> io::Result<(RawFd, Option<std::os::fd::OwnedFd>)> {
+    use std::os::fd::AsRawFd;
+    if let Some(acquired) = crate::input_endpoint::input_duplicate() {
+        let (dup, stdin_kind) = acquired?;
+        if stdin_kind {
+            // As for stdin: a provably-same non-blocking reopen, else the shared description.
+            if let Some(own) = reopen_same_terminal(dup.as_raw_fd()) {
+                return Ok((own.as_raw_fd(), Some(own)));
+            }
+        }
+        // Our own /dev/tty description (non-blocking), or stdin's shared one (blocking).
+        return Ok((dup.as_raw_fd(), Some(dup)));
+    }
     select_input_fd(libc::STDIN_FILENO, stdin_is_terminal)
 }
 
@@ -955,11 +971,19 @@ pub(crate) fn poll(
     let left = deadline.map_or(Duration::MAX, |d| {
         d.saturating_duration_since(Instant::now())
     });
-    guard
+    let result = guard
         .as_mut()
         .expect("initialised above")
         .1
-        .poll_tagged(left)
+        .poll_tagged(left);
+    if GENERATION.load(Ordering::Acquire) != generation {
+        // The source was retired while this poll waited on it (a session acquired or
+        // released the terminal). Its result belongs to no current lease: never deliver it
+        // as the new owner's input. The retired source is dropped here.
+        *guard = None;
+        return Ok(None);
+    }
+    result
 }
 
 /// Retires the terminal source: called when the session gives the terminal up, so a later

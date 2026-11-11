@@ -62,6 +62,8 @@ pub mod hit_test;
 /// explicit model, never a synthetic key release (v0.7 node D).
 pub mod hold;
 pub mod input;
+#[cfg(unix)]
+mod input_endpoint;
 pub mod instrument_telemetry;
 pub mod layout;
 pub mod node;
