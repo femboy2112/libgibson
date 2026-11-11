@@ -297,3 +297,105 @@ is a candidate design, not an implementation or a qualified API contract;
 it needs compatibility review, exact-head negative controls and integration
 with the terminal lifecycle. In particular, a session identity, writer
 address or identical output bytes alone does not prove destination identity.
+
+## XXVIII — Context stdout redirection and #333 CI
+
+At this snapshot, `main` remains
+`e64402526562ce0d7b6d88c0b5f7bb31152574d6`. No merge or release has occurred
+in this update. v0.7 remains **HOLD** with no qualified release candidate.
+
+#333 head `d9b2c2a648c4408084e24359d0cf6226574006eb` passed all eight jobs
+in hosted development run `42930229874`. The Rust job checked out synthetic
+merge `8e6a99f7b4f24157c9544956b246870019a3bcf3`, whose parents were the
+then-current main and the PR head. Its tree
+`24a3e3e1ffb5d120ee6492154c6bc8218741ed16` exactly matches the PR head's
+tree. This is same-tree synthetic-merge CI, not a checkout of the head commit
+itself. The PR remained a draft with no GitHub review at the time of audit;
+the source review was same-model-family and was not independent human or
+different-model certification. The review found no definite new defect in
+its scoped mouse and screen guards, but the remaining unguarded session paths
+and the combined panic, focus, input, restore and renderer lifecycle still
+require qualification. #330 remains open.
+
+A new real-PTY probe demonstrates that **Context output**, not only the public
+standalone renderer, can share differential state across different physical
+destinations. A Context rendered FRAME_A to a PTY while holding its lease;
+stdout was redirected to a pipe, FRAME_B was rendered, stdout was restored,
+and FRAME_B was requested again. On #338 head
+`da9322811e4280bb486317126a42312af3c8d2d4`, the final physical PTY still
+contained FRAME_A at cell (0,6) where the no-redirection control showed
+FRAME_B. The test explicitly verifies the initial A frame and replays the exact
+redirected bytes from that baseline through a VT100 model: all 1,920 cells and
+the cursor then match the no-redirection B control, establishing that the
+redirected call carried the B update. This is a source-specific Linux PTY
+counterexample; the model does not establish all real-terminal behavior.
+
+The unignored red test and its strengthened positive control are preserved in
+research branch `research/xxviii-context-stdout-identity` at
+`bfafd766d5ee1ac45a2526e03061d7a492a18a52`; no competing PR was opened. In a
+checkout of that branch, this command exited 101 on the physical comparison,
+after the A-frame, B-frame and redirected-byte full-grid controls passed:
+
+```sh
+cargo +1.98.1 test --locked --test terminal_sovereignty_pty \
+  context_stdout_redirection_does_not_poison_physical_frame \
+  -- --exact --test-threads=1
+```
+
+The test presently assumes the redirected render succeeds; an explicitly
+fail-closed contract requires a revised acceptance oracle that proves either
+safe delivery or an error without claiming an undelivered frame. This new
+counterexample compounds the two standalone-writer failures. #338 remains
+**HOLD**; stdout descriptor identity, actual terminal destination, session mode
+writes and ownership cannot be inferred from writer addresses or from
+`isatty` alone. A duplicate of the acquired terminal descriptor is one design
+candidate, subject to a lifecycle and compatibility audit; it is not a proof
+that all session operations use the same destination.
+
+### Experimental renderer target branch — HOLD
+
+Draft #339 is a separate experiment based on #338, head
+`4dd1427cef39f4bf3b4817deaa8d7450f73de5c7`. It explores conservative
+fullscreen output for unbound writers and a target-binding API for stateful
+operations. It is not merged or qualified, and it does not repair the Context
+stdout-redirection counterexample above. Its Rust public API and existing
+standalone behavior need compatibility review before any promotion.
+
+At that head, the focused `renderer_unbound_safety` suite passed 11/11,
+including controls for first-target state, forged renderer state, writer
+panic/forgotten binding and inline growth/restyle. The two previously failing
+standalone A/B/A tests also passed as ordinary, unignored tests. Both had
+failed with exit 101 on the pre-experiment source; on an earlier experimental
+prototype, restoring unsafe fullscreen cache reuse made both fail. A focused
+Clippy check passed. These controls are evidence for particular modeled cases,
+not proof of general terminal or lifecycle safety. Review was by a separate
+agent in the same model family, not an independent human or different model.
+
+A six-target no-fail-fast compatibility run at the experimental head exited
+101 with 27 failures across four targets:
+
+| Test target | Result |
+|---|---:|
+| `renderer_depth_repaint` | 3 passed |
+| `renderer_depth_repaint_failed_write` | 1 passed, 1 failed |
+| `renderer_partial_write` | 4 passed, 4 failed |
+| `renderer_unbound_safety` | 11 passed |
+| `terminal_sovereignty_pty` | 16 passed, 3 failed |
+| `whole_renderer_vt100` | 2 passed, 19 failed |
+
+Some failures may reflect intentional rejection of unbound operations, but
+that has not been established for each failure; do not rewrite or delete the
+older tests merely to obtain a green suite. Reconcile each behavior against
+public callers and target-binding semantics, review output cleanup and failure
+paths, add the Context retargeting acceptance or a fail-closed equivalent, and
+rerun the combined exact-head suite before considering #339 or #338 for merge.
+
+```sh
+cargo +1.98.1 test --locked --test renderer_unbound_safety -- --test-threads=1
+cargo +1.98.1 test --locked --test terminal_sovereignty_pty \
+  standalone_renderer_must_not -- --test-threads=1
+cargo +1.98.1 test --locked --no-fail-fast \
+  --test renderer_depth_repaint --test renderer_depth_repaint_failed_write \
+  --test renderer_partial_write --test renderer_unbound_safety \
+  --test terminal_sovereignty_pty --test whole_renderer_vt100 -- --test-threads=1
+```
