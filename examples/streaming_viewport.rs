@@ -48,9 +48,7 @@ impl Flow {
         }
     }
     fn source_is_safe(source: &str) -> bool {
-        source
-            .chars()
-            .all(|c| !c.is_control() || c == '\n' || c == '\t')
+        source.chars().all(|c| !c.is_control() || c == '\n')
     }
     // Source and cached-row budgets constrain retained values. They are not a
     // process-RSS cap: the caller owns the input String and selection clones rows.
@@ -119,9 +117,15 @@ impl Flow {
         if remaining_rows > self.row_limit - rows.len() {
             return Err("rendered row budget exceeded");
         }
+        let last_row = rows.len().saturating_sub(1);
         self.blocks[index].source = source;
         if !self.mutation {
             self.lines.insert(id, rows);
+        }
+        if let Some((anchor_id, row)) = self.anchor {
+            if anchor_id == id {
+                self.anchor = Some((anchor_id, row.min(last_row)));
+            }
         }
         Ok(())
     }
@@ -141,6 +145,11 @@ impl Flow {
                 }
                 count += rows.len();
                 next.insert(block.id, rows);
+            }
+            if let Some((id, row)) = self.anchor {
+                if let Some(rows) = next.get(&id) {
+                    self.anchor = Some((id, row.min(rows.len().saturating_sub(1))));
+                }
             }
             self.width = width;
             self.lines = next;
@@ -429,5 +438,84 @@ mod budget_tests {
             flow.all_rows(),
             vec![(2, 0, "b".into()), (3, 0, "c".into())]
         );
+    }
+    fn body_cells(flow: &mut Flow, mutate: bool) -> Vec<String> {
+        use gibson::{
+            cell::Style,
+            context::{Context, RenderMode},
+            node::Node,
+        };
+        let mut body = flow.window(1).into_iter().next().unwrap();
+        if mutate {
+            body = "X".into();
+        }
+        let root = Node::col()
+            .child(Node::text("S", Style::default()))
+            .child(Node::text(body, Style::default()))
+            .child(Node::text("I", Style::default()));
+        let mut context = Context::headless(RenderMode::Fullscreen, 8, 3);
+        context.set_root(root);
+        context.render().unwrap();
+        (0..8)
+            .map(|x| context.frame_cell(x, 1).unwrap().glyph.to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn accepted_tab_must_not_silently_collapse_body_cells() {
+        let mut flow = Flow::with_budgets(8, 4, 100, 20, false);
+        if flow.append(1, "A\tB".into()).is_err() {
+            return;
+        }
+        // If tabs are accepted as one separator, neither token may collapse.
+        assert_eq!(
+            body_cells(&mut flow, false),
+            ["A", " ", "B", " ", " ", " ", " ", " "]
+        );
+    }
+
+    #[test]
+    fn tabs_are_rejected_without_changing_source_or_cache() {
+        let mut flow = Flow::with_budgets(8, 4, 100, 20, false);
+        flow.append(1, "A B".into()).unwrap();
+        let before = flow.all_rows();
+        assert!(flow.replace(1, "A\tB".into()).is_err());
+        assert!(flow.append(2, "A\tB".into()).is_err());
+        assert_eq!(flow.blocks[0].source, "A B");
+        assert_eq!(flow.all_rows(), before);
+    }
+
+    #[test]
+    fn shrink_then_grow_keeps_clamped_anchor() {
+        let mut flow = Flow::with_budgets(8, 4, 100, 20, false);
+        flow.append(1, "a\nb\nc".into()).unwrap();
+        flow.anchor = Some((1, 2));
+        flow.replace(1, "a".into()).unwrap();
+        assert_eq!(flow.anchor, Some((1, 0)));
+        flow.replace(1, "a\nb\nc".into()).unwrap();
+        assert_eq!(flow.anchor, Some((1, 0)));
+        assert_eq!(flow.window(1), ["a"]);
+    }
+
+    #[test]
+    fn headless_body_matches_complete_expected_row() {
+        let mut flow = Flow::with_budgets(8, 4, 100, 20, false);
+        flow.append(1, "A B".into()).unwrap();
+        let mutate = std::env::var_os("GIBSON_TEST_MUTATE_BODY").is_some();
+        assert_eq!(
+            body_cells(&mut flow, mutate),
+            ["A", " ", "B", " ", " ", " ", " ", " "]
+        );
+    }
+    #[test]
+    fn resize_then_restore_width_keeps_clamped_anchor() {
+        let mut flow = Flow::with_budgets(2, 4, 100, 20, false);
+        flow.append(1, "abcdefgh".into()).unwrap();
+        flow.anchor = Some((1, 3));
+        flow.resize(8).unwrap();
+        assert_eq!(flow.anchor, Some((1, 0)));
+        flow.resize(2).unwrap();
+        assert_eq!(flow.anchor, Some((1, 0)));
+        assert_eq!(flow.window(1), ["ab"]);
     }
 }

@@ -9,13 +9,17 @@ replacement invalidation, one cached width, a held block/row anchor, explicit
 32-block retention and eviction receipts. Appending a streaming block leaves a
 held historical view unchanged. Resize preserves the anchored block and clamps
 its visual row; it does not promise an exact source-byte anchor after reflow.
-The application owns source retention and all status/approval decisions.
+The clamped visual row is stored when a replacement or resize shortens the block,
+so later growth does not jump back to an earlier row. The application owns source
+retention and all status/approval decisions.
 
 At 40×15, 80×24 and 120×40, a headless scene reserves status and input rows. Cell
 readback asserts those rows remain visible while the middle viewport contains
 synthetic content. This is a layout example, not a protected-overlay, keyboard
 focus or authority-enforcement API. Those interactions still need PTY acceptance.
-Terminal control characters are refused before modifying the retained source.
+Terminal control characters, including tabs, are refused before modifying the
+retained source. Callers must provide spaces if they want visible indentation;
+the example never silently drops tabs or rewrites the stored source.
 
 `cargo run --locked --example streaming_viewport -- --mutate-stale-cache` must
 fail: it deliberately reuses the prior streaming block's wrapped lines. The
