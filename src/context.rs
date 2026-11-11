@@ -14,6 +14,12 @@ use std::time::{Duration, Instant};
 pub use crate::renderer::RenderMode;
 
 /// High-level engine coordinator managing session, rendering, input, and scheduling.
+///
+/// On Unix, a terminal Context pins its renderer output to an owned duplicate
+/// of the stdout descriptor observed during construction. The caller must
+/// still keep process stdout stable through terminal acquisition, session mode
+/// changes, panic handling and restoration: those operations currently write
+/// process stdout separately and are not protected by this output pin.
 pub struct Context {
     /// Session for this context. Replacing it after output begins does not
     /// transfer the renderer's destination state; later context output is
@@ -32,8 +38,8 @@ pub struct Context {
     renderer_fingerprint: (RenderMode, u16, u16, u16, Option<bool>, AnchorState),
     pub scheduler: FrameScheduler,
     root: Option<Node>,
-    /// Where rendered bytes go: the process stdout for interactive contexts, or
-    /// an in-memory buffer for headless ones (see [`Context::rendered_bytes`]).
+    /// Where rendered bytes go: a pinned terminal descriptor on Unix interactive
+    /// contexts, stdout otherwise, or an in-memory headless buffer.
     output: OutputSink,
     /// Count of `render`/`render_now` calls issued with no root set — the most
     /// likely "forgot `set_root`" integration mistake (issue #48 E-01). A
@@ -44,12 +50,12 @@ pub struct Context {
 
 /// Destination for a [`Context`]'s rendered bytes.
 ///
-/// Interactive contexts write straight to the process stdout. A headless context
-/// captures into an in-memory buffer instead, so callers can read the exact bytes
-/// back for snapshot/assertion testing without any escape codes reaching a real
-/// terminal (issue #27).
+/// On Unix, interactive contexts write to a duplicate of the acquired stdout.
+/// Headless contexts capture into memory; noninteractive contexts retain stdout.
 enum OutputSink {
     Stdout,
+    #[cfg(unix)]
+    PinnedTerminal(std::fs::File),
     Buffer(Vec<u8>),
 }
 
@@ -57,6 +63,8 @@ impl Write for OutputSink {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             OutputSink::Stdout => io::stdout().write(buf),
+            #[cfg(unix)]
+            OutputSink::PinnedTerminal(file) => file.write(buf),
             OutputSink::Buffer(b) => b.write(buf),
         }
     }
@@ -64,9 +72,57 @@ impl Write for OutputSink {
     fn flush(&mut self) -> io::Result<()> {
         match self {
             OutputSink::Stdout => io::stdout().flush(),
+            #[cfg(unix)]
+            OutputSink::PinnedTerminal(file) => file.flush(),
             OutputSink::Buffer(b) => b.flush(),
         }
     }
+}
+
+// Keep an independently owned descriptor so later changes to fd 1 cannot
+// redirect a Context's renderer output. This does not pin the session's
+// separate terminal-mode, panic-hook, or restoration writes.
+#[cfg(unix)]
+fn pin_interactive_stdout() -> io::Result<Option<std::fs::File>> {
+    use std::os::fd::FromRawFd;
+    if !io::stdout().is_terminal() {
+        return Ok(None);
+    }
+    io::stdout().flush()?;
+    // SAFETY: fd 1 is borrowed; a nonnegative return is a new owned descriptor.
+    let fd = unsafe { libc::fcntl(libc::STDOUT_FILENO, libc::F_DUPFD_CLOEXEC, 3) };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: fcntl returned a new descriptor exclusively owned by this File.
+    let file = unsafe { std::fs::File::from_raw_fd(fd) };
+    if !file.is_terminal() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotConnected,
+            "stdout changed during terminal acquisition",
+        ));
+    }
+    Ok(Some(file))
+}
+
+// This detects ordinary acquisition-time retargeting. It is not synchronization
+// against another thread concurrently replacing fd 1 during a mode transition.
+#[cfg(unix)]
+fn stdout_matches_pin(file: &std::fs::File) -> io::Result<bool> {
+    use std::os::fd::AsRawFd;
+    let mut pinned = std::mem::MaybeUninit::<libc::stat>::uninit();
+    let mut current = std::mem::MaybeUninit::<libc::stat>::uninit();
+    // SAFETY: fstat writes the supplied stat structure on success.
+    if unsafe { libc::fstat(file.as_raw_fd(), pinned.as_mut_ptr()) } != 0
+        || unsafe { libc::fstat(libc::STDOUT_FILENO, current.as_mut_ptr()) } != 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: both fstat calls succeeded.
+    let (pinned, current) = unsafe { (pinned.assume_init(), current.assume_init()) };
+    Ok(pinned.st_dev == current.st_dev
+        && pinned.st_ino == current.st_ino
+        && pinned.st_rdev == current.st_rdev)
 }
 
 /// A read-only view of one resolved cell in the most recently rendered frame, with its style
@@ -100,6 +156,9 @@ impl Context {
     fn ensure_output_authorized(&self) -> io::Result<()> {
         let physical_stdout =
             matches!(self.output, OutputSink::Stdout) && io::stdout().is_terminal();
+        #[cfg(unix)]
+        let physical_stdout =
+            physical_stdout || matches!(self.output, OutputSink::PinnedTerminal(_));
         // A freshly constructed virtual context may be configured before its
         // first output. Once used, its renderer/session belong to that sink.
         let unbound_virtual = matches!(self.output, OutputSink::Buffer(_))
@@ -151,7 +210,22 @@ impl Context {
     }
 
     pub fn new(mode: RenderMode) -> io::Result<Self> {
+        #[cfg(unix)]
+        let pinned = pin_interactive_stdout()?;
         let mut session = TerminalSession::new()?;
+        #[cfg(unix)]
+        let output = match (session.owns_terminal_lease(), pinned) {
+            (true, Some(file)) if stdout_matches_pin(&file)? => OutputSink::PinnedTerminal(file),
+            (false, None) => OutputSink::Stdout,
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotConnected,
+                    "stdout changed during terminal acquisition",
+                ))
+            }
+        };
+        #[cfg(not(unix))]
+        let output = OutputSink::Stdout;
         if mode == RenderMode::Fullscreen {
             session.enter_alternate_screen()?;
         }
@@ -170,7 +244,7 @@ impl Context {
             renderer_fingerprint,
             scheduler: FrameScheduler::new(60),
             root: None,
-            output: OutputSink::Stdout,
+            output,
             empty_root_renders: 0,
         })
     }
@@ -418,6 +492,8 @@ impl Context {
         match &self.output {
             OutputSink::Buffer(b) => b.as_slice(),
             OutputSink::Stdout => &[],
+            #[cfg(unix)]
+            OutputSink::PinnedTerminal(_) => &[],
         }
     }
 
@@ -431,6 +507,8 @@ impl Context {
                 String::from_utf8_lossy(&bytes).into_owned()
             }
             OutputSink::Stdout => String::new(),
+            #[cfg(unix)]
+            OutputSink::PinnedTerminal(_) => String::new(),
         }
     }
 
@@ -442,6 +520,8 @@ impl Context {
         match &mut self.output {
             OutputSink::Buffer(b) => std::mem::take(b),
             OutputSink::Stdout => Vec::new(),
+            #[cfg(unix)]
+            OutputSink::PinnedTerminal(_) => Vec::new(),
         }
     }
 
@@ -946,7 +1026,14 @@ impl Context {
     }
 
     pub fn restore(&mut self) -> io::Result<()> {
-        self.session.restore()
+        let result = self.session.restore();
+        // A completed one-shot restore releases the lease even on an I/O error;
+        // do not keep a duplicate terminal descriptor open until Context drop.
+        #[cfg(unix)]
+        if matches!(self.output, OutputSink::PinnedTerminal(_)) {
+            self.output = OutputSink::Stdout;
+        }
+        result
     }
 }
 
