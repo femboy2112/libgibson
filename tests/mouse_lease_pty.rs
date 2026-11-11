@@ -107,6 +107,26 @@ fn stale_output_oracle_rejects_individual_and_torn_mouse_sequences() {
 }
 
 #[test]
+fn stale_output_oracle_rejects_screen_requests_and_torn_prefixes() {
+    for request in [ALT_ON, ALT_OFF] {
+        let mut raw = STALE_BEGIN.to_vec();
+        raw.extend_from_slice(request);
+        raw.extend_from_slice(STALE_END);
+        assert!(!stale_calls_have_no_escapes(&raw));
+    }
+    for prefix in [b"\x1b".as_slice(), b"\x1b[", b"\x1b[?104"] {
+        let mut raw = STALE_BEGIN.to_vec();
+        raw.extend_from_slice(prefix);
+        raw.extend_from_slice(STALE_END);
+        assert!(
+            screen_requests(&raw).is_empty(),
+            "old screen oracle misses this"
+        );
+        assert!(!stale_calls_have_no_escapes(&raw), "{prefix:?}");
+    }
+}
+
+#[test]
 fn restored_session_cannot_enable_or_disable_mouse_for_new_owner() {
     let raw = capture("stale");
     assert_eq!(mouse_requests(&raw), Vec::<&str>::new());
@@ -187,6 +207,11 @@ fn screen_requests(raw: &[u8]) -> Vec<&'static str> {
 fn restored_session_cannot_switch_a_new_owners_screen() {
     let raw = capture("screen-stale");
     assert_eq!(screen_requests(&raw), ["on", "off"]);
+    assert!(
+        stale_calls_have_no_escapes(&raw),
+        "{}",
+        String::from_utf8_lossy(&raw)
+    );
     assert!(String::from_utf8_lossy(&raw).contains("MOUSE_DONE rejected=true,true"));
 }
 
@@ -254,8 +279,15 @@ fn mouse_lease_child() {
     }
     if role == "screen-stale" {
         owner.enter_alternate_screen().unwrap();
+        eprintln!("STALE_CALLS_BEGIN");
         let enter_rejected = matches!(old.enter_alternate_screen(), Err(e) if e.kind() == std::io::ErrorKind::NotConnected);
         let leave_rejected = matches!(old.leave_alternate_screen(), Err(e) if e.kind() == std::io::ErrorKind::NotConnected);
+        // Hostile control: model a partial mode request even though the stale calls
+        // report rejection. The ordinary run does not set this variable.
+        if std::env::var_os("GIBSON_TEST_STALE_SCREEN_TORN").is_some() {
+            eprint!("\x1b[?104");
+        }
+        eprintln!("STALE_CALLS_END");
         owner.restore().unwrap();
         eprintln!("MOUSE_DONE rejected={enter_rejected},{leave_rejected}");
         return;
