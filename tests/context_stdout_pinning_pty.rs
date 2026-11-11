@@ -72,6 +72,15 @@ fn explicit_restore_closes_the_owned_terminal_descriptor() {
     assert!(output.contains("PIN_FD_RELEASED=true"), "{output:?}");
 }
 
+// The public Session can currently relinquish its lease without informing
+// Context that its separately owned output descriptor should be closed.
+#[test]
+#[ignore = "open: direct session restore retains Context's pinned descriptor"]
+fn direct_session_restore_closes_the_owned_terminal_descriptor() {
+    let output = capture("fd-direct");
+    assert!(output.contains("PIN_FD_RELEASED=true"), "{output:?}");
+}
+
 // Known lifecycle gap: Session::restore writes fd 1 rather than the pinned fd.
 // It is deliberately ignored only on this research branch, not a release gate pass.
 #[test]
@@ -94,7 +103,7 @@ fn pin_child() {
     let Ok(role) = std::env::var(CHILD) else {
         return;
     };
-    if role == "fd-release" {
+    if role == "fd-release" || role == "fd-direct" {
         fn matching_stdout_descriptors() -> usize {
             let mut reference = std::mem::MaybeUninit::<libc::stat>::uninit();
             assert_eq!(unsafe { libc::fstat(1, reference.as_mut_ptr()) }, 0);
@@ -115,7 +124,11 @@ fn pin_child() {
         let before = matching_stdout_descriptors();
         let mut ctx = Context::inline().unwrap();
         let during = matching_stdout_descriptors();
-        ctx.restore().unwrap();
+        if role == "fd-direct" {
+            ctx.session.restore().unwrap();
+        } else {
+            ctx.restore().unwrap();
+        }
         let after = matching_stdout_descriptors();
         eprintln!(
             "PIN_FD_RELEASED={}",
