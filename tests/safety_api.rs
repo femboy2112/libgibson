@@ -11,6 +11,28 @@ use gibson::session::TerminalSession;
 use gibson::Context;
 use gibson::RenderMode;
 
+// The binding keeps one writer for the whole test. Taking a snapshot of its
+// accepted bytes does not replace or retarget that writer.
+#[derive(Clone, Default)]
+struct Capture(std::rc::Rc<std::cell::RefCell<Vec<u8>>>);
+impl std::io::Write for Capture {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.borrow_mut().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+impl Capture {
+    fn clear(&self) {
+        self.0.borrow_mut().clear();
+    }
+    fn snapshot(&self) -> Vec<u8> {
+        self.0.borrow().clone()
+    }
+}
+
 fn context_with_live_region(cols: u16, rows: u16) -> (Context, Vec<u8>) {
     let mut ctx = Context::headless(RenderMode::Inline, cols, rows);
     // Render a live region so insertion has something to preserve.
@@ -27,20 +49,21 @@ fn context_with_live_region(cols: u16, rows: u16) -> (Context, Vec<u8>) {
 fn insert_text_cannot_inject_terminal_controls() {
     let mut renderer = Renderer::new(RenderMode::Inline);
     let mut session = TerminalSession::headless(40, 10);
-    let mut out = Vec::new();
+    let out = Capture::default();
+    let mut writer = out.clone();
+    let mut target = renderer.bind_target(&mut session, &mut writer).unwrap();
 
     let mut root =
         gibson::node::Node::col().child(gibson::node::Node::text("LIVE", Style::default()));
-    renderer.render(&mut root, &mut session, &mut out).unwrap();
+    target.render(&mut root).unwrap();
     out.clear();
 
     let payload = "evil \x1b[2J\x1b]0;pwned\x07 and \x1b[31mred";
-    let (_bytes, strategy) = renderer
-        .insert_text_before_live(payload, &mut session, &mut out)
-        .unwrap();
+    let (_bytes, strategy) = target.insert_text_before_live(payload).unwrap();
     assert_eq!(strategy, InsertStrategy::InsertLineFastPath);
 
-    let text = String::from_utf8_lossy(&out);
+    let bytes = out.snapshot();
+    let text = String::from_utf8_lossy(&bytes);
     assert!(
         !text.contains("\x1b[2J"),
         "safe insert leaked a clear-screen CSI: {text:?}"
@@ -59,17 +82,20 @@ fn insert_text_cannot_inject_terminal_controls() {
 fn raw_lines_unchecked_does_pass_controls_through() {
     let mut renderer = Renderer::new(RenderMode::Inline);
     let mut session = TerminalSession::headless(40, 10);
-    let mut out = Vec::new();
+    let out = Capture::default();
+    let mut writer = out.clone();
+    let mut target = renderer.bind_target(&mut session, &mut writer).unwrap();
 
     let mut root =
         gibson::node::Node::col().child(gibson::node::Node::text("LIVE", Style::default()));
-    renderer.render(&mut root, &mut session, &mut out).unwrap();
+    target.render(&mut root).unwrap();
     out.clear();
 
-    renderer
-        .insert_raw_lines_before_live_unchecked(&["\x1b[2JRAW"], &mut session, &mut out)
+    target
+        .insert_raw_lines_before_live_unchecked(&["\x1b[2JRAW"])
         .unwrap();
-    let text = String::from_utf8_lossy(&out);
+    let bytes = out.snapshot();
+    let text = String::from_utf8_lossy(&bytes);
     assert!(
         text.contains("\x1b[2J"),
         "the unchecked escape hatch must be raw: {text:?}"
@@ -80,17 +106,18 @@ fn raw_lines_unchecked_does_pass_controls_through() {
 fn insert_text_is_width_aware() {
     let mut renderer = Renderer::new(RenderMode::Inline);
     let mut session = TerminalSession::headless(20, 12);
-    let mut out = Vec::new();
+    let out = Capture::default();
+    let mut writer = out.clone();
+    let mut target = renderer.bind_target(&mut session, &mut writer).unwrap();
     let mut root =
         gibson::node::Node::col().child(gibson::node::Node::text("LIVE", Style::default()));
-    renderer.render(&mut root, &mut session, &mut out).unwrap();
+    target.render(&mut root).unwrap();
     out.clear();
 
     let long = "word ".repeat(40);
-    renderer
-        .insert_text_before_live(&long, &mut session, &mut out)
-        .unwrap();
-    let text = String::from_utf8_lossy(&out);
+    target.insert_text_before_live(&long).unwrap();
+    let bytes = out.snapshot();
+    let text = String::from_utf8_lossy(&bytes);
     // Wrap must have split the line: multiple newlines should be present.
     assert!(
         text.matches('\n').count() >= 3,
@@ -102,20 +129,21 @@ fn insert_text_is_width_aware() {
 fn insert_rich_text_is_safe_and_preserves_styles() {
     let mut renderer = Renderer::new(RenderMode::Inline);
     let mut session = TerminalSession::headless(40, 10);
-    let mut out = Vec::new();
+    let out = Capture::default();
+    let mut writer = out.clone();
+    let mut target = renderer.bind_target(&mut session, &mut writer).unwrap();
     let mut root =
         gibson::node::Node::col().child(gibson::node::Node::text("LIVE", Style::default()));
-    renderer.render(&mut root, &mut session, &mut out).unwrap();
+    target.render(&mut root).unwrap();
     out.clear();
 
     let rich = RichText::new().line(Line::new().span(Span::styled(
         "accent \x1b[2J",
         Style::new().fg(gibson::Color::Red),
     )));
-    renderer
-        .insert_rich_text_before_live(&rich, &mut session, &mut out)
-        .unwrap();
-    let text = String::from_utf8_lossy(&out);
+    target.insert_rich_text_before_live(&rich).unwrap();
+    let bytes = out.snapshot();
+    let text = String::from_utf8_lossy(&bytes);
     assert!(
         !text.contains("\x1b[2J"),
         "rich insert leaked controls: {text:?}"
@@ -129,7 +157,9 @@ fn commit_text_cannot_inject_controls() {
     let mut session = TerminalSession::headless(40, 10);
     let mut out = Vec::new();
     renderer
-        .commit_text("hello \x1b[2J\x07world", &mut session, &mut out)
+        .bind_target(&mut session, &mut out)
+        .unwrap()
+        .commit_text("hello \x1b[2J\x07world")
         .unwrap();
     let text = String::from_utf8_lossy(&out);
     assert!(!text.contains("\x1b[2J"));
@@ -145,7 +175,9 @@ fn renderer_commit_is_now_safe_text_not_raw() {
     // `Renderer::commit` used to alias the raw path; it must now behave like
     // `commit_text` and neutralize controls.
     renderer
-        .commit("safe \x1b[2J text", &mut session, &mut out)
+        .bind_target(&mut session, &mut out)
+        .unwrap()
+        .commit("safe \x1b[2J text")
         .unwrap();
     let text = String::from_utf8_lossy(&out);
     assert!(
@@ -160,13 +192,15 @@ fn insert_line_fast_path_requires_supported_capability() {
     let mut renderer = Renderer::new(RenderMode::Inline);
     let mut session = TerminalSession::headless(40, 10);
     session.set_capabilities(gibson::TerminalCapabilities::mono()); // insert_line = Unknown
-    let mut out = Vec::new();
+    let out = Capture::default();
+    let mut writer = out.clone();
+    let mut target = renderer.bind_target(&mut session, &mut writer).unwrap();
     let mut root =
         gibson::node::Node::col().child(gibson::node::Node::text("LIVE", Style::default()));
-    renderer.render(&mut root, &mut session, &mut out).unwrap();
+    target.render(&mut root).unwrap();
     out.clear();
-    let (_, strategy) = renderer
-        .insert_raw_lines_before_live_unchecked(&["HISTORY"], &mut session, &mut out)
+    let (_, strategy) = target
+        .insert_raw_lines_before_live_unchecked(&["HISTORY"])
         .unwrap();
     assert_eq!(strategy, InsertStrategy::RepaintFallback);
 
@@ -174,13 +208,15 @@ fn insert_line_fast_path_requires_supported_capability() {
     let mut renderer = Renderer::new(RenderMode::Inline);
     let mut session = TerminalSession::headless(40, 10);
     session.set_capabilities(gibson::TerminalCapabilities::truecolor());
-    let mut out = Vec::new();
+    let out = Capture::default();
+    let mut writer = out.clone();
+    let mut target = renderer.bind_target(&mut session, &mut writer).unwrap();
     let mut root =
         gibson::node::Node::col().child(gibson::node::Node::text("LIVE", Style::default()));
-    renderer.render(&mut root, &mut session, &mut out).unwrap();
+    target.render(&mut root).unwrap();
     out.clear();
-    let (_, strategy) = renderer
-        .insert_raw_lines_before_live_unchecked(&["HISTORY"], &mut session, &mut out)
+    let (_, strategy) = target
+        .insert_raw_lines_before_live_unchecked(&["HISTORY"])
         .unwrap();
     assert_eq!(strategy, InsertStrategy::InsertLineFastPath);
 }

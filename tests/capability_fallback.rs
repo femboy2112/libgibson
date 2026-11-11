@@ -77,7 +77,11 @@ fn same_ui_degrades_through_the_whole_renderer() {
             Style::new().fg(Color::Rgb(10, 220, 130)),
         ));
         let mut out = Vec::new();
-        renderer.render(&mut root, &mut session, &mut out).unwrap();
+        renderer
+            .bind_target(&mut session, &mut out)
+            .unwrap()
+            .render(&mut root)
+            .unwrap();
         String::from_utf8_lossy(&out).to_string()
     };
 
@@ -97,7 +101,9 @@ fn commit_output_obeys_color_depth() {
     let node_style = Style::new().fg(Color::Rgb(9, 9, 200));
     let mut node = gibson::node::Node::text("styled", node_style);
     renderer
-        .commit_node(&mut node, &mut session, &mut out)
+        .bind_target(&mut session, &mut out)
+        .unwrap()
+        .commit_node(&mut node)
         .unwrap();
     let s = String::from_utf8_lossy(&out);
     assert!(
