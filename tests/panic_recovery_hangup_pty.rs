@@ -69,6 +69,10 @@ impl Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
+        if std::thread::panicking() {
+            eprintln!("failed recovery fixture retained: {}", self.dir.display());
+            return;
+        }
         // Remove only the two known files and their empty private directory.
         let _ = std::fs::remove_file(&self.gate);
         let _ = std::fs::remove_file(&self.result);
@@ -115,7 +119,10 @@ fn run_case(role: &str) {
         std::thread::sleep(Duration::from_millis(5));
     };
     let receipt = std::fs::read_to_string(&fixture.result).unwrap_or_default();
-    assert!(status.success(), "{role}: {receipt:?}");
+    assert!(
+        status.success(),
+        "{role}: child status={status:?}; receipt={receipt:?}"
+    );
     assert_eq!(
         receipt
             .lines()
@@ -160,19 +167,44 @@ fn recovery_hangup_child() {
     let Ok(role) = std::env::var(ROLE) else {
         return;
     };
+    let receipt_path = PathBuf::from(std::env::var_os(RESULT).unwrap());
+    let mut receipt = OpenOptions::new()
+        .append(true)
+        .create_new(true)
+        .open(&receipt_path)
+        .unwrap();
+    writeln!(
+        receipt,
+        "CHILD_START role={role} pid={}",
+        std::process::id()
+    )
+    .unwrap();
     // SAFETY: SIG_IGN installs no handler code; only this dedicated child is affected.
     assert_ne!(
         unsafe { libc::signal(libc::SIGHUP, libc::SIG_IGN) },
         libc::SIG_ERR
     );
+    writeln!(receipt, "SIGHUP_IGNORE_INSTALLED").unwrap();
     let mut ctx = Context::new(RenderMode::Inline).unwrap();
+    // Preserve the library's hook and record a failure before it attempts terminal output.
+    let prior_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if let Ok(mut diagnostic) = OpenOptions::new().append(true).open(&receipt_path) {
+            let _ = writeln!(diagnostic, "CHILD_PANIC {info}");
+        }
+        prior_hook(info);
+    }));
+    writeln!(receipt, "CONTEXT_CREATED").unwrap();
     ctx.enter_interactive().unwrap();
+    writeln!(receipt, "INITIAL_FLAGS={:#x}", local_flags()).unwrap();
     assert_eq!(local_flags() & (libc::ICANON | libc::ECHO), 0);
     eprintln!("INITIAL_RAW=1");
     if role.starts_with("owner-") {
+        writeln!(receipt, "OWNER_PANIC_BEGIN").unwrap();
         assert!(
             std::panic::catch_unwind(|| panic!("caught owner panic for hangup probe")).is_err()
         );
+        writeln!(receipt, "OWNER_PANIC_CAUGHT flags={:#x}", local_flags()).unwrap();
         assert_eq!(
             local_flags() & (libc::ICANON | libc::ECHO),
             libc::ICANON | libc::ECHO
@@ -183,24 +215,52 @@ fn recovery_hangup_child() {
     if role == "owner-eager-entry" {
         ctx.enter_interactive().unwrap();
     }
+    writeln!(receipt, "GATE_OPEN_WAIT flags={:#x}", local_flags()).unwrap();
     eprintln!("RECOVERY_HUP_READY");
     let mut gate = File::open(std::env::var_os(GATE).unwrap()).unwrap();
+    writeln!(receipt, "GATE_READ_WAIT").unwrap();
     let mut token = [0];
     gate.read_exact(&mut token).unwrap();
     assert_eq!(token, [b'!']);
-    let mut receipt = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(std::env::var_os(RESULT).unwrap())
-        .unwrap();
+    writeln!(receipt, "GATE_RELEASED").unwrap();
     let mut fd = libc::pollfd {
         fd: 0,
         events: libc::POLLIN,
         revents: 0,
     };
-    // SAFETY: one initialized pollfd for the child's open terminal descriptor.
-    assert!(unsafe { libc::poll(&mut fd, 1, 0) } > 0);
-    assert_ne!(fd.revents & (libc::POLLHUP | libc::POLLERR), 0);
+    writeln!(receipt, "HUP_PRECHECK_BEGIN").unwrap();
+    // Closing the parent's master does not prove the last master reference is gone yet.
+    // Observe HUP before testing the already-disconnected input path; a timeout is a failure.
+    let hup_deadline = Instant::now() + Duration::from_secs(1);
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        // SAFETY: one initialized pollfd for the child's open terminal descriptor.
+        let ready = unsafe { libc::poll(&mut fd, 1, 10) };
+        let error = (ready < 0).then(std::io::Error::last_os_error);
+        if attempts == 1 || fd.revents & (libc::POLLHUP | libc::POLLERR) != 0 {
+            writeln!(
+                receipt,
+                "HUP_PRECHECK_RESULT attempt={attempts} rc={ready} revents={:#x} errno={:?}",
+                fd.revents,
+                error.as_ref().and_then(std::io::Error::raw_os_error)
+            )
+            .unwrap();
+        }
+        if let Some(error) = error {
+            assert_eq!(
+                error.kind(),
+                std::io::ErrorKind::Interrupted,
+                "HUP observation failed"
+            );
+        } else if ready > 0 && fd.revents & (libc::POLLHUP | libc::POLLERR) != 0 {
+            break;
+        }
+        assert!(
+            Instant::now() < hup_deadline,
+            "hangup was not observed within its bound"
+        );
+    }
     writeln!(receipt, "HUP_OBSERVED=1").unwrap();
     if std::env::var_os("GIBSON_TEST_STALL_RECOVERY_AFTER_HUP").is_some() {
         loop {
