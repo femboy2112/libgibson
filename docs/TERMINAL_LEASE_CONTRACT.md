@@ -1,6 +1,6 @@
 # Terminal lease contract (Linux scope, v0.7 candidate)
 
-Status: **input side implemented** (issue #345, branch `fix/xxxii-acquired-input-endpoint`);
+Status: **input side implemented** (issue #345, merged in #349 as `b3428db`);
 output identity and resize geometry **not yet qualified** (stack #338 → #339 → #343, research
 #348). This document is the decision record for which descriptor changes a managed session
 supports. It is not a public type: the lease is private implementation state.
