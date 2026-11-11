@@ -83,8 +83,8 @@ fn hung_up() -> io::Error {
     io::Error::new(io::ErrorKind::BrokenPipe, "terminal hung up (SIGHUP)")
 }
 
-/// How the terminal size is read for a resize event. Real sources ask crossterm
-/// (`TIOCGWINSZ`); tests inject a fixed size.
+/// How tests inject a fixed size into a resize source.
+#[cfg(test)]
 type SizeFn = fn() -> io::Result<(u16, u16)>;
 
 /// The decoding state for one terminal descriptor.
@@ -100,7 +100,7 @@ pub(crate) struct TtySource {
     pressed: PressedKeys,
     /// Read end of the `SIGWINCH` self-pipe (non-blocking), if resizes are watched.
     winch: Option<UnixStream>,
-    size: SizeFn,
+    size: Box<dyn Fn() -> io::Result<(u16, u16)> + Send>,
     /// Bytes of unfinished sequences discarded because a hangup ended them.
     dropped_partial_bytes: usize,
     /// When a held lone `ESC` (see [`LONE_ESC_WAIT`]) is delivered as Esc if nothing follows.
@@ -196,7 +196,11 @@ enum ReadOutcome {
 impl TtySource {
     /// A source over `fd` (not owned: never closed here). `winch` is the read end of a
     /// `SIGWINCH` self-pipe, if resizes should be reported.
-    pub(crate) fn new(fd: RawFd, winch: Option<UnixStream>, size: SizeFn) -> io::Result<Self> {
+    pub(crate) fn new(
+        fd: RawFd,
+        winch: Option<UnixStream>,
+        size: impl Fn() -> io::Result<(u16, u16)> + Send + 'static,
+    ) -> io::Result<Self> {
         if let Some(w) = &winch {
             w.set_nonblocking(true)?;
         }
@@ -207,7 +211,7 @@ impl TtySource {
             pending: VecDeque::new(),
             pressed: PressedKeys::default(),
             winch,
-            size,
+            size: Box::new(size),
             dropped_partial_bytes: 0,
             esc_deadline: None,
             hung_up: false,
@@ -925,6 +929,9 @@ pub(crate) fn poll(
     stdin_is_terminal: bool,
 ) -> io::Result<Option<(u64, SourceEvent)>> {
     use std::sync::atomic::Ordering;
+    // Bind the reader to this poll, not to the lifetime of a source that a
+    // previous unmanaged poll may have created before the session existed.
+    let size_reader = crate::session::resize_size_reader();
     let deadline = deadline_after(timeout);
     let mut guard = loop {
         match TERMINAL_SOURCE.try_lock() {
@@ -955,11 +962,9 @@ pub(crate) fn poll(
     let left = deadline.map_or(Duration::MAX, |d| {
         d.saturating_duration_since(Instant::now())
     });
-    guard
-        .as_mut()
-        .expect("initialised above")
-        .1
-        .poll_tagged(left)
+    let source = &mut guard.as_mut().expect("initialised above").1;
+    source.size = size_reader;
+    source.poll_tagged(left)
 }
 
 /// Retires the terminal source: called when the session gives the terminal up, so a later

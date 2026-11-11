@@ -123,14 +123,39 @@ fn raw_cleanup_tracks_the_terminal_where_raw_was_enabled() {
 }
 
 #[test]
+fn host_crossterm_raw_mode_survives_managed_session() {
+    for role in ["host-no-session", "host-crossterm-raw"] {
+        let result = child(role, (120, 40));
+        let err = String::from_utf8_lossy(&result.stderr);
+        assert!(result.status.success(), "{role}: {err}");
+        assert!(err.contains("HOST_RAW_AFTER=true"), "{role}: {err}");
+        eprintln!("{role}: {err}");
+    }
+}
+
+#[test]
 fn resize_event_matches_the_acquired_output_geometry() {
-    for role in ["resize-control", "resize-noctty"] {
+    for role in [
+        "resize-control",
+        "resize-noctty",
+        "resize-before-poll",
+        "resize-preexisting-source",
+    ] {
         let result = child(role, (120, 40));
         let err = String::from_utf8_lossy(&result.stderr);
         assert!(result.status.success(), "{role}: {err}");
         assert!(err.contains("GETTER=50x20 EVENT=50x20"), "{role}: {err}");
         eprintln!("{role} control passed: {err}");
     }
+}
+
+#[test]
+fn prior_unmanaged_inflight_poll_must_not_report_a_different_terminal() {
+    let result = child("resize-inflight", (120, 40));
+    let err = String::from_utf8_lossy(&result.stderr);
+    assert!(err.contains("INFLIGHT_POLL_OBSERVED=true"), "{err}");
+    assert!(result.status.success(), "{err}");
+    assert!(err.contains("GETTER=50x20 EVENT=50x20"), "{err}");
 }
 
 #[test]
@@ -146,6 +171,28 @@ fn geometry_child() {
         let no_ctty = controlling.unwrap_err().raw_os_error() == Some(libc::ENXIO);
         eprintln!("NO_CTTY_ENXIO={no_ctty}");
         assert!(no_ctty);
+    }
+    if role == "host-crossterm-raw" || role == "host-no-session" {
+        crossterm::terminal::enable_raw_mode().unwrap();
+        assert!(crossterm::terminal::is_raw_mode_enabled().unwrap());
+        if role == "host-crossterm-raw" {
+            let mut context = gibson::Context::fullscreen().unwrap();
+            context.enter_interactive().unwrap();
+            context.restore().unwrap();
+        }
+        let host_raw = crossterm::terminal::is_raw_mode_enabled().unwrap();
+        let mut attr = std::mem::MaybeUninit::<libc::termios>::uninit();
+        assert_eq!(unsafe { libc::tcgetattr(0, attr.as_mut_ptr()) }, 0);
+        let attr = unsafe { attr.assume_init() };
+        let physical_raw = attr.c_lflag & (libc::ECHO | libc::ICANON) == 0;
+        eprintln!("HOST_RAW_AFTER={host_raw} PHYSICAL_RAW_AFTER={physical_raw}");
+        // This call is safe whether the session restored the host mode or not.
+        crossterm::terminal::disable_raw_mode().unwrap();
+        assert!(
+            host_raw && physical_raw,
+            "session released host-owned raw mode"
+        );
+        return;
     }
     if role.starts_with("raw-") {
         fn attrs(fd: libc::c_int) -> libc::termios {
@@ -200,11 +247,55 @@ fn geometry_child() {
         return;
     }
     if role.starts_with("resize-") {
+        let inflight = if role == "resize-inflight" {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let worker = std::thread::spawn(move || {
+                let tid = unsafe { libc::syscall(libc::SYS_gettid) };
+                tx.send(tid).unwrap();
+                gibson::poll_event(Duration::from_secs(5))
+            });
+            let tid = rx.recv_timeout(Duration::from_secs(1)).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                let syscall = std::fs::read_to_string(format!("/proc/self/task/{tid}/syscall"))
+                    .unwrap_or_default();
+                if syscall
+                    .split_whitespace()
+                    .next()
+                    .and_then(|n| n.parse::<libc::c_long>().ok())
+                    == Some(libc::SYS_poll)
+                {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "worker never entered poll: {syscall}"
+                );
+                std::thread::yield_now();
+            }
+            eprintln!("INFLIGHT_POLL_OBSERVED=true");
+            Some(worker)
+        } else {
+            None
+        };
+        // A public free-function poll can create the process-global source before
+        // the managed session exists. The session must not inherit its size reader.
+        if role == "resize-preexisting-source" {
+            assert!(gibson::poll_event(Duration::ZERO).unwrap().is_none());
+        }
         let mut context = gibson::Context::fullscreen().unwrap();
         context.enter_interactive().unwrap();
-        // Initialize the input source and its signal pipe while both fds refer to A.
-        assert!(context.poll_event(Duration::ZERO).unwrap().is_none());
-        assert_eq!(unsafe { libc::dup2(4, 1) }, 1);
+        // Also test replacement before the lazily created input source exists.
+        if role == "resize-before-poll" {
+            assert_eq!(unsafe { libc::dup2(4, 1) }, 1);
+        }
+        // Initialize the input source and its signal pipe.
+        if inflight.is_none() {
+            assert!(context.poll_event(Duration::ZERO).unwrap().is_none());
+        }
+        if role != "resize-before-poll" {
+            assert_eq!(unsafe { libc::dup2(4, 1) }, 1);
+        }
         let size = libc::winsize {
             ws_row: 20,
             ws_col: 50,
@@ -214,7 +305,11 @@ fn geometry_child() {
         assert_eq!(unsafe { libc::ioctl(0, libc::TIOCSWINSZ, &size) }, 0);
         // Explicitly trigger the signal on both controlling and non-controlling cases.
         assert_eq!(unsafe { libc::raise(libc::SIGWINCH) }, 0);
-        let observed = context.poll_event(Duration::from_secs(2)).unwrap();
+        let observed = if let Some(worker) = inflight {
+            worker.join().unwrap().unwrap()
+        } else {
+            context.poll_event(Duration::from_secs(2)).unwrap()
+        };
         let getter = context.session.terminal_size();
         let event = match observed {
             Some(gibson::Event::Resize(c, r)) => (c, r),

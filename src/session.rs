@@ -238,6 +238,25 @@ fn owner_output() -> Option<SessionWriter> {
         .map(|p| SessionWriter(Some(p)))
 }
 
+/// Capture the current managed output identity for a resize poll. If this
+/// captured endpoint is relinquished, the reader does not fall back to stdout.
+#[cfg(unix)]
+pub(crate) fn resize_size_reader() -> Box<dyn Fn() -> io::Result<(u16, u16)> + Send> {
+    if TERMINAL_LEASE.load(Ordering::SeqCst) == LEASE_AVAILABLE {
+        return Box::new(crossterm::terminal::size);
+    }
+    let endpoint = OWNER_OUTPUT
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
+    Box::new(move || {
+        endpoint
+            .upgrade()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "output lease ended"))?
+            .terminal_size()
+    })
+}
+
 /// Records (or clears) the lease-owning thread. The lock is held only for this
 /// one assignment — never across terminal I/O — so it cannot be poisoned by a
 /// panic mid-restore, and the panic hook can always read it back.
