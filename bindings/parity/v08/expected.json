@@ -1,6 +1,12 @@
 {
   "format": 1,
   "comment": "Committed expectation for scripts/dev/parity_v08.sh. differs_* list the record ids that are KNOWN to differ (documented gaps, docs/V08_PARITY_SLICE.md); any other difference is a regression. Labels: SUPPORTED / PARTIAL / UNSUPPORTED / UNVERIFIED, each with a one-line evidence pointer. record_ids is the complete, ordered set every transcript must contain exactly once. pinned holds the exact record each allowlisted difference must still be, so a change inside a known gap is a regression too.",
+  "absolute": {
+    "t01": "{\"cols\":40,\"id\":\"t01\",\"k\":\"terminal_size\",\"rows\":12,\"st\":\"OK\"}",
+    "t02": "{\"cols\":60,\"id\":\"t02\",\"k\":\"terminal_size\",\"rows\":16,\"st\":\"OK\"}",
+    "f05.1": "{\"cols\":0,\"id\":\"f05.1\",\"k\":\"event\",\"key_code\":0,\"kind\":\"NONE\",\"mods\":0,\"paste\":\"\",\"rows\":0,\"st\":\"OK\",\"type\":\"FOCUS_GAINED\"}",
+    "f05.2": "{\"cols\":0,\"id\":\"f05.2\",\"k\":\"event\",\"key_code\":0,\"kind\":\"NONE\",\"mods\":0,\"paste\":\"\",\"rows\":0,\"st\":\"OK\",\"type\":\"FOCUS_LOST\"}"
+  },
   "reference": "c",
   "differs_from_c": {
     "c": [],
@@ -169,45 +175,45 @@
     "EVT": {
       "c": [
         "SUPPORTED",
-        "e01-e09/x01-x04 are the reference; poll_event_kind separates e09.2 (U+1001 CHAR) from e09.3 (ENTER), kind-less poll_event conflates x03/x04"
+        "e01-e09/x01-x04 are the reference; poll_event_kind separates e09.2 (U+1001 CHAR) from e09.3 (ENTER), kind-less poll_event conflates x03/x04; f01/f02 headless focus-reporting request/disable (terminal delivery unverified); f03-f05 inject and poll focus events headlessly"
       ],
       "cpp": [
         "SUPPORTED",
-        "every e01-e09/x01-x04 record via gibson::Context (headless, push_event, poll_event_kind for e*, kind-less poll_event_kindless(timeout) and Event::legacy_key for x*); wrapper obs ctx_has_headless=1, ctx_has_push_event=1, ctx_has_poll_event_kind=1"
+        "every e01-e09/x01-x04 record via gibson::Context (headless, push_event, poll_event_kind for e*, kind-less poll_event_kindless(timeout) and Event::legacy_key for x*); wrapper obs ctx_has_headless=1, ctx_has_push_event=1, ctx_has_poll_event_kind=1; f01/f02 headless focus-reporting request/disable (terminal delivery unverified); f03-f05 inject and poll focus events headlessly"
       ],
       "py": [
         "SUPPORTED",
-        "every e01-e09/x01-x04 record via the wrapper (Context.push_event/poll_event, Event.char vs Event.special key_kind, poll_event(kind=False) for the kind-less x-records; wrapper obs ctx_has_push_event=1, ctx_has_poll_event=1, module_has_event_struct=1)"
+        "every e01-e09/x01-x04 record via the wrapper (Context.push_event/poll_event, Event.char vs Event.special key_kind, poll_event(kind=False) for the kind-less x-records; wrapper obs ctx_has_push_event=1, ctx_has_poll_event=1, module_has_event_struct=1); f01/f02 headless focus-reporting request/disable (terminal delivery unverified); f03-f05 inject and poll focus events headlessly"
       ],
       "go": [
         "SUPPORTED",
-        "every e01-e09/x01-x04 record via bindings/go (NewHeadlessContext, PushEvent, PollEventKind; CharKey vs SpecialKey keep e09.2 and e09.3 apart; kind-less PollEvent / LegacyKey for the x-records; wrapper obs ctx_has_PushEvent=1, ctx_has_PollEventKind=1)"
+        "every e01-e09/x01-x04 record via bindings/go (NewHeadlessContext, PushEvent, PollEventKind; CharKey vs SpecialKey keep e09.2 and e09.3 apart; kind-less PollEvent / LegacyKey for the x-records; wrapper obs ctx_has_PushEvent=1, ctx_has_PollEventKind=1); f01/f02 headless focus-reporting request/disable (terminal delivery unverified); f03-f05 inject and poll focus events headlessly"
       ],
       "rust": [
         "PARTIAL",
-        "e01-e09 byte-identical via InjectedQueue + Context::poll_from; x01/x03/x04 UNSUPPORTED (Rust has no kind-less key path)"
+        "e01-e09 byte-identical via InjectedQueue + Context::poll_from; x01/x03/x04 UNSUPPORTED (Rust has no kind-less key path); f01/f02 headless focus-reporting request/disable (terminal delivery unverified); f03-f05 inject and poll focus events headlessly"
       ]
     },
     "GEO": {
       "c": [
         "SUPPORTED",
-        "s15 40x12, r02 60x16: a polled RESIZE resizes the headless context (the only resize path; no direct resize call)"
+        "s15 40x12, r02 60x16: a polled RESIZE resizes the headless context (the only resize path; no direct resize call); t01/t02 live geometry before render and after polled resize"
       ],
       "cpp": [
         "SUPPORTED",
-        "s15/r02 byte-identical via Context::frame_size, with the RESIZE pushed and polled through Context::push_event/poll_event_kind"
+        "s15/r02 byte-identical via Context::frame_size, with the RESIZE pushed and polled through Context::push_event/poll_event_kind; t01/t02 live geometry before render and after polled resize"
       ],
       "py": [
         "SUPPORTED",
-        "s15/r02 byte-identical via Context.frame_size, with the RESIZE pushed and polled through Context.push_event/poll_event"
+        "s15/r02 byte-identical via Context.frame_size, with the RESIZE pushed and polled through Context.push_event/poll_event; t01/t02 live geometry before render and after polled resize"
       ],
       "go": [
         "SUPPORTED",
-        "s15/r02 byte-identical via Context.FrameSize, with the RESIZE pushed and polled through PushEvent/PollEventKind"
+        "s15/r02 byte-identical via Context.FrameSize, with the RESIZE pushed and polled through PushEvent/PollEventKind; t01/t02 live geometry before render and after polled resize"
       ],
       "rust": [
-        "PARTIAL",
-        "r02 matches only with an explicit ctx.session.set_terminal_size after poll_from; witness: poll_from alone leaves r02 at 40x12"
+        "SUPPORTED",
+        "since #293, poll_from applies the delivered resize without an explicit set_terminal_size; t01/t02 show headless geometry before render and after the resize"
       ]
     },
     "CELL": {
@@ -345,6 +351,13 @@
   },
   "record_ids": [
     "s01",
+    "t01",
+    "f01",
+    "f02",
+    "f03",
+    "f04",
+    "f05.1",
+    "f05.2",
     "s05",
     "s06",
     "s07",
@@ -386,6 +399,7 @@
     "e09.7",
     "e09.8",
     "e09.9",
+    "t02",
     "r01",
     "r02",
     "r03",

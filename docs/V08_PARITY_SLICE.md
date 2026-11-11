@@ -34,6 +34,23 @@ Knobs: `PARITY_V08_REPS` (default 500), `PARITY_V08_WORK` (default: fresh `mktem
 `PARITY_V08_SKIP_CONTROLS=1`. Exit 0 = no regression against `expected.json`; 1 = regression;
 2 = usage/environment error.
 
+On Linux the same harness also runs the C++, Go and Python interactive focus wrappers under a
+PTY. It checks the enable/disable/restore bytes, catches a client that skips enable, and checks
+the propagated error from an injected `/dev/full` write. The PTY peer also writes emulated
+focus-gained and focus-lost input after raw input is initialized; each wrapper must poll them in
+order, and a reversed-input control must fail. This is a separate control and does not change the
+84 transcript records. Other systems report it as UNVERIFIED. The peer's emulated input and the
+request bytes do not prove that a particular terminal emits or supports focus events.
+
+The comparator pins the focus-event and headless-geometry records and the complete record order independently of the
+live C reference. Its lightweight controls include shared wrong-focus and shared reordered-record
+mutations, checks common-mode incorrect geometry, and requires a changed or healed pinned gap to update the committed expectation.
+These are transcript-oracle controls; they do not establish focus delivery from a real terminal.
+The C consumer also statically pins focus event discriminants to ABI values 7 and 8, with a
+deliberately wrong-value compile control. A run using skipped controls, a prebuilt Rust binary of
+unverified provenance, or an unavailable PTY reports PARTIAL. Even a complete local relative
+parity run does not establish that the installed SDK came from the Rust consumer's source.
+
 How each consumer reaches the installed SDK:
 
 | Lang | Build / load | Surface actually used |
@@ -42,7 +59,17 @@ How each consumer reaches the installed SDK:
 | C++ | `c++ -std=c++17 ...` same pkg-config + rpath | `gibson.hpp`: `gibson::Node` RAII, `Context::abi_compatible()`, `Context::headless`, `set_root`, `render`, `push_event`, `poll_event_kind` / `poll_event_kindless(timeout)`, `frame_size`, `frame_cell(s)`, `frame_cell_glyph` / `full_glyph`, `rendered_output`, `close`, with `Error` / `QueueFullError`. Raw C only for what the wrapper cannot express (NULL pointers, `destroy(NULL)`, `set_color_depth`, `Node::text` of invalid UTF-8): 9 probes, `l02` |
 | Python | a copy of `bindings/python/gibson.py` on `PYTHONPATH` (temp dir), `LIBGIBSON_LIBRARY=<sdk>/lib/libgibson.so` | `gibson.py`: `Context.headless`, `Node`, `GibsonStyle`, `set_root`, `render`, `frame_size`, `frame_cells`, `frame_cell`, `frame_cell_glyph`, `rendered_output`, `push_event`, `poll_event` (with `Event`, `Key`, `KeyKind`), `close`. Probes the wrapper cannot express (NULL pointers, foreign contexts, `destroy(NULL)`): raw ctypes on the same `.so` (`gibson._lib._name`) |
 | Go | `go build` (cgo, `#cgo pkg-config: libgibson`), `GOFLAGS=-mod=mod GOPROXY=off`, rpath via `CGO_LDFLAGS`; `replace` to `bindings/go` | `bindings/go`: `CheckABI`, `NewHeadlessContext`, `NewColNode`, `NewStyledTextNode` + `gibson.Style`, `SetRootNode`, `Render`, `PushEvent`, `PollEventKind` / `PollEvent`, `FrameSize`, `FrameCell(s)`, `FrameCellGlyph` / `FullGlyph`, `RenderedOutput`, `Close`, `*gibson.Error`. Raw cgo only for what the wrapper cannot express (NULL pointers, `destroy(NULL)`, `set_color_depth`, the `cells_oob` out-param): 8 probes, `l02`, via `Context.UnsafeHandle()` |
-| Rust | `cargo +1.98.1 build --release --example parity_v08` (this worktree's source = the SDK's source) | the native crate API: `Context::headless`, `Node`, `Style`, `InjectedQueue` + `Context::poll_from`, `Context::frame_size`/`frame_cell`/`rendered_bytes` (`TerminalSession::set_terminal_size` only in the `unapplied` resize control, since #293). No `gibson::ffi` call |
+| Rust | `cargo +1.98.1 build --release --example parity_v08` (this worktree's source; the SDK's source provenance must be verified separately) | the native crate API: `Context::headless`, `Node`, `Style`, `InjectedQueue` + `Context::poll_from`, `Context::frame_size`/`frame_cell`/`rendered_bytes` (`TerminalSession::set_terminal_size` only in the `unapplied` resize control, since #293). No `gibson::ffi` call |
+
+The C/C++ compiler helper parses pkg-config's escaped flags without shell word splitting. For an
+SDK prefix containing whitespace, the harness supplies pkg-config with a temporary whitespace-free
+symlink to that SDK because some Go/cgo toolchains split its escaped flags incorrectly. It sets
+`LD_LIBRARY_PATH` to the actual SDK for the run; to run the resulting Go binaries later, set that
+variable yourself. Each run uses a fresh Go cache under its work directory so cached cgo flags do
+not reuse another run's cgo search path. To avoid deleting a directory that another process may
+have replaced, the harness reports and retains its temporary cache and alias paths for separately
+audited cleanup. The work directory and receipts are retained. The symlink does not change the
+SDK's contents or bytes.
 
 Toolchains of the recorded run: gcc/g++ 13.3.0, Python 3.12.3, Go `go1.18 gccgo` (GCC 14.2.0),
 Rust 1.98.1, Linux x86_64.
@@ -83,6 +110,8 @@ What it does, in order:
 | `mount` | | `gibson_set_root_node` (consumes the tree) | `mount` |
 | `render` | | `gibson_render` | `render` |
 | `geom` | | `gibson_get_frame_size` | `geom` |
+| `terminal_size` | | `gibson_get_terminal_size` | `terminal_size` |
+| `focus_reporting` | `0` / `1` | `gibson_set_focus_reporting` (headless no-op; not evidence of terminal support) | `focus_reporting` |
 | `frame` | | `gibson_get_frame_size`, `gibson_get_frame_cells` (all cells), `gibson_get_frame_cell_glyph` for truncated cells, `gibson_get_rendered_output` | `frame` |
 | `cell` | `X Y` | `gibson_get_frame_cell` (+ glyph escape hatch) | `cell` |
 | `glyph` | `X Y` | `gibson_get_frame_cell_glyph` (size query, copy) | `glyph` |
@@ -91,6 +120,7 @@ What it does, in order:
 | `push_special` | `NAME MODS` | `gibson_push_event_kind(..., GIBSON_KEY_KIND_SPECIAL)` | `push` |
 | `push_legacy` | `U+X MODS` | `gibson_push_event` | `push` |
 | `push_paste` | `HEX` | `gibson_push_event` (PASTE) | `push` |
+| `push_focus` | `GAINED` / `LOST` | `gibson_push_event` (focus) | `push` |
 | `push_resize` | `COLS ROWS` | `gibson_push_event` (RESIZE) | `push` |
 | `poll` | `N` | N x `gibson_poll_event_kind(ctx, 0, ...)` | `event` (ids `<id>.1`..`<id>.N`) |
 | `poll_legacy` | | `gibson_poll_event` | `event` (`kind` = `ABSENT`) |
@@ -234,7 +264,7 @@ push/poll calls of `p21` (not profiled).
 |---|---|---|
 | cell, x5 languages | `PARITY_V08_PERTURB=cell`: last byte of step s06's text `!` -> `?` | `r03,s16` (both frame digests) for C, C++, Python, Go, Rust |
 | events, x5 languages | `PARITY_V08_PERTURB=events`: swap steps e01/e02 | `ORDER,e09.1,e09.2` for all five |
-| Rust resize witness | `PARITY_V08_RUST_RESIZE=unapplied`: put back the geometry `poll_from` applied (the behaviour before #293). In the recorded run this was `=native`, which skipped the consumer's explicit `set_terminal_size`; #293 removed that step | `r02,r03,r04`; r02 = `{"cols":40,"id":"r02","k":"geom","rows":12,"st":"OK"}` |
+| Rust resize witness | `PARITY_V08_RUST_RESIZE=unapplied`: put back the geometry `poll_from` applied (the behaviour before #293). In the recorded run this was `=native`, which skipped the consumer's explicit `set_terminal_size`; #293 removed that step | `r02,r03,r04,t02` in the extended script; r02 = `{"cols":40,"id":"r02","k":"geom","rows":12,"st":"OK"}` |
 | planted leak (resource gate) | `PARITY_V08_PERTURB=leak` (C): d01 drops the context without destroying it | second-half growth 18304 KB > 4096 -> EXCEEDED |
 
 The perturbations are env-gated in the consumers and never on by default. The harness unsets them
@@ -255,7 +285,7 @@ Labels, applied per language per dimension:
 | Dimension | C | C++ | Python | Go | Rust |
 |---|---|---|---|---|---|
 | Event identity & ordering | SUPPORTED: e09.1-e09.9 are the reference; `poll_event_kind` separates e09.2 (U+1001 CHAR) from e09.3 (ENTER SPECIAL) | SUPPORTED: every e01-e09/x01-x04 record through gibson.hpp (`Context::headless`, `push_event`, `poll_event_kind`; `Event::char_key` vs `Event::special_key` keep e09.2 and e09.3 apart; kind-less `poll_event_kindless(timeout)` / `Event::legacy_key` for the x-records; wrapper obs `ctx_has_push_event:1`, `ctx_has_poll_event_kind:1`) | SUPPORTED: every e01-e09/x01-x04 record through gibson.py (`Context.push_event` / `poll_event`; `Event.char` vs `Event.special` keep e09.2 and e09.3 apart; `poll_event(kind=False)` is the kind-less x-record path; `ctx_has_push_event:1`, `ctx_has_poll_event:1`, `module_has_event_struct:1`) | SUPPORTED: every e01-e09/x01-x04 record through bindings/go (`NewHeadlessContext`, `PushEvent`, `PollEventKind`; `CharKey` vs `SpecialKey` keep e09.2 and e09.3 apart; kind-less `PollEvent` / `LegacyKey` for the x-records; `ctx_has_PushEvent:1`, `ctx_has_PollEventKind:1`) | PARTIAL: e01-e09 byte-identical via `InjectedQueue` + `poll_from`; x01/x03/x04 UNSUPPORTED (no kind-less key path) |
-| Geometry | SUPPORTED: s15 40x12, r02 60x16; a polled RESIZE is the only resize path (no direct resize call, none needed) | SUPPORTED: s15/r02 via `Context::frame_size`, with the RESIZE pushed and polled through `push_event` / `poll_event_kind` (was PARTIAL: no `frame_size`, raw C) | SUPPORTED: s15/r02 via `Context.frame_size`, with the RESIZE pushed and polled through `Context.push_event` / `poll_event` (was PARTIAL: the resize needed raw ctypes) | SUPPORTED: s15/r02 via `Context.FrameSize`, with the RESIZE pushed and polled through `PushEvent` / `PollEventKind` (was PARTIAL: no readback) | PARTIAL: in the recorded run r02 matched only with an explicit `ctx.session.set_terminal_size`; since #293 `poll_from` alone gives r02 60x16 (the label is unchanged in `expected.json`) |
+| Geometry | SUPPORTED: s15 40x12, r02 60x16; a polled RESIZE is the only resize path (no direct resize call, none needed) | SUPPORTED: s15/r02 via `Context::frame_size`, with the RESIZE pushed and polled through `push_event` / `poll_event_kind` (was PARTIAL: no `frame_size`, raw C) | SUPPORTED: s15/r02 via `Context.frame_size`, with the RESIZE pushed and polled through `Context.push_event` / `poll_event` (was PARTIAL: the resize needed raw ctypes) | SUPPORTED: s15/r02 via `Context.FrameSize`, with the RESIZE pushed and polled through `PushEvent` / `PollEventKind` (was PARTIAL: no readback) | SUPPORTED for these cases: since #293 `poll_from` alone applies the resize; the earlier recorded run required `ctx.session.set_terminal_size` |
 | Rendered cells & styles | SUPPORTED: s16/r03 digests (cells + wire), s18 RGB+bold+underline, s19 ANSI256+named+italic, s25/r04 blanks | SUPPORTED: every CELL record through gibson.hpp (`Context::headless`, `Node` RAII + style, `set_root`, `render`, `frame_cells`, `frame_cell`, `rendered_output`) | SUPPORTED: every CELL record through gibson.py (`Context.headless`, `Node.text`+`GibsonStyle`, `frame_cells`, `frame_cell`, `rendered_output`) | SUPPORTED: every CELL record through bindings/go (`NewHeadlessContext`, `NewStyledTextNode` + `gibson.Style`, `SetRootNode`, `Render`, `FrameCells`, `FrameCell`, `RenderedOutput`) | SUPPORTED: s16/r03 and s18/s19/s25/r04 via `frame_cell` + `rendered_bytes` (r03/r04 rely on the GEO step) |
 | Text & Unicode semantics | SUPPORTED: s20/s21 CJK width 2 + continuation, s22 `e`+U+0301 one cell, s23/s26 25-byte ZWJ width 2, s24/r05 U+1001, s27 inline cap = 14-byte prefix, `trunc:1` | SUPPORTED: `Node::text` carries the UTF-8; `Context::frame_cell_glyph` / `full_glyph` read the full grapheme | SUPPORTED: `Node.text(str)`, `frame_cell_glyph`, `GibsonCell.glyph_truncated` | SUPPORTED: `NewStyledTextNode` carries the UTF-8; `FrameCellGlyph` / `FullGlyph` read the full grapheme | PARTIAL: s17-s26/r05 byte-identical; s27/s28 UNSUPPORTED (Rust always has the full grapheme; the cap is a C artifact) |
 | Failure codes | SUPPORTED: p01-p22 = 21 INVALID_PARAM + 1 QUEUE_FULL; last-error text for 6 | PARTIAL: p01-p22 byte-identical; 13 probes (p01, p02, p05, p06, p11-p17, p21, p22) via `gibson::Error` / `QueueFullError` with last-error text, 9 still raw C (NULL pointers, `set_color_depth`, the `cells_oob` out-param, `Node::text` of invalid UTF-8 drops the status: `node_text_invalid_utf8_raw_is_null:1`) | PARTIAL: byte-identical; the 8 event probes (p11-p17, p21) go through `Context.push_event` and `GibsonError` (status + last-error text), the other 14 still need raw ctypes (NULL pointers, foreign contexts) and `Node.*` ignore the status | PARTIAL: p01-p22 byte-identical; 14 probes (p01, p02, p05, p06, p09, p11-p17, p21, p22) via `*gibson.Error` with the last-error text read inside the failing cgo call, 8 still raw cgo (p03, p04, p07, p08, p10, p18, p19, p20); the older constructors (`NewTextNode`, `AddChild`, `SetRoot`) still drop statuses | PARTIAL: no status codes: 13 unrepresentable, 7 rejected natively, **2 accepted where C rejects** (p02, p15) |
@@ -361,12 +391,15 @@ bypassing the binding:**
   - the INLINE mode, scrollback, `commit_*` and `insert_*_before_live`;
   - rich text and Line nodes; spinner, text_input, border box, rule, rail, stack and dim nodes;
   - layout setters, wrapping, color-depth downgrade, stats parity;
-  - terminal (TTY) contexts and timeouts;
-  - mouse and focus events (absent from ABI v1; Rust has them);
+  - general interactive TTY scenes and input timeouts (the request-byte control above is narrower);
+  - mouse events (absent from ABI v1) and focus delivery by an interactive terminal;
   - `KeyCode::BackTab` (the ABI folds it into TAB);
   - threading;
   - `gibson_push_event` on a non-headless context.
   These are UNVERIFIED by this slice.
+
+The extended headless script does inject and poll focus gained/lost events through ABI v1
+and the wrappers. That verifies their identity and ordering, not terminal support.
 * **Common mode.** C, C++, Python and Go all drive the same `libgibson.so`. Their agreement proves
   binding/ABI fidelity, not engine correctness. Rust-vs-C compares two API paths over the same engine
   source. The comparison is relative: an engine change that alters every language's output equally

@@ -31,7 +31,7 @@ MASK = (1 << 64) - 1
 
 ST = {0: "OK", -1: "INVALID_PARAM", -2: "IO", -3: "PANIC", -4: "NOT_INITIALIZED", -5: "QUEUE_FULL"}
 KIND = {0: "NONE", 1: "CHAR", 2: "SPECIAL"}
-TYPE = {1: "KEY", 2: "PASTE", 3: "RESIZE"}
+TYPE = {1: "KEY", 2: "PASTE", 3: "RESIZE", 7: "FOCUS_GAINED", 8: "FOCUS_LOST"}
 EV_KEY, EV_PASTE, EV_RESIZE = gibson.EventType.KEY, gibson.EventType.PASTE, gibson.EventType.RESIZE
 KIND_CHAR, KIND_SPECIAL = gibson.KeyKind.CHAR, gibson.KeyKind.SPECIAL
 QUEUE_CAPACITY = gibson.GIBSON_EVENT_QUEUE_CAPACITY
@@ -298,6 +298,12 @@ class Interp:
             except RuntimeError:
                 st = "WRAPPER_RAISED"
             emit(out, {"id": sid, "k": "render", "st": st})
+        elif op == "terminal_size":
+            c, r = self.ctx.terminal_size()
+            emit(out, {"cols": c, "id": sid, "k": "terminal_size", "rows": r, "st": "OK"})
+        elif op == "focus_reporting":
+            self.ctx.set_focus_reporting(a[0] == "1")
+            emit(out, {"id": sid, "k": "focus_reporting", "st": "OK"})
         elif op == "geom":
             c, r = self.ctx.frame_size()
             emit(out, {"cols": c, "id": sid, "k": "geom", "rows": r, "st": "OK"})
@@ -345,6 +351,8 @@ class Interp:
                 ev = gibson.Event.special(SPECIAL[a[0]], int(a[1]))
             elif op == "push_paste":
                 ev = gibson.Event.paste_text(bytes.fromhex(a[0]))
+            elif op == "push_focus":
+                ev = gibson.Event(gibson.EventType.FOCUS_GAINED if a[0] == "GAINED" else gibson.EventType.FOCUS_LOST)
             else:
                 ev = gibson.Event.resize(int(a[0]), int(a[1]))
             emit(out, {"id": sid, "k": "push", "st": st_name(self.push(ev)[0])})

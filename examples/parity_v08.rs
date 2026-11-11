@@ -19,14 +19,14 @@
 //! the C ABI's `gibson_poll_event` uses (#293), so this consumer takes no extra step.
 //! `PARITY_V08_RUST_RESIZE=unapplied` (a negative control in `scripts/dev/parity_v08.sh`, never on
 //! by default) puts the pre-resize geometry back after the poll, reproducing the behaviour before
-//! #293, so the comparator must catch r02/r03/r04.
+//! #293, so the comparator must catch t02/r02/r03/r04.
 //!
 //! Negative controls (never on by default): `PARITY_V08_PERTURB=cell | events` (see parity_v08.c).
 
 use gibson::cell::{Color, Style};
 use gibson::context::{Context, FrameCell, RenderMode};
 use gibson::event_source::InjectedQueue;
-use gibson::input::{Event, KeyCode, KeyEvent, KeyModifiers};
+use gibson::input::{Event, FocusChange, KeyCode, KeyEvent, KeyModifiers};
 use gibson::node::{Node, WrapMode};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -237,6 +237,12 @@ impl Interp<'_> {
                     0,
                     0,
                 )
+            }
+            Some(Event::Focus(FocusChange::Gained)) => {
+                ("FOCUS_GAINED", 0, "NONE", 0, String::new(), 0, 0)
+            }
+            Some(Event::Focus(FocusChange::Lost)) => {
+                ("FOCUS_LOST", 0, "NONE", 0, String::new(), 0, 0)
             }
             Some(Event::Paste(s)) => ("PASTE", 0, "NONE", 0, hex(s.as_bytes()), 0, 0),
             Some(Event::Resize(c, r)) => {
@@ -463,6 +469,30 @@ impl Interp<'_> {
                     .s("st", st)
                     .emit(self.out);
             }
+            "terminal_size" => {
+                let (c, r) = self.ctx().session.terminal_size();
+                Rec::default()
+                    .i("cols", c as i64)
+                    .s("id", id)
+                    .s("k", "terminal_size")
+                    .i("rows", r as i64)
+                    .s("st", "OK")
+                    .emit(self.out);
+            }
+            "focus_reporting" => {
+                let ok = self
+                    .ctx
+                    .as_mut()
+                    .expect("no context")
+                    .session
+                    .set_focus_reporting(a[0] == "1")
+                    .is_ok();
+                Rec::default()
+                    .s("id", id)
+                    .s("k", "focus_reporting")
+                    .s("st", if ok { "OK" } else { "RUST_ERR" })
+                    .emit(self.out);
+            }
             "geom" => {
                 let size = self.ctx().frame_size();
                 let (c, r) = size.unwrap_or((0, 0));
@@ -542,7 +572,7 @@ impl Interp<'_> {
                 "FrameCell.glyph is the full str; the 16-byte inline cap is a C ABI artifact",
             )
             .emit(self.out),
-            "push_char" | "push_special" | "push_paste" | "push_resize" => {
+            "push_char" | "push_special" | "push_paste" | "push_resize" | "push_focus" => {
                 let ev = match op {
                     "push_char" => {
                         let cp = u32::from_str_radix(&a[0][2..], 16).unwrap();
@@ -558,6 +588,11 @@ impl Interp<'_> {
                         Event::Key(KeyEvent::new(code, mods))
                     }
                     "push_paste" => Event::Paste(String::from_utf8(unhex(&a[0])).unwrap()),
+                    "push_focus" => Event::Focus(if a[0] == "GAINED" {
+                        FocusChange::Gained
+                    } else {
+                        FocusChange::Lost
+                    }),
                     _ => Event::Resize(num(0), num(1)),
                 };
                 let st = if self.queue.push(ev).is_ok() {
