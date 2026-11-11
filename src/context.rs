@@ -724,6 +724,14 @@ impl Context {
         if !self.session.is_tty || self.session.is_headless() {
             return Ok(None);
         }
+        // Reject a relinquished session before it can inspect or modify lease-scoped notices
+        // belonging to a later owner. The session also enforces this at its own public boundary.
+        if self.session.restore_attempted() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "poll_event after restore: this context has released the terminal",
+            ));
+        }
         self.session.sync_key_release_reporting();
         // Before entering interactive mode: the panic hook left raw mode, and this restores it.
         let ended = self.session.take_key_releases_ended();
