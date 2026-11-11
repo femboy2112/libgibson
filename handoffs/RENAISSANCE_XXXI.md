@@ -17,6 +17,9 @@ The existing stack is draft research, not an independent merge train: #338
 `7b839e944f152920598484bbe8e95f1ab9e61509` → #343
 `0f8014ece2045353e31256ae0cbb6724fb1dd64b`. #339 had failing Rust and release
 preflight checks. #343's green checks do not settle inherited compatibility.
+The two original standalone A/B/A controls were rerun at #338's exact head:
+both exited 101 with A instead of B at VT100 cell (0,6), including the control
+that retargets a single writer object internally.
 
 The stacked research continuation `research/xxxi-endpoint-integration` at
 `f65f31291ed70c1465616535ab5807fe2f60d95e` contains a normal merge of the
@@ -91,6 +94,14 @@ ECHO mutation failed. Input typed before raw entry, slow-inference latency and
 the complete release canary remain unverified. The private candidate retained
 separate production and test-instrumentation patches; the production patch alone
 was not built, and no downstream main or capabilities were changed.
+
+After the downstream main advanced by a documentation-only merge, the same
+production-only substitutions were separately applied to that newer exact source
+and built without the earlier test instrumentation. Its original attached-input
+PTYs passed 2/2, idle console/demo PTY passed 1/1, and headless selfcheck passed
+at four sizes/color settings. Those existing tests cover input at readiness, not
+typing before readiness. This is still a scoped consumer witness, not the full
+release canary.
 
 Math M0 remains fixed-trusted-input, headless cell/raster research. A standalone
 Kitty 0.32.2 RGB graphics probe on a freshly isolated Xvfb display received the
