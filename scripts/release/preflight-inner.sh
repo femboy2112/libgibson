@@ -130,6 +130,11 @@ if scripts/release/tests/test-cleanroom-scratch.sh; then
 else
     no "cleanroom scratch allocation and cleanup controls"
 fi
+if scripts/release/tests/test-cleanroom-pkgconfig.sh; then
+    ok "cleanroom pkg-config argument and native consumer controls"
+else
+    no "cleanroom pkg-config argument and native consumer controls"
+fi
 if scripts/release/tests/test-check-abi.sh; then
     ok "ABI checker fault controls"
 else

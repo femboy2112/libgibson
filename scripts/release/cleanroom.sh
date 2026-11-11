@@ -92,6 +92,41 @@ rm -f "$slog"
 export PKG_CONFIG_PATH="$SDK/lib/pkgconfig"
 export LD_LIBRARY_PATH="$SDK/lib"
 
+echo "### SDK compiler flags (pkg-config) ###"
+sdk_flags=()
+sdk_flags_ok=0
+# pkg-config emits shell-escaped words. Command substitution alone splits those
+# words again without honoring their quoting. Parse them without evaluating code,
+# then carry the exact arguments in a Bash array for every C/C++ consumer.
+if pkg-config --cflags --libs libgibson > "$WORK/pkg-config.flags" && \
+    python3 - "$WORK/pkg-config.flags" > "$WORK/pkg-config.args" <<'PY'
+import os
+from pathlib import Path
+import shlex
+import sys
+
+try:
+    raw = Path(sys.argv[1]).read_text(encoding="utf-8", errors="surrogateescape")
+    flags = shlex.split(raw)
+    if not flags or any("\0" in flag for flag in flags):
+        raise ValueError("empty or NUL-containing compiler flags")
+except (OSError, ValueError) as exc:
+    print(f"cannot parse pkg-config compiler flags: {exc}", file=sys.stderr)
+    sys.exit(1)
+for flag in flags:
+    sys.stdout.buffer.write(os.fsencode(flag) + b"\0")
+PY
+then
+    if mapfile -d '' -t sdk_flags < "$WORK/pkg-config.args"; then
+        sdk_flags_ok=1
+        pass "SDK compiler flags"
+    else
+        bad "SDK compiler flags could not be read"
+    fi
+else
+    bad "SDK compiler flags lookup or parsing"
+fi
+
 echo "### C consumer (pkg-config) ###"
 cdir="$WORK/c"; mkdir -p "$cdir"
 cat > "$cdir/main.c" <<'EOF'
@@ -104,7 +139,7 @@ int main(void) {
 }
 EOF
 clog="$(mktemp)"
-if ( cd "$cdir" && cc -std=c11 main.c $(pkg-config --cflags --libs libgibson) -o c_app && ./c_app >/dev/null ) >"$clog" 2>&1; then pass "C"; else bad "C"; dump "$clog"; fi
+if ( [ "$sdk_flags_ok" = 1 ] && cd "$cdir" && cc -std=c11 main.c "${sdk_flags[@]}" -o c_app && ./c_app >/dev/null ) >"$clog" 2>&1; then pass "C"; else bad "C"; dump "$clog"; fi
 rm -f "$clog"
 
 echo "### C installed-SDK forcing consumer (bulk readback loop, pkg-config) ###"
@@ -114,7 +149,7 @@ echo "### C installed-SDK forcing consumer (bulk readback loop, pkg-config) ###"
 fdir="$WORK/forcing"; mkdir -p "$fdir"
 cp bindings/sdk_forcing/doom_forcing_consumer.c "$fdir/main.c"
 flog="$(mktemp)"
-if ( cd "$fdir" && cc -std=c11 -Wall -Wextra main.c $(pkg-config --cflags --libs libgibson) -o forcing_app && ./forcing_app | grep -q '^doom_forcing_consumer: OK' ) >"$flog" 2>&1; then pass "C forcing consumer"; else bad "C forcing consumer"; dump "$flog"; fi
+if ( [ "$sdk_flags_ok" = 1 ] && cd "$fdir" && cc -std=c11 -Wall -Wextra main.c "${sdk_flags[@]}" -o forcing_app && ./forcing_app | grep -q '^doom_forcing_consumer: OK' ) >"$flog" 2>&1; then pass "C forcing consumer"; else bad "C forcing consumer"; dump "$flog"; fi
 rm -f "$flog"
 
 echo "### C headless capture drain (#297: one context, bounded capture, pkg-config) ###"
@@ -124,7 +159,7 @@ echo "### C headless capture drain (#297: one context, bounded capture, pkg-conf
 ddir="$WORK/drain"; mkdir -p "$ddir"
 cp bindings/sdk_forcing/headless_capture_drain.c "$ddir/main.c"
 dlog="$(mktemp)"
-if ( cd "$ddir" && cc -std=c11 -Wall -Wextra main.c $(pkg-config --cflags --libs libgibson) -o drain_app && ./drain_app </dev/null >out.txt && grep -q '^headless_capture_drain: OK$' out.txt && cat out.txt ) >"$dlog" 2>&1; then pass "C headless capture drain"; else bad "C headless capture drain"; dump "$dlog"; fi
+if ( [ "$sdk_flags_ok" = 1 ] && cd "$ddir" && cc -std=c11 -Wall -Wextra main.c "${sdk_flags[@]}" -o drain_app && ./drain_app </dev/null >out.txt && grep -q '^headless_capture_drain: OK$' out.txt && cat out.txt ) >"$dlog" 2>&1; then pass "C headless capture drain"; else bad "C headless capture drain"; dump "$dlog"; fi
 rm -f "$dlog"
 
 echo "### C++ consumer (pkg-config) ###"
@@ -146,7 +181,7 @@ int main() {
 }
 EOF
 xlog="$(mktemp)"
-if ( cd "$xdir" && c++ -std=c++17 main.cpp $(pkg-config --cflags --libs libgibson) -o cpp_app && ./cpp_app >/dev/null ) >"$xlog" 2>&1; then pass "C++"; else bad "C++"; dump "$xlog"; fi
+if ( [ "$sdk_flags_ok" = 1 ] && cd "$xdir" && c++ -std=c++17 main.cpp "${sdk_flags[@]}" -o cpp_app && ./cpp_app >/dev/null ) >"$xlog" 2>&1; then pass "C++"; else bad "C++"; dump "$xlog"; fi
 rm -f "$xlog"
 
 echo "### Python consumer (wheel + sdist -> fresh venv) ###"
