@@ -57,13 +57,16 @@ stays 1.85.
   now happen in one C helper, one cgo call. Go API unchanged.
   ([`docs/V08_PARITY_SLICE.md`](docs/V08_PARITY_SLICE.md) F6)
 
-### Known limitation — a shifted symbol in the screen-switch window ([#312](https://github.com/femboy2112/libgibson/issues/312))
+### Known limitation — a shifted key in the screen-switch window ([#312](https://github.com/femboy2112/libgibson/issues/312))
 - **A shifted *symbol* (e.g. `!`) pressed during the brief legacy-mode window of a screen switch is
   delivered correctly as a press, but kitty reports its release under the base key (`1`); shift does
   not lowercase a symbol, so the release cannot be matched to the press layout-agnostically and is
   delivered as `1`.** A held-key model therefore keeps the symbol held until a focus loss, the key's
-  next kitty press/release, or reporting is disabled. Letters (the usual sustained/movement keys)
-  fold correctly (`W`→`w`) and are unaffected. Deliberately not renamed: mapping `1`→`!` assumes a
+  next kitty press/release, or reporting is disabled. A legacy `W` pairs when the terminal reports
+  `w` as its base. Not all Unicode letters pair this way: the default lowercase of `İ` is two code
+  points, so it does not match
+  a single `i` base key. The `İ` case is covered by a decoder model, not a real-layout terminal test.
+  Deliberately not renamed: mapping `1`→`!` assumes a
   keyboard layout, and pairing the unmatched release with the newest orphan would mis-identify an
   unrelated key's release. None of the recovery events is guaranteed, so this hold may persist
   indefinitely while reporting remains active. Tests in `src/tty_source.rs` (`issue_312_*`) pin
