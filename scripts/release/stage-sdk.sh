@@ -22,7 +22,11 @@
 #
 #   --prefix DIR   destination prefix (required); created if absent.
 #   --force        if <prefix> already exists and is non-empty, remove it first.
-#   --no-build     skip `cargo build --release` (use existing target/release artifacts).
+#   --no-build     skip `cargo build --release` (use existing artifacts under
+#                  ${CARGO_TARGET_DIR:-target}/release; provenance is unverified).
+#
+# Packaging requires objcopy (or OBJCOPY naming an equivalent executable). It is
+# a release-build tool only, not a dependency for installed SDK consumers.
 
 set -euo pipefail
 
@@ -70,20 +74,48 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
+OBJCOPY=${OBJCOPY:-objcopy}
+command -v -- "$OBJCOPY" >/dev/null 2>&1 || die "objcopy is required to package a native static archive (set OBJCOPY to its executable)"
+
 # Single source of truth for the version: Cargo.toml [package] version.
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 [[ -n "$VERSION" ]] || die "could not read version from Cargo.toml"
 note "LibGibson version: $VERSION"
 
-if [[ "$NO_BUILD" -eq 0 ]]; then
-    note "building release artifacts (cargo build --release)..."
-    cargo build --release
-fi
+# Keep immutable-by-convention copies in a private directory between Cargo's
+# artifact report and installation. This does not sandbox a hostile process or
+# establish the provenance of --no-build inputs.
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/libgibson-sdk-artifacts.XXXXXXXX")
+trap 'rm -f -- "$scratch/messages" "$scratch/paths" "$scratch/libgibson.so" "$scratch/libgibson.a"; rmdir -- "$scratch" 2>/dev/null || true' EXIT
 
-SO="$REPO_ROOT/target/release/libgibson.so"
-A="$REPO_ROOT/target/release/libgibson.a"
+if [[ "$NO_BUILD" -eq 0 ]]; then
+    # Select what this Cargo invocation actually built, including configured/custom target
+    # directories or target triples. A stale repo-local target must never mask those outputs.
+    note "building release artifacts (cargo build --release)..."
+    messages="$scratch/messages"
+    paths="$scratch/paths"
+    cargo build --release --message-format=json > "$messages"
+    python3 scripts/release/cargo-artifact-paths.py "$messages" "$REPO_ROOT" > "$paths"
+    mapfile -d '' -t artifacts < "$paths"
+    [[ ${#artifacts[@]} -eq 2 ]] || die "cargo did not report both native libraries"
+    SO=${artifacts[0]}
+    A=${artifacts[1]}
+else
+    TARGET_DIR=${CARGO_TARGET_DIR:-"$REPO_ROOT/target"}
+    [[ "$TARGET_DIR" = /* ]] || TARGET_DIR="$REPO_ROOT/$TARGET_DIR"
+    if [[ -n ${CARGO_BUILD_TARGET:-} ]]; then TARGET_DIR="$TARGET_DIR/$CARGO_BUILD_TARGET"; fi
+    SO="$TARGET_DIR/release/libgibson.so"
+    A="$TARGET_DIR/release/libgibson.a"
+    note "--no-build: artifact provenance is UNVERIFIED ($TARGET_DIR/release)"
+fi
 [[ -f "$SO" ]] || die "missing $SO (run without --no-build, or build release first)"
 [[ -f "$A" ]]  || die "missing $A"
+selected_so=$SO
+selected_a=$A
+cp -- "$selected_so" "$scratch/libgibson.so"
+cp -- "$selected_a" "$scratch/libgibson.a"
+cmp -s -- "$selected_so" "$scratch/libgibson.so" || die "shared library changed while being copied"
+cmp -s -- "$selected_a" "$scratch/libgibson.a" || die "static library changed while being copied"
 
 # Best-effort discovery of the native system libraries a STATIC consumer must add.
 # Dynamic (.so) consumers do not need these; they go into Libs.private for --static.
@@ -91,6 +123,10 @@ NATIVE_STATIC_LIBS="$(cargo rustc --release --crate-type staticlib -- --print na
     | sed -n 's/^note: native-static-libs: //p' | head -1 || true)"
 [[ -n "$NATIVE_STATIC_LIBS" ]] || NATIVE_STATIC_LIBS="-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc"
 note "native-static-libs: $NATIVE_STATIC_LIBS"
+# Cargo's metadata query may legitimately rebuild its own target artifacts.
+# Install the snapshots checked immediately after selection, never those later files.
+SO="$scratch/libgibson.so"
+A="$scratch/libgibson.a"
 
 # Fresh prefix.
 if [[ -e "$PREFIX" ]]; then
@@ -115,6 +151,15 @@ install -m 0644 include/termframe.h "$PREFIX/include/termframe.h"
 install -m 0755 "$SO" "$PREFIX/lib/libgibson.so.1"
 ln -sf libgibson.so.1 "$PREFIX/lib/libgibson.so"
 install -m 0644 "$A"  "$PREFIX/lib/libgibson.a"
+
+# The SDK exports native C ABI machine code, not Rust cross-language LTO input.
+# Go 1.27.4 scans every archive in a -L directory, even when the linker selects
+# the adjacent shared library, and refuses embedded compiler IR/options (#341).
+# Remove only these two compiler-only sections from the INSTALLED copy. Never
+# alter the selected Cargo artifact or snapshots; checksum the final archive below.
+if ! "$OBJCOPY" --remove-section=.llvmbc --remove-section=.llvmcmd "$PREFIX/lib/libgibson.a"; then
+    die "objcopy failed to prepare the installed native static archive"
+fi
 
 # License / doc payload.
 install -m 0644 README.md              "$PREFIX/share/doc/libgibson/README.md"

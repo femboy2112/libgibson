@@ -38,12 +38,20 @@ const REPORT_KEY_RELEASE: u8 = 0b100;
 /// The owner-thread panic hook attempted to disable mouse reporting. A caught panic leaves
 /// cleanup owed, but the next enable must issue a fresh request rather than trust the old one.
 static PANIC_MOUSE_CAPTURE_INVALIDATED: AtomicBool = AtomicBool::new(false);
+// The panic hook cannot borrow the owning session. It sets this notice before attempting its
+// focus disable so a caught panic cannot leave the session believing its previous enable is live.
+static FOCUS_REPORTING_INVALIDATED: AtomicBool = AtomicBool::new(false);
 
 /// Set by the panic hook when it ends key-release reporting; taken once, by the owner's next
 /// `Context` poll or by the Unix source before the next answer it decodes, which then delivers
 /// `KeyReleaseReporting::Unsupported` (see [`TerminalSession::take_key_releases_ended`] and
 /// [`take_key_releases_ended_notice`]). An atomic: the hook takes no lock.
 static KEY_RELEASES_ENDED: AtomicBool = AtomicBool::new(false);
+
+/// The owner-thread panic hook has attempted to leave raw input and bracketed paste. A caught
+/// panic leaves the session alive, so its next interactive entry must not trust its old flags.
+/// This notice is lease-scoped; it does not claim recovery of screen, cursor, renderer or capture.
+static PANIC_INPUT_MODES_INVALIDATED: AtomicBool = AtomicBool::new(false);
 
 /// Takes the panic hook's notice that reporting ended, for the Unix source to queue just before an
 /// answer it decodes (#275 review 8). One swap against the owner's
@@ -146,15 +154,21 @@ pub struct TerminalSession {
     raw_mode_enabled: bool,
     alt_screen_active: bool,
     cursor_hidden: bool,
+    /// A paste-enable may have reached the terminal and requires a disable on cleanup.
     bracketed_paste_enabled: bool,
+    /// A paste-enable write and flush succeeded since the last owner-thread panic.
+    bracketed_paste_confirmed: bool,
     /// Opt-in SGR mouse-capture reporting is on. Tracked so `restore`, `Drop` and
     /// the panic hook unwind it (the raw `input::set_mouse_capture` free function
     /// does not, so its enable leaks on any early return or panic).
     mouse_capture_enabled: bool,
     /// A mouse-enable write and flush completed since the last uncertain transition.
     mouse_capture_confirmed: bool,
-    /// Opt-in focus-change reporting is on, tracked and unwound for the same reason.
+    /// A focus enable may have reached the terminal; a disable is required on cleanup.
     focus_reporting_enabled: bool,
+    /// The latest focus-enable write and flush succeeded. A failed transition invalidates this
+    /// without clearing cleanup ownership, because a partial write may have reached the terminal.
+    focus_reporting_confirmed: bool,
     /// Opt-in key-release reporting is on (#275): kitty keyboard flags pushed on the current
     /// screen, popped by `restore`, `Drop` and the panic hook.
     key_release_reporting_enabled: bool,
@@ -211,9 +225,11 @@ impl TerminalSession {
             alt_screen_active: false,
             cursor_hidden: false,
             bracketed_paste_enabled: false,
+            bracketed_paste_confirmed: false,
             mouse_capture_enabled: false,
             mouse_capture_confirmed: false,
             focus_reporting_enabled: false,
+            focus_reporting_confirmed: false,
             key_release_reporting_enabled: false,
             sync_updates_enabled: true,
             capabilities: TerminalCapabilities::detect_from_env(),
@@ -252,9 +268,11 @@ impl TerminalSession {
             alt_screen_active: false,
             cursor_hidden: false,
             bracketed_paste_enabled: false,
+            bracketed_paste_confirmed: false,
             mouse_capture_enabled: false,
             mouse_capture_confirmed: false,
             focus_reporting_enabled: false,
+            focus_reporting_confirmed: false,
             key_release_reporting_enabled: false,
             sync_updates_enabled: true,
             capabilities: TerminalCapabilities::truecolor(),
@@ -353,6 +371,7 @@ impl TerminalSession {
                 if TERMINAL_LEASE.load(Ordering::SeqCst) != LEASE_AVAILABLE
                     && owner_thread() == Some(std::thread::current().id())
                 {
+                    PANIC_INPUT_MODES_INVALIDATED.store(true, Ordering::SeqCst);
                     let _ = disable_raw_mode();
                     let mut out = stdout();
                     // Disable exactly the reporting modes the owner turned on; the
@@ -368,6 +387,7 @@ impl TerminalSession {
                     }
                     let modes = REPORTING_MODES.load(Ordering::SeqCst);
                     if modes & REPORT_FOCUS != 0 {
+                        FOCUS_REPORTING_INVALIDATED.store(true, Ordering::SeqCst);
                         let _ = execute!(out, DisableFocusChange);
                     }
                     if modes & REPORT_MOUSE != 0 {
@@ -384,11 +404,22 @@ impl TerminalSession {
         }
     }
 
-    /// Enables raw mode and bracketed paste for interactive operation.
+    /// Enables raw mode and bracketed paste for interactive operation. If the owner-thread panic
+    /// hook ran and the panic was caught, requests both again on the next interactive entry.
+    /// This input recovery does not restore alternate-screen, cursor, renderer or capture state.
     pub fn enter_interactive(&mut self) -> io::Result<()> {
         if !self.is_tty || self.headless {
             return Ok(());
         }
+
+        if self.restore_attempted || !self.owns_lease {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "enter_interactive after restore: this session has released the terminal",
+            ));
+        }
+
+        self.reconcile_panic_input_modes();
 
         // Identity, not liveness: record that input is now a live controlling
         // terminal, so a later hangup (after which `isatty` reports false) still
@@ -411,13 +442,39 @@ impl TerminalSession {
             self.raw_mode_enabled = true;
         }
 
-        if !self.bracketed_paste_enabled {
-            let mut out = stdout();
-            execute!(out, EnableBracketedPaste)?;
-            self.bracketed_paste_enabled = true;
-        }
+        self.enable_bracketed_paste_on(&mut stdout())?;
 
         Ok(())
+    }
+
+    fn reconcile_panic_input_modes(&mut self) {
+        if self.owns_lease && PANIC_INPUT_MODES_INVALIDATED.swap(false, Ordering::SeqCst) {
+            self.raw_mode_enabled = false;
+            // A failed panic-hook disable may have left paste enabled. Keep cleanup ownership
+            // even if raw-mode re-entry fails before another paste request can be made.
+            self.bracketed_paste_confirmed = false;
+        }
+    }
+
+    fn enable_bracketed_paste_on(&mut self, out: &mut impl Write) -> io::Result<()> {
+        if !self.bracketed_paste_confirmed {
+            // A failed write or flush may still have enabled paste at the terminal. Retain a
+            // cleanup obligation, but retry the request until a write and flush both succeed.
+            self.bracketed_paste_enabled = true;
+            execute!(out, EnableBracketedPaste)?;
+            self.bracketed_paste_confirmed = true;
+        }
+        Ok(())
+    }
+
+    fn disable_bracketed_paste_on(&mut self, out: &mut impl Write) -> io::Result<()> {
+        if !self.bracketed_paste_enabled {
+            return Ok(());
+        }
+        let result = execute!(out, DisableBracketedPaste);
+        self.bracketed_paste_enabled = false;
+        self.bracketed_paste_confirmed = false;
+        result
     }
 
     /// Enters alternate screen mode (fullscreen). A restored session no longer owns the
@@ -517,12 +574,9 @@ impl TerminalSession {
 
     /// Reconciles session state after a key-release push was lost mid screen-switch (#305):
     /// the `REPORT_KEY_RELEASE` bit is already clear after the successful pop and failed switch,
-    /// so stop delivering releases and mark reporting
-    /// disabled — but do NOT touch `raw_mode_enabled`. Unlike the panic-hook path (whose
-    /// `enabled && !pushed` reconciliation in [`key_release_reporting_live`] assumes the hook
-    /// already dropped raw mode), raw mode is still on here, so `restore` must disable it;
-    /// setting `enabled = false` also keeps the next `key_release_reporting_live` out of that
-    /// branch.
+    /// so stop delivering releases and mark reporting disabled. Raw mode is still on, so its
+    /// cleanup obligation must stay intact. Panic-triggered input invalidation is handled
+    /// separately on the next interactive entry.
     fn on_key_release_push_lost(&mut self) {
         self.key_release_reporting_enabled = false;
         crate::input::set_key_releases_delivered(false);
@@ -581,17 +635,49 @@ impl TerminalSession {
             && !(self.owns_lease && PANIC_MOUSE_CAPTURE_INVALIDATED.load(Ordering::SeqCst))
     }
 
-    /// Enables or disables focus-change reporting, tracked and unwound exactly like
-    /// [`set_mouse_capture`](TerminalSession::set_mouse_capture).
+    /// Requests or disables focus-change reporting, tracked for cleanup like
+    /// [`set_mouse_capture`](TerminalSession::set_mouse_capture). If a write or flush fails,
+    /// the terminal state is unknown and the next enable retries the request. A caught owner-thread
+    /// panic also invalidates the prior request. A successful write does not establish that the
+    /// terminal supports focus reporting. Headless and non-TTY sessions are no-ops; enabling a
+    /// restored interactive session returns `NotConnected`, and disabling it is a no-op.
     pub fn set_focus_reporting(&mut self, enable: bool) -> io::Result<()> {
-        if !self.is_tty || self.headless || enable == self.focus_reporting_enabled {
+        if !self.is_tty || self.headless {
             return Ok(());
         }
-        let mut out = stdout();
+        if !self.owns_lease || self.restore_attempted {
+            return if enable {
+                Err(io::Error::new(
+                    io::ErrorKind::NotConnected,
+                    "terminal session is not active",
+                ))
+            } else {
+                Ok(())
+            };
+        }
+        self.set_focus_reporting_with_writer(enable, &mut stdout())
+    }
+
+    fn set_focus_reporting_with_writer(
+        &mut self,
+        enable: bool,
+        out: &mut impl Write,
+    ) -> io::Result<()> {
+        if FOCUS_REPORTING_INVALIDATED.swap(false, Ordering::SeqCst) {
+            self.focus_reporting_confirmed = false;
+        }
+        if (enable && self.focus_reporting_confirmed) || (!enable && !self.focus_reporting_enabled)
+        {
+            return Ok(());
+        }
+        // Until the flush succeeds the terminal's state is unknown: retain ownership for cleanup,
+        // but do not let a retry report success without sending another request.
+        self.focus_reporting_confirmed = false;
         if enable {
             self.focus_reporting_enabled = true;
             REPORTING_MODES.fetch_or(REPORT_FOCUS, Ordering::SeqCst);
             execute!(out, EnableFocusChange)?;
+            self.focus_reporting_confirmed = true;
         } else {
             execute!(out, DisableFocusChange)?;
             self.focus_reporting_enabled = false;
@@ -600,7 +686,8 @@ impl TerminalSession {
         Ok(())
     }
 
-    /// Whether session-owned focus reporting is currently enabled.
+    /// Whether this session owns a focus-reporting request and must disable it during cleanup.
+    /// After a failed write the terminal's actual state is unknown; `true` does not confirm delivery.
     pub fn focus_reporting_enabled(&self) -> bool {
         self.focus_reporting_enabled
     }
@@ -722,9 +809,9 @@ impl TerminalSession {
         if self.key_release_reporting_enabled && !key_releases_pushed() {
             self.key_release_reporting_enabled = false;
             crate::input::set_key_releases_delivered(false);
-            // The hook pops only after disabling raw mode: say so, so that enabling again (which
-            // enters interactive mode first) restores raw mode rather than trusting a stale flag.
-            self.raw_mode_enabled = false;
+            // The panic-input notice independently reconciles raw mode on interactive entry.
+            // That entry may already have re-enabled raw mode before Kitty is reconciled;
+            // clearing its bookkeeping here would forget a live cleanup obligation.
         } else if self.key_release_reporting_enabled && !crate::input::key_releases_delivered() {
             // An `Unsupported` answer was handed out (by whichever poll): withdraw this session's
             // push, once (claimed, so restore, `Drop` and the panic hook never pop it again).
@@ -756,8 +843,8 @@ impl TerminalSession {
     /// Whether the panic hook ended key-release reporting and nobody has said so yet (#275); true
     /// once per end, for the lease owner only, unless the Unix source took the notice first to
     /// queue it before an answer ([`take_key_releases_ended_notice`]). The poll then delivers
-    /// `Unsupported`, so a client still waiting for releases switches back to inferred holds. Notes the end here too: raw mode is
-    /// marked off (the hook left it), so the poll's `enter_interactive` restores it.
+    /// `Unsupported`, so a client still waiting for releases switches back to inferred holds.
+    /// Raw input is reconciled independently on the next interactive entry.
     /// Re-enabling does not clear it: the client must see `Unsupported` before any later answer.
     pub(crate) fn take_key_releases_ended(&mut self) -> bool {
         if !self.owns_lease || !KEY_RELEASES_ENDED.swap(false, Ordering::SeqCst) {
@@ -880,6 +967,7 @@ impl TerminalSession {
         if self.focus_reporting_enabled {
             record(execute!(out, DisableFocusChange));
             self.focus_reporting_enabled = false;
+            self.focus_reporting_confirmed = false;
         }
         if self.mouse_capture_enabled {
             record(execute!(out, DisableMouseCapture));
@@ -892,10 +980,7 @@ impl TerminalSession {
             self.cursor_hidden = false;
         }
 
-        if self.bracketed_paste_enabled {
-            record(execute!(out, DisableBracketedPaste));
-            self.bracketed_paste_enabled = false;
-        }
+        record(self.disable_bracketed_paste_on(&mut out));
 
         if self.alt_screen_active {
             record(execute!(out, LeaveAlternateScreen));
@@ -923,8 +1008,10 @@ impl TerminalSession {
         // returned Err), not a reason to wedge the lease shut (issue #11, B1/B2).
         if self.owns_lease {
             REPORTING_MODES.store(0, Ordering::SeqCst);
+            FOCUS_REPORTING_INVALIDATED.store(false, Ordering::SeqCst);
             KEY_RELEASES_ENDED.store(false, Ordering::SeqCst);
             PANIC_MOUSE_CAPTURE_INVALIDATED.store(false, Ordering::SeqCst);
+            PANIC_INPUT_MODES_INVALIDATED.store(false, Ordering::SeqCst);
             set_owner_thread(None);
             TERMINAL_LEASE.store(LEASE_AVAILABLE, Ordering::SeqCst);
             self.owns_lease = false;
@@ -1386,5 +1473,229 @@ mod mouse_capture_fault_tests {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+}
+
+#[cfg(all(test, unix))]
+mod panic_input_fault_tests {
+    use super::*;
+
+    struct NoticeGuard(bool);
+    impl Drop for NoticeGuard {
+        fn drop(&mut self) {
+            PANIC_INPUT_MODES_INVALIDATED.store(self.0, Ordering::SeqCst);
+        }
+    }
+
+    struct FailFlush(Vec<u8>);
+    impl Write for FailFlush {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "injected flush failure",
+            ))
+        }
+    }
+
+    struct PartialThenFail(Vec<u8>);
+    impl Write for PartialThenFail {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if self.0.is_empty() {
+                let n = bytes.len().min(3);
+                self.0.extend_from_slice(&bytes[..n]);
+                Ok(n)
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "injected partial write",
+                ))
+            }
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn partial_paste_enable_write_retains_cleanup_and_retries() {
+        let mut session = TerminalSession::headless(80, 24);
+        let mut fail = PartialThenFail(Vec::new());
+        assert!(session.enable_bracketed_paste_on(&mut fail).is_err());
+        assert_eq!(fail.0, b"\x1b[?");
+        assert!(session.bracketed_paste_enabled);
+        let mut retry = Vec::new();
+        session.enable_bracketed_paste_on(&mut retry).unwrap();
+        assert_eq!(retry, b"\x1b[?2004h");
+        let mut cleanup = Vec::new();
+        session.disable_bracketed_paste_on(&mut cleanup).unwrap();
+        assert_eq!(cleanup, b"\x1b[?2004l");
+    }
+
+    #[test]
+    fn panic_invalidation_keeps_uncertain_paste_cleanup_when_raw_reentry_fails() {
+        let _serial = crate::tty_source::queries_lock();
+        let _notice = NoticeGuard(PANIC_INPUT_MODES_INVALIDATED.load(Ordering::SeqCst));
+        let mut session = TerminalSession::headless(80, 24);
+        session.owns_lease = true; // only exercise the reconciliation; no real terminal lease
+        session.raw_mode_enabled = true;
+        session.bracketed_paste_enabled = true;
+        // Model a panic-hook disable that may have failed. No new raw/paste request succeeds.
+        PANIC_INPUT_MODES_INVALIDATED.store(true, Ordering::SeqCst);
+        session.reconcile_panic_input_modes();
+        assert!(!session.raw_mode_enabled);
+        assert!(
+            session.bracketed_paste_enabled,
+            "cleanup ownership cannot be forgotten"
+        );
+        let mut cleanup = Vec::new();
+        session.disable_bracketed_paste_on(&mut cleanup).unwrap();
+        assert_eq!(cleanup, b"\x1b[?2004l");
+    }
+
+    #[test]
+    fn failed_paste_enable_flush_retains_cleanup_and_retries() {
+        let mut session = TerminalSession::headless(80, 24);
+        let mut fail = FailFlush(Vec::new());
+        assert!(session.enable_bracketed_paste_on(&mut fail).is_err());
+        assert_eq!(fail.0, b"\x1b[?2004h");
+        assert!(
+            session.bracketed_paste_enabled,
+            "the full enable might have arrived"
+        );
+        let mut retry = Vec::new();
+        session.enable_bracketed_paste_on(&mut retry).unwrap();
+        assert_eq!(retry, b"\x1b[?2004h", "retry must request paste again");
+        let mut duplicate = Vec::new();
+        session.enable_bracketed_paste_on(&mut duplicate).unwrap();
+        assert!(duplicate.is_empty());
+        let mut cleanup = Vec::new();
+        session.disable_bracketed_paste_on(&mut cleanup).unwrap();
+        assert_eq!(cleanup, b"\x1b[?2004l");
+    }
+}
+
+#[cfg(all(test, unix))]
+mod focus_retry_tests {
+    use super::*;
+
+    // Restore only this bit even if an assertion panics. All tests in this module share the
+    // query lock with the keyboard transition tests that reset REPORTING_MODES.
+    struct FocusBitGuard(u8);
+    impl Drop for FocusBitGuard {
+        fn drop(&mut self) {
+            REPORTING_MODES.fetch_and(!REPORT_FOCUS, Ordering::SeqCst);
+            REPORTING_MODES.fetch_or(self.0 & REPORT_FOCUS, Ordering::SeqCst);
+        }
+    }
+
+    struct FailWrite;
+    impl Write for FailWrite {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "injected write failure",
+            ))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct FailFlush(Vec<u8>);
+
+    impl Write for FailFlush {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "injected flush failure",
+            ))
+        }
+    }
+
+    #[test]
+    fn failed_focus_enable_must_retry_and_retain_cleanup_ownership() {
+        let _serial = crate::tty_source::queries_lock();
+        let initial = REPORTING_MODES.load(Ordering::SeqCst);
+        let _restore_focus_bit = FocusBitGuard(initial);
+        assert_eq!(
+            initial & REPORT_FOCUS,
+            0,
+            "focus ownership leaked into test"
+        );
+        let mut session = TerminalSession::headless(80, 24);
+
+        // A write can fail before sending a complete sequence; cleanup still owns the mode.
+        assert!(session
+            .set_focus_reporting_with_writer(true, &mut FailWrite)
+            .is_err());
+        assert!(session.focus_reporting_enabled());
+        assert_ne!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_FOCUS, 0);
+        let mut cleanup = Vec::new();
+        session
+            .set_focus_reporting_with_writer(false, &mut cleanup)
+            .unwrap();
+        assert_eq!(cleanup, b"\x1b[?1004l");
+        assert_eq!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_FOCUS, 0);
+
+        let mut failing = FailFlush(Vec::new());
+        assert!(session
+            .set_focus_reporting_with_writer(true, &mut failing)
+            .is_err());
+        assert_eq!(failing.0, b"\x1b[?1004h");
+        assert!(
+            session.focus_reporting_enabled(),
+            "failed write still needs cleanup"
+        );
+        assert_ne!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_FOCUS, 0);
+
+        let mut retry = Vec::new();
+        session
+            .set_focus_reporting_with_writer(true, &mut retry)
+            .unwrap();
+        assert_eq!(
+            retry, b"\x1b[?1004h",
+            "retry must actually request reporting"
+        );
+
+        let mut duplicate = Vec::new();
+        session
+            .set_focus_reporting_with_writer(true, &mut duplicate)
+            .unwrap();
+        assert!(duplicate.is_empty(), "confirmed enable remains idempotent");
+
+        // A failed disable may have reached the terminal; another enable must be sent.
+        let mut failing_disable = FailFlush(Vec::new());
+        assert!(session
+            .set_focus_reporting_with_writer(false, &mut failing_disable)
+            .is_err());
+        assert_eq!(failing_disable.0, b"\x1b[?1004l");
+        assert!(session.focus_reporting_enabled());
+        assert_ne!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_FOCUS, 0);
+        let mut reenable = Vec::new();
+        session
+            .set_focus_reporting_with_writer(true, &mut reenable)
+            .unwrap();
+        assert_eq!(reenable, b"\x1b[?1004h");
+
+        let mut disable = Vec::new();
+        session
+            .set_focus_reporting_with_writer(false, &mut disable)
+            .unwrap();
+        assert_eq!(disable, b"\x1b[?1004l");
+        assert!(!session.focus_reporting_enabled());
+        assert_eq!(REPORTING_MODES.load(Ordering::SeqCst) & REPORT_FOCUS, 0);
+        let mut duplicate_disable = Vec::new();
+        session
+            .set_focus_reporting_with_writer(false, &mut duplicate_disable)
+            .unwrap();
+        assert!(duplicate_disable.is_empty());
     }
 }

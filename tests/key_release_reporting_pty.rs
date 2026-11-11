@@ -74,18 +74,57 @@ fn count(hay: &[u8], needle: &[u8]) -> usize {
     hay.windows(needle.len()).filter(|w| *w == needle).count()
 }
 
-fn events(cap: &Capture) -> Vec<String> {
-    String::from_utf8_lossy(cap.raw())
+fn event_lines(raw: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(raw)
         .split(['\r', '\n'])
-        // An `Unsupported` answer is followed at once by the pop that withdraws the push, written
-        // just before the child prints the event.
+        // A pop or bracketed-paste re-enable can be written immediately before the event line,
+        // without a newline. Strip only these known terminal prefixes, never arbitrary bytes.
         .filter_map(|l| {
-            l.trim()
-                .trim_start_matches("\x1b[<u")
-                .strip_prefix("EV ")
-                .map(str::to_string)
+            let mut rest = l.trim();
+            while let Some(next) = rest
+                .strip_prefix("\x1b[<u")
+                .or_else(|| rest.strip_prefix("\x1b[?2004h"))
+            {
+                rest = next;
+            }
+            if let Some(event) = rest.strip_prefix("EV ") {
+                Some(event.to_string())
+            } else if rest.contains("EV ") {
+                // A line containing an event marker behind an unknown prefix must remain in the
+                // vector and fail the oracle, rather than silently hiding an extra event.
+                Some(format!("UNRECOGNIZED EVENT LINE: {rest:?}"))
+            } else {
+                None
+            }
         })
         .collect()
+}
+
+fn events(cap: &Capture) -> Vec<String> {
+    event_lines(cap.raw())
+}
+
+#[test]
+fn event_line_decoder_preserves_missing_extra_and_reordered_events() {
+    let reference = ["reporting:Active", "reporting:Unsupported", "key:w:0"];
+    let good =
+        b"EV reporting:Active\r\n\x1b[<u\x1b[?2004hEV reporting:Unsupported\r\nEV key:w:0\r\n";
+    assert_eq!(event_lines(good), reference);
+    let missing = b"EV reporting:Active\r\nEV key:w:0\r\n";
+    let extra = b"EV reporting:Active\r\nEV reporting:Unsupported\r\nEV key:q:0\r\nEV key:w:0\r\n";
+    let reordered = b"EV reporting:Active\r\nEV key:w:0\r\nEV reporting:Unsupported\r\n";
+    let unknown_extra = b"EV reporting:Active\r\nEV reporting:Unsupported\r\n\x1b[?9999hEV key:q:0\r\nEV key:w:0\r\n";
+    for mutant in [
+        missing.as_slice(),
+        extra.as_slice(),
+        reordered.as_slice(),
+        unknown_extra.as_slice(),
+    ] {
+        assert_ne!(event_lines(mutant), reference);
+    }
+    let unknown = event_lines(b"\x1b[?9999hEV key:w:0\r\n");
+    assert_eq!(unknown.len(), 1);
+    assert_ne!(unknown[0], "key:w:0");
 }
 
 fn finish(mut cap: Capture, role: &str) -> (Capture, portable_pty::ExitStatus) {
@@ -342,6 +381,66 @@ fn without_the_opt_in_nothing_is_written_and_no_release_is_delivered() {
 }
 
 #[test]
+fn restored_session_cannot_enable_focus_reporting() {
+    let mut cap = Capture::spawn(child("focus-restored"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "FOCUS-AFTER-RESTORE");
+    let (cap, status) = finish(cap, "focus-restored");
+    assert!(status.success());
+    assert_eq!(
+        count(cap.raw(), b"\x1b[?1004h"),
+        0,
+        "restored session must not enable focus"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn failed_restore_also_prevents_focus_reenable() {
+    let mut cap = Capture::spawn(
+        child("focus-failed-restore"),
+        80,
+        24,
+        Duration::from_secs(40),
+    );
+    wait_for(&mut cap, "FOCUS-AFTER-FAILED-RESTORE");
+    let (cap, status) = finish(cap, "focus-failed-restore");
+    assert!(status.success());
+    let raw = cap.raw();
+    let before = find(raw, b"FOCUS-RESTORE-FAILED", 0).expect("failed restore observed");
+    let after = find(raw, b"FOCUS-AFTER-FAILED-RESTORE", before).expect("request completed");
+    assert!(
+        find(&raw[before..after], b"\x1b[?1004h", 0).is_none(),
+        "no enable after failed restore"
+    );
+}
+
+#[test]
+fn caught_owner_panic_retries_focus_reporting() {
+    let mut cap = Capture::spawn(child("focus-caught-panic"), 80, 24, Duration::from_secs(40));
+    wait_for(&mut cap, "FOCUS-RETRIED");
+    let (cap, status) = finish(cap, "focus-caught-panic");
+    assert!(status.success());
+    let raw = cap.raw();
+    let enabled = find(raw, b"\x1b[?1004h", 0).expect("initial focus enable");
+    let before = find(raw, b"FOCUS-BEFORE", enabled).expect("initial enable completed");
+    let hook_disable = find(raw, b"\x1b[?1004l", before).expect("panic hook disabled focus");
+    let caught = find(raw, b"FOCUS-CAUGHT", hook_disable).expect("panic caught after disable");
+    let retried =
+        find(raw, b"\x1b[?1004h", caught).expect("caught panic requires a new focus request");
+    let marker = find(raw, b"FOCUS-RETRIED", retried).expect("retry completed");
+    assert!(
+        find(raw, b"\x1b[?1004l", marker).is_some(),
+        "restore disables focus again"
+    );
+    assert_eq!(count(raw, b"\x1b[?1004h"), 2, "exactly two enables");
+    assert_eq!(
+        count(raw, b"\x1b[?1004l"),
+        2,
+        "hook and restore each disable"
+    );
+}
+
+#[test]
 fn the_panic_hook_pops_the_flags_before_leaving_the_alternate_screen() {
     let mut cap = Capture::spawn(child("panic"), 80, 24, Duration::from_secs(40));
     wait_for(&mut cap, "READY");
@@ -457,7 +556,9 @@ fn after_a_caught_panic_no_release_is_delivered() {
             "reporting:Unsupported",
             "key:w:0",
             "key:q:0"
-        ]
+        ],
+        "raw PTY bytes: {:?}",
+        String::from_utf8_lossy(cap.raw())
     );
     assert_eq!(count(cap.raw(), POP), 1, "the hook's pop only");
 }
@@ -815,6 +916,42 @@ fn key_release_reporting_child() {
         RenderMode::Fullscreen
     };
     let mut ctx = Context::new(mode).expect("terminal context");
+    #[cfg(target_os = "linux")]
+    if role == "focus-failed-restore" {
+        use std::os::fd::AsRawFd;
+        ctx.session.set_focus_reporting(true).unwrap();
+        // In this dedicated child, redirect only stdout to a writer that fails every write.
+        // Restore must report its failure yet still release ownership and latch the attempt.
+        let saved = unsafe { libc::dup(libc::STDOUT_FILENO) };
+        assert!(saved >= 0);
+        let full = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/full")
+            .unwrap();
+        assert!(unsafe { libc::dup2(full.as_raw_fd(), libc::STDOUT_FILENO) } >= 0);
+        let failed = ctx.restore();
+        assert!(unsafe { libc::dup2(saved, libc::STDOUT_FILENO) } >= 0);
+        unsafe { libc::close(saved) };
+        assert!(failed.is_err(), "the restore fault must be observed");
+        say("FOCUS-RESTORE-FAILED");
+        let retry = ctx.session.set_focus_reporting(true);
+        let still_owned = ctx.session.focus_reporting_enabled();
+        say("FOCUS-AFTER-FAILED-RESTORE");
+        assert_eq!(retry.unwrap_err().kind(), std::io::ErrorKind::NotConnected);
+        assert!(!still_owned);
+        ctx.session.set_focus_reporting(false).unwrap();
+        return;
+    }
+    if role == "focus-restored" {
+        ctx.restore().unwrap();
+        let retry = ctx.session.set_focus_reporting(true);
+        let still_owned = ctx.session.focus_reporting_enabled();
+        say("FOCUS-AFTER-RESTORE");
+        assert_eq!(retry.unwrap_err().kind(), std::io::ErrorKind::NotConnected);
+        assert!(!still_owned);
+        ctx.session.set_focus_reporting(false).unwrap();
+        return;
+    }
     if role == "restored" {
         ctx.restore().unwrap();
         ctx.session.set_key_release_reporting(true).unwrap();
@@ -823,6 +960,17 @@ fn key_release_reporting_child() {
         return;
     }
     ctx.session.enter_interactive().unwrap();
+    if role == "focus-caught-panic" {
+        ctx.session.set_focus_reporting(true).unwrap();
+        say("FOCUS-BEFORE");
+        let caught = std::panic::catch_unwind(|| panic!("caught, on the focus owner thread"));
+        assert!(caught.is_err());
+        say("FOCUS-CAUGHT");
+        ctx.session.set_focus_reporting(true).unwrap();
+        say("FOCUS-RETRIED");
+        ctx.restore().unwrap();
+        return;
+    }
     if role == "foreign-free" || role == "foreign-headless" {
         ctx.session.set_key_release_reporting(true).unwrap();
         say("READY");
