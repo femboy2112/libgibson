@@ -11,7 +11,9 @@
 //! Driven through the real `Renderer -> TerminalTransaction` byte stream into a `vt100` virtual
 //! terminal; a fail-once writer injects the write error. Proven for Inline and Fullscreen.
 
+use std::cell::RefCell;
 use std::io::{self, Write};
+use std::rc::Rc;
 
 use gibson::capability::ColorDepth;
 use gibson::cell::{Color, Style};
@@ -34,25 +36,20 @@ fn styled_root() -> Node {
 /// A writer that fails its first `write` call once — nothing reaches the sink — then behaves
 /// normally. Models a transient write/flush error on exactly one frame, with that frame's bytes
 /// never reaching the terminal (so the virtual-terminal oracle's state stays physically truthful).
-struct FailFirstWrite {
+#[derive(Default)]
+struct WriterState {
     armed: bool,
     sink: Vec<u8>,
 }
-impl FailFirstWrite {
-    fn armed() -> Self {
-        Self {
-            armed: true,
-            sink: Vec::new(),
-        }
-    }
-}
-impl Write for FailFirstWrite {
+struct SharedWriter(Rc<RefCell<WriterState>>);
+impl Write for SharedWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if self.armed {
-            self.armed = false;
+        let mut state = self.0.borrow_mut();
+        if state.armed {
+            state.armed = false;
             return Err(io::Error::other("injected one-shot write failure"));
         }
-        self.sink.extend_from_slice(buf);
+        state.sink.extend_from_slice(buf);
         Ok(buf.len())
     }
     fn flush(&mut self) -> io::Result<()> {
@@ -80,11 +77,15 @@ fn fail_once_retry_restyles(mode: gibson::RenderMode) {
     let mut session = TerminalSession::headless(cols, rows); // defaults to truecolor
     let mut parser = vt100::Parser::new(rows, cols, 0);
 
+    // A single writer represents the one virtual terminal across every frame.
+    // Its shared control changes only failure behavior, not the destination.
+    let state = Rc::new(RefCell::new(WriterState::default()));
+    let mut writer = SharedWriter(Rc::clone(&state));
+    let mut bound = renderer.bind_target(&mut session, &mut writer).unwrap();
+
     // --- Frame A at truecolor: establish the live frame on the virtual terminal. ---
-    let mut out_a = Vec::new();
-    renderer
-        .render(&mut styled_root(), &mut session, &mut out_a)
-        .unwrap();
+    bound.render(&mut styled_root()).unwrap();
+    let out_a = std::mem::take(&mut state.borrow_mut().sink);
     parser.process(&out_a);
     assert!(
         contains(&out_a, b"38;2;255;128;0"),
@@ -92,26 +93,23 @@ fn fail_once_retry_restyles(mode: gibson::RenderMode) {
     );
 
     // --- The depth changes mid-session; the repaint frame's write FAILS. ---
-    session.set_color_depth(ColorDepth::Ansi16);
-    let mut failing = FailFirstWrite::armed();
-    let failed = renderer.render(&mut styled_root(), &mut session, &mut failing);
+    bound.set_color_depth(ColorDepth::Ansi16);
+    state.borrow_mut().armed = true;
+    let failed = bound.render(&mut styled_root());
     assert!(
         failed.is_err(),
         "the injected write failure must surface as a render error"
     );
     assert!(
-        failing.sink.is_empty(),
+        state.borrow().sink.is_empty(),
         "nothing reached the terminal on the failed frame"
     );
 
-    // --- Retry the SAME tree at the SAME (new) depth with a working writer. ---
-    // Because the failed frame did NOT mark Ansi16 as emitted, the renderer re-detects the depth
-    // change and restyles. RED before the fix: the failed frame advanced `last_emitted_depth` to
-    // Ansi16, so the retry computed restyle=false and emitted nothing — `out_c` lacked "Static".
-    let mut out_c = Vec::new();
-    renderer
-        .render(&mut styled_root(), &mut session, &mut out_c)
-        .unwrap();
+    // Retry the same frame at the same new depth on the same bound destination.
+    // If a failed frame had advanced last_emitted_depth, the retry would skip
+    // the restyle; the VT and byte assertions below would catch that regression.
+    bound.render(&mut styled_root()).unwrap();
+    let out_c = std::mem::take(&mut state.borrow_mut().sink);
     parser.process(&out_c);
 
     assert!(

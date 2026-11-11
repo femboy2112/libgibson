@@ -195,6 +195,22 @@ impl BoundTarget<'_> {
     pub fn last_exact_changed(&self) -> usize {
         self.renderer.last_exact_changed()
     }
+    /// Height of the current live region in terminal rows.
+    pub fn live_region_height(&self) -> u16 {
+        self.renderer.live_region_height
+    }
+    /// Number of renderer anchor resynchronizations.
+    pub fn anchor_resyncs(&self) -> u64 {
+        self.renderer.anchor_resyncs
+    }
+    /// Strategy used by the most recent insertion, if any.
+    pub fn last_insert_strategy(&self) -> Option<InsertStrategy> {
+        self.renderer.last_insert_strategy
+    }
+    /// Number of history insertions that used the fast path.
+    pub fn fast_insertions(&self) -> u64 {
+        self.renderer.fast_insertions
+    }
     fn run<T>(
         &mut self,
         f: impl FnOnce(&mut Renderer, &mut TerminalSession, &mut dyn Write) -> io::Result<T>,
