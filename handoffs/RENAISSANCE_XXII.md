@@ -1,5 +1,8 @@
 # Renaissance XXII — current integration handoff
 
+> Historical archive: statements, queues and CI below describe the recorded snapshot.
+> Superseded by [Renaissance XXX](RENAISSANCE_XXX.md); fetch live state before acting.
+
 **Historical snapshot.** For the following round and current resume instructions, see
 [`RENAISSANCE_XXIII.md`](RENAISSANCE_XXIII.md); always verify live PR heads and CI.
 

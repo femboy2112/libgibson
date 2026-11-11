@@ -1,5 +1,8 @@
 # Renaissance XXV — terminal ownership, math M0 and release evidence
 
+> Historical archive: statements, queues and CI below describe the recorded snapshot.
+> Superseded by [Renaissance XXX](RENAISSANCE_XXX.md); fetch live state before acting.
+
 Snapshot while work is in flight; fetch live refs, read the PR discussions and
 recheck every candidate before acting. This file is an engineering handoff,
 not independent certification or authority to bypass a gate.
@@ -174,7 +177,7 @@ At #337 head `4e147b8bfacde2658c8cdf3e41cfec62b9e18f7d`, a fresh archived
 candidate release build using Rust/Cargo 1.98.1 and explicit symbol check was
 reported exit 0 with 67 of 67 baseline names and shared-library SHA-256
 `a776781efeaf93bbee06fcf3c22fed8206dc5f62aa303c43b28e2de1688f8423`.
-After that witness, an independent same-family review reproduced a preflight
+After that witness, an separate same-model-family review (not independent human or different-model certification) reproduced a preflight
 cleanliness bypass involving Git's `assume-unchanged` flag; #337's `26a59b2...`
 head adds flag controls. A further same-family review reproduced a false-clean
 tracked file without hidden flags: with `core.trustctime=false` and

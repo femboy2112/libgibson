@@ -1,5 +1,8 @@
 # Renaissance XXIII — live-state bootstrap
 
+> Historical archive: statements, queues and CI below describe the recorded snapshot.
+> Superseded by [Renaissance XXX](RENAISSANCE_XXX.md); fetch live state before acting.
+
 Round baseline: `main` `4573d0d6e571159b376e08fb2761b4e8eaffe6f3`
 (`0.7.0-dev`); development CI run 42578229665 succeeded at that SHA. #322 then
 merged as `b04e9c42d6484506373355d0a3538254d87d16ba`; development CI run 42725113594

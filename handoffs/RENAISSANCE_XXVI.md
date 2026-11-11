@@ -1,12 +1,15 @@
 # Renaissance XXVI — renderer destination and qualification (working handoff)
 
+> Historical archive: statements, queues and CI below describe the recorded snapshot.
+> Superseded by [Renaissance XXX](RENAISSANCE_XXX.md); fetch live state before acting.
+
 This is a point-in-time engineering record, not release approval. Fetch the live
 refs and inspect actual CI checkout commits before acting. Same-model-family
 agent reviews are useful additional source passes, not independent human or
 independent-model certification.
 
 The later XXVII updates supersede older #333 and #338 heads and check status
-in this historical record. This handoff remains a draft and is not on main.
+in this historical record. At that recorded snapshot, this handoff was a draft and was not on main.
 
 ## Main and release
 
@@ -82,7 +85,8 @@ identify physical origin. Do not impose arbitrary timeouts on genuine holds.
 Rebuild #325 against the eventually qualified runtime in an external installed
 prefix and verify complete five-language transcripts, controls and PTY focus.
 Keep #331's Unicode test as a decoder-model example, not a physical keyboard
-claim. Do not merge this status handoff while it is stale.
+claim. The recorded snapshot instructed: do not merge the status handoff while stale.
+This file is now historical evidence; use Renaissance XXX for the later snapshot.
 
 ## XXVI additional observations and controls
 

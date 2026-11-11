@@ -1,5 +1,8 @@
 # Renaissance XXIV — terminal recovery and SDK audit
 
+> Historical archive: statements, queues and CI below describe the recorded snapshot.
+> Superseded by [Renaissance XXX](RENAISSANCE_XXX.md); fetch live state before acting.
+
 Snapshot: `main` `43bae9a6e50336e9a8e0d64e313a0e2d3a16e654`, version
 `0.7.0-dev`. Development CI run 42731417582 passed all eight jobs at that SHA.
 The latest published GitHub prerelease is `v0.6.0`; both its tag and

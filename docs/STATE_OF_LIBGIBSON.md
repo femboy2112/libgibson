@@ -37,13 +37,22 @@ Records: [qualification](https://github.com/femboy2112/libgibson/issues/287#issu
 [publication](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6721728874);
 exact-head CI run 42480198449 (8/8, first attempt), Release Preflight run 42480200825 (PASS).
 `main` (0.7.0-dev) exports **67** C ABI symbols (#273, #283, #306, #303, #317),
-`GIBSON_ABI_VERSION` still 1. As of the 2026-11-09 source audit at `43bae9a`, the 0.7
-release remains unqualified: terminal lease/panic/focus integration is still in draft PRs,
-the external GPL engine port is not independently released, and complete exact-candidate
-installed-consumer/release preflight has not yet run. The Math Typesetting v0.8→v1.0
-track is **planned, not implemented** ([#334](https://github.com/femboy2112/libgibson/issues/334),
-[math roadmap](MATH_TYPESETTING_ROADMAP.md)); current Braille/half-block surfaces do not
-constitute paper-quality formula rendering.
+`GIBSON_ABI_VERSION` still 1. The 2026-11-11 development checkpoint has merged
+mouse/screen lease guards (#333), caught-panic input-mode recovery (#329), focus
+retries (#327), fresh-candidate release tooling (#337), and wrapper focus/geometry
+parity (#325). Fresh installed consumers passed 84 records in five languages with
+500 repetitions and hostile controls. A same-host downstream comparison passed
+451 default tests on both published v0.6.0 and the exact merged runtime `b459062`;
+that witness is scoped and is not a final release-candidate qualification.
+
+**v0.7 remains unqualified.** Managed renderer/output target identity remains
+experimental (#338/#339/#343); the separate GPL engine port is not independently
+published, and the complete final-SHA release/artifact/resource gates are unpaid.
+The math track now includes trusted fixed-fixture M0 research (#336), with no
+untrusted TeX, stable math API or integrated high-fidelity terminal-pixel claim.
+See the [current engineering handoff](../handoffs/RENAISSANCE_XXX.md) and
+[math roadmap](MATH_TYPESETTING_ROADMAP.md). Braille/half-block surfaces alone do
+not constitute paper-quality formula rendering.
 **v0.7 line since v0.6.0 (unreleased):**
 - Bounded headless capture (#306).
 - Headless resize parity (#308).
