@@ -1,4 +1,6 @@
 use crate::capability::{Capability, ColorDepth, TerminalCapabilities};
+#[cfg(not(unix))]
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm::{
     cursor::Show,
     event::{
@@ -6,7 +8,7 @@ use crossterm::{
         EnableFocusChange, EnableMouseCapture,
     },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::io::{self, stdout, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -346,6 +348,9 @@ impl TerminalSession {
                     && owner_thread() == Some(std::thread::current().id())
                 {
                     PANIC_INPUT_MODES_INVALIDATED.store(true, Ordering::SeqCst);
+                    #[cfg(unix)]
+                    crate::input_endpoint::leave_raw_from_panic_hook();
+                    #[cfg(not(unix))]
                     let _ = disable_raw_mode();
                     let mut out = stdout();
                     // Disable exactly the reporting modes the owner turned on; the
@@ -401,19 +406,43 @@ impl TerminalSession {
         // spin-on-a-hung-fd backend (issue #79). Sampled BEFORE raw mode is entered, so a
         // hangup during the acquisition itself cannot recast a hung-up stdin as "reach the
         // terminal through /dev/tty" (#269 review); a no-op once latched.
+        //
+        // The input terminal itself is acquired here too (#345): raw mode, its restore and the
+        // input source all use the lease's own descriptor for it, never a later stdin.
+        #[cfg(unix)]
+        let (acquired_kind, acquired_now) = crate::input_endpoint::acquire()?;
+        #[cfg(unix)]
+        let latched_now = crate::input::note_tty_source_acquired_as(acquired_kind);
+        #[cfg(not(unix))]
         let latched_now = crate::input::note_tty_source_acquired();
 
         if !self.raw_mode_enabled {
-            if let Err(e) = enable_raw_mode() {
+            #[cfg(unix)]
+            let entered = crate::input_endpoint::enter_raw();
+            #[cfg(not(unix))]
+            let entered = enable_raw_mode();
+            if let Err(e) = entered {
                 // Not acquired after all: withdraw the identity this call latched, if it
                 // latched one. A latch (and source, with its queued events) established
                 // earlier, by a public poll for instance, is not this call's to undo.
                 if let Some(identity) = latched_now {
                     crate::input::forget_tty_source_acquisition(identity);
                 }
+                #[cfg(unix)]
+                if acquired_now {
+                    crate::input_endpoint::release();
+                }
                 return Err(e);
             }
             self.raw_mode_enabled = true;
+            // Only once the acquisition has succeeded (a failed one leaves any existing source
+            // and its queue alone): a source opened before it (an unmanaged public poll)
+            // belongs to no lease. Retire it, so neither its queued events nor the result of
+            // a poll already blocked on it are delivered as this owner's input.
+            #[cfg(unix)]
+            if acquired_now {
+                crate::tty_source::reset();
+            }
         }
 
         self.enable_bracketed_paste_on(&mut stdout())?;
@@ -950,8 +979,20 @@ impl TerminalSession {
         record(out.flush());
 
         if self.raw_mode_enabled {
+            // Restored on the terminal raw mode was entered on, never a replacement stdin (#345).
+            #[cfg(unix)]
+            record(crate::input_endpoint::leave_raw());
+            #[cfg(not(unix))]
             record(disable_raw_mode());
             self.raw_mode_enabled = false;
+        }
+        // Retire the input source BEFORE giving the endpoint up, so no poll can fall through to
+        // whatever stdin is now during the release; the second retirement below drops a source
+        // a concurrent poll may have opened on the endpoint in between.
+        #[cfg(unix)]
+        if self.owns_lease {
+            crate::input::clear_tty_source();
+            crate::input_endpoint::release();
         }
 
         // Relinquish the latched terminal identity with the terminal itself, so a

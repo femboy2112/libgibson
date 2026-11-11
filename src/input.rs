@@ -652,7 +652,24 @@ const LATCHED_DEV_TTY: u8 = 2;
 /// Returns the identity this call latched, or `None` if one was already latched (by an
 /// earlier acquisition or a public poll), so a failed acquisition can undo exactly its own
 /// latch ([`forget_tty_source_acquisition`]) and nothing else.
+/// [`note_tty_source_acquired`] with the identity the session's acquired input endpoint
+/// established (`true`: stdin). A latch made earlier by a public poll is kept; while an
+/// endpoint is acquired the input source reads the endpoint regardless of the latch.
 #[cfg(unix)]
+pub(crate) fn note_tty_source_acquired_as(stdin_is_terminal: bool) -> Option<u8> {
+    let identity = if stdin_is_terminal {
+        LATCHED_STDIN
+    } else {
+        LATCHED_DEV_TTY
+    };
+    TTY_SOURCE
+        .compare_exchange(UNLATCHED, identity, Ordering::AcqRel, Ordering::Acquire)
+        .ok()
+        .map(|_| identity)
+}
+
+#[cfg(unix)]
+#[allow(dead_code)]
 pub(crate) fn note_tty_source_acquired() -> Option<u8> {
     // Called on every `enter_interactive` (each `Context::poll_event`), so the identity is
     // sampled only on the transition to acquired: after a hangup `isatty(0)` is false, and

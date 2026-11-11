@@ -22,6 +22,18 @@ line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 was **released o
 (below); its source-version baseline `9a899e1` is never tagged. `GIBSON_ABI_VERSION` stays 1; MSRV
 stays 1.85.
 
+### Fixed — raw-mode restore targets the acquired terminal (#345)
+
+- A managed session now restores raw mode on the terminal it acquired, not on whatever stdin
+  names at restore time. Previously, replacing stdin with another terminal after
+  `enter_interactive` made `restore` report success while the acquired terminal stayed raw and
+  the replacement received its saved settings. Input is read from the acquired terminal too, and
+  a poll already blocked before acquisition no longer delivers its event to the new owner. A
+  host's own crossterm raw mode is still disabled on restore, as documented; with a replaced
+  stdin that restore now returns an error and changes nothing. Supported and excluded descriptor
+  changes: [`docs/TERMINAL_LEASE_CONTRACT.md`](docs/TERMINAL_LEASE_CONTRACT.md). No public API
+  or C ABI change.
+
 ### Added — C ABI: terminal-size query and focus events (#298)
 
 - **`gibson_get_terminal_size(ctx, *out_cols, *out_rows)`** returns the live terminal geometry
