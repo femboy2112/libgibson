@@ -399,3 +399,128 @@ cargo +1.98.1 test --locked --no-fail-fast \
   --test renderer_partial_write --test renderer_unbound_safety \
   --test terminal_sovereignty_pty --test whole_renderer_vt100 -- --test-threads=1
 ```
+
+## XXIX — renderer compatibility and pinned Context output (working)
+
+The verified main at this snapshot is still
+`e64402526562ce0d7b6d88c0b5f7bb31152574d6`; no merge or release has been
+performed in this round. Release `v0.7.0` remains **HOLD** with no qualified
+candidate. Re-fetch live refs before acting.
+
+#333 at `d9b2c2a648c4408084e24359d0cf6226574006eb` has 8/8 hosted CI
+passing on synthetic merge `8e6a99f7b4f24157c9544956b246870019a3bcf3`;
+its checkout tree equals the PR head tree. This is not an independent human
+or different-model review and does not resolve #330 or the combined
+#329/#327 lifecycle. No merge is claimed.
+
+### Context stdout pin research — not a lifecycle fix
+
+The isolated research branch `research/xxix-context-output-pin` at
+`f0c268357f57faa6a0ce5462209f0de6350a25dc` is based on the prior real-PTY
+stdout-retarget test and is **WIP / DO NOT MERGE**. On Unix its experiment
+keeps renderer output on a duplicated terminal descriptor; a red-first real
+PTY test showed that the old source diverted a frame to a pipe, while the
+prototype preserved the no-redirection full-cell/cursor result and sent no
+renderer bytes to the pipe. At the experimental head, the focused ordinary
+suite passed 3 tests with 2 ignored; targeted Clippy passed. Running those two
+ignored controls explicitly exited 101: `Context::restore()` while stdout is
+redirected reports success while the physical terminal cursor remains hidden,
+and `ctx.session.restore()` leaves the Context's pinned descriptor open while
+the Context remains alive. These failures are not accepted release controls.
+
+The pin does not cover session mode writes, panic hooks or restoration, all of
+which still use process stdout. The acquisition check does not synchronize
+against concurrent descriptor retargeting, including the alternate-screen
+transition; direct public session methods, stdout buffering and interleaving
+also remain part of the lifecycle and ownership review. Explicit
+`Context::restore` closes the duplicate, but the public direct-session path
+does not. The previously retained stdout-retarget test expects the diverted
+pipe to receive FRAME_B; a changed pinned-output contract needs a reviewed
+acceptance oracle, not deletion of the physical-delivery check. Windows and
+other platform behavior are unverified. The evidence is from a same-model
+agent, not independent human or different-model certification.
+
+```sh
+cargo +1.98.1 test --locked --test context_stdout_pinning_pty -- --test-threads=1
+cargo +1.98.1 test --locked --test context_stdout_pinning_pty -- --ignored --test-threads=1
+cargo +1.98.1 clippy --locked --test context_stdout_pinning_pty -- -D warnings
+```
+
+The ordinary test command exited 0; the explicit ignored command exited 101
+with both named lifecycle failures. Full session ownership and terminal
+cleanup require further design and independently falsifying tests.
+
+### Renderer target-binding compatibility — under active migration
+
+The prior #339 head `4dd1427cef39f4bf3b4817deaa8d7450f73de5c7` had 27
+failures in the six-target renderer compatibility run. At intermediate head
+`4af5f4225d5f3b6443365b2b241dedae782d40a6`, the same six targets passed
+64/64 with no ignored tests after moving the depth-retry, cursor-fault,
+torn-write and whole-frame VT harnesses to a stable bound writer. Existing
+expected frames, write-cut matrices and cursor controls must remain in place.
+This is evidence for that intermediate tree, not a qualification of a later
+head or proof that all formerly failing behavior is acceptable.
+
+Hostile controls were exercised on the migrated harnesses: prematurely
+advancing color-depth bookkeeping made both depth retry controls fail;
+discarding cursor uncertainty failed the cursor control; forcing an empty
+write-cut range and corrupting the clean reference caused the respective
+partial-write control to fail. Test writers now verify that cut points are
+actually reached and that independently generated clean reference frames
+contain their expected content before serving as an oracle. These mutations
+are not substitutes for final exact-head CI or independent review.
+
+A broader earlier run of 13 additional targets failed 38 tests in 12 targets;
+these failures were under active investigation and must not all be assumed to
+be harmless migrations. A separate four-target effects/cinematic migration,
+using stable capture writers and preserving resize, cell, frozen-byte and
+performance thresholds, passed 39 tests with no ignored tests on its isolated
+test branch. Structured-output controls likewise passed 22 tests across four
+focused targets on their isolated branch. These targeted runs do not represent
+a complete integrated suite.
+
+```sh
+cargo +1.98.1 test --locked --no-fail-fast \
+  --test renderer_depth_repaint --test renderer_depth_repaint_failed_write \
+  --test renderer_partial_write --test renderer_unbound_safety \
+  --test terminal_sovereignty_pty --test whole_renderer_vt100 -- --test-threads=1
+cargo +1.98.1 test --locked --no-fail-fast \
+  --test effects_perf --test acid_graphics --test acid_presentation \
+  --test acid_render -- --test-threads=1
+```
+
+The next session must obtain the final #339 head and CI checkout tree live,
+rerun the expanded integration and applicable consumers, audit remaining
+public session controls and writer-lifetime obligations, and reconcile the
+independent Context/session lifecycle counterexample. No green targeted suite
+alone is a release or merge verdict.
+
+### XXIX integration checkpoint
+
+The #339 branch was subsequently pushed at
+`551eb36ab60201a7eb21056c43003bbf92b4da53`. An integrated run on that tree
+passed **125 tests across 14 targets**, zero ignored, exit 0: the six original
+renderer targets, four effects/cinematic targets, and four structured-output
+and safety targets. The previously described 39- and 22-test isolated runs
+are included in that integrated evidence. A mutation that restored the unsafe
+raw deprecated commit alias failed its retained control. The 38-failure broad
+run preceded these integrations; **six prior failures in four scene/surface
+targets remain unresolved** at this checkpoint. An isolated scene migration
+is work in progress and is not included in the integrated 125-test claim.
+
+Hosted CI for this new head was pending at the checkpoint. The Context
+stdout-retarget and pinned-output restore controls remain unresolved, and the
+binding's API/lifecycle contract, full development CI, installed consumers,
+release preflight and independent human or different-model review have not
+been qualified. #339, #338 and v0.7 remain **HOLD**. Confirm current remote
+head, checkout tree and checks before any action.
+
+```sh
+cargo +1.98.1 test --locked --no-fail-fast \
+  --test renderer_depth_repaint --test renderer_depth_repaint_failed_write \
+  --test renderer_partial_write --test renderer_unbound_safety \
+  --test terminal_sovereignty_pty --test whole_renderer_vt100 \
+  --test effects_perf --test acid_graphics --test acid_presentation --test acid_render \
+  --test capability_fallback --test commit_invariance --test safety_api \
+  --test structured_output -- --test-threads=1
+```
