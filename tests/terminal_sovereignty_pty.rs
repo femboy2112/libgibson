@@ -56,14 +56,46 @@ fn context_stdout_redirection_does_not_poison_physical_frame() {
     }
     let control = capture("stdout-physical-control");
     let redirected = capture("stdout-redirect-cache");
-    assert!(
-        redirected.contains("REDIRECT_WROTE_B=true"),
-        "redirection positive control: {redirected:?}"
-    );
     let (initial, actual) = screen(&redirected);
     let (_, expected) = screen(&control);
     assert!(initial.contents().contains("FRAME_A"));
     assert!(expected.screen().contents().contains("FRAME_B"));
+    let hex = redirected
+        .split("REDIRECT_BYTES_HEX=")
+        .nth(1)
+        .expect("redirected-byte marker")
+        .split_whitespace()
+        .next()
+        .expect("redirected bytes");
+    assert!(!hex.is_empty() && hex.len() % 2 == 0);
+    let redirected_bytes: Vec<u8> = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("valid hex"))
+        .collect();
+    let start = redirected.find(START).unwrap() + START.len();
+    let after_a = redirected.find(AFTER_A).unwrap();
+    let mut pipe_screen = vt100::Parser::new(24, 80, 0);
+    pipe_screen.process(&redirected.as_bytes()[start..after_a]);
+    pipe_screen.process(&redirected_bytes);
+    // Positive control: when applied to the same A-screen baseline, the exact
+    // bytes diverted to the pipe produce the expected B frame and cursor.
+    for row in 0..24 {
+        for col in 0..80 {
+            assert_eq!(
+                pipe_screen.screen().cell(row, col),
+                expected.screen().cell(row, col),
+                "redirected control cell {row},{col}"
+            );
+        }
+    }
+    assert_eq!(
+        pipe_screen.screen().cursor_position(),
+        expected.screen().cursor_position()
+    );
+    assert_eq!(
+        pipe_screen.screen().hide_cursor(),
+        expected.screen().hide_cursor()
+    );
     for row in 0..24 {
         for col in 0..80 {
             assert_eq!(
@@ -771,7 +803,7 @@ fn sovereignty_child() {
             ctx.render_now().unwrap();
             out.write_all(b"\x1b]0;REDIRECT_AFTER_A\x07").unwrap();
             out.flush().unwrap();
-            let mut wrote_b = true;
+            let mut redirected_bytes = Vec::new();
             if role == "stdout-redirect-cache" {
                 let saved = unsafe { libc::dup(1) };
                 assert!(saved >= 0);
@@ -788,15 +820,17 @@ fn sovereignty_child() {
                     libc::close(saved);
                 }
                 let mut redirect = unsafe { std::fs::File::from_raw_fd(pipe[0]) };
-                let mut bytes = Vec::new();
-                redirect.read_to_end(&mut bytes).unwrap();
-                wrote_b = bytes.contains(&b'B');
+                redirect.read_to_end(&mut redirected_bytes).unwrap();
             }
             ctx.set_root(Node::text("FRAME_B", Style::default()));
             ctx.render_now().unwrap();
             out.write_all(b"\x1b]0;REDIRECT_END\x07").unwrap();
             out.flush().unwrap();
-            eprintln!("REDIRECT_WROTE_B={wrote_b}");
+            let hex: String = redirected_bytes
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            eprintln!("REDIRECT_BYTES_HEX={hex}");
             ctx.restore().unwrap();
         }
         "stale-render" => {
