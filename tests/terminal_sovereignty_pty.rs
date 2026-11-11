@@ -36,6 +36,53 @@ fn capture(role: &str) -> String {
     String::from_utf8_lossy(cap.raw()).into_owned()
 }
 
+// Physical-output contract: a successful redirected update must not advance the
+// physical terminal's differential baseline. Compare against a no-redirection
+// control, including every cell and the terminal cursor state.
+#[test]
+fn context_stdout_redirection_does_not_poison_physical_frame() {
+    const START: &str = "\x1b]0;REDIRECT_START\x07";
+    const AFTER_A: &str = "\x1b]0;REDIRECT_AFTER_A\x07";
+    const END: &str = "\x1b]0;REDIRECT_END\x07";
+    fn screen(output: &str) -> (vt100::Screen, vt100::Parser) {
+        let start = output.find(START).expect("start marker") + START.len();
+        let after_a = output.find(AFTER_A).expect("after A marker");
+        let end = output.find(END).expect("end marker");
+        let mut p = vt100::Parser::new(24, 80, 0);
+        p.process(&output.as_bytes()[start..after_a]);
+        let initial = p.screen().clone();
+        p.process(&output.as_bytes()[after_a + AFTER_A.len()..end]);
+        (initial, p)
+    }
+    let control = capture("stdout-physical-control");
+    let redirected = capture("stdout-redirect-cache");
+    assert!(
+        redirected.contains("REDIRECT_WROTE_B=true"),
+        "redirection positive control: {redirected:?}"
+    );
+    let (initial, actual) = screen(&redirected);
+    let (_, expected) = screen(&control);
+    assert!(initial.contents().contains("FRAME_A"));
+    assert!(expected.screen().contents().contains("FRAME_B"));
+    for row in 0..24 {
+        for col in 0..80 {
+            assert_eq!(
+                actual.screen().cell(row, col),
+                expected.screen().cell(row, col),
+                "cell {row},{col}"
+            );
+        }
+    }
+    assert_eq!(
+        actual.screen().cursor_position(),
+        expected.screen().cursor_position()
+    );
+    assert_eq!(
+        actual.screen().hide_cursor(),
+        expected.screen().hide_cursor()
+    );
+}
+
 #[test]
 fn restored_context_cannot_render_or_commit_into_new_owner() {
     let output = capture("stale-render");
@@ -710,6 +757,47 @@ fn sovereignty_child() {
             let mut ctx = Context::inline().unwrap();
             assert!(!ctx.session.is_tty);
             ctx.commit_text("REDIRECTED_CONTROL").unwrap();
+        }
+        "stdout-physical-control" | "stdout-redirect-cache" => {
+            use std::io::Read;
+            use std::os::fd::FromRawFd;
+            let mut ctx = Context::fullscreen().unwrap();
+            ctx.set_color_depth(gibson::capability::ColorDepth::TrueColor);
+            let mut out = std::io::stdout();
+            out.write_all(b"\x1b[2J\x1b[H\x1b]0;REDIRECT_START\x07")
+                .unwrap();
+            out.flush().unwrap();
+            ctx.set_root(Node::text("FRAME_A", Style::default()));
+            ctx.render_now().unwrap();
+            out.write_all(b"\x1b]0;REDIRECT_AFTER_A\x07").unwrap();
+            out.flush().unwrap();
+            let mut wrote_b = true;
+            if role == "stdout-redirect-cache" {
+                let saved = unsafe { libc::dup(1) };
+                assert!(saved >= 0);
+                let mut pipe = [0; 2];
+                assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
+                assert_eq!(unsafe { libc::dup2(pipe[1], 1) }, 1);
+                unsafe {
+                    libc::close(pipe[1]);
+                }
+                ctx.set_root(Node::text("FRAME_B", Style::default()));
+                ctx.render_now().unwrap();
+                assert_eq!(unsafe { libc::dup2(saved, 1) }, 1);
+                unsafe {
+                    libc::close(saved);
+                }
+                let mut redirect = unsafe { std::fs::File::from_raw_fd(pipe[0]) };
+                let mut bytes = Vec::new();
+                redirect.read_to_end(&mut bytes).unwrap();
+                wrote_b = bytes.contains(&b'B');
+            }
+            ctx.set_root(Node::text("FRAME_B", Style::default()));
+            ctx.render_now().unwrap();
+            out.write_all(b"\x1b]0;REDIRECT_END\x07").unwrap();
+            out.flush().unwrap();
+            eprintln!("REDIRECT_WROTE_B={wrote_b}");
+            ctx.restore().unwrap();
         }
         "stale-render" => {
             let mut old = Context::inline().unwrap();
