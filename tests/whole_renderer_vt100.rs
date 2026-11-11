@@ -10,47 +10,83 @@ use gibson::node::{Node, WrapMode};
 use gibson::renderer::{InsertStrategy, Renderer};
 use gibson::session::TerminalSession;
 
-struct Harness {
-    renderer: Renderer,
-    session: TerminalSession,
+use std::{
+    cell::RefCell,
+    io::{self, Write},
+    rc::Rc,
+};
+
+#[derive(Clone)]
+struct Wire(Rc<RefCell<Vec<u8>>>);
+impl Write for Wire {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.borrow_mut().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+struct Harness<'a> {
+    bound: gibson::renderer::BoundTarget<'a>,
+    wire: Rc<RefCell<Vec<u8>>>,
     parser: vt100::Parser,
 }
 
-impl Harness {
-    fn new(cols: u16, rows: u16) -> Self {
-        Self {
-            renderer: Renderer::new(gibson::RenderMode::Inline),
-            session: TerminalSession::headless(cols, rows),
-            parser: vt100::Parser::new(rows, cols, 0),
-        }
+macro_rules! make_harness {
+    ($name:ident, $cols:expr, $rows:expr, $mode:expr) => {
+        let mut renderer_storage = Renderer::new($mode);
+        let mut session_storage = TerminalSession::headless($cols, $rows);
+        let wire_state = Rc::new(RefCell::new(Vec::new()));
+        let mut writer_storage = Wire(wire_state.clone());
+        let mut $name = Harness {
+            bound: renderer_storage
+                .bind_target(&mut session_storage, &mut writer_storage)
+                .unwrap(),
+            wire: wire_state,
+            parser: vt100::Parser::new($rows, $cols, 0),
+        };
+    };
+}
+
+impl Harness<'_> {
+    fn take_output(&mut self) -> Vec<u8> {
+        std::mem::take(&mut *self.wire.borrow_mut())
+    }
+
+    fn render_detail(
+        &mut self,
+        root: &mut Node,
+    ) -> (usize, usize, usize, bool, gibson::painter::PaintContext) {
+        let result = self.bound.render(root).unwrap();
+        let bytes = self.take_output();
+        self.parser.process(&bytes);
+        result
     }
 
     fn render(&mut self, root: &mut Node) -> (usize, usize, bool) {
-        let mut out = Vec::new();
-        let (dirty, _total, bytes, full, _) = self
-            .renderer
-            .render(root, &mut self.session, &mut out)
-            .unwrap();
-        self.parser.process(&out);
+        let (dirty, _total, bytes, full, _) = self.render_detail(root);
         (dirty, bytes, full)
     }
 
-    fn insert(&mut self, lines: &[&str]) -> (usize, InsertStrategy) {
-        let mut out = Vec::new();
+    fn insert_capture(&mut self, lines: &[&str]) -> (usize, InsertStrategy, Vec<u8>) {
         let (bytes, strategy) = self
-            .renderer
-            .insert_raw_lines_before_live_unchecked(lines, &mut self.session, &mut out)
+            .bound
+            .insert_raw_lines_before_live_unchecked(lines)
             .unwrap();
+        (bytes, strategy, self.take_output())
+    }
+
+    fn insert(&mut self, lines: &[&str]) -> (usize, InsertStrategy) {
+        let (bytes, strategy, out) = self.insert_capture(lines);
         self.parser.process(&out);
         (bytes, strategy)
     }
 
     fn commit(&mut self, text: &str) -> usize {
-        let mut out = Vec::new();
-        let bytes = self
-            .renderer
-            .commit_text(text, &mut self.session, &mut out)
-            .unwrap();
+        let bytes = self.bound.commit_text(text).unwrap();
+        let out = self.take_output();
         self.parser.process(&out);
         bytes
     }
@@ -59,11 +95,9 @@ impl Harness {
         let (_, cols) = (self.parser.screen().size().0, self.parser.screen().size().1);
         self.parser.screen().rows(0, cols).collect()
     }
-
     fn cursor(&self) -> (u16, u16) {
         self.parser.screen().cursor_position()
     }
-
     fn hide_cursor(&self) -> bool {
         self.parser.screen().hide_cursor()
     }
@@ -78,7 +112,7 @@ fn live_root() -> Node {
 
 #[test]
 fn whole_renderer_first_inline_frame_appears() {
-    let mut h = Harness::new(80, 24);
+    make_harness!(h, 80, 24, gibson::RenderMode::Inline);
     let mut root = live_root();
     let (dirty, bytes, full) = h.render(&mut root);
     assert!(full, "first frame must be a full repaint");
@@ -96,7 +130,7 @@ fn whole_renderer_first_inline_frame_appears() {
 
 #[test]
 fn whole_renderer_second_frame_one_cell_diff() {
-    let mut h = Harness::new(80, 24);
+    make_harness!(h, 80, 24, gibson::RenderMode::Inline);
     let mut root = Node::col().child(Node::text("SPINNER ⠋ status", Style::default()));
     h.render(&mut root);
 
@@ -113,7 +147,7 @@ fn whole_renderer_cursor_visibility_is_physical_truth() {
     use gibson::node::NodeKind;
 
     // Frame 1: two plain cells, no cursor requested -> hidden.
-    let mut h = Harness::new(80, 24);
+    make_harness!(h, 80, 24, gibson::RenderMode::Inline);
     let mut plain = Node::col().child(Node::text("ab", Style::default()));
     h.render(&mut plain);
     assert!(h.hide_cursor());
@@ -142,24 +176,24 @@ fn whole_renderer_cursor_visibility_is_physical_truth() {
 
 #[test]
 fn whole_renderer_live_region_growth_and_shrink() {
-    let mut h = Harness::new(80, 24);
+    make_harness!(h, 80, 24, gibson::RenderMode::Inline);
     let mut small = Node::col().child(Node::text("one", Style::default()));
     h.render(&mut small);
-    assert_eq!(h.renderer.live_region_height, 1);
+    assert_eq!(h.bound.live_region_height(), 1);
 
     let mut big = Node::col()
         .child(Node::text("one", Style::default()))
         .child(Node::text("two", Style::default()))
         .child(Node::text("three", Style::default()));
     h.render(&mut big);
-    assert_eq!(h.renderer.live_region_height, 3);
+    assert_eq!(h.bound.live_region_height(), 3);
     let rows = h.screen_rows();
     assert!(rows[0].starts_with("one"), "rows: {rows:?}");
     assert!(rows[2].starts_with("three"), "rows: {rows:?}");
 
     let mut small_again = Node::col().child(Node::text("one", Style::default()));
     h.render(&mut small_again);
-    assert_eq!(h.renderer.live_region_height, 1);
+    assert_eq!(h.bound.live_region_height(), 1);
     let rows = h.screen_rows();
     assert!(rows[0].starts_with("one"));
     // Rows below must be cleared, not left with stale content.
@@ -172,13 +206,13 @@ fn whole_renderer_live_region_growth_and_shrink() {
 
 #[test]
 fn whole_renderer_commit_moves_live_to_scrollback() {
-    let mut h = Harness::new(80, 24);
+    make_harness!(h, 80, 24, gibson::RenderMode::Inline);
     let mut root = live_root();
     h.render(&mut root);
 
     let bytes = h.commit("Committed result A");
     assert!(bytes > 0);
-    assert_eq!(h.renderer.live_region_height, 0);
+    assert_eq!(h.bound.live_region_height(), 0);
 
     let rows = h.screen_rows();
     let all = rows.join("\n");
@@ -192,19 +226,15 @@ fn whole_renderer_commit_moves_live_to_scrollback() {
 
 #[test]
 fn insert_line_fast_path_inserts_history_without_repainting_live() {
-    let mut h = Harness::new(80, 24);
+    make_harness!(h, 80, 24, gibson::RenderMode::Inline);
     let mut root = live_root();
     h.render(&mut root);
-    let baseline = h.renderer.live_region_height;
+    let baseline = h.bound.live_region_height();
     assert_eq!(baseline, 3);
 
     // Capture the insertion byte stream separately so we can prove the live
     // framebuffer was not re-emitted.
-    let mut out: Vec<u8> = Vec::new();
-    let (bytes, strategy) = h
-        .renderer
-        .insert_raw_lines_before_live_unchecked(&["HISTORY-1"], &mut h.session, &mut out)
-        .unwrap();
+    let (bytes, strategy, out) = h.insert_capture(&["HISTORY-1"]);
     assert_eq!(
         strategy,
         InsertStrategy::InsertLineFastPath,
@@ -243,7 +273,7 @@ fn insert_line_fast_path_inserts_history_without_repainting_live() {
 
 #[test]
 fn insert_line_fast_path_multiple_rows_and_cursor_restore() {
-    let mut h = Harness::new(80, 24);
+    make_harness!(h, 80, 24, gibson::RenderMode::Inline);
     // Live region with a visible cursor so we can prove exact restoration.
     let mut root = live_root();
     h.render(&mut root);
@@ -274,20 +304,12 @@ fn insert_line_fast_path_multiple_rows_and_cursor_restore() {
 #[test]
 fn repaint_fallback_used_when_no_room_and_restores_live_and_cursor() {
     // Tiny terminal: cannot fit history + live, so the fallback must engage.
-    let mut h = Harness::new(40, 6);
+    make_harness!(h, 40, 6, gibson::RenderMode::Inline);
     let mut root = live_root();
     h.render(&mut root);
-    assert_eq!(h.renderer.live_region_height, 3);
+    assert_eq!(h.bound.live_region_height(), 3);
 
-    let mut out: Vec<u8> = Vec::new();
-    let (_bytes, strategy) = h
-        .renderer
-        .insert_raw_lines_before_live_unchecked(
-            &["A", "B", "C", "D", "E"],
-            &mut h.session,
-            &mut out,
-        )
-        .unwrap();
+    let (_bytes, strategy, out) = h.insert_capture(&["A", "B", "C", "D", "E"]);
     assert_eq!(strategy, InsertStrategy::RepaintFallback);
     let s = String::from_utf8_lossy(&out);
     // Fallback necessarily repaints the live framebuffer.
@@ -311,22 +333,22 @@ fn repaint_fallback_used_when_no_room_and_restores_live_and_cursor() {
 
 #[test]
 fn insert_strategy_is_reported() {
-    let mut h = Harness::new(80, 24);
+    make_harness!(h, 80, 24, gibson::RenderMode::Inline);
     let mut root = live_root();
     h.render(&mut root);
-    assert_eq!(h.renderer.last_insert_strategy, None);
+    assert_eq!(h.bound.last_insert_strategy(), None);
     h.insert(&["x"]);
     assert_eq!(
-        h.renderer.last_insert_strategy,
+        h.bound.last_insert_strategy(),
         Some(InsertStrategy::InsertLineFastPath)
     );
-    assert_eq!(h.renderer.fast_insertions, 1);
+    assert_eq!(h.bound.fast_insertions(), 1);
 }
 
 #[test]
 fn repaint_fallback_restores_exact_cursor() {
     // Tiny terminal forces the fallback; the live region carries a visible cursor.
-    let mut h = Harness::new(40, 6);
+    make_harness!(h, 40, 6, gibson::RenderMode::Inline);
     let mut root = Node::col()
         .child(Node::text("LIVE-TOP", Style::default()))
         .child(Node::text_input("ab", 1, None, Style::default()))
@@ -361,21 +383,18 @@ fn repaint_fallback_restores_exact_cursor() {
 
 #[test]
 fn resize_invalidates_anchor_and_resyncs() {
-    let mut h = Harness::new(120, 30);
+    make_harness!(h, 120, 30, gibson::RenderMode::Inline);
     let mut root = live_root();
     h.render(&mut root);
-    assert_eq!(h.renderer.anchor_resyncs, 0);
+    assert_eq!(h.bound.anchor_resyncs(), 0);
 
     // Simulate terminal resize and tell both the session and the virtual terminal.
-    h.session.set_terminal_size(40, 12);
+    h.bound.set_terminal_size(40, 12);
     h.parser.screen_mut().set_size(12, 40);
 
     let (_, _, full) = h.render(&mut root);
     assert!(full, "resize must force a full re-anchor repaint");
-    assert_eq!(
-        h.renderer.anchor_resyncs, 1,
-        "anchor resync must be counted"
-    );
+    assert_eq!(h.bound.anchor_resyncs(), 1, "anchor resync must be counted");
 
     let rows = h.screen_rows();
     let all = rows.join("\n");
@@ -385,19 +404,19 @@ fn resize_invalidates_anchor_and_resyncs() {
     // A further render at the same size is a normal differential frame.
     let (_, _, full2) = h.render(&mut root);
     assert!(!full2);
-    assert_eq!(h.renderer.anchor_resyncs, 1);
+    assert_eq!(h.bound.anchor_resyncs(), 1);
 }
 
 #[test]
 fn resize_to_narrow_width_reflows_without_panic() {
-    let mut h = Harness::new(120, 30);
+    make_harness!(h, 120, 30, gibson::RenderMode::Inline);
     let mut root = Node::col().child(Node::text_wrapped(
         "a very long line of text that must wrap when the terminal becomes narrow",
         Style::default(),
         WrapMode::WordWrap,
     ));
     h.render(&mut root);
-    h.session.set_terminal_size(20, 8);
+    h.bound.set_terminal_size(20, 8);
     h.parser.screen_mut().set_size(8, 20);
     h.render(&mut root);
     // No panic; all written rows fit within width.
@@ -412,7 +431,7 @@ fn resize_to_narrow_width_reflows_without_panic() {
 
 #[test]
 fn whole_renderer_right_margin_no_autowrap_glitch() {
-    let mut h = Harness::new(20, 8);
+    make_harness!(h, 20, 8, gibson::RenderMode::Inline);
     let mut root = Node::col().child(Node::text("X".repeat(20), Style::default()));
     h.render(&mut root);
     let rows = h.screen_rows();
@@ -421,7 +440,7 @@ fn whole_renderer_right_margin_no_autowrap_glitch() {
 
 #[test]
 fn whole_renderer_cjk_and_emoji() {
-    let mut h = Harness::new(40, 8);
+    make_harness!(h, 40, 8, gibson::RenderMode::Inline);
     let mut root = Node::col().child(Node::rich_text(
         RichText::new().line(
             Line::new()
@@ -444,15 +463,10 @@ fn whole_renderer_long_input_scrolls_with_hostile_unicode() {
         use unicode_segmentation::UnicodeSegmentation;
         text.graphemes(true).count()
     };
-    let mut h = Harness::new(24, 8);
+    make_harness!(h, 24, 8, gibson::RenderMode::Inline);
     let mut root = Node::col()
         .child(Node::text_input(text, graphemes, Some("prompt"), Style::default()).width(20.0));
-    let mut out = Vec::new();
-    let (_d, _t, _b, _f, paint) = h
-        .renderer
-        .render(&mut root, &mut h.session, &mut out)
-        .unwrap();
-    h.parser.process(&out);
+    let (_d, _t, _b, _f, paint) = h.render_detail(&mut root);
     let (cx, _cy) = paint.cursor_position.expect("cursor requested");
     assert!(cx < 20, "cursor x {} escaped the input width", cx);
 }
@@ -463,7 +477,7 @@ fn whole_renderer_long_input_survives_resize() {
     let text = "cargo clippy --all-targets --all-features 🦀 你好世界 e\u{0301} 🇺🇸 tail";
     let graphemes = text.graphemes(true).count();
 
-    let mut h = Harness::new(80, 24);
+    make_harness!(h, 80, 24, gibson::RenderMode::Inline);
     let mut root = Node::col().child(Node::text_input(
         text,
         graphemes,
@@ -473,17 +487,13 @@ fn whole_renderer_long_input_survives_resize() {
     h.render(&mut root);
 
     // Shrink dramatically; the input must re-scroll and keep the cursor in bounds.
-    h.session.set_terminal_size(24, 8);
+    h.bound.set_terminal_size(24, 8);
     h.parser.screen_mut().set_size(8, 24);
-    let mut out = Vec::new();
-    let (_d, _t, _b, _f, paint) = h
-        .renderer
-        .render(&mut root, &mut h.session, &mut out)
-        .unwrap();
+    let (_d, _t, _b, _f, paint) = h.render_detail(&mut root);
     let (cx, cy) = paint.cursor_position.expect("cursor requested");
     assert!(cx < 24, "cursor x {cx} escaped width after resize");
     assert!(cy < 8, "cursor y {cy} escaped height after resize");
-    assert_eq!(h.renderer.anchor_resyncs, 1);
+    assert_eq!(h.bound.anchor_resyncs(), 1);
 }
 
 #[test]
@@ -491,10 +501,7 @@ fn whole_renderer_fullscreen_owns_the_canvas() {
     use gibson::renderer::RenderMode;
     let cols = 40u16;
     let rows = 12u16;
-    let mut session = TerminalSession::headless(cols, rows);
-    let mut renderer = Renderer::new(RenderMode::Fullscreen);
-    let mut parser = vt100::Parser::new(rows, cols, 0);
-    let mut out = Vec::new();
+    make_harness!(h, cols, rows, RenderMode::Fullscreen);
 
     let mut root = Node::col()
         .percent_width(100.0)
@@ -505,11 +512,10 @@ fn whole_renderer_fullscreen_owns_the_canvas() {
                 .percent_height(100.0)
                 .child(Node::text("hello fullscreen", Style::default())),
         );
-    let (_d, _t, bytes, full, _p) = renderer.render(&mut root, &mut session, &mut out).unwrap();
+    let (_d, _t, bytes, full, _p) = h.render_detail(&mut root);
     assert!(full);
     assert!(bytes > 0);
-    parser.process(&out);
-    let screen = parser.screen().contents();
+    let screen = h.parser.screen().contents();
     assert!(screen.contains("CONSOLE"), "screen: {screen:?}");
     assert!(screen.contains("hello fullscreen"));
     assert!(screen.contains('╭'), "screen: {screen:?}");
@@ -525,13 +531,9 @@ fn whole_renderer_fullscreen_owns_the_canvas() {
                 .percent_height(100.0)
                 .child(Node::text("changed fullscreen", Style::default())),
         );
-    let mut out2 = Vec::new();
-    let (_d2, _t2, bytes2, _full2, _p2) = renderer
-        .render(&mut root2, &mut session, &mut out2)
-        .unwrap();
+    let (_d2, _t2, bytes2, _full2, _p2) = h.render_detail(&mut root2);
     assert!(bytes2 > 0);
-    parser.process(&out2);
-    let screen2 = parser.screen().contents();
+    let screen2 = h.parser.screen().contents();
     assert!(screen2.contains("changed fullscreen"));
     assert_eq!(
         screen2.matches("CONSOLE").count(),
@@ -544,10 +546,7 @@ fn whole_renderer_fullscreen_owns_the_canvas() {
     );
 
     // Identical third frame emits nothing.
-    let mut out3 = Vec::new();
-    let (_d3, _t3, bytes3, full3, _p3) = renderer
-        .render(&mut root2, &mut session, &mut out3)
-        .unwrap();
+    let (_d3, _t3, bytes3, full3, _p3) = h.render_detail(&mut root2);
     assert!(!full3);
     assert_eq!(bytes3, 0);
 }
@@ -589,17 +588,13 @@ fn fs_root_with(base_extra: Node, modal: bool) -> Node {
 }
 
 fn fullscreen_screen(cols: u16, rows: u16, modal: bool) -> (Vec<String>, u64) {
-    let mut renderer = Renderer::new(gibson::RenderMode::Fullscreen);
-    let mut session = TerminalSession::headless(cols, rows);
-    let mut parser = vt100::Parser::new(rows, cols, 0);
-    let mut out = Vec::new();
+    make_harness!(h, cols, rows, gibson::RenderMode::Fullscreen);
     for _ in 0..3 {
         let mut root = fs_root_with(Node::text("detail", Style::default()), modal);
-        renderer.render(&mut root, &mut session, &mut out).unwrap();
+        h.render(&mut root);
     }
-    parser.process(&out);
-    let rows_out = parser.screen().rows(0, cols).collect::<Vec<_>>();
-    (rows_out, renderer.anchor_resyncs)
+    let rows_out = h.parser.screen().rows(0, cols).collect::<Vec<_>>();
+    (rows_out, h.bound.anchor_resyncs())
 }
 
 #[test]
@@ -625,33 +620,25 @@ fn overlay_removal_leaves_no_ghost_cells() {
 
 #[test]
 fn resize_during_overlay_animation_reanchors_without_panic() {
-    let mut renderer = Renderer::new(gibson::RenderMode::Fullscreen);
-    let mut session = TerminalSession::headless(44, 16);
-    let mut parser = vt100::Parser::new(16, 44, 0);
-    let mut out = Vec::new();
+    make_harness!(h, 44, 16, gibson::RenderMode::Fullscreen);
 
     let mut root = fs_root_with(Node::text("frame", Style::default()), true);
-    renderer.render(&mut root, &mut session, &mut out).unwrap();
-    parser.process(&out);
-    let resyncs_before = renderer.anchor_resyncs;
+    h.render(&mut root);
+    let resyncs_before = h.bound.anchor_resyncs();
 
     // Resize mid-animation, then keep rendering the overlay.
-    session.set_terminal_size(30, 10);
-    parser.screen_mut().set_size(10, 30);
-    let mut out2 = Vec::new();
+    h.bound.set_terminal_size(30, 10);
+    h.parser.screen_mut().set_size(10, 30);
     let mut root2 = fs_root_with(Node::text("frame", Style::default()), true);
-    renderer
-        .render(&mut root2, &mut session, &mut out2)
-        .unwrap();
-    parser.process(&out2);
+    h.render(&mut root2);
 
     assert!(
-        renderer.anchor_resyncs > resyncs_before,
+        h.bound.anchor_resyncs() > resyncs_before,
         "resize must re-anchor"
     );
-    let screen = parser.screen().contents();
+    let screen = h.parser.screen().contents();
     assert!(screen.contains("PERMISSION") || screen.contains("BASE"));
-    for line in parser.screen().rows(0, 30) {
+    for line in h.parser.screen().rows(0, 30) {
         assert!(
             unicode_width::UnicodeWidthStr::width(line.as_str()) <= 30,
             "line overflows after resize: {line:?}"
@@ -661,41 +648,36 @@ fn resize_during_overlay_animation_reanchors_without_panic() {
 
 #[test]
 fn fullscreen_resize_clears_stale_blank_regions_and_accounts_for_clear() {
-    let mut renderer = Renderer::new(gibson::RenderMode::Fullscreen);
-    renderer.capture_damage = true;
-    let mut session = TerminalSession::headless(40, 10);
-    let mut parser = vt100::Parser::new(10, 40, 0);
+    make_harness!(h, 40, 10, gibson::RenderMode::Fullscreen);
+    h.bound.set_capture_damage(true);
     let mut old = Node::col()
         .width(40.0)
         .height(10.0)
         .child(Node::text("OLD CONTENT MUST DISAPPEAR", Style::new()).height(1.0))
         .child(Node::text("SECOND OLD ROW", Style::new()).height(1.0));
-    let mut wire = Vec::new();
-    renderer.render(&mut old, &mut session, &mut wire).unwrap();
-    parser.process(&wire);
-    session.set_terminal_size(20, 6);
-    parser.screen_mut().set_size(6, 20);
+    h.render(&mut old);
+    h.bound.set_terminal_size(20, 6);
+    h.parser.screen_mut().set_size(6, 20);
     let mut new = Node::stack().width(20.0).height(6.0).child(
         Node::text("NEW", Style::new())
             .width(3.0)
             .height(1.0)
             .offset(4.0, 3.0),
     );
-    wire.clear();
-    let (affected, total, bytes, full, _) =
-        renderer.render(&mut new, &mut session, &mut wire).unwrap();
-    parser.process(&wire);
+    let (affected, total, bytes, full, _) = h.bound.render(&mut new).unwrap();
+    let wire = h.take_output();
+    h.parser.process(&wire);
     assert!(full);
     assert_eq!(affected, total);
     assert_eq!(affected, 120);
     assert_eq!(bytes, wire.len());
-    assert_eq!(renderer.last_dirty_cells().len(), 120);
-    let contents = parser.screen().contents();
+    assert_eq!(h.bound.last_dirty_cells().len(), 120);
+    let contents = h.parser.screen().contents();
     assert!(!contents.contains("OLD"));
     assert!(!contents.contains("SECOND"));
     assert_eq!(contents.trim(), "NEW");
-    wire.clear();
-    let (_, _, bytes, _, _) = renderer.render(&mut new, &mut session, &mut wire).unwrap();
+    let (_, _, bytes, _, _) = h.bound.render(&mut new).unwrap();
+    let wire = h.take_output();
     assert_eq!(bytes, 0);
     assert!(wire.is_empty());
 }
