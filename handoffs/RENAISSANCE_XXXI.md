@@ -5,6 +5,9 @@ This is a checkpoint, not a substitute for fetching live refs. Baseline main was
 successful jobs. The latest published Engineering Alpha remained v0.6.0 and its
 Go tag, both peeled to `492d0fec7727658d50b9a82025c784b7e427d6b0`. The source
 version was 0.7.0-dev; v0.7.0 remained HOLD without a release candidate.
+After the verified example-only #346 merge, main was
+`94df258a362bb0a5c36fe5c96599b526da7e770e`; its push CI 43080393656 was
+in progress at this checkpoint. Fetch its current result before relying on it.
 
 All eight XXX main merges, including #323, are already present. Do not replay
 #340, #337, #333, #329, #327, #325, #336 or #323. #331 was recognized by GitHub
@@ -66,7 +69,10 @@ arbitrary timeouts or fabricated identity.
 
 ## Streaming viewport example
 
-PR #346, head `1f44546a791c3002122a296c88dedf791ab4d3d5`, adds logical source-byte,
+#346, head `1f44546a791c3002122a296c88dedf791ab4d3d5`, merged normally at
+`94df258a362bb0a5c36fe5c96599b526da7e770e` after all eight jobs of PR CI
+43078437968 passed. The checked synthetic merge and the final main tree both
+matched the PR head's tree. The change adds logical source-byte,
 per-block and cached-row budgets to the example, explicit eviction receipts and
 atomic rejected replace/resize operations. Tabs are rejected because the cell
 renderer would omit them; held anchors are persistently clamped on shrink or
@@ -80,7 +86,7 @@ eight-cell row; correct and corrupted fixtures constrain those tests. Seventeen
 focused tests, the example, synthetic 1/10/100/1,000-turn workload and Clippy
 passed; stale-cache, byte-guard and body mutations were rejected. The timing
 comparison shares a wrapping implementation and is not a terminal/backpressure or
-independent Unicode proof. Check live exact-head CI and review before any merge.
+independent Unicode proof. The main push CI remained in progress when recorded.
 
 ## Consumer and math boundaries
 
