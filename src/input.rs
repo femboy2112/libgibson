@@ -205,9 +205,10 @@ pub enum Event {
     /// `W` into `w`), so a release matches its press by equality. A key that was already down
     /// when reporting began has no recorded press: its release is named as its first autorepeat
     /// since then was delivered, or, with none, as the terminal reports it. Not covered: a
-    /// shifted symbol pressed just before the flags take effect (at enable, or as a screen switch
-    /// pushes them again) and let go without an autorepeat is released as the terminal reports it
-    /// (`!` as `1`), so that release does not match its press
+    /// shifted symbol or a letter whose lowercase does not match its base key as a single Unicode
+    /// character, pressed just before the flags take effect (at enable, or as a screen switch
+    /// pushes them again) and let go without an autorepeat, is released as the terminal reports it
+    /// (for example `!` as `1`), so that release does not match its press
     /// ([#312](https://github.com/femboy2112/libgibson/issues/312)). An autorepeat of a held key is
     /// an [`Event::Key`], as on any terminal.
     KeyRelease(KeyEvent),

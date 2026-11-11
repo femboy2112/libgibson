@@ -147,7 +147,24 @@ The #312 shifted-key ambiguity is documented, not fixed; #326 demonstrates the m
 press-provenance discriminator. This update supersedes the older #298-open and
 external-canary assumptions in the historical 2026-11-08 snapshot above.
 
-### v0.8–v1.0 mathematical typesetting — OWNER-REQUESTED / PLANNED
+*Update 2026-11-11 (Renaissance XXX):* #333/#329/#327 are now merged as bounded
+mouse/screen, raw-input/paste and focus repairs; #328/#330 remain open for wider
+lifecycle/output acceptance. #325's native wrappers and 84-record five-language
+installed parity slice are merged, as is #337's fresh-candidate preflight and
+native SDK packaging repair. A downstream v0.6/exact-runtime `b459062` comparison
+passed 451 default tests on each input, without retries. It does not qualify
+unmeasured pressure or a future release tree. The renderer target/endpoint work
+in #338/#339/#343 is still experimental; no v0.7 candidate or release exists.
+Node J's separately published GPL port still needs its deliverable or an explicit
+milestone decision. See [Renaissance XXX](handoffs/RENAISSANCE_XXX.md) for exact
+SHAs, receipts and remaining gates. This supersedes the draft/integration status
+in the historical November 9 update above.
+
+### v0.8–v1.0 mathematical typesetting — OWNER-REQUESTED / EXPERIMENTAL M0
+
+*M0 checkpoint:* #336 adds four fixed trusted formulas, bounded RGB capture and
+headless/reference controls. No arbitrary TeX, default heavyweight dependency,
+stable math API or LibGibson-owned high-fidelity pixel display is qualified.
 
 **Goal:** actual mathematical-paper typography *inside LibGibson* (fractions, integrals,
 radicals, stretchy delimiters, scripts, matrices, aligned equations, labels), not a
