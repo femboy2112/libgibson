@@ -491,3 +491,58 @@ func TestHeadlessErrorIsFromItsOwnCall(t *testing.T) {
 		break
 	}
 }
+
+func TestFocusAndTerminalGeometry(t *testing.T) {
+	ctx := headless(t, 40, 12)
+	c, r, err := ctx.TerminalSize()
+	must(t, err)
+	if c != 40 || r != 12 {
+		t.Fatalf("pre-render size %d x %d", c, r)
+	}
+	must(t, ctx.SetFocusReporting(true))
+	must(t, ctx.PushEvent(gibson.Event{Type: gibson.EventFocusGained}))
+	must(t, ctx.PushEvent(gibson.ResizeEvent(33, 9)))
+	must(t, ctx.PushEvent(gibson.Event{Type: gibson.EventFocusLost}))
+	c, r, err = ctx.TerminalSize()
+	must(t, err)
+	if c != 40 || r != 12 {
+		t.Fatalf("queued resize applied early: %d x %d", c, r)
+	}
+	ev, err := ctx.PollEventKind(0)
+	must(t, err)
+	if ev.Type != gibson.EventFocusGained {
+		t.Fatalf("focus gained: %+v", ev)
+	}
+	ev, err = ctx.PollEventKind(0)
+	must(t, err)
+	if ev.Type != gibson.EventResize {
+		t.Fatalf("resize: %+v", ev)
+	}
+	c, r, err = ctx.TerminalSize()
+	must(t, err)
+	if c != 33 || r != 9 {
+		t.Fatalf("polled size %d x %d", c, r)
+	}
+	ev, err = ctx.PollEventKind(0)
+	must(t, err)
+	if ev.Type != gibson.EventFocusLost {
+		t.Fatalf("focus lost: %+v", ev)
+	}
+	must(t, ctx.PushEvent(ev))
+	got, err := ctx.PollEventKind(0)
+	must(t, err)
+	if got != ev {
+		t.Fatalf("focus round trip: %+v != %+v", got, ev)
+	}
+	must(t, ctx.SetFocusReporting(false))
+	ctx.Close()
+	_, _, err = ctx.TerminalSize()
+	if asError(t, err).Status != gibson.StatusInvalidParam {
+		t.Fatalf("closed error: %v", err)
+	}
+	err = ctx.SetFocusReporting(true)
+	ge := asError(t, err)
+	if ge.Status != gibson.StatusInvalidParam || ge.LastError != "" {
+		t.Fatalf("closed focus returned stale error: %+v", ge)
+	}
+}

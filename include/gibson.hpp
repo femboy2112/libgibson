@@ -240,6 +240,8 @@ private:
 class Error : public std::runtime_error {
 public:
     Error(const char* what, gibson_status_t status) : Error(what, status, last_error_text()) {}
+    Error(const char* what, gibson_status_t status, bool has_detail)
+        : Error(what, status, has_detail ? last_error_text() : std::string()) {}
     gibson_status_t status() const noexcept { return status_; }
     // The C ABI's last-error text at the time of the failure ("" if it set none).
     const std::string& last_error() const noexcept { return last_error_; }
@@ -556,6 +558,22 @@ public:
     }
 
     // ---- frame readback (headless or terminal; throws Error on a non-OK status) ---------------
+
+    // Live size, including before rendering; headless resize is applied when polled.
+    // Failed or zero terminal measurements fall back to 80x24.
+    std::pair<uint16_t, uint16_t> terminal_size() const {
+        uint16_t c = 0, r = 0;
+        gibson_status_t st = gibson_get_terminal_size(ctx_, &c, &r);
+        if (st != GIBSON_OK) throw Error("terminal_size", st, st == GIBSON_ERR_INVALID_PARAM);
+        return std::make_pair(c, r);
+    }
+
+    // Requests focus reports; no-op headless, and automatically disabled on destruction.
+    // A successful request does not guarantee that the terminal supports it.
+    void set_focus_reporting(bool enabled) {
+        gibson_status_t st = gibson_set_focus_reporting(ctx_, enabled ? 1 : 0);
+        if (st != GIBSON_OK) throw Error("set_focus_reporting", st, st == GIBSON_ERR_IO);
+    }
 
     // (cols, rows) of the most recently rendered frame, (0, 0) if there is none yet.
     std::pair<uint16_t, uint16_t> frame_size() const {

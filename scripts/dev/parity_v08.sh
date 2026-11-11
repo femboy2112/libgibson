@@ -9,7 +9,9 @@
 # lib/pkgconfig/libgibson.pc. C and C++ compile against it via pkg-config and link with an rpath to
 # its libdir; Python imports a copy of bindings/python/gibson.py (the module the wheel ships) from a
 # temp dir and loads the SDK's libgibson.so via LIBGIBSON_LIBRARY; Go builds with cgo + pkg-config
-# (GOPROXY=off); the Rust consumer is the gibson crate API (cargo example parity_v08).
+# (GOPROXY=off); when the SDK path contains whitespace, Go uses LD_LIBRARY_PATH during this run
+# and a temporary whitespace-free pkg-config alias. The Rust consumer is the gibson crate API
+# (cargo example parity_v08).
 #
 # Environment:
 #   PARITY_V08_REPS      in-process repetitions for the resource run (default 500)
@@ -27,6 +29,11 @@ set -euo pipefail
 die() { echo "parity_v08: $*" >&2; exit 2; }
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+source "$REPO/scripts/dev/parity_v08_cleanup.sh"
+source "$REPO/scripts/dev/parity_v08_status.sh"
+GO_CACHE=""
+SDK_ALIAS_DIR=""
+trap parity_cleanup EXIT
 SDK=${1:-${LIBGIBSON_SDK:-}}
 [ -n "$SDK" ] || die "usage: $0 SDK_PREFIX  (or set LIBGIBSON_SDK)"
 SDK=$(cd "$SDK" && pwd)
@@ -42,6 +49,9 @@ if [ "$REPS" -lt 500 ]; then
 fi
 WORK=${PARITY_V08_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/parity_v08.XXXXXX")}
 mkdir -p "$WORK/bin" "$WORK/out" "$WORK/pysite" "$WORK/ctl"
+# cgo caches can embed pkg-config search paths. A fresh cache prevents an earlier run's temporary
+# SDK alias from being reused after that alias was removed (and works when WORK is reused).
+GO_CACHE=$(mktemp -d "$WORK/go-cache.XXXXXX")
 V08=$REPO/bindings/parity/v08
 SCRIPT=$V08/script.txt
 EXPECTED=$V08/expected.json
@@ -51,9 +61,18 @@ read -r -a CARGO_CMD <<<"${PARITY_V08_CARGO:-cargo +1.98.1}"
 # The main runs use the script exactly as committed.
 unset PARITY_V08_PERTURB PARITY_V08_RUST_RESIZE
 
+LIBDIR=$SDK/lib
+GO_LDFLAGS="-Wl,-rpath,$LIBDIR"
 export PKG_CONFIG_PATH=$SDK/lib/pkgconfig
-LIBDIR=$(pkg-config --variable=libdir libgibson)
-read -r -a PC <<<"$(pkg-config --cflags --libs libgibson)"
+if [[ "$SDK" =~ [[:space:]] ]]; then
+    # Some Go/cgo toolchains split pkg-config's escaped spaces incorrectly. This alias is used for
+    # this run and retained for audited cleanup; the installed SDK supplies headers/library bytes.
+    SDK_ALIAS_DIR=$(mktemp -d /tmp/libgibson-parity-sdk.XXXXXX)
+    ln -s -- "$SDK" "$SDK_ALIAS_DIR/sdk"
+    export PKG_CONFIG_PATH=$SDK_ALIAS_DIR/sdk/lib/pkgconfig
+    export LD_LIBRARY_PATH="$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    GO_LDFLAGS=""
+fi
 echo "parity_v08: SDK=$SDK (libgibson $(pkg-config --modversion libgibson)) WORK=$WORK REPS=$REPS"
 echo "parity_v08: libgibson.so sha256 $(sha256sum "$LIBDIR/libgibson.so" | cut -d' ' -f1)"
 
@@ -65,14 +84,21 @@ build() { # name, command...
         echo "  BUILD FAILED: $name (see $WORK/out/build_$name.log)"; BUILD_FAIL=1; fi
 }
 echo "== build =="
-build c cc -std=c11 -O2 -Wall -Wextra -o "$WORK/bin/parity_v08_c" "$V08/parity_v08.c" "${PC[@]}" -Wl,-rpath,"$LIBDIR"
-build cpp c++ -std=c++17 -O2 -Wall -Wextra -o "$WORK/bin/parity_v08_cpp" "$V08/parity_v08.cpp" "${PC[@]}" -Wl,-rpath,"$LIBDIR"
+build c python3 "$REPO/onboarding/pkg-config-cc.py" cc -std=c11 -O2 -Wall -Wextra -o "$WORK/bin/parity_v08_c" "$V08/parity_v08.c" -Wl,-rpath,"$LIBDIR"
+build cpp python3 "$REPO/onboarding/pkg-config-cc.py" c++ -std=c++17 -O2 -Wall -Wextra -o "$WORK/bin/parity_v08_cpp" "$V08/parity_v08.cpp" -Wl,-rpath,"$LIBDIR"
 build py cp "$REPO/bindings/python/gibson.py" "$WORK/pysite/gibson.py"
-build go env -C "$V08/go" GOFLAGS=-mod=mod GOPROXY=off CGO_LDFLAGS="-Wl,-rpath,$LIBDIR" go build -o "$WORK/bin/parity_v08_go" .
+build go env -C "$V08/go" GOFLAGS=-mod=mod GOPROXY=off GOCACHE="$GO_CACHE" CGO_LDFLAGS="$GO_LDFLAGS" go build -o "$WORK/bin/parity_v08_go" .
+PTY_STATUS=UNVERIFIED
+if [ "$(uname -s)" = Linux ]; then
+    build focus-cpp python3 "$REPO/onboarding/pkg-config-cc.py" c++ -std=c++17 -O2 -Wall -Wextra -o "$WORK/bin/focus_cpp" "$V08/focus/client.cpp" -Wl,-rpath,"$LIBDIR"
+    build focus-go env -C "$V08/focus/go" GOFLAGS=-mod=mod GOPROXY=off GOCACHE="$GO_CACHE" CGO_LDFLAGS="$GO_LDFLAGS" go build -o "$WORK/bin/focus_go" .
+fi
 if [ -n "${PARITY_V08_RUST_BIN:-}" ]; then
     RUST_BIN=$PARITY_V08_RUST_BIN
+    RUST_PROVENANCE=PREBUILT_UNVERIFIED
     echo "  rust: using prebuilt $RUST_BIN"
 else
+    RUST_PROVENANCE=WORKTREE_BUILD
     build rust env -C "$REPO" "${CARGO_CMD[@]}" build --release --example parity_v08
     RUST_BIN=${CARGO_TARGET_DIR:-$REPO/target}/release/examples/parity_v08
 fi
@@ -112,8 +138,34 @@ MATRIX_RC=0
 
 # ---------------------------------------------------------------------------- negative controls
 CTL_FAIL=0
+CONTROL_STATUS=SKIPPED
 if [ "${PARITY_V08_SKIP_CONTROLS:-0}" != 1 ]; then
+    CONTROL_STATUS=PASS
     echo "== negative controls (each must be CAUGHT as a regression, with exactly the planted ids) =="
+    if ! PYTHONDONTWRITEBYTECODE=1 python3 "$V08/test_compare.py"; then
+        echo "  MISSED   comparator oracle controls"; CTL_FAIL=1
+    fi
+    if ! PYTHONDONTWRITEBYTECODE=1 python3 "$V08/test_cleanup.py"; then
+        echo "  MISSED   temporary cache cleanup controls"; CTL_FAIL=1
+    fi
+    if ! PYTHONDONTWRITEBYTECODE=1 python3 "$V08/test_status.py"; then
+        echo "  MISSED   qualification summary controls"; CTL_FAIL=1
+    fi
+    # A deliberately wrong literal must fail for the intended assertion, not a missing SDK.
+    cat > "$WORK/ctl/focus-discriminant-mutant.c" <<'CFOCUS'
+#include <gibson.h>
+_Static_assert(GIBSON_EVENT_FOCUS_GAINED == 8, "FOCUS_GAINED_MUTANT");
+_Static_assert(GIBSON_EVENT_FOCUS_LOST == 7, "FOCUS_LOST_MUTANT");
+CFOCUS
+    if python3 "$REPO/onboarding/pkg-config-cc.py" cc -std=c11 -fsyntax-only \
+        "$WORK/ctl/focus-discriminant-mutant.c" >"$WORK/ctl/focus-discriminant-mutant.log" 2>&1; then
+        echo "  MISSED   focus ABI discriminant mutation"; CTL_FAIL=1
+    elif grep -q FOCUS_GAINED_MUTANT "$WORK/ctl/focus-discriminant-mutant.log" && \
+         grep -q FOCUS_LOST_MUTANT "$WORK/ctl/focus-discriminant-mutant.log"; then
+        echo "  CAUGHT   focus ABI discriminant mutation"
+    else
+        echo "  MISSED   focus ABI mutation failed for another reason"; CTL_FAIL=1
+    fi
     control() { # label, lang, want, env assignment
         local label=$1 lang=$2 want=$3 assign=$4 out rc line
         out="$WORK/ctl/$label.$lang.jsonl"
@@ -131,9 +183,62 @@ if [ "${PARITY_V08_SKIP_CONTROLS:-0}" != 1 ]; then
         control cell "$lang" "r03,s16" PARITY_V08_PERTURB=cell
         control events "$lang" "ORDER,e09.1,e09.2" PARITY_V08_PERTURB=events
     done
+    # Focus identity control: mutate a completed wrapper transcript so a lost focus identity
+    # cannot be hidden by a comparator that merely checks transcript cardinality.
+    python3 - "$WORK/out/py.a.jsonl" "$WORK/ctl/focus.py.jsonl" <<'PYFOCUS'
+import json, sys
+lines = open(sys.argv[1], encoding="utf-8").readlines()
+changed = 0
+with open(sys.argv[2], "w", encoding="utf-8") as out:
+    for line in lines:
+        row = json.loads(line)
+        if row.get("id") == "f05.1" and row.get("type") == "FOCUS_GAINED":
+            row["type"] = "NONE"
+            line = json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+            changed += 1
+        out.write(line)
+if changed != 1:
+    raise SystemExit("focus control did not find exactly one focus-gained record")
+PYFOCUS
+    rc=0
+    line=$("${COMPARE[@]}" check --script "$SCRIPT" --expected "$EXPECTED" --ref "$WORK/out/c.a.jsonl" \
+        --lang py --transcript "$WORK/ctl/focus.py.jsonl" --want f05.1 | tail -n 1) || rc=$?
+    if [ "$rc" = 1 ] && [[ $line == *EXACT ]]; then
+        echo "  CAUGHT   focus/py: $line"
+    else
+        echo "  MISSED   focus/py (rc=$rc): $line"; CTL_FAIL=1
+    fi
+    # Identical wrong geometry in the C reference and a wrapper must not cancel out.
+    for lang in c py; do
+        python3 - "$WORK/out/$lang.a.jsonl" "$WORK/ctl/geometry-common.$lang.jsonl" <<'PYGEOMETRY'
+import json, sys
+seen = set()
+with open(sys.argv[1], encoding="utf-8") as src, open(sys.argv[2], "w", encoding="utf-8") as out:
+    for line in src:
+        row = json.loads(line)
+        if row.get("id") in ("t01", "t02"):
+            if row["id"] in seen:
+                raise SystemExit("duplicate geometry control record")
+            seen.add(row["id"])
+            row.update(cols=1, rows=1)
+            line = json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+        out.write(line)
+if seen != {"t01", "t02"}:
+    raise SystemExit("missing geometry control record")
+PYGEOMETRY
+    done
+    rc=0
+    line=$("${COMPARE[@]}" check --script "$SCRIPT" --expected "$EXPECTED" \
+        --ref "$WORK/ctl/geometry-common.c.jsonl" --lang py \
+        --transcript "$WORK/ctl/geometry-common.py.jsonl" --want t01,t02 | tail -n 1) || rc=$?
+    if [ "$rc" = 1 ] && [[ $line == *EXACT ]]; then
+        echo "  CAUGHT   common-mode geometry: $line"
+    else
+        echo "  MISSED   common-mode geometry (rc=$rc): $line"; CTL_FAIL=1
+    fi
     # Resize regression witness (#293): the Rust consumer undoes the geometry poll_from applied,
     # as the library did before #293; the polled Resize then leaves the headless geometry at 40x12.
-    control rust-resize-unapplied rust "r02,r03,r04" PARITY_V08_RUST_RESIZE=unapplied
+    control rust-resize-unapplied rust "r02,r03,r04,t02" PARITY_V08_RUST_RESIZE=unapplied
     grep '"id":"r02"' "$WORK/ctl/rust-resize-unapplied.rust.jsonl" | sed 's/^/    witness r02: /' || true
     # Resource-gate control: the C consumer leaks its context every repetition.
     ( export PARITY_V08_PERTURB=leak; run_lang c "$REPS" ) >/dev/null 2>"$WORK/ctl/leak.c.err" || true
@@ -143,11 +248,28 @@ if [ "${PARITY_V08_SKIP_CONTROLS:-0}" != 1 ]; then
     else echo "  MISSED   leak/c (rc=$rc): $line"; CTL_FAIL=1; fi
 fi
 
+# Interactive focus controls do not add records to the 84-record parity transcript. A PTY proves
+# the wrapper's requests and cleanup bytes, not the terminal's interpretation of those requests.
+echo "== interactive focus reporting =="
+if [ "$(uname -s)" = Linux ]; then
+    if [ ! -c /dev/full ] || ! python3 -c 'import os,pty; a,b=pty.openpty(); os.close(a); os.close(b)' 2>/dev/null; then
+        echo "  UNVERIFIED: /dev/full or a usable PTY is unavailable"
+    elif PYTHONPATH="$WORK/pysite" LIBGIBSON_LIBRARY="$SDK/lib/libgibson.so" \
+        python3 "$V08/focus/pty_check.py" "$WORK/bin/focus_cpp" "$WORK/bin/focus_go" \
+            "$V08/focus/client.py" "$(command -v python3)"; then
+        PTY_STATUS=PASS
+    else
+        PTY_STATUS=FAIL
+    fi
+else
+    echo "  UNVERIFIED: interactive focus PTY control is Linux-only"
+fi
+
 echo "== summary =="
 echo "  transcripts: $WORK/out"
-echo "  build_fail=$BUILD_FAIL run_fail=$RUN_FAIL matrix_rc=$MATRIX_RC control_fail=$CTL_FAIL"
-if [ "$BUILD_FAIL" != 0 ] || [ "$RUN_FAIL" != 0 ] || [ "$MATRIX_RC" != 0 ] || [ "$CTL_FAIL" != 0 ]; then
+echo "  build_fail=$BUILD_FAIL run_fail=$RUN_FAIL matrix_rc=$MATRIX_RC control_fail=$CTL_FAIL controls=$CONTROL_STATUS focus_pty=$PTY_STATUS rust=$RUST_PROVENANCE sdk_source=UNVERIFIED"
+if [ "$BUILD_FAIL" != 0 ] || [ "$RUN_FAIL" != 0 ] || [ "$MATRIX_RC" != 0 ] || [ "$CTL_FAIL" != 0 ] || [ "$PTY_STATUS" = FAIL ]; then
     echo "parity_v08: REGRESSION"
     exit 1
 fi
-echo "parity_v08: OK (no regression against expected.json)"
+parity_qualification "$CONTROL_STATUS" "$RUST_PROVENANCE" "$PTY_STATUS"

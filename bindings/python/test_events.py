@@ -90,7 +90,7 @@ for n in ("NONE", "CHAR", "SPECIAL"):
 for n in ("SHIFT", "CONTROL", "ALT"):
     check(getattr(Mod, n) == defined("GIBSON_MOD_" + n), f"Mod.{n} matches the header")
 check(GIBSON_EVENT_QUEUE_CAPACITY == defined("GIBSON_EVENT_QUEUE_CAPACITY"), "queue capacity matches")
-for n in ("NONE", "KEY", "PASTE", "RESIZE"):
+for n in ("NONE", "KEY", "PASTE", "RESIZE", "FOCUS_GAINED", "FOCUS_LOST"):
     m = re.search(r"GIBSON_EVENT_%s\s*=\s*(\d+)" % n, header)
     check(m and getattr(EventType, n) == int(m.group(1)), f"EventType.{n} matches the header")
 for n, hn in (("OK", "GIBSON_OK"), ("ERR_INVALID_PARAM", "GIBSON_ERR_INVALID_PARAM"),
@@ -242,6 +242,29 @@ with headless() as ctx:
     a = ctx.poll_event(kind=False)
     ctx.push_event(a)
     check(ctx.poll_event(kind=False) == a, "kind-less poll -> push -> poll is the identity")
+
+# Focus and geometry: before rendering, around a queued resize, and event round trip.
+with headless() as ctx:
+    check(ctx.terminal_size() == (40, 12), "terminal size before render")
+    ctx.set_focus_reporting(True)
+    ctx.push_event(Event(EventType.FOCUS_GAINED))
+    ctx.push_event(Event.resize(33, 9))
+    ctx.push_event(Event(EventType.FOCUS_LOST))
+    check(ctx.terminal_size() == (40, 12), "queued resize does not apply before poll")
+    check(ctx.poll_event().event_type == EventType.FOCUS_GAINED, "focus gained")
+    check(ctx.poll_event().event_type == EventType.RESIZE, "resize")
+    check(ctx.terminal_size() == (33, 9), "size after poll")
+    e = ctx.poll_event()
+    check(e.event_type == EventType.FOCUS_LOST, "focus lost")
+    ctx.push_event(e)
+    check(ctx.poll_event() == e, "focus event round trip")
+    ctx.set_focus_reporting(False)
+ctx.close()
+e = raises(GibsonError, lambda: ctx.terminal_size(), "closed terminal size")
+check(e is not None and e.status == Status.ERR_INVALID_PARAM, "closed context error")
+e = raises(GibsonError, lambda: ctx.set_focus_reporting(True), "closed focus reporting")
+check(e is not None and e.status == Status.ERR_INVALID_PARAM and not e.last_error,
+      "focus error does not reuse stale terminal-size error")
 
 # --- misc -------------------------------------------------------------------------------------
 raises(Exception, lambda: setattr(Event(), "key_code", 1), "Event is immutable")
