@@ -309,27 +309,43 @@ fn viewport_inside_stack_is_positioned_and_clipped() {
 // Damage behaviour through the whole renderer
 // ---------------------------------------------------------------------------
 
-struct Fs {
-    renderer: Renderer,
-    session: TerminalSession,
+struct Capture<'a>(&'a std::cell::RefCell<Vec<u8>>);
+impl std::io::Write for Capture<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.borrow_mut().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+struct Fs<'a> {
+    target: gibson::renderer::BoundTarget<'a>,
+    output: &'a std::cell::RefCell<Vec<u8>>,
     parser: vt100::Parser,
 }
 
-impl Fs {
-    fn new(cols: u16, rows: u16) -> Self {
-        Self {
-            renderer: Renderer::new(RenderMode::Fullscreen),
-            session: TerminalSession::headless(cols, rows),
-            parser: vt100::Parser::new(rows, cols, 0),
-        }
-    }
+macro_rules! make_fs {
+    ($name:ident, $cols:expr, $rows:expr) => {
+        let mut renderer_storage = Renderer::new(RenderMode::Fullscreen);
+        let mut session_storage = TerminalSession::headless($cols, $rows);
+        let output_storage = std::cell::RefCell::new(Vec::new());
+        let mut writer_storage = Capture(&output_storage);
+        let mut $name = Fs {
+            target: renderer_storage
+                .bind_target(&mut session_storage, &mut writer_storage)
+                .unwrap(),
+            output: &output_storage,
+            parser: vt100::Parser::new($rows, $cols, 0),
+        };
+    };
+}
 
+impl Fs<'_> {
     fn render(&mut self, root: &mut Node) -> (usize, usize, usize) {
-        let mut out = Vec::new();
-        let (dirty, total, bytes, _, _) = self
-            .renderer
-            .render(root, &mut self.session, &mut out)
-            .unwrap();
+        let (dirty, total, bytes, _, _) = self.target.render(root).unwrap();
+        let out = std::mem::take(&mut *self.output.borrow_mut());
         self.parser.process(&out);
         (dirty, total, bytes)
     }
@@ -359,7 +375,7 @@ fn sprite_at(x: f32) -> Node {
 
 #[test]
 fn moving_one_cell_sprite_has_bounded_damage_and_no_ghost() {
-    let mut fs = Fs::new(40, 12);
+    make_fs!(fs, 40, 12);
     let (_, total, _) = fs.render(&mut sprite_at(10.0));
     assert_eq!(fs.cell(10, 5), "X");
 
@@ -397,7 +413,7 @@ fn viewport_pan_damage_is_viewport_local() {
                     .offset(20.0, 4.0),
             )
     };
-    let mut fs = Fs::new(40, 12);
+    make_fs!(fs, 40, 12);
     fs.render(&mut world(0));
     let (dirty, total, _) = fs.render(&mut world(1));
     assert!(
