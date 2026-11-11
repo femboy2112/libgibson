@@ -14,9 +14,11 @@ so later growth does not jump back to an earlier row. The application owns sourc
 retention and all status/approval decisions.
 
 At 40×15, 80×24 and 120×40, a headless scene reserves status and input rows. Cell
-readback asserts those rows remain visible while the middle viewport contains
-synthetic content. This is a layout example, not a protected-overlay, keyboard
-focus or authority-enforcement API. Those interactions still need PTY acceptance.
+readback checks those labels and the first ten cells of the anchored synthetic
+body at each size. A separate test checks an entire eight-cell body row. Neither
+checks every cell of the larger body. This is a layout example, not a
+protected-overlay, keyboard-focus or authority-enforcement API. Those
+interactions still need PTY acceptance.
 Terminal control characters, including tabs, are refused before modifying the
 retained source. Callers must provide spaces if they want visible indentation;
 the example never silently drops tabs or rewrites the stored source.

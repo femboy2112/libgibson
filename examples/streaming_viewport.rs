@@ -205,10 +205,11 @@ fn check_frame(flow: &mut Flow, width: u16, height: u16) -> std::io::Result<()> 
     let body = flow.window(usize::from(height - 2));
     let mut nodes = vec![Node::text("HOST STATUS: review pending", Style::default())];
     for n in 0..height - 2 {
-        nodes.push(Node::text(
-            body.get(usize::from(n)).cloned().unwrap_or_default(),
-            Style::default(),
-        ));
+        let mut text = body.get(usize::from(n)).cloned().unwrap_or_default();
+        if n == 0 && std::env::var_os("GIBSON_TEST_MUTATE_VIEWPORT_BODY").is_some() {
+            text = "WRONG BODY".into();
+        }
+        nodes.push(Node::text(text, Style::default()));
     }
     nodes.push(Node::text("INPUT >", Style::default()));
     let mut root = Node::col();
@@ -227,6 +228,16 @@ fn check_frame(flow: &mut Flow, width: u16, height: u16) -> std::io::Result<()> 
                 .to_owned();
             assert_eq!(actual, c.to_string(), "protected cell ({col},{row})");
         }
+    }
+    // This frame is specifically the fixed, block-12 anchored fixture below.
+    // Compare independent literal cells, not the cached/rebuilt wrapper output.
+    for (col, expected) in "TURN 0012:".chars().enumerate() {
+        let actual = context.frame_cell(col as u16, 1).unwrap().glyph;
+        assert_eq!(
+            actual,
+            expected.to_string(),
+            "body cell ({col},1) at {width}x{height}"
+        );
     }
     Ok(())
 }
@@ -517,5 +528,26 @@ mod budget_tests {
         flow.resize(2).unwrap();
         assert_eq!(flow.anchor, Some((1, 0)));
         assert_eq!(flow.window(1), ["ab"]);
+    }
+    #[test]
+    fn corrupted_anchored_body_is_rejected_at_each_layout() {
+        for (width, height) in [(40, 15), (80, 24), (120, 40)] {
+            let mut flow = Flow::with_budgets(width, 4, 100, 20, false);
+            flow.append(12, "WRONG BODY".into()).unwrap();
+            flow.anchor = Some((12, 0));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                super::check_frame(&mut flow, width, height).unwrap();
+            }));
+            assert!(result.is_err(), "corrupt body escaped at {width}x{height}");
+        }
+    }
+    #[test]
+    fn anchored_fixture_is_visible_at_each_layout() {
+        for (width, height) in [(40, 15), (80, 24), (120, 40)] {
+            let mut flow = Flow::with_budgets(width, 4, 100, 20, false);
+            flow.append(12, "TURN 0012: valid fixture".into()).unwrap();
+            flow.anchor = Some((12, 0));
+            super::check_frame(&mut flow, width, height).unwrap();
+        }
     }
 }
