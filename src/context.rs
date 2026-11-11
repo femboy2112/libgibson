@@ -142,6 +142,7 @@ impl Context {
         self.ensure_output_authorized()?;
         self.renderer_identity = self.renderer.identity();
         self.session_identity = self.session.identity();
+        let _target_scope = self.renderer.context_target_scope();
         let result = f(&mut self.renderer, &mut self.session, &mut self.output);
         // Record even on an ordinary error: counted-write recovery belongs to
         // this target. A panic skips this assignment and thus fails closed.

@@ -8,6 +8,7 @@ use crate::session::TerminalSession;
 use crate::surface::Surface;
 use crate::transaction::TerminalTransaction;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
@@ -87,6 +88,8 @@ impl FrameReport {
 pub struct Renderer {
     pub mode: RenderMode,
     identity: Arc<()>,
+    bound_target: Arc<AtomicBool>,
+    bound_initial: bool,
     // A Context records this before and after its own output operations. Direct
     // public Renderer output may have used an arbitrary writer, so the Context
     // must not reuse the resulting differential state as physical truth.
@@ -145,11 +148,159 @@ pub struct Renderer {
     owed_reanchor: bool,
 }
 
+/// An exclusive renderer/session/writer binding. The caller must keep the
+/// writer directed to the same destination and prevent other writes to that
+/// destination for the binding's lifetime. A `Write` cannot enforce either
+/// promise for aliased or internally retargetable destinations. Successful
+/// writes and flushes report writer acceptance, not terminal presentation.
+pub struct BoundTarget<'a> {
+    renderer: &'a mut Renderer,
+    session: &'a mut TerminalSession,
+    writer: &'a mut dyn Write,
+}
+
+pub(crate) struct TargetScope(Arc<AtomicBool>);
+impl Drop for TargetScope {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Relaxed);
+    }
+}
+
+impl BoundTarget<'_> {
+    /// Update the headless terminal geometry without changing the destination.
+    pub fn set_terminal_size(&mut self, cols: u16, rows: u16) {
+        self.session.set_terminal_size(cols, rows);
+    }
+    pub fn set_capabilities(&mut self, caps: crate::capability::TerminalCapabilities) {
+        self.session.set_capabilities(caps);
+    }
+    pub fn set_color_depth(&mut self, depth: crate::capability::ColorDepth) {
+        self.session.set_color_depth(depth);
+    }
+    pub fn set_sync_updates(&mut self, enabled: bool) {
+        self.session.set_sync_updates(enabled);
+    }
+    pub fn set_capture_damage(&mut self, enabled: bool) {
+        self.renderer.capture_damage = enabled;
+    }
+    pub fn last_frame_report(&self) -> FrameReport {
+        self.renderer.last_frame_report()
+    }
+    pub fn last_frame_lines(&self) -> Vec<String> {
+        self.renderer.last_frame_lines()
+    }
+    pub fn last_dirty_cells(&self) -> &[(u16, u16)] {
+        self.renderer.last_dirty_cells()
+    }
+    pub fn last_exact_changed(&self) -> usize {
+        self.renderer.last_exact_changed()
+    }
+    fn run<T>(
+        &mut self,
+        f: impl FnOnce(&mut Renderer, &mut TerminalSession, &mut dyn Write) -> io::Result<T>,
+    ) -> io::Result<T> {
+        let _scope = self.renderer.context_target_scope();
+        let before = self.session.cursor_hidden_for_render();
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            f(self.renderer, self.session, self.writer)
+        })) {
+            Ok(result) => result,
+            Err(payload) => {
+                self.session.reconcile_failed_cursor_write(before, true);
+                self.renderer.poison_physical_state();
+                std::panic::resume_unwind(payload)
+            }
+        }
+    }
+    pub fn render(
+        &mut self,
+        node: &mut Node,
+    ) -> io::Result<(usize, usize, usize, bool, crate::painter::PaintContext)> {
+        self.run(|r, s, w| r.render(node, s, w))
+    }
+    pub fn commit_text(&mut self, text: &str) -> io::Result<usize> {
+        self.run(|r, s, w| r.commit_text(text, s, w))
+    }
+    pub fn commit_text_with_mode(&mut self, text: &str, wrap: WrapMode) -> io::Result<usize> {
+        self.run(|r, s, w| r.commit_text_with_mode(text, wrap, s, w))
+    }
+    pub fn commit_raw_ansi_unchecked(&mut self, text: &str) -> io::Result<usize> {
+        self.run(|r, s, w| r.commit_raw_ansi_unchecked(text, s, w))
+    }
+    pub fn commit_node(&mut self, node: &mut Node) -> io::Result<usize> {
+        self.run(|r, s, w| r.commit_node(node, s, w))
+    }
+    pub fn commit_rich_text(&mut self, rich: &RichText) -> io::Result<usize> {
+        self.run(|r, s, w| r.commit_rich_text(rich, s, w))
+    }
+    pub fn insert_text_before_live(&mut self, text: &str) -> io::Result<(usize, InsertStrategy)> {
+        self.run(|r, s, w| r.insert_text_before_live(text, s, w))
+    }
+    pub fn insert_text_before_live_with_mode(
+        &mut self,
+        text: &str,
+        wrap: WrapMode,
+    ) -> io::Result<(usize, InsertStrategy)> {
+        self.run(|r, s, w| r.insert_text_before_live_with_mode(text, wrap, s, w))
+    }
+    pub fn insert_raw_lines_before_live_unchecked(
+        &mut self,
+        lines: &[&str],
+    ) -> io::Result<(usize, InsertStrategy)> {
+        self.run(|r, s, w| r.insert_raw_lines_before_live_unchecked(lines, s, w))
+    }
+    pub fn insert_node_before_live(
+        &mut self,
+        node: &mut Node,
+    ) -> io::Result<(usize, InsertStrategy)> {
+        self.run(|r, s, w| r.insert_node_before_live(node, s, w))
+    }
+    pub fn insert_rich_text_before_live(
+        &mut self,
+        rich: &RichText,
+    ) -> io::Result<(usize, InsertStrategy)> {
+        self.run(|r, s, w| r.insert_rich_text_before_live(rich, s, w))
+    }
+    pub fn clear_live_region(&mut self) -> io::Result<usize> {
+        self.run(|r, s, w| r.clear_live_region(s, w))
+    }
+    pub fn physical_state_uncertain(&self) -> bool {
+        self.renderer.physical_state_uncertain()
+    }
+}
+
 impl Renderer {
+    /// Binds output state to one writer for the lifetime of the returned guard.
+    /// Only a fresh renderer can be bound, because earlier destination state is
+    /// not transferable. The writer must not be retargeted or written to elsewhere.
+    pub fn bind_target<'a>(
+        &'a mut self,
+        session: &'a mut TerminalSession,
+        writer: &'a mut dyn Write,
+    ) -> io::Result<BoundTarget<'a>> {
+        session.ensure_render_authorized()?;
+        if self.output_generation() != Some(0)
+            || self.physical_fingerprint() != (self.mode, 0, 0, 0, None, AnchorState::Invalid)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "binding requires a fresh renderer",
+            ));
+        }
+        self.begin_output();
+        self.bound_initial = true;
+        Ok(BoundTarget {
+            renderer: self,
+            session,
+            writer,
+        })
+    }
     pub fn new(mode: RenderMode) -> Self {
         Self {
             mode,
             identity: Arc::new(()),
+            bound_target: Arc::new(AtomicBool::new(false)),
+            bound_initial: false,
             output_generation: 0,
             output_generation_exhausted: false,
             previous_surface: None,
@@ -183,6 +334,25 @@ impl Renderer {
 
     pub(crate) fn identity(&self) -> Arc<()> {
         Arc::clone(&self.identity)
+    }
+
+    pub(crate) fn context_target_scope(&self) -> TargetScope {
+        assert!(!self.bound_target.swap(true, Ordering::Relaxed));
+        TargetScope(Arc::clone(&self.bound_target))
+    }
+
+    fn has_bound_target(&self) -> bool {
+        self.bound_target.load(Ordering::Relaxed)
+    }
+
+    fn require_bound_target(&self, session: &TerminalSession) -> io::Result<()> {
+        if session.is_tty && !self.has_bound_target() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "interactive output requires a bound renderer target",
+            ));
+        }
+        Ok(())
     }
 
     pub(crate) fn output_generation(&self) -> Option<u64> {
@@ -309,6 +479,12 @@ impl Renderer {
 
     /// Renders a UI node tree onto the terminal.
     ///
+    /// Without [`Renderer::bind_target`], interactive fullscreen calls reset
+    /// and repaint the entire canvas on every call: `Write` does not identify a
+    /// destination. Corresponding damage and frame reports describe a full
+    /// repaint. Interactive inline rendering requires a bound target. Context
+    /// uses its own managed output path.
+    ///
     /// Returns `(affected_cells, total_cells, bytes_emitted, is_full_repaint,
     /// PaintContext)`. `affected_cells` is the logical affected footprint
     /// (`SurfaceDiff::logical_dirty_count`), **not** an exact state delta; see
@@ -325,6 +501,17 @@ impl Renderer {
             // Non-TTY / CI mode: suppress live interactive frames.
             self.last_frame_report = FrameReport::default();
             return Ok((0, 0, 0, false, crate::painter::PaintContext::default()));
+        }
+        if !self.has_bound_target() {
+            if self.mode == RenderMode::Inline {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "inline rendering requires a bound renderer target",
+                ));
+            }
+            // Arbitrary writers have no stable identity. Re-establish every
+            // fullscreen cell and cursor request on each unbound call.
+            self.poison_physical_state();
         }
 
         let frame_start = Instant::now();
@@ -393,8 +580,11 @@ impl Renderer {
         // RXIV Gate G3: after a failed (possibly torn) commit the canvas holds unknown content, so a
         // fullscreen recovery frame clears it exactly like a reanchor does.
         let recover = self.physical_uncertain;
-        let force_cursor = recover || self.cursor_visibility_uncertain;
-        let clears_canvas = self.mode == RenderMode::Fullscreen && (reanchor || restyle || recover);
+        let initial_target = self.has_bound_target() && self.bound_initial;
+        let force_cursor =
+            recover || self.cursor_visibility_uncertain || initial_target || is_full_repaint;
+        let clears_canvas = self.mode == RenderMode::Fullscreen
+            && (reanchor || restyle || recover || is_full_repaint);
         let dirty_cells = if clears_canvas {
             total_cells
         } else {
@@ -516,6 +706,23 @@ impl Renderer {
                     self.compiler.reset_cursor(0, 0);
                     self.last_cursor_y = 0;
                     self.last_cursor_x = 0;
+                    if self.has_bound_target() {
+                        // Establish blank cells only in the allocated live rows;
+                        // leave unrelated rows below the inline region intact.
+                        tx.push(b"\x1b[0m");
+                        for row in 0..surface_height {
+                            tx.push(b"\x1b[2K");
+                            if row + 1 < surface_height {
+                                tx.push(b"\r\n");
+                            }
+                        }
+                        if surface_height > 1 {
+                            write!(tx.buffer, "\x1b[{}A\r", surface_height - 1).ok();
+                        } else {
+                            tx.push(b"\r");
+                        }
+                        self.compiler.current_style = Style::default();
+                    }
                 } else {
                     // Rewind cursor from last position back to row 0 of live region
                     if self.last_cursor_y > 0 {
@@ -633,6 +840,7 @@ impl Renderer {
         self.previous_surface = Some(next_surface);
         self.physical_uncertain = false;
         self.cursor_visibility_uncertain = false;
+        self.bound_initial = false;
         self.owed_reanchor = false;
         // Physical-emission truth, advanced only now that the transaction committed: the cells on
         // screen carry this depth's SGR. A failed commit returns via `?` above and leaves the prior
@@ -666,6 +874,7 @@ impl Renderer {
     ) -> io::Result<usize> {
         self.begin_output();
         session.ensure_render_authorized()?;
+        self.require_bound_target(session)?;
         if !session.is_tty {
             let mut bytes = 0usize;
             for line in lines {
@@ -939,6 +1148,7 @@ impl Renderer {
         writer: &mut dyn Write,
     ) -> io::Result<(usize, InsertStrategy)> {
         session.ensure_render_authorized()?;
+        self.require_bound_target(session)?;
         if !session.is_tty {
             let mut bytes = 0usize;
             for line in lines {
@@ -1134,6 +1344,7 @@ impl Renderer {
     ) -> io::Result<usize> {
         self.begin_output();
         session.ensure_render_authorized()?;
+        self.require_bound_target(session)?;
         if !session.is_tty || self.live_region_height == 0 {
             return Ok(0);
         }

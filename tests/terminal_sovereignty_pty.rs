@@ -327,7 +327,6 @@ fn every_direct_output_entry_invalidates_managed_output() {
 // This records the unresolved standalone API boundary. Unlike Context, direct
 // Renderer calls have no stable destination identity in their Write argument.
 #[test]
-#[ignore = "open: standalone Renderer diffs across unrelated writers"]
 fn standalone_renderer_must_not_share_cache_between_writers() {
     let mut renderer = gibson::Renderer::new(gibson::RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(80, 24);
@@ -382,7 +381,6 @@ fn standalone_renderer_must_not_share_cache_between_writers() {
 // A writer's address is not its destination identity. This single writer can
 // redirect internally while retaining exactly the same address for every call.
 #[test]
-#[ignore = "open: a writer can retarget without changing its address"]
 fn standalone_renderer_must_not_assume_writer_address_identifies_target() {
     use std::{
         cell::{Cell, RefCell},
