@@ -5,8 +5,8 @@ refs and inspect actual CI checkout commits before acting. Same-model-family
 agent reviews are useful additional source passes, not independent human or
 independent-model certification.
 
-The XXVII update at the end supersedes older #333 head and check status in
-this historical record. This handoff remains a draft and is not on main.
+The later XXVII updates supersede older #333 and #338 heads and check status
+in this historical record. This handoff remains a draft and is not on main.
 
 ## Main and release
 
@@ -223,3 +223,77 @@ standalone control shown earlier, with its `--ignored` flag while it remains
 ignored. Do not confuse the planted torn-sequence control with proof that the
 terminal applies a particular protocol or that a physically torn write is
 atomic.
+
+## XXVII follow-up — cursor recovery, destination contract still open
+
+#338 is now `da9322811e4280bb486317126a42312af3c8d2d4`, a test-only change
+after `be38740fe108a9dc1be04fc3eb6eadd1d34579d0`. The latter merge commit
+includes #333's `d9b2c2a648c4408084e24359d0cf6226574006eb` and cursor work
+at `6fef3ff6a127dfbe51ae7f20d2b8ba98bae38ae4`. The preceding statement that
+the cursor work was uncommitted is historical. Main is still
+`e64402526562ce0d7b6d88c0b5f7bb31152574d6`; no merge or release is recorded
+in this follow-up. Check PR heads and final CI live.
+
+A frame that failed before output could advance session cursor bookkeeping;
+the previous renderer then skipped a hide/show request on retry. The draft
+preserves cursor cleanup obligations on uncertain writes and tracks cursor
+visibility uncertainty separately from inline-region recovery. The added
+controls exercise both cursor-visibility directions, fullscreen and inline,
+every tested frame write cut, flush failures with all or none of the bytes
+delivered, and inline history operations before retry. The new control failed
+on the old source, and a mutation discarding the uncertainty failed the new
+control. A scoped local mouse/renderer/PTY run at `be38740` passed 63 tests
+with one ignored. A separate source reviewer was in the same model family;
+there is no independent human or different-model certification.
+
+The scoped run and the still-failing control used:
+
+```sh
+cargo +1.98.1 test --locked --test mouse_lease_pty \
+  --test terminal_sovereignty_pty --test renderer_partial_write \
+  --test renderer_depth_repaint --test renderer_depth_repaint_failed_write \
+  --test whole_renderer_vt100 -- --test-threads=1
+cargo +1.98.1 test --locked --test terminal_sovereignty_pty \
+  standalone_renderer_must_not_share_cache_between_writers \
+  -- --exact --ignored --test-threads=1
+```
+
+At `be38740`, the first exited 0 (63 passed, one ignored); the second exited
+101. The old-source red test was named
+`cursor_hide_is_retried_after_zero_byte_frame_failure`;
+the final expanded test is `cursor_visibility_is_retried_after_write_and_flush_failures`.
+For the cursor mutation, local assignments setting
+`cursor_visibility_uncertain = true` were removed, then this command exited
+101; the source was restored and those assignments were subsequently
+refactored into `poison_physical_state`:
+
+```sh
+cargo +1.98.1 test --locked --test terminal_sovereignty_pty \
+  inline_history_does_not_forget_uncertain_cursor_visibility \
+  -- --exact --test-threads=1
+```
+
+The ignored test is a release-critical standalone arbitrary-writer A/B/A
+control; it remains unresolved, so #338 remains **HOLD**. At `da93228`, a
+second deliberately ignored control retargets the *same writer object* to a
+different destination and fails at cell (0,6), exit 101:
+
+```sh
+cargo +1.98.1 test --locked --test terminal_sovereignty_pty \
+  standalone_renderer_must_not_assume_writer_address_identifies_target \
+  -- --exact --ignored --test-threads=1
+```
+
+The ordinary `terminal_sovereignty_pty` suite at that head passed 17 tests
+with both release-critical controls ignored, and targeted Clippy passed.
+Rust 1.85 locked library checking passed at `be38740`; the later delta is
+test-only. None of these outcomes resolves the two failures. The Context guard
+still rejects ambiguous reuse rather than presenting FRAME_B. A proposed design
+is to reset and emit the complete frame and cursor for each unmanaged
+arbitrary-writer fullscreen call, while retaining differential updates on a
+managed target with an explicit identity. Inline origin, commit, insert and
+clear operations need an explicit target contract or a returned error. This
+is a candidate design, not an implementation or a qualified API contract;
+it needs compatibility review, exact-head negative controls and integration
+with the terminal lifecycle. In particular, a session identity, writer
+address or identical output bytes alone does not prove destination identity.
