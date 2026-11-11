@@ -11,7 +11,7 @@ merge**. The post-merge main SHA must be fetched; it is not self-certified by
 this pre-merge file. #323's final-head CI/review remains pending at this checkpoint.
 
 ```text
-MAIN: 3358f6679ad7fc53623b9757b9c1d2485e7e3b9f | CI: PASS (43008614279, eight jobs)
+MAIN: 3358f6679ad7fc53623b9757b9c1d2485e7e3b9f | CI: PASS (43008412700, eight jobs)
 RELEASE: v0.6.0 / 492d0fec7727658d50b9a82025c784b7e427d6b0 | PUBLISHED: YES
 MERGED: #340, #337, #333, #329, #327, #325, #336 (seven normal merges; exact commits below)
 RENDERER: original red reproduced; #343 passes scoped endpoint controls; full compatibility remains HOLD
@@ -228,7 +228,7 @@ backpressure matrix. A future runtime/release SHA needs its own canary.
 #336 merged normally at `3358f6679ad7fc53623b9757b9c1d2485e7e3b9f` from
 head `df6ab6162c95c39220d22d78f4d60ab4e9cf61a8`. Fresh Rust 1.85 ran the
 full four-fixture checker on that exact head, exit 0; eight-job CI 43006713951
-passed, followed by merged-main eight-job CI 43008614279. Bounded trusted-source
+passed, followed by merged-main eight-job CI 43008412700. Bounded trusted-source
 review found no additional blocker within that scope. The checker honors external/
 spaced Cargo targets. Six experiment files formerly entered the crate;
 `/experiments` now excludes them, and the post-change package inspection found zero.
@@ -326,6 +326,12 @@ not apply. Do not publish registries or rewrite existing tags.
 
 ## Commands, provenance and local cleanup
 
+Select development CI by workflow name, event, exact source SHA and expected job
+set. A successful Dependabot workflow is not the eight-job development gate.
+The initial draft mistakenly cited run 43008614279 for main; it was a one-job
+Dependabot run. The corrected exact-main CI is 43008412700, verified as a push
+at `3358f6679ad7fc53623b9757b9c1d2485e7e3b9f` with all eight jobs successful.
+
 CI/preflight IDs above are public receipts. Detailed stdout, artifact manifests,
 process inventories, private consumer receipts and cleanup paths stay local.
 Reproduction commands are instructions, not claims that every listed command ran
@@ -395,7 +401,7 @@ later source tree. No public host-path inventory belongs here.
 
 Repository `github.com/femboy2112/libgibson`; fetch before acting. Checkpoint main
 `3358f6679ad7fc53623b9757b9c1d2485e7e3b9f`, `0.7.0-dev`, Rust 1.85,
-ABI v1/67 baseline exports. Main CI 43008614279 passed all eight jobs. This is
+ABI v1/67 baseline exports. Main CI 43008412700 passed all eight jobs. This is
 the snapshot before the pending #323 documentation/model-test merge; fetch its
 actual post-merge main SHA before resuming.
 Published `v0.6.0` and Go tag remain
@@ -489,6 +495,7 @@ gh pr list --repo femboy2112/libgibson --state open --limit 100
 gh pr checks 343 --repo femboy2112/libgibson
 gh pr checks 339 --repo femboy2112/libgibson
 gh pr checks 323 --repo femboy2112/libgibson
+gh run list --repo femboy2112/libgibson --workflow ci.yml --branch main --limit 3
 gh run list --repo femboy2112/libgibson --commit "$(git rev-parse origin/main)" --limit 5
 df -h .
 ```
