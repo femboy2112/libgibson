@@ -3,7 +3,7 @@ use crate::input::{poll_event, Event, KeyReleaseReporting};
 use crate::node::Node;
 use crate::renderer::{AnchorState, FrameReport, InsertStrategy, Renderer};
 use crate::scheduler::{FramePacing, FrameScheduler, RenderStats};
-use crate::session::TerminalSession;
+use crate::session::{SessionOutput, TerminalSession};
 use std::io::{self, IsTerminal, Write};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -50,6 +50,7 @@ pub struct Context {
 /// terminal (issue #27).
 enum OutputSink {
     Stdout,
+    Session(SessionOutput),
     Buffer(Vec<u8>),
 }
 
@@ -57,6 +58,7 @@ impl Write for OutputSink {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             OutputSink::Stdout => io::stdout().write(buf),
+            OutputSink::Session(out) => out.write(buf),
             OutputSink::Buffer(b) => b.write(buf),
         }
     }
@@ -64,6 +66,7 @@ impl Write for OutputSink {
     fn flush(&mut self) -> io::Result<()> {
         match self {
             OutputSink::Stdout => io::stdout().flush(),
+            OutputSink::Session(out) => out.flush(),
             OutputSink::Buffer(b) => b.flush(),
         }
     }
@@ -168,6 +171,10 @@ impl Context {
         }
 
         let session_identity = session.identity();
+        let output = session
+            .output_sink()
+            .map(OutputSink::Session)
+            .unwrap_or(OutputSink::Stdout);
         let renderer = Renderer::new(mode);
         let renderer_identity = renderer.identity();
         let renderer_generation = renderer.output_generation();
@@ -181,7 +188,7 @@ impl Context {
             renderer_fingerprint,
             scheduler: FrameScheduler::new(60),
             root: None,
-            output: OutputSink::Stdout,
+            output,
             empty_root_renders: 0,
         })
     }
@@ -428,7 +435,7 @@ impl Context {
     pub fn rendered_bytes(&self) -> &[u8] {
         match &self.output {
             OutputSink::Buffer(b) => b.as_slice(),
-            OutputSink::Stdout => &[],
+            OutputSink::Stdout | OutputSink::Session(_) => &[],
         }
     }
 
@@ -441,7 +448,7 @@ impl Context {
                 let bytes = std::mem::take(b);
                 String::from_utf8_lossy(&bytes).into_owned()
             }
-            OutputSink::Stdout => String::new(),
+            OutputSink::Stdout | OutputSink::Session(_) => String::new(),
         }
     }
 
@@ -452,7 +459,7 @@ impl Context {
     pub fn take_rendered_bytes(&mut self) -> Vec<u8> {
         match &mut self.output {
             OutputSink::Buffer(b) => std::mem::take(b),
-            OutputSink::Stdout => Vec::new(),
+            OutputSink::Stdout | OutputSink::Session(_) => Vec::new(),
         }
     }
 
