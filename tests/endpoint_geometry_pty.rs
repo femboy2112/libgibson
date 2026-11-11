@@ -53,7 +53,7 @@ fn child(role: &str, b_size: (u16, u16)) -> Output {
         .stderr(Stdio::piped());
     // SAFETY: only async-signal-safe syscalls before exec; the duplicated fd survives exec.
     unsafe {
-        let controlling = role == "controlling";
+        let controlling = role == "controlling" || role == "resize-control";
         command.pre_exec(move || {
             if libc::setsid() == -1 || libc::dup2(b_fd, 4) != 4 {
                 return Err(std::io::Error::last_os_error());
@@ -123,12 +123,23 @@ fn raw_cleanup_tracks_the_terminal_where_raw_was_enabled() {
 }
 
 #[test]
+fn resize_event_matches_the_acquired_output_geometry() {
+    for role in ["resize-control", "resize-noctty"] {
+        let result = child(role, (120, 40));
+        let err = String::from_utf8_lossy(&result.stderr);
+        assert!(result.status.success(), "{role}: {err}");
+        assert!(err.contains("GETTER=50x20 EVENT=50x20"), "{role}: {err}");
+        eprintln!("{role} control passed: {err}");
+    }
+}
+
+#[test]
 fn geometry_child() {
     let Ok(role) = std::env::var(CHILD) else {
         return;
     };
     let controlling = std::fs::File::open("/dev/tty");
-    if role == "controlling" {
+    if role == "controlling" || role == "resize-control" {
         eprintln!("CONTROLLING_TTY={}", controlling.is_ok());
         assert!(controlling.is_ok());
     } else {
@@ -186,6 +197,36 @@ fn geometry_child() {
             restored && unchanged,
             "raw cleanup changed the wrong terminal"
         );
+        return;
+    }
+    if role.starts_with("resize-") {
+        let mut context = gibson::Context::fullscreen().unwrap();
+        context.enter_interactive().unwrap();
+        // Initialize the input source and its signal pipe while both fds refer to A.
+        assert!(context.poll_event(Duration::ZERO).unwrap().is_none());
+        assert_eq!(unsafe { libc::dup2(4, 1) }, 1);
+        let size = libc::winsize {
+            ws_row: 20,
+            ws_col: 50,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+        assert_eq!(unsafe { libc::ioctl(0, libc::TIOCSWINSZ, &size) }, 0);
+        // Explicitly trigger the signal on both controlling and non-controlling cases.
+        assert_eq!(unsafe { libc::raise(libc::SIGWINCH) }, 0);
+        let observed = context.poll_event(Duration::from_secs(2)).unwrap();
+        let getter = context.session.terminal_size();
+        let event = match observed {
+            Some(gibson::Event::Resize(c, r)) => (c, r),
+            other => panic!("expected a resize event, got {other:?}"),
+        };
+        eprintln!(
+            "GETTER={}x{} EVENT={}x{}",
+            getter.0, getter.1, event.0, event.1
+        );
+        context.restore().unwrap();
+        assert_eq!(getter, (50, 20));
+        assert_eq!(event, getter, "resize event must describe acquired output");
         return;
     }
     let mut session = gibson::TerminalSession::new().unwrap();

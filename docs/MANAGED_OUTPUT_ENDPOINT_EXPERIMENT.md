@@ -95,9 +95,11 @@ the existing endpoint suite separately checks full physical output and cursor.
 
 The experimental getter now asks the captured output descriptor directly. Its
 matched, different-size and controlling-terminal query controls pass, as do the
-nine prior endpoint tests. This only qualifies the **query** on Linux: resize
-events still use the crossterm input source's separate size callback and can
-disagree. Its ioctl-error and post-restore behavior falls back to 80×24 rather
+nine prior endpoint tests. This only qualifies the **query** on Linux: a separate
+real SIGWINCH control resized A to 50×20, and the getter returned 50×20 while the
+delivered resize event returned B's 120×40. The controlling-A control returned
+50×20 for both. The input source's separate size callback remains unresolved.
+Its ioctl-error and post-restore behavior falls back to 80×24 rather
 than querying a possibly different live terminal. That is an observable Rust and
 FFI compatibility question requiring explicit tests and a decision, including
 all Unix targets and historical installed consumers. No stable contract follows.
