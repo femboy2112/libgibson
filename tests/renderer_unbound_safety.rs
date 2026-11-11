@@ -1,6 +1,44 @@
 use gibson::{Node, RenderMode, Renderer, Style, TerminalSession};
 
 #[test]
+fn draining_headless_capture_does_not_renew_the_initial_blank_baseline() {
+    use gibson::Context;
+    let mut ctx = Context::headless(RenderMode::Inline, 20, 8);
+    let mut actual = vt100::Parser::new(8, 20, 0);
+    ctx.set_root(Node::text("OLD_CONTENT", Style::default()));
+    ctx.render().unwrap();
+    actual.process(&ctx.take_rendered_bytes());
+    ctx.commit_text("history").unwrap();
+    actual.process(&ctx.take_rendered_bytes());
+    ctx.set_root(Node::text("X", Style::default()));
+    let dirty_before = ctx.stats().dirty_cells;
+    ctx.render().unwrap();
+    let bytes = ctx.take_rendered_bytes();
+    assert!(bytes.windows(4).any(|w| w == b"\x1b[2K"));
+    assert_eq!(ctx.stats().dirty_cells - dirty_before, 20);
+    actual.process(&bytes);
+    let mut expected = vt100::Parser::new(8, 20, 0);
+    expected.process(b"history\r\nX\r\x1b[?25l");
+    for row in 0..8 {
+        for col in 0..20 {
+            assert_eq!(
+                actual.screen().cell(row, col),
+                expected.screen().cell(row, col),
+                "cell {row},{col}"
+            );
+        }
+    }
+    assert_eq!(
+        actual.screen().cursor_position(),
+        expected.screen().cursor_position()
+    );
+    assert_eq!(
+        actual.screen().hide_cursor(),
+        expected.screen().hide_cursor()
+    );
+}
+
+#[test]
 fn unbound_inline_and_anchor_operations_fail_before_writing() {
     let mut s = TerminalSession::headless(80, 24);
     let mut r = Renderer::new(RenderMode::Inline);

@@ -8,7 +8,7 @@ use crate::session::TerminalSession;
 use crate::surface::Surface;
 use crate::transaction::TerminalTransaction;
 use std::io::{self, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
@@ -88,7 +88,7 @@ impl FrameReport {
 pub struct Renderer {
     pub mode: RenderMode,
     identity: Arc<()>,
-    bound_target: Arc<AtomicBool>,
+    bound_target: Arc<AtomicU8>,
     bound_initial: bool,
     // A Context records this before and after its own output operations. Direct
     // public Renderer output may have used an arbitrary writer, so the Context
@@ -159,10 +159,18 @@ pub struct BoundTarget<'a> {
     writer: &'a mut dyn Write,
 }
 
-pub(crate) struct TargetScope(Arc<AtomicBool>);
+/// Initial contents are known only for the first operation on a Context-owned
+/// virtual display. An arbitrary writer may already contain unrelated cells.
+#[derive(Clone, Copy)]
+pub(crate) enum TargetBaseline {
+    Unknown = 1,
+    FreshBlankVirtual = 2,
+}
+
+pub(crate) struct TargetScope(Arc<AtomicU8>);
 impl Drop for TargetScope {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::Relaxed);
+        self.0.store(0, Ordering::Relaxed);
     }
 }
 
@@ -219,7 +227,7 @@ impl BoundTarget<'_> {
         &mut self,
         f: impl FnOnce(&mut Renderer, &mut TerminalSession, &mut dyn Write) -> io::Result<T>,
     ) -> io::Result<T> {
-        let _scope = self.renderer.context_target_scope();
+        let _scope = self.renderer.context_target_scope(TargetBaseline::Unknown);
         let before = self.session.cursor_hidden_for_render();
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             f(self.renderer, self.session, self.writer)
@@ -325,7 +333,7 @@ impl Renderer {
         Self {
             mode,
             identity: Arc::new(()),
-            bound_target: Arc::new(AtomicBool::new(false)),
+            bound_target: Arc::new(AtomicU8::new(0)),
             bound_initial: false,
             output_generation: 0,
             output_generation_exhausted: false,
@@ -362,13 +370,17 @@ impl Renderer {
         Arc::clone(&self.identity)
     }
 
-    pub(crate) fn context_target_scope(&self) -> TargetScope {
-        assert!(!self.bound_target.swap(true, Ordering::Relaxed));
+    pub(crate) fn context_target_scope(&self, baseline: TargetBaseline) -> TargetScope {
+        assert_eq!(self.bound_target.swap(baseline as u8, Ordering::Relaxed), 0);
         TargetScope(Arc::clone(&self.bound_target))
     }
 
     fn has_bound_target(&self) -> bool {
-        self.bound_target.load(Ordering::Relaxed)
+        self.bound_target.load(Ordering::Relaxed) != 0
+    }
+
+    fn has_fresh_blank_virtual_target(&self) -> bool {
+        self.bound_target.load(Ordering::Relaxed) == TargetBaseline::FreshBlankVirtual as u8
     }
 
     fn require_bound_target(&self, session: &TerminalSession) -> io::Result<()> {
@@ -612,7 +624,10 @@ impl Renderer {
         let clears_canvas = self.mode == RenderMode::Fullscreen
             && (reanchor || restyle || recover || is_full_repaint);
         let clears_inline = self.mode == RenderMode::Inline
-            && ((is_full_repaint && self.has_bound_target()) || restyle);
+            && ((is_full_repaint
+                && self.has_bound_target()
+                && !self.has_fresh_blank_virtual_target())
+                || restyle);
         let cleared_inline_height = if restyle {
             self.live_region_height.max(surface_height)
         } else {
@@ -764,7 +779,7 @@ impl Renderer {
                     self.compiler.reset_cursor(0, 0);
                     self.last_cursor_y = 0;
                     self.last_cursor_x = 0;
-                    if self.has_bound_target() {
+                    if clears_inline {
                         // Establish blank cells only in the allocated live rows;
                         // leave unrelated rows below the inline region intact.
                         tx.push(b"\x1b[0m");
