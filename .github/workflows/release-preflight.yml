@@ -74,6 +74,9 @@ jobs:
       - name: Install ALSA dev headers (for the optional audio-cpal feature)
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
+      - name: Isolated preflight fault controls
+        run: python3 scripts/release/tests/test-isolated-preflight.py
+
       - name: Release preflight
         env:
           STABLE_TOOLCHAIN: ""

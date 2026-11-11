@@ -34,6 +34,14 @@ steps on its own. What a release promises is defined in
 
 ## 3. Run the release preflight
 
+The Linux packaging host needs `objcopy` (or an equivalent executable selected
+with `OBJCOPY`). SDK staging removes embedded `.llvmbc` and `.llvmcmd` metadata
+from the installed static archive before checksumming it; it preserves the
+original Cargo artifact. The native-archive controls compare members, symbols,
+machine code and static clients, and require a Go toolchain with the 1.27.4 /
+1.26.11 cgo security checks. This packaging prerequisite does not change the
+library's Rust MSRV or require `objcopy` on an SDK consumer's machine.
+
 ```
 ./scripts/release/preflight.sh
 ```
@@ -47,6 +55,29 @@ outside the checkout), license presence **and** distributable license-payload
 assertions (Python wheel/sdist and the Go module root carry the dual license),
 enforced third-party-notice freshness, and a repository-path-leak check. It must
 print `RELEASE PREFLIGHT: PASS`.
+
+Preflight captures the caller's HEAD and runs its checks in a separate local clone at
+that commit, with a fresh Cargo target. The clone's checkout is checked for changes
+and assume-unchanged/skip-worktree flags at both boundaries. Its scratch directory is
+reported and retained for audited cleanup. The caller's uncommitted changes and ignored
+files are not part of this witness. The clone is not mounted read-only, so these
+checks do not prove that no tool transiently changed a file during execution or that
+the toolchain was not substituted. External toolchains, environment and caches still
+need to be controlled. The ABI symbol gate builds that captured commit from a
+Git archive in an isolated target
+and passes that exact path to `check-abi.sh --so`; it reports the commit and library
+digest. It checks exported names only, not C signatures or structure layouts. A release
+must separately qualify layouts and signatures, and use a clean candidate checkout for
+the other preflight steps. `check-candidate-abi.sh` retains its named temporary directory
+for audited local cleanup rather than recursively deleting it automatically.
+
+SDK staging uses Python 3 to select the native-library paths reported by that Cargo
+build, including custom target directories. It makes private copies of the selected
+files before the subsequent native-link-flags query, checks each copy against its
+original immediately, and stages the copies. The query may legitimately rebuild the
+originals. These checks are not a defense against a hostile toolchain or concurrent
+process. `--no-build`
+uses existing artifacts and does not establish their source provenance.
 
 **Hangup-test execution is a separate mandatory release witness.** The four
 terminal-hangup liveness tests are marked `#[ignore]` for the normal parallel
@@ -171,9 +202,10 @@ restarts at step 3, with no green run inherited from an earlier SHA.
 
 ## Disk hygiene (local dev)
 
-The release scripts each trap-clean their own temp trees, so `preflight.sh`,
-`cleanroom.sh`, `bundle.sh`, and `msrv-consumer.sh` leave nothing behind. Two things
-are **not** auto-cleaned on a dev box and accumulate across a patch train:
+`cleanroom.sh`, `bundle.sh`, and `msrv-consumer.sh` trap-clean their own temp trees.
+The ABI candidate and fault-control scripts instead report and retain their temporary
+directories for audited cleanup. On a dev box these and two other things can accumulate
+across a patch train:
 
 - **The consumer-acceptance lab clone.** When validating a candidate against the
   external Europa consumers, clone the lab into the canonical throwaway location

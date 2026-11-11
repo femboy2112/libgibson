@@ -36,7 +36,14 @@ evidence and remaining limits: [`V06_QUALIFICATION_LEDGER.md`](V06_QUALIFICATION
 Records: [qualification](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6721675144),
 [publication](https://github.com/femboy2112/libgibson/issues/287#issuecomment-6721728874);
 exact-head CI run 42480198449 (8/8, first attempt), Release Preflight run 42480200825 (PASS).
-`main` (0.7.0-dev) exports 65 C ABI symbols (#273, #283, #306, #303), `GIBSON_ABI_VERSION` still 1.
+`main` (0.7.0-dev) exports **67** C ABI symbols (#273, #283, #306, #303, #317),
+`GIBSON_ABI_VERSION` still 1. As of the 2026-11-09 source audit at `43bae9a`, the 0.7
+release remains unqualified: terminal lease/panic/focus integration is still in draft PRs,
+the external GPL engine port is not independently released, and complete exact-candidate
+installed-consumer/release preflight has not yet run. The Math Typesetting v0.8→v1.0
+track is **planned, not implemented** ([#334](https://github.com/femboy2112/libgibson/issues/334),
+[math roadmap](MATH_TYPESETTING_ROADMAP.md)); current Braille/half-block surfaces do not
+constitute paper-quality formula rendering.
 **v0.7 line since v0.6.0 (unreleased):**
 - Bounded headless capture (#306).
 - Headless resize parity (#308).
