@@ -12,7 +12,10 @@ from matplotlib.mathtext import MathTextParser
 
 ROOT = Path(__file__).resolve().parents[2]
 RENDER = ROOT/'experiments/math_m0/render.py'
-BIN = ROOT/'target/debug/examples/math_m0_capture'
+TARGET = Path(os.environ.get('CARGO_TARGET_DIR', 'target'))
+if not TARGET.is_absolute():
+    TARGET = ROOT / TARGET
+BIN = TARGET/'debug/examples/math_m0_capture'
 ORACLE = ROOT/'experiments/math_m0/screen_oracle.py'
 ENV = dict(os.environ, PYTHONNOUSERSITE='1')
 SCREEN_ENV = dict(ENV)

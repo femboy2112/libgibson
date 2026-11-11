@@ -28,6 +28,8 @@ malicious replacement executable or a compromised toolchain.
 Requires Rust/Cargo and local `pdflatex`, `pdftoppm`, `pdftotext`, Pillow,
 NumPy, Matplotlib and pyte. There is no new core dependency. On the evaluated host,
 `PYTHONNOUSERSITE=1` avoids an incompatible user-site NumPy installation.
+The checker honors `CARGO_TARGET_DIR`, including a path containing spaces; use
+the same setting for the example build and checker invocation.
 
 ```sh
 cargo build --locked --example math_m0_capture -j 1
@@ -89,8 +91,11 @@ terminal emulator and cannot validate effects it does not model.
   LibGibson rendering path, a formula display, or proof of image teardown,
   clipping, resize or long-session behavior. No paper-quality terminal output
   is claimed. Other terminals remain unqualified.
+- The capture example was freshly built on Rust 1.85 and 1.98.1; the complete
+  four-fixture headless checker passed with each executable. This qualifies the
+  capture path, not optional future typesetter dependencies or a release tree.
 - Arbitrary input, SVG parsing, hostile SVG, filesystem/network isolation,
-  fonts unavailable, recursion, full resource envelopes, Rust 1.85, long
+  fonts unavailable, recursion, full resource envelopes, long
   documents, resize and graphics protocol lifecycle remain unqualified. The
   backend-failure test is a deliberate exit status, not evidence about all
   process-termination races.
