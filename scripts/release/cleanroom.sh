@@ -22,12 +22,22 @@
 
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-cd "$REPO_ROOT"
+if ! REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" || [[ -z "$REPO_ROOT" ]]; then
+    echo 'cleanroom: cannot resolve the source directory' >&2; exit 1
+fi
+cd -- "$REPO_ROOT" || exit 1
 CARGO="${CARGO:-cargo}"
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/libgibson-cleanroom.XXXXXX")"
-WORK="$(cd "$WORK" && pwd -P)"
+if ! allocated_work="$(mktemp -d "${TMPDIR:-/tmp}/libgibson-cleanroom.XXXXXX")" \
+    || [[ -z "$allocated_work" || ! -d "$allocated_work" || -L "$allocated_work" ]]; then
+    echo 'cleanroom: could not allocate a scratch directory; no cleanup attempted' >&2; exit 1
+fi
+if ! WORK="$(cd -- "$allocated_work" && pwd -P)" \
+    || [[ -z "$WORK" || "$WORK" == / || "$WORK" == "$REPO_ROOT" \
+        || ! "$WORK" -ef "$allocated_work" ]]; then
+    echo 'cleanroom: cannot verify the scratch directory; no cleanup attempted' >&2; exit 1
+fi
+readonly WORK allocated_work
 SDK="$WORK/sdk"
 godir=""   # set only if the Go consumer is built; referenced under `set -u` later
 fail=0
@@ -63,7 +73,14 @@ sys.exit(0 if all(any(n.endswith("/" + f) for n in names) for f in need) else 1)
 PY
 }
 
-cleanup() { rm -rf "$WORK"; }
+cleanup() {
+    # Install this trap only after allocation and canonicalization succeeded.
+    # A failed mktemp must never turn an empty path into the source directory.
+    # Refuse a replaced/symlinked scratch path rather than following it.
+    if [[ -d "$WORK" && ! -L "$WORK" && "$WORK" -ef "$allocated_work" ]]; then
+        rm -rf -- "$WORK"
+    fi
+}
 trap cleanup EXIT
 
 echo "cleanroom: work dir $WORK (version $VERSION)"

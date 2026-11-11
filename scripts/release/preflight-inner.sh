@@ -125,6 +125,11 @@ if scripts/release/tests/test-cleanroom-go.sh; then
 else
     no "cleanroom Go availability and failure controls"
 fi
+if scripts/release/tests/test-cleanroom-scratch.sh; then
+    ok "cleanroom scratch allocation and cleanup controls"
+else
+    no "cleanroom scratch allocation and cleanup controls"
+fi
 if scripts/release/tests/test-check-abi.sh; then
     ok "ABI checker fault controls"
 else

@@ -37,7 +37,8 @@ if inner.exists():
 executable(repo / "scripts/release/check-clean-index.py", (root / "scripts/release/check-clean-index.py").read_text())
 for script in ("check-versions.sh", "msrv-consumer.sh", "check-candidate-abi.sh", "cleanroom.sh",
                "tests/test-check-abi.sh", "tests/test-check-clean-index.sh", "tests/test-stage-sdk-target.sh",
-               "tests/test-cleanroom-package.sh", "tests/test-cleanroom-go.sh"):
+               "tests/test-cleanroom-package.sh", "tests/test-cleanroom-go.sh",
+               "tests/test-cleanroom-scratch.sh"):
     executable(repo / "scripts/release" / script, "#!/bin/sh\nexit 0\n")
 executable(repo / "scripts/release/gen-third-party-notices.sh", '#!/bin/sh\nprintf notice > "$1"\n')
 for name in ("LICENSE-MIT", "LICENSE-APACHE", "LICENSES-THIRD-PARTY.md"):
