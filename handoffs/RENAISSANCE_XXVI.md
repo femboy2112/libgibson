@@ -160,3 +160,13 @@ replace real terminal capability evidence or exact release artifacts.
   sequences before polling, check echo/canonical flags and event order, and
   compare explicit raw entry and no-panic controls. Do not characterize this
   hypothesis as a reproduced regression or terminal support.
+- #333 head-associated run `42926618911` passed 8/8 on synthetic merge
+  `3e7051775adc9cdb554fc96228960bc48c4bf677`; its tree equals the PR head tree.
+- #338 head-associated run `42926746890` passed 8/8 on synthetic merge
+  `61798aef2bac8738d61410204ff330b9416bb014`; its tree equals the PR head tree.
+  The explicitly run standalone writer control still fails, overriding green CI.
+- #337 head-associated development run `42925970286` passed 8/8 and
+  publication-free preflight run `42925970169` passed on synthetic merge
+  `cb1e6bfdfbccf0e45af05229d116d607610a448d`, whose tree equals the PR head
+  tree. These are not the future tagged commit, and separate ABI history,
+  signature/layout and final-candidate consumer checks still apply.
