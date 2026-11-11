@@ -8,6 +8,25 @@ use gibson::renderer::Renderer;
 use gibson::session::TerminalSession;
 use gibson::{BrailleCanvas, RenderMode, Style};
 
+// One writer stays bound throughout each render sequence. Cloned observation
+// handles drain bytes, not retarget the renderer.
+use std::{
+    cell::RefCell,
+    io::{self, Write},
+    rc::Rc,
+};
+#[derive(Clone, Default)]
+struct Wire(Rc<RefCell<Vec<u8>>>);
+impl Write for Wire {
+    fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+        self.0.borrow_mut().extend_from_slice(b);
+        Ok(b.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 fn oscilloscope_node(phase: f32, cols: u16, lines: u16, style: Style) -> Node {
     // A braille waveform whose vertical offset shifts with `phase`.
     let mut c = BrailleCanvas::new(cols, lines);
@@ -38,18 +57,19 @@ fn braille_phase_update_has_bounded_diff_cost() {
     let rows = 6u16;
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(cols, rows);
-    let mut out = Vec::new();
+    let mut out = Wire::default();
+    let output = out.0.clone();
+    let mut bound = renderer.bind_target(&mut session, &mut out).unwrap();
 
     let mut root = oscilloscope_node(0.0, cols, 4, Style::new());
-    let (dirty, total, bytes, _, _) = renderer.render(&mut root, &mut session, &mut out).unwrap();
+    let (dirty, total, bytes, _, _) = bound.render(&mut root).unwrap();
     assert!(dirty <= total);
     assert!(bytes > 0);
-    out.clear();
+    output.borrow_mut().clear();
 
     // Advance the phase by a small amount: only a fraction of cells should move.
     let mut root2 = oscilloscope_node(0.2, cols, 4, Style::new());
-    let (dirty2, total2, _bytes2, _, _) =
-        renderer.render(&mut root2, &mut session, &mut out).unwrap();
+    let (dirty2, total2, _bytes2, _, _) = bound.render(&mut root2).unwrap();
     assert!(total2 > 0);
     assert!(
         dirty2 < total2,
@@ -67,7 +87,9 @@ fn scanline_overlay_moves_with_small_diff() {
     let rows = 12u16;
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(cols, rows);
-    let mut out = Vec::new();
+    let mut out = Wire::default();
+    let output = out.0.clone();
+    let mut bound = renderer.bind_target(&mut session, &mut out).unwrap();
 
     let build = |y: u16| {
         Node::stack()
@@ -89,10 +111,10 @@ fn scanline_overlay_moves_with_small_diff() {
     };
 
     let mut root = build(2);
-    let (_d, total, _b, _, _) = renderer.render(&mut root, &mut session, &mut out).unwrap();
-    out.clear();
+    let (_d, total, _b, _, _) = bound.render(&mut root).unwrap();
+    output.borrow_mut().clear();
     let mut root2 = build(3);
-    let (dirty, total2, _b2, _, _) = renderer.render(&mut root2, &mut session, &mut out).unwrap();
+    let (dirty, total2, _b2, _, _) = bound.render(&mut root2).unwrap();
     assert!(total2 == total);
     // One dim row moved by one: the changed cells should be ~2 rows, far below
     // the whole screen.
@@ -126,19 +148,13 @@ fn wireframe_rotation_damage_is_bounded_and_static_frame_is_free() {
     let rows = 10u16;
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(cols, rows);
-    let mut out = Vec::new();
+    let mut out = Wire::default();
+    let output = out.0.clone();
+    let mut bound = renderer.bind_target(&mut session, &mut out).unwrap();
 
-    renderer
-        .render(&mut wireframe_node(0.0, cols, rows), &mut session, &mut out)
-        .unwrap();
-    out.clear();
-    let (dirty, total, bytes, _, _) = renderer
-        .render(
-            &mut wireframe_node(0.05, cols, rows),
-            &mut session,
-            &mut out,
-        )
-        .unwrap();
+    bound.render(&mut wireframe_node(0.0, cols, rows)).unwrap();
+    output.borrow_mut().clear();
+    let (dirty, total, bytes, _, _) = bound.render(&mut wireframe_node(0.05, cols, rows)).unwrap();
     assert!(bytes > 0);
     assert!(
         dirty * 2 <= total,
@@ -146,14 +162,8 @@ fn wireframe_rotation_damage_is_bounded_and_static_frame_is_free() {
     );
 
     // A frozen frame must emit nothing.
-    out.clear();
-    let (_, _, bytes_same, _, _) = renderer
-        .render(
-            &mut wireframe_node(0.05, cols, rows),
-            &mut session,
-            &mut out,
-        )
-        .unwrap();
+    output.borrow_mut().clear();
+    let (_, _, bytes_same, _, _) = bound.render(&mut wireframe_node(0.05, cols, rows)).unwrap();
     assert_eq!(bytes_same, 0, "identical wireframe must be clean");
 }
 
@@ -163,7 +173,9 @@ fn particle_field_motion_is_bounded() {
     let rows = 10u16;
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(cols, rows);
-    let mut out = Vec::new();
+    let mut out = Wire::default();
+    let output = out.0.clone();
+    let mut bound = renderer.bind_target(&mut session, &mut out).unwrap();
 
     let build = |step: usize| {
         let mut ps = gibson::ParticleSystem::new(0x1234);
@@ -178,13 +190,9 @@ fn particle_field_motion_is_bounded() {
             .height(rows as f32)
     };
 
-    renderer
-        .render(&mut build(0), &mut session, &mut out)
-        .unwrap();
-    out.clear();
-    let (dirty, total, _b, _, _) = renderer
-        .render(&mut build(1), &mut session, &mut out)
-        .unwrap();
+    bound.render(&mut build(0)).unwrap();
+    output.borrow_mut().clear();
+    let (dirty, total, _b, _, _) = bound.render(&mut build(1)).unwrap();
     assert!(total > 0);
     // A sparse field advancing a 0.1s step must not repaint the whole screen.
     // (A deliberately visible step: sub-dot motion can legitimately round back to
@@ -203,7 +211,9 @@ fn frozen_particle_state_is_zero_damage_and_zero_bytes() {
     let rows = 10u16;
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(cols, rows);
-    let mut out = Vec::new();
+    let mut out = Wire::default();
+    let output = out.0.clone();
+    let mut bound = renderer.bind_target(&mut session, &mut out).unwrap();
 
     let build = || {
         let mut ps = gibson::ParticleSystem::new(0xABCD);
@@ -218,13 +228,9 @@ fn frozen_particle_state_is_zero_damage_and_zero_bytes() {
             .height(rows as f32)
     };
 
-    renderer
-        .render(&mut build(), &mut session, &mut out)
-        .unwrap();
-    out.clear();
-    let (dirty, _total, bytes, _, _) = renderer
-        .render(&mut build(), &mut session, &mut out)
-        .unwrap();
+    bound.render(&mut build()).unwrap();
+    output.borrow_mut().clear();
+    let (dirty, _total, bytes, _, _) = bound.render(&mut build()).unwrap();
     assert_eq!(dirty, 0, "a frozen particle field has zero logical damage");
     assert_eq!(bytes, 0, "a frozen particle field emits zero frame bytes");
 }
@@ -238,18 +244,20 @@ fn erase_to_eol_has_large_logical_damage_but_tiny_wire_cost() {
     let rows = 4u16;
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(cols, rows);
-    let mut out = Vec::new();
+    let mut out = Wire::default();
+    let output = out.0.clone();
+    let mut bound = renderer.bind_target(&mut session, &mut out).unwrap();
 
     let full = "X".repeat(cols as usize);
     let mut long = Node::text(full.clone(), gibson::Style::new())
         .width(cols as f32)
         .height(1.0);
-    renderer.render(&mut long, &mut session, &mut out).unwrap();
-    out.clear();
+    bound.render(&mut long).unwrap();
+    output.borrow_mut().clear();
 
     // Next frame: the same row is blank. The whole row is logically erased.
     let mut blank = Node::text(" ", gibson::Style::new()).width(1.0).height(1.0);
-    let (dirty, total, bytes, _, _) = renderer.render(&mut blank, &mut session, &mut out).unwrap();
+    let (dirty, total, bytes, _, _) = bound.render(&mut blank).unwrap();
 
     // Logical damage should be a large fraction of the row ...
     assert!(
@@ -273,7 +281,9 @@ fn one_cell_sprite_move_is_bounded_to_old_plus_new_footprint() {
     let rows = 12u16;
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(cols, rows);
-    let mut out = Vec::new();
+    let mut out = Wire::default();
+    let output = out.0.clone();
+    let mut bound = renderer.bind_target(&mut session, &mut out).unwrap();
 
     let sprite = |x: f32| {
         Node::stack()
@@ -288,13 +298,9 @@ fn one_cell_sprite_move_is_bounded_to_old_plus_new_footprint() {
             )
     };
 
-    renderer
-        .render(&mut sprite(20.0), &mut session, &mut out)
-        .unwrap();
-    out.clear();
-    let (dirty, total, _bytes, _, _) = renderer
-        .render(&mut sprite(21.0), &mut session, &mut out)
-        .unwrap();
+    bound.render(&mut sprite(20.0)).unwrap();
+    output.borrow_mut().clear();
+    let (dirty, total, _bytes, _, _) = bound.render(&mut sprite(21.0)).unwrap();
     // Old + new cell + a small allowance for any control/cursor cell.
     assert!(
         dirty <= 4,
@@ -308,16 +314,18 @@ fn identical_frame_reports_zero_logical_damage() {
     let rows = 8u16;
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(cols, rows);
-    let mut out = Vec::new();
+    let mut out = Wire::default();
+    let output = out.0.clone();
+    let mut bound = renderer.bind_target(&mut session, &mut out).unwrap();
     let mut root = Node::rich_text_wrapped(
         gibson::RichText::raw("static dashboard\nno animation here"),
         WrapMode::NoWrap,
     )
     .width(cols as f32)
     .height(rows as f32);
-    renderer.render(&mut root, &mut session, &mut out).unwrap();
-    out.clear();
-    let (dirty, _total, bytes, _, _) = renderer.render(&mut root, &mut session, &mut out).unwrap();
+    bound.render(&mut root).unwrap();
+    output.borrow_mut().clear();
+    let (dirty, _total, bytes, _, _) = bound.render(&mut root).unwrap();
     assert_eq!(dirty, 0);
     assert_eq!(bytes, 0);
 }
@@ -327,23 +335,20 @@ fn resize_during_wireframe_animation_is_safe_and_reanchors() {
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(60, 20);
     let mut parser = vt100::Parser::new(20, 60, 0);
-    let mut out = Vec::new();
+    let mut out = Wire::default();
+    let output = out.0.clone();
+    let mut bound = renderer.bind_target(&mut session, &mut out).unwrap();
 
-    renderer
-        .render(&mut wireframe_node(0.1, 40, 12), &mut session, &mut out)
-        .unwrap();
-    parser.process(&out);
-    let before = renderer.anchor_resyncs;
+    bound.render(&mut wireframe_node(0.1, 40, 12)).unwrap();
+    parser.process(&std::mem::take(&mut *output.borrow_mut()));
+    let before = bound.anchor_resyncs();
 
-    session.set_terminal_size(30, 10);
+    bound.set_terminal_size(30, 10);
     parser.screen_mut().set_size(10, 30);
-    let mut out2 = Vec::new();
-    renderer
-        .render(&mut wireframe_node(0.2, 20, 8), &mut session, &mut out2)
-        .unwrap();
-    parser.process(&out2);
+    bound.render(&mut wireframe_node(0.2, 20, 8)).unwrap();
+    parser.process(&std::mem::take(&mut *output.borrow_mut()));
 
-    assert!(renderer.anchor_resyncs > before, "resize must re-anchor");
+    assert!(bound.anchor_resyncs() > before, "resize must re-anchor");
     for line in parser.screen().rows(0, 30) {
         assert!(
             unicode_width::UnicodeWidthStr::width(line.as_str()) <= 30,

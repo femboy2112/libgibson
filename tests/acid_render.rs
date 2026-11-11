@@ -7,6 +7,25 @@ use encounter::Encounter;
 use gibson::*;
 use std::time::Duration;
 
+// A stable writer remains bound across frames; the capture handle only drains
+// the emitted transcript and does not retarget the output destination.
+use std::{
+    cell::RefCell,
+    io::{self, Write},
+    rc::Rc,
+};
+#[derive(Clone, Default)]
+struct Wire(Rc<RefCell<Vec<u8>>>);
+impl Write for Wire {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.borrow_mut().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 fn surface(mut root: Node, w: u16, h: u16) -> Surface {
     compute_layout(&mut root, w, h).unwrap();
     let mut s = Surface::new(w, h);
@@ -46,16 +65,16 @@ fn actual_story_frames_match_whole_renderer_vt100_across_sizes() {
         let mut renderer = Renderer::new(RenderMode::Fullscreen);
         let mut terminal = TerminalSession::headless(w, h);
         let mut parser = vt100::Parser::new(h, w, 0);
+        let mut wire = Wire::default();
+        let output = wire.0.clone();
+        let mut bound = renderer.bind_target(&mut terminal, &mut wire).unwrap();
         for stage in encounter::STAGES {
             let mut e = Encounter::new(stage, true);
             e.update(Duration::from_millis(400), &[]);
             let expected = surface(e.frame(w, h), w, h);
             valid(&expected);
-            let mut wire = Vec::new();
-            renderer
-                .render(&mut e.frame(w, h), &mut terminal, &mut wire)
-                .unwrap();
-            parser.process(&wire);
+            bound.render(&mut e.frame(w, h)).unwrap();
+            parser.process(&std::mem::take(&mut *output.borrow_mut()));
             let got = parser
                 .screen()
                 .rows(0, w)
@@ -67,12 +86,10 @@ fn actual_story_frames_match_whole_renderer_vt100_across_sizes() {
                 text.contains("crash >"),
                 "control island missing in {stage} at {w}x{h}"
             );
-            wire.clear();
-            let (_, _, bytes, _, _) = renderer
-                .render(&mut e.frame(w, h), &mut terminal, &mut wire)
-                .unwrap();
+            output.borrow_mut().clear();
+            let (_, _, bytes, _, _) = bound.render(&mut e.frame(w, h)).unwrap();
             assert_eq!(bytes, 0, "frozen {stage} at {w}x{h}");
-            assert!(wire.is_empty());
+            assert!(output.borrow().is_empty());
         }
     }
 }
@@ -83,14 +100,12 @@ fn measure(label: &str, a: Node, b: Node, w: u16, h: u16) -> (usize, usize, usiz
     let diff = compute_diff(Some(&previous), &next);
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut terminal = TerminalSession::headless(w, h);
-    let mut wire = Vec::new();
-    renderer
-        .render(&mut a.clone(), &mut terminal, &mut wire)
-        .unwrap();
-    wire.clear();
-    let (_, _, bytes, _, _) = renderer
-        .render(&mut b.clone(), &mut terminal, &mut wire)
-        .unwrap();
+    let mut wire = Wire::default();
+    let output = wire.0.clone();
+    let mut bound = renderer.bind_target(&mut terminal, &mut wire).unwrap();
+    bound.render(&mut a.clone()).unwrap();
+    output.borrow_mut().clear();
+    let (_, _, bytes, _, _) = bound.render(&mut b.clone()).unwrap();
     eprintln!(
         "{label}: exact={} affected={} wire={bytes}",
         diff.exact_changed_cell_count(),
@@ -172,16 +187,16 @@ fn ghost_input_never_edits_crash_buffer_and_live_resize_keeps_renderer_correct()
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut terminal = TerminalSession::headless(120, 32);
     let mut parser = vt100::Parser::new(32, 120, 0);
+    let mut wire = Wire::default();
+    let output = wire.0.clone();
+    let mut bound = renderer.bind_target(&mut terminal, &mut wire).unwrap();
     for (w, h) in [(120, 32), (56, 24), (160, 40), (80, 24), (120, 32)] {
-        terminal.set_terminal_size(w, h);
+        bound.set_terminal_size(w, h);
         parser.screen_mut().set_size(h, w);
         e.tick(Duration::from_millis(150), false);
         let expected = surface(e.frame(w, h), w, h);
-        let mut wire = Vec::new();
-        renderer
-            .render(&mut e.frame(w, h), &mut terminal, &mut wire)
-            .unwrap();
-        parser.process(&wire);
+        bound.render(&mut e.frame(w, h)).unwrap();
+        parser.process(&std::mem::take(&mut *output.borrow_mut()));
         assert_eq!(e.input.text, original);
         assert_eq!(e.input.cursor_grapheme, cursor);
         let actual = parser

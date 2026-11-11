@@ -13,6 +13,25 @@ use gibson::{
 };
 use std::{collections::BTreeSet, time::Duration};
 
+// A stable writer remains bound across frames; the capture handle only drains
+// the emitted transcript and does not retarget the output destination.
+use std::{
+    cell::RefCell,
+    io::{self, Write},
+    rc::Rc,
+};
+#[derive(Clone, Default)]
+struct Wire(Rc<RefCell<Vec<u8>>>);
+impl Write for Wire {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.borrow_mut().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 fn shot(encounter: &Encounter, width: u16, height: u16) -> ShotPlan {
     presentation::plan(
         encounter.battle(),
@@ -320,16 +339,14 @@ fn frozen_default_cinema_has_zero_delta_footprint_and_wire_cost() {
     assert_eq!(delta.affected_cell_count(), 0);
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut terminal = TerminalSession::headless(120, 32);
-    let mut bytes = Vec::new();
-    renderer
-        .render(&mut encounter.frame(120, 32), &mut terminal, &mut bytes)
-        .unwrap();
-    bytes.clear();
-    let (_, _, emitted, _, _) = renderer
-        .render(&mut encounter.frame(120, 32), &mut terminal, &mut bytes)
-        .unwrap();
+    let mut bytes = Wire::default();
+    let output = bytes.0.clone();
+    let mut bound = renderer.bind_target(&mut terminal, &mut bytes).unwrap();
+    bound.render(&mut encounter.frame(120, 32)).unwrap();
+    output.borrow_mut().clear();
+    let (_, _, emitted, _, _) = bound.render(&mut encounter.frame(120, 32)).unwrap();
     assert_eq!(emitted, 0);
-    assert!(bytes.is_empty());
+    assert!(output.borrow().is_empty());
 }
 
 #[test]
@@ -361,24 +378,20 @@ fn animated_shot_damage_keeps_delta_footprint_and_wire_separate() {
         let mut renderer = Renderer::new(RenderMode::Fullscreen);
         let mut terminal = TerminalSession::headless(160, 40);
         terminal.set_color_depth(gibson::ColorDepth::TrueColor);
-        let mut bytes = Vec::new();
-        renderer
-            .render(&mut first.clone(), &mut terminal, &mut bytes)
-            .unwrap();
-        bytes.clear();
-        let (_, _, wire, _, _) = renderer
-            .render(&mut next.clone(), &mut terminal, &mut bytes)
-            .unwrap();
+        let mut bytes = Wire::default();
+        let output = bytes.0.clone();
+        let mut bound = renderer.bind_target(&mut terminal, &mut bytes).unwrap();
+        bound.render(&mut first.clone()).unwrap();
+        output.borrow_mut().clear();
+        let (_, _, wire, _, _) = bound.render(&mut next.clone()).unwrap();
         assert!(wire > 0);
         eprintln!(
             "{stage} 17ms: exact={} affected={} wire={wire}",
             delta.exact_changed_cell_count(),
             delta.affected_cell_count()
         );
-        bytes.clear();
-        let (_, _, frozen, _, _) = renderer
-            .render(&mut next.clone(), &mut terminal, &mut bytes)
-            .unwrap();
+        output.borrow_mut().clear();
+        let (_, _, frozen, _, _) = bound.render(&mut next.clone()).unwrap();
         assert_eq!(frozen, 0);
     }
 }

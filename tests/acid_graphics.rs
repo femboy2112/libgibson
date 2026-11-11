@@ -13,6 +13,25 @@ use gibson::{
 };
 use std::{collections::BTreeSet, time::Duration};
 
+// A stable writer remains bound across frames; the capture handle only drains
+// the emitted transcript and does not retarget the output destination.
+use std::{
+    cell::RefCell,
+    io::{self, Write},
+    rc::Rc,
+};
+#[derive(Clone, Default)]
+struct Wire(Rc<RefCell<Vec<u8>>>);
+impl Write for Wire {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.borrow_mut().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 fn painted(mut root: Node, width: u16, height: u16) -> Surface {
     compute_layout(&mut root, width, height).unwrap();
     let mut surface = Surface::new(width, height);
@@ -218,17 +237,15 @@ fn frozen_graphical_frame_has_zero_semantic_delta_footprint_and_wire_bytes() {
     assert_eq!(diff.affected_cell_count(), 0);
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut terminal = TerminalSession::headless(120, 32);
-    let mut wire = Vec::new();
-    renderer
-        .render(&mut encounter.frame(120, 32), &mut terminal, &mut wire)
-        .unwrap();
-    assert!(!wire.is_empty());
-    wire.clear();
-    let (_, _, bytes, _, _) = renderer
-        .render(&mut encounter.frame(120, 32), &mut terminal, &mut wire)
-        .unwrap();
+    let mut wire = Wire::default();
+    let output = wire.0.clone();
+    let mut bound = renderer.bind_target(&mut terminal, &mut wire).unwrap();
+    bound.render(&mut encounter.frame(120, 32)).unwrap();
+    assert!(!output.borrow().is_empty());
+    output.borrow_mut().clear();
+    let (_, _, bytes, _, _) = bound.render(&mut encounter.frame(120, 32)).unwrap();
     assert_eq!(bytes, 0);
-    assert!(wire.is_empty());
+    assert!(output.borrow().is_empty());
 }
 
 #[test]
@@ -238,18 +255,14 @@ fn resize_reprojects_history_without_advancing_or_retaining_old_pixels() {
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut terminal = TerminalSession::headless(120, 32);
     let mut parser = vt100::Parser::new(32, 120, 0);
+    let mut wire = Wire::default();
+    let output = wire.0.clone();
+    let mut bound = renderer.bind_target(&mut terminal, &mut wire).unwrap();
     for (width, height) in [(120, 32), (56, 24), (160, 40), (80, 24), (120, 32)] {
-        terminal.set_terminal_size(width, height);
+        bound.set_terminal_size(width, height);
         parser.screen_mut().set_size(height, width);
-        let mut wire = Vec::new();
-        renderer
-            .render(
-                &mut encounter.frame(width, height),
-                &mut terminal,
-                &mut wire,
-            )
-            .unwrap();
-        parser.process(&wire);
+        bound.render(&mut encounter.frame(width, height)).unwrap();
+        parser.process(&std::mem::take(&mut *output.borrow_mut()));
         let expected = painted(encounter.replay().frame(width, height), width, height);
         let rows: Vec<_> = (0..height)
             .map(|y| {
@@ -381,29 +394,25 @@ fn moving_graphics_report_real_damage_and_wire_cost() {
         let previous = painted(e.frame(160, 40), 160, 40);
         let mut renderer = Renderer::new(RenderMode::Fullscreen);
         let mut terminal = TerminalSession::headless(160, 40);
-        let mut wire = Vec::new();
-        renderer
-            .render(&mut e.frame(160, 40), &mut terminal, &mut wire)
-            .unwrap();
+        let mut wire = Wire::default();
+        let output = wire.0.clone();
+        let mut bound = renderer.bind_target(&mut terminal, &mut wire).unwrap();
+        bound.render(&mut e.frame(160, 40)).unwrap();
         e.update(Duration::from_millis(17), &[]);
         let start = std::time::Instant::now();
         let node = e.frame(160, 40);
         let generation = start.elapsed();
         let next = painted(node.clone(), 160, 40);
         let diff = compute_diff(Some(&previous), &next);
-        wire.clear();
-        let (_, _, bytes, _, _) = renderer
-            .render(&mut node.clone(), &mut terminal, &mut wire)
-            .unwrap();
+        output.borrow_mut().clear();
+        let (_, _, bytes, _, _) = bound.render(&mut node.clone()).unwrap();
         eprintln!("{stage} 160x40/17ms: exact={} affected={} bytes={bytes} generation_us={} (observation, not a timing assertion)",diff.exact_changed_cell_count(),diff.affected_cell_count(),generation.as_micros());
         assert!(diff.exact_changed_cell_count() > 0);
         assert!(diff.affected_cell_count() >= diff.exact_changed_cell_count());
         assert!(bytes > 0);
-        wire.clear();
-        let (_, _, frozen, _, _) = renderer
-            .render(&mut node.clone(), &mut terminal, &mut wire)
-            .unwrap();
+        output.borrow_mut().clear();
+        let (_, _, frozen, _, _) = bound.render(&mut node.clone()).unwrap();
         assert_eq!(frozen, 0);
-        assert!(wire.is_empty());
+        assert!(output.borrow().is_empty());
     }
 }
