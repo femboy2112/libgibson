@@ -83,3 +83,32 @@ focus fault clients: their fd-1-to-`/dev/full` technique must target the capture
 endpoint if this contract is adopted. A green parity run on main's existing
 stdout behavior is not evidence for this experimental output path. Full installed
 compatibility, geometry/input and the parent renderer API remain promotion gates.
+
+## XXXI: two-terminal geometry and input probes — HOLD
+
+In a Linux child without a controlling terminal, capture a 40×15 output PTY A,
+then retarget stdout to 120×40 PTY B. Before the query change in this experiment,
+`terminal_size()` returned B's size while managed output remained pinned to A.
+The two independently measured sizes and ENXIO for `/dev/tty` were recorded.
+The unchanged-size control and a separate controlling-A case constrain the test;
+the existing endpoint suite separately checks full physical output and cursor.
+
+The experimental getter now asks the captured output descriptor directly. Its
+matched, different-size and controlling-terminal query controls pass, as do the
+nine prior endpoint tests. This only qualifies the **query** on Linux: resize
+events still use the crossterm input source's separate size callback and can
+disagree. Its ioctl-error and post-restore behavior falls back to 80×24 rather
+than querying a possibly different live terminal. That is an observable Rust and
+FFI compatibility question requiring explicit tests and a decision, including
+all Unix targets and historical installed consumers. No stable contract follows.
+
+A separate raw-input probe enters raw on A, replaces stdin with B, and restores.
+It reproduced on current main as well as this stack: restoration returns success
+while A remains raw and B's termios is changed. The no-retarget control restores
+A and preserves B; B's IXON state is independently distinguished. Tests reset
+both disposable PTYs after observation. Descriptor replacement is an explicit
+hostile perturbation outside this experiment's current general managed contract;
+the supported boundary and safe failure behavior remain to be decided in #345.
+The ordinary `raw_cleanup_tracks_the_terminal_where_raw_was_enabled` control is
+intentionally red. A green geometry query does not waive this control, the
+resize-event, renderer API, installed-client or full lifecycle gates.

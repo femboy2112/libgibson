@@ -145,6 +145,20 @@ impl SessionEndpoint {
             stdout().is_terminal()
         }
     }
+
+    #[cfg(unix)]
+    fn terminal_size(&self) -> io::Result<(u16, u16)> {
+        use std::os::fd::AsRawFd;
+        let mut size = std::mem::MaybeUninit::<libc::winsize>::uninit();
+        // SAFETY: the owned descriptor stays alive throughout the call and TIOCGWINSZ
+        // initializes the supplied winsize on success.
+        if unsafe { libc::ioctl(self.file.as_raw_fd(), libc::TIOCGWINSZ, size.as_mut_ptr()) } == -1
+        {
+            return Err(io::Error::last_os_error());
+        }
+        let size = unsafe { size.assume_init() };
+        Ok((size.ws_col, size.ws_row))
+    }
 }
 
 /// A short-lived strong reference used for a single managed operation.
@@ -1178,7 +1192,17 @@ impl TerminalSession {
         if self.headless {
             self.headless_size
         } else if self.is_tty {
-            crossterm::terminal::size().unwrap_or((80, 24))
+            #[cfg(unix)]
+            {
+                self.output_endpoint
+                    .as_ref()
+                    .and_then(|endpoint| endpoint.terminal_size().ok())
+                    .unwrap_or((80, 24))
+            }
+            #[cfg(not(unix))]
+            {
+                crossterm::terminal::size().unwrap_or((80, 24))
+            }
         } else {
             (80, 24)
         }
