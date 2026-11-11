@@ -156,13 +156,13 @@ def check_against(lang, text, ref_text, expected, dims, out_lines):
         if rid in recs and recs[rid] != value:
             new.append(rid)
             problems.append("CHANGED absolute record %s (%s)" % (rid, dim_of(dims, rid)))
-    new = sorted(set(new) | set(missing) | set(dups))
+    new = sorted(set(new) | set(missing) | set(dups) | set(healed))
     if not order_ok:
         problems.append("record ORDER differs from the reference or committed order")
     for rid in sorted(set(differing) - allowed):
         problems.append("NEW difference vs c at %s (%s)" % (rid, dim_of(dims, rid)))
     for rid in healed:
-        out_lines.append("  note: %s: expected difference at %s no longer present (expected.json is stale)" % (lang, rid))
+        problems.append("DISAPPEARED known gap %s (%s): expected difference vs c requires expectation review" % (rid, dim_of(dims, rid)))
     return new, problems, order_ok
 
 
@@ -190,7 +190,8 @@ def cmd_check(args):
 
 
 def cmd_matrix(args):
-    expected = json.load(open(args.expected, encoding="utf-8"))
+    with open(args.expected, encoding="utf-8") as expectation:
+        expected = json.load(expectation)
     dims = step_dims(args.script)
     d = args.dir
     regress = []
@@ -227,7 +228,8 @@ def cmd_matrix(args):
             regress.append("%s: NEW difference vs rust at %s" % (lang, rid))
             dim_ok[lang][dim_of(dims, rid)] = False
         for rid in sorted(want_r - set(dr)) if rust else []:
-            notes.append("  note: %s: expected difference vs rust at %s no longer present (expected.json is stale)" % (lang, rid))
+            regress.append("%s: DISAPPEARED known gap vs rust at %s: requires expectation review" % (lang, rid))
+            dim_ok[lang][dim_of(dims, rid)] = False
         nrec = len(t.splitlines())
         summary.append((lang, nrec, dc, order_c, dr, order_r))
 
