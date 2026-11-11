@@ -24,6 +24,16 @@ static int32_t gibson_go_poll(gibson_context_t *ctx, uint32_t timeout_ms, gibson
 	if (st != GIBSON_OK) gibson_last_error_message(err, n);
 	return st;
 }
+static int32_t gibson_go_terminal_size(gibson_context_t *ctx, uint16_t *c, uint16_t *r, char *err, size_t n) {
+    int32_t st = gibson_get_terminal_size(ctx, c, r);
+    if (st == GIBSON_ERR_INVALID_PARAM) gibson_last_error_message(err, n);
+    return st;
+}
+static int32_t gibson_go_focus_reporting(gibson_context_t *ctx, int32_t enabled, char *err, size_t n) {
+    int32_t st = gibson_set_focus_reporting(ctx, enabled);
+    if (st == GIBSON_ERR_IO) gibson_last_error_message(err, n);
+    return st;
+}
 static int32_t gibson_go_frame_size(gibson_context_t *ctx, uint16_t *c, uint16_t *r, char *err, size_t n) {
 	int32_t st = gibson_get_frame_size(ctx, c, r);
 	if (st != GIBSON_OK) gibson_last_error_message(err, n);
@@ -125,10 +135,12 @@ func newError(op string, st C.int32_t, buf *[errCap]C.char) error {
 type EventType int32
 
 const (
-	EventNone   EventType = C.GIBSON_EVENT_NONE
-	EventKey    EventType = C.GIBSON_EVENT_KEY
-	EventPaste  EventType = C.GIBSON_EVENT_PASTE
-	EventResize EventType = C.GIBSON_EVENT_RESIZE
+	EventNone        EventType = C.GIBSON_EVENT_NONE
+	EventKey         EventType = C.GIBSON_EVENT_KEY
+	EventPaste       EventType = C.GIBSON_EVENT_PASTE
+	EventResize      EventType = C.GIBSON_EVENT_RESIZE
+	EventFocusGained EventType = C.GIBSON_EVENT_FOCUS_GAINED
+	EventFocusLost   EventType = C.GIBSON_EVENT_FOCUS_LOST
 )
 
 // KeyKind says how to read a KEY event's KeyCode. GIBSON_KEY_* occupy U+1001-U+100D, which are also
@@ -398,6 +410,31 @@ func (c *Context) PollEventKind(timeoutMs uint32) (Event, error) {
 // and HasKind is false.
 func (c *Context) PollEvent(timeoutMs uint32) (Event, error) {
 	return c.poll("PollEvent", timeoutMs, false)
+}
+
+// TerminalSize returns live geometry even before render. Headless resize takes effect on poll;
+// redirected or failed/zero terminal measurements use the 80x24 ABI fallback.
+func (c *Context) TerminalSize() (cols, rows uint16, err error) {
+	var cc, rr C.uint16_t
+	var buf [errCap]C.char
+	if st := C.gibson_go_terminal_size(c.ptr, &cc, &rr, &buf[0], errCap); st != C.GIBSON_OK {
+		return 0, 0, newError("TerminalSize", st, &buf)
+	}
+	return uint16(cc), uint16(rr), nil
+}
+
+// SetFocusReporting requests notifications; it is a headless no-op and Close restores it.
+// Success does not guarantee terminal support.
+func (c *Context) SetFocusReporting(enabled bool) error {
+	var en C.int32_t
+	if enabled {
+		en = 1
+	}
+	var buf [errCap]C.char
+	if st := C.gibson_go_focus_reporting(c.ptr, en, &buf[0], errCap); st != C.GIBSON_OK {
+		return newError("SetFocusReporting", st, &buf)
+	}
+	return nil
 }
 
 // FrameSize returns (cols, rows) of the most recently rendered frame, (0, 0) if there is none yet.

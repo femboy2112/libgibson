@@ -52,3 +52,13 @@ cargo build --release
 export LIBGIBSON_LIBRARY="$PWD/target/release/libgibson.so"
 python bindings/python/example.py
 ```
+
+## Geometry and focus
+
+`ctx.terminal_size()` returns live `(columns, rows)` before rendering. A headless
+context applies an injected resize when it is polled; a failed terminal measurement
+uses the ABI's `80x24` fallback. `ctx.set_focus_reporting(True)` requests focus
+notifications; poll for `EventType.FOCUS_GAINED` and `EventType.FOCUS_LOST`.
+Disable with `False`; closing the context restores the terminal. The request is a
+headless no-op and does not guarantee terminal support. These operations require the
+additive v0.7 native symbols even though the ABI version remains 1.

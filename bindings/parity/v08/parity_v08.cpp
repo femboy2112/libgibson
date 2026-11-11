@@ -132,6 +132,8 @@ std::string type_name(int32_t t) {
     case GIBSON_EVENT_KEY: return "KEY";
     case GIBSON_EVENT_PASTE: return "PASTE";
     case GIBSON_EVENT_RESIZE: return "RESIZE";
+    case GIBSON_EVENT_FOCUS_GAINED: return "FOCUS_GAINED";
+    case GIBSON_EVENT_FOCUS_LOST: return "FOCUS_LOST";
     default: return "NONE";
     }
 }
@@ -401,6 +403,13 @@ private:
             std::string st = "OK";  // Context::render() throws without the status
             try { ctx_->render(); } catch (const std::runtime_error&) { st = "WRAPPER_RAISED"; }
             Rec().s("id", id).s("k", "render").s("st", st).emit(out_);
+        } else if (op == "terminal_size") {
+            std::pair<uint16_t, uint16_t> sz(0, 0);
+            int st = status_of([&] { sz = ctx_->terminal_size(); });
+            Rec().i("cols", sz.first).s("id", id).s("k", "terminal_size").i("rows", sz.second).s("st", st_name(st)).emit(out_);
+        } else if (op == "focus_reporting") {
+            int st = status_of([&] { ctx_->set_focus_reporting(arg(0) == "1"); });
+            Rec().s("id", id).s("k", "focus_reporting").s("st", st_name(st)).emit(out_);
         } else if (op == "geom") {
             std::pair<uint16_t, uint16_t> sz(0, 0);
             int st = status_of([&] { sz = ctx_->frame_size(); });
@@ -472,6 +481,8 @@ private:
                 ev = gibson::Event::legacy_key(cp_of(arg(0)), static_cast<uint8_t>(num(1)));  // kind-less call
             } else if (op == "push_paste") {
                 ev = gibson::Event::paste_text(unhex(arg(0)));
+            } else if (op == "push_focus") {
+                ev.type = arg(0) == "GAINED" ? GIBSON_EVENT_FOCUS_GAINED : GIBSON_EVENT_FOCUS_LOST;
             } else {
                 ev = gibson::Event::resize(static_cast<uint16_t>(num(0)), static_cast<uint16_t>(num(1)));
             }
