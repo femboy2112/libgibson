@@ -379,6 +379,80 @@ fn standalone_renderer_must_not_share_cache_between_writers() {
     );
 }
 
+// A writer's address is not its destination identity. This single writer can
+// redirect internally while retaining exactly the same address for every call.
+#[test]
+#[ignore = "open: a writer can retarget without changing its address"]
+fn standalone_renderer_must_not_assume_writer_address_identifies_target() {
+    use std::{
+        cell::{Cell, RefCell},
+        io,
+        rc::Rc,
+    };
+    struct Retargetable {
+        selected: Rc<Cell<usize>>,
+        streams: Rc<RefCell<[Vec<u8>; 2]>>,
+    }
+    impl io::Write for Retargetable {
+        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+            self.streams.borrow_mut()[self.selected.get()].extend_from_slice(data);
+            Ok(data.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let selected = Rc::new(Cell::new(0));
+    let streams = Rc::new(RefCell::new([Vec::new(), Vec::new()]));
+    let mut writer = Retargetable {
+        selected: selected.clone(),
+        streams: streams.clone(),
+    };
+    let mut renderer = gibson::Renderer::new(gibson::RenderMode::Fullscreen);
+    let mut session = TerminalSession::headless(80, 24);
+    for (target, label) in [(0, "FRAME_A"), (1, "FRAME_B"), (0, "FRAME_B")] {
+        selected.set(target);
+        renderer
+            .render(
+                &mut Node::text(label, Style::default()),
+                &mut session,
+                &mut writer,
+            )
+            .unwrap();
+    }
+    let mut expected_output = Vec::new();
+    let mut fresh = gibson::Renderer::new(gibson::RenderMode::Fullscreen);
+    fresh
+        .render(
+            &mut Node::text("FRAME_B", Style::default()),
+            &mut TerminalSession::headless(80, 24),
+            &mut expected_output,
+        )
+        .unwrap();
+    let mut actual = vt100::Parser::new(24, 80, 0);
+    let mut expected = vt100::Parser::new(24, 80, 0);
+    actual.process(&streams.borrow()[0]);
+    expected.process(&expected_output);
+    assert!(expected.screen().contents().contains("FRAME_B"));
+    for row in 0..24 {
+        for col in 0..80 {
+            assert_eq!(
+                actual.screen().cell(row, col),
+                expected.screen().cell(row, col),
+                "cell {row},{col}"
+            );
+        }
+    }
+    assert_eq!(
+        actual.screen().cursor_position(),
+        expected.screen().cursor_position()
+    );
+    assert_eq!(
+        actual.screen().hide_cursor(),
+        expected.screen().hide_cursor()
+    );
+}
+
 #[test]
 fn cursor_visibility_is_retried_after_write_and_flush_failures() {
     use std::io::{self, Write};
