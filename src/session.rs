@@ -45,6 +45,11 @@ static PANIC_MOUSE_CAPTURE_INVALIDATED: AtomicBool = AtomicBool::new(false);
 /// [`take_key_releases_ended_notice`]). An atomic: the hook takes no lock.
 static KEY_RELEASES_ENDED: AtomicBool = AtomicBool::new(false);
 
+/// The owner-thread panic hook has attempted to leave raw input and bracketed paste. A caught
+/// panic leaves the session alive, so its next interactive entry must not trust its old flags.
+/// This notice is lease-scoped; it does not claim recovery of screen, cursor, renderer or capture.
+static PANIC_INPUT_MODES_INVALIDATED: AtomicBool = AtomicBool::new(false);
+
 /// Takes the panic hook's notice that reporting ended, for the Unix source to queue just before an
 /// answer it decodes (#275 review 8). One swap against the owner's
 /// [`take_key_releases_ended`](TerminalSession::take_key_releases_ended): exactly one of them
@@ -142,7 +147,10 @@ pub struct TerminalSession {
     raw_mode_enabled: bool,
     alt_screen_active: bool,
     cursor_hidden: bool,
+    /// A paste-enable may have reached the terminal and requires a disable on cleanup.
     bracketed_paste_enabled: bool,
+    /// A paste-enable write and flush succeeded since the last owner-thread panic.
+    bracketed_paste_confirmed: bool,
     /// Opt-in SGR mouse-capture reporting is on. Tracked so `restore`, `Drop` and
     /// the panic hook unwind it (the raw `input::set_mouse_capture` free function
     /// does not, so its enable leaks on any early return or panic).
@@ -206,6 +214,7 @@ impl TerminalSession {
             alt_screen_active: false,
             cursor_hidden: false,
             bracketed_paste_enabled: false,
+            bracketed_paste_confirmed: false,
             mouse_capture_enabled: false,
             mouse_capture_confirmed: false,
             focus_reporting_enabled: false,
@@ -246,6 +255,7 @@ impl TerminalSession {
             alt_screen_active: false,
             cursor_hidden: false,
             bracketed_paste_enabled: false,
+            bracketed_paste_confirmed: false,
             mouse_capture_enabled: false,
             mouse_capture_confirmed: false,
             focus_reporting_enabled: false,
@@ -327,6 +337,7 @@ impl TerminalSession {
                 if TERMINAL_LEASE.load(Ordering::SeqCst) != LEASE_AVAILABLE
                     && owner_thread() == Some(std::thread::current().id())
                 {
+                    PANIC_INPUT_MODES_INVALIDATED.store(true, Ordering::SeqCst);
                     let _ = disable_raw_mode();
                     let mut out = stdout();
                     // Disable exactly the reporting modes the owner turned on; the
@@ -358,11 +369,22 @@ impl TerminalSession {
         }
     }
 
-    /// Enables raw mode and bracketed paste for interactive operation.
+    /// Enables raw mode and bracketed paste for interactive operation. If the owner-thread panic
+    /// hook ran and the panic was caught, requests both again on the next interactive entry.
+    /// This input recovery does not restore alternate-screen, cursor, renderer or capture state.
     pub fn enter_interactive(&mut self) -> io::Result<()> {
         if !self.is_tty || self.headless {
             return Ok(());
         }
+
+        if self.restore_attempted || !self.owns_lease {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "enter_interactive after restore: this session has released the terminal",
+            ));
+        }
+
+        self.reconcile_panic_input_modes();
 
         // Identity, not liveness: record that input is now a live controlling
         // terminal, so a later hangup (after which `isatty` reports false) still
@@ -385,13 +407,39 @@ impl TerminalSession {
             self.raw_mode_enabled = true;
         }
 
-        if !self.bracketed_paste_enabled {
-            let mut out = stdout();
-            execute!(out, EnableBracketedPaste)?;
-            self.bracketed_paste_enabled = true;
-        }
+        self.enable_bracketed_paste_on(&mut stdout())?;
 
         Ok(())
+    }
+
+    fn reconcile_panic_input_modes(&mut self) {
+        if self.owns_lease && PANIC_INPUT_MODES_INVALIDATED.swap(false, Ordering::SeqCst) {
+            self.raw_mode_enabled = false;
+            // A failed panic-hook disable may have left paste enabled. Keep cleanup ownership
+            // even if raw-mode re-entry fails before another paste request can be made.
+            self.bracketed_paste_confirmed = false;
+        }
+    }
+
+    fn enable_bracketed_paste_on(&mut self, out: &mut impl Write) -> io::Result<()> {
+        if !self.bracketed_paste_confirmed {
+            // A failed write or flush may still have enabled paste at the terminal. Retain a
+            // cleanup obligation, but retry the request until a write and flush both succeed.
+            self.bracketed_paste_enabled = true;
+            execute!(out, EnableBracketedPaste)?;
+            self.bracketed_paste_confirmed = true;
+        }
+        Ok(())
+    }
+
+    fn disable_bracketed_paste_on(&mut self, out: &mut impl Write) -> io::Result<()> {
+        if !self.bracketed_paste_enabled {
+            return Ok(());
+        }
+        let result = execute!(out, DisableBracketedPaste);
+        self.bracketed_paste_enabled = false;
+        self.bracketed_paste_confirmed = false;
+        result
     }
 
     /// Enters alternate screen mode (fullscreen). A restored session no longer owns the
@@ -491,12 +539,9 @@ impl TerminalSession {
 
     /// Reconciles session state after a key-release push was lost mid screen-switch (#305):
     /// the `REPORT_KEY_RELEASE` bit is already clear after the successful pop and failed switch,
-    /// so stop delivering releases and mark reporting
-    /// disabled — but do NOT touch `raw_mode_enabled`. Unlike the panic-hook path (whose
-    /// `enabled && !pushed` reconciliation in [`key_release_reporting_live`] assumes the hook
-    /// already dropped raw mode), raw mode is still on here, so `restore` must disable it;
-    /// setting `enabled = false` also keeps the next `key_release_reporting_live` out of that
-    /// branch.
+    /// so stop delivering releases and mark reporting disabled. Raw mode is still on, so its
+    /// cleanup obligation must stay intact. Panic-triggered input invalidation is handled
+    /// separately on the next interactive entry.
     fn on_key_release_push_lost(&mut self) {
         self.key_release_reporting_enabled = false;
         crate::input::set_key_releases_delivered(false);
@@ -696,9 +741,9 @@ impl TerminalSession {
         if self.key_release_reporting_enabled && !key_releases_pushed() {
             self.key_release_reporting_enabled = false;
             crate::input::set_key_releases_delivered(false);
-            // The hook pops only after disabling raw mode: say so, so that enabling again (which
-            // enters interactive mode first) restores raw mode rather than trusting a stale flag.
-            self.raw_mode_enabled = false;
+            // The panic-input notice independently reconciles raw mode on interactive entry.
+            // That entry may already have re-enabled raw mode before Kitty is reconciled;
+            // clearing its bookkeeping here would forget a live cleanup obligation.
         } else if self.key_release_reporting_enabled && !crate::input::key_releases_delivered() {
             // An `Unsupported` answer was handed out (by whichever poll): withdraw this session's
             // push, once (claimed, so restore, `Drop` and the panic hook never pop it again).
@@ -730,8 +775,8 @@ impl TerminalSession {
     /// Whether the panic hook ended key-release reporting and nobody has said so yet (#275); true
     /// once per end, for the lease owner only, unless the Unix source took the notice first to
     /// queue it before an answer ([`take_key_releases_ended_notice`]). The poll then delivers
-    /// `Unsupported`, so a client still waiting for releases switches back to inferred holds. Notes the end here too: raw mode is
-    /// marked off (the hook left it), so the poll's `enter_interactive` restores it.
+    /// `Unsupported`, so a client still waiting for releases switches back to inferred holds.
+    /// Raw input is reconciled independently on the next interactive entry.
     /// Re-enabling does not clear it: the client must see `Unsupported` before any later answer.
     pub(crate) fn take_key_releases_ended(&mut self) -> bool {
         if !self.owns_lease || !KEY_RELEASES_ENDED.swap(false, Ordering::SeqCst) {
@@ -850,10 +895,7 @@ impl TerminalSession {
             self.cursor_hidden = false;
         }
 
-        if self.bracketed_paste_enabled {
-            record(execute!(out, DisableBracketedPaste));
-            self.bracketed_paste_enabled = false;
-        }
+        record(self.disable_bracketed_paste_on(&mut out));
 
         if self.alt_screen_active {
             record(execute!(out, LeaveAlternateScreen));
@@ -883,6 +925,7 @@ impl TerminalSession {
             REPORTING_MODES.store(0, Ordering::SeqCst);
             KEY_RELEASES_ENDED.store(false, Ordering::SeqCst);
             PANIC_MOUSE_CAPTURE_INVALIDATED.store(false, Ordering::SeqCst);
+            PANIC_INPUT_MODES_INVALIDATED.store(false, Ordering::SeqCst);
             set_owner_thread(None);
             TERMINAL_LEASE.store(LEASE_AVAILABLE, Ordering::SeqCst);
             self.owns_lease = false;
@@ -1344,5 +1387,107 @@ mod mouse_capture_fault_tests {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+}
+
+#[cfg(all(test, unix))]
+mod panic_input_fault_tests {
+    use super::*;
+
+    struct NoticeGuard(bool);
+    impl Drop for NoticeGuard {
+        fn drop(&mut self) {
+            PANIC_INPUT_MODES_INVALIDATED.store(self.0, Ordering::SeqCst);
+        }
+    }
+
+    struct FailFlush(Vec<u8>);
+    impl Write for FailFlush {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "injected flush failure",
+            ))
+        }
+    }
+
+    struct PartialThenFail(Vec<u8>);
+    impl Write for PartialThenFail {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if self.0.is_empty() {
+                let n = bytes.len().min(3);
+                self.0.extend_from_slice(&bytes[..n]);
+                Ok(n)
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "injected partial write",
+                ))
+            }
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn partial_paste_enable_write_retains_cleanup_and_retries() {
+        let mut session = TerminalSession::headless(80, 24);
+        let mut fail = PartialThenFail(Vec::new());
+        assert!(session.enable_bracketed_paste_on(&mut fail).is_err());
+        assert_eq!(fail.0, b"\x1b[?");
+        assert!(session.bracketed_paste_enabled);
+        let mut retry = Vec::new();
+        session.enable_bracketed_paste_on(&mut retry).unwrap();
+        assert_eq!(retry, b"\x1b[?2004h");
+        let mut cleanup = Vec::new();
+        session.disable_bracketed_paste_on(&mut cleanup).unwrap();
+        assert_eq!(cleanup, b"\x1b[?2004l");
+    }
+
+    #[test]
+    fn panic_invalidation_keeps_uncertain_paste_cleanup_when_raw_reentry_fails() {
+        let _serial = crate::tty_source::queries_lock();
+        let _notice = NoticeGuard(PANIC_INPUT_MODES_INVALIDATED.load(Ordering::SeqCst));
+        let mut session = TerminalSession::headless(80, 24);
+        session.owns_lease = true; // only exercise the reconciliation; no real terminal lease
+        session.raw_mode_enabled = true;
+        session.bracketed_paste_enabled = true;
+        // Model a panic-hook disable that may have failed. No new raw/paste request succeeds.
+        PANIC_INPUT_MODES_INVALIDATED.store(true, Ordering::SeqCst);
+        session.reconcile_panic_input_modes();
+        assert!(!session.raw_mode_enabled);
+        assert!(
+            session.bracketed_paste_enabled,
+            "cleanup ownership cannot be forgotten"
+        );
+        let mut cleanup = Vec::new();
+        session.disable_bracketed_paste_on(&mut cleanup).unwrap();
+        assert_eq!(cleanup, b"\x1b[?2004l");
+    }
+
+    #[test]
+    fn failed_paste_enable_flush_retains_cleanup_and_retries() {
+        let mut session = TerminalSession::headless(80, 24);
+        let mut fail = FailFlush(Vec::new());
+        assert!(session.enable_bracketed_paste_on(&mut fail).is_err());
+        assert_eq!(fail.0, b"\x1b[?2004h");
+        assert!(
+            session.bracketed_paste_enabled,
+            "the full enable might have arrived"
+        );
+        let mut retry = Vec::new();
+        session.enable_bracketed_paste_on(&mut retry).unwrap();
+        assert_eq!(retry, b"\x1b[?2004h", "retry must request paste again");
+        let mut duplicate = Vec::new();
+        session.enable_bracketed_paste_on(&mut duplicate).unwrap();
+        assert!(duplicate.is_empty());
+        let mut cleanup = Vec::new();
+        session.disable_bracketed_paste_on(&mut cleanup).unwrap();
+        assert_eq!(cleanup, b"\x1b[?2004l");
     }
 }
