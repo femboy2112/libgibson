@@ -115,6 +115,11 @@ if scripts/release/tests/test-stage-sdk-target.sh; then
 else
     no "SDK staging artifact-selection controls"
 fi
+if scripts/release/tests/test-native-sdk-archive.sh; then
+    ok "native SDK archive and cgo security controls"
+else
+    no "native SDK archive and cgo security controls"
+fi
 if scripts/release/tests/test-cleanroom-package.sh; then
     ok "cleanroom crate selection controls"
 else

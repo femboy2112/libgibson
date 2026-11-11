@@ -34,6 +34,14 @@ steps on its own. What a release promises is defined in
 
 ## 3. Run the release preflight
 
+The Linux packaging host needs `objcopy` (or an equivalent executable selected
+with `OBJCOPY`). SDK staging removes embedded `.llvmbc` and `.llvmcmd` metadata
+from the installed static archive before checksumming it; it preserves the
+original Cargo artifact. The native-archive controls compare members, symbols,
+machine code and static clients, and require a Go toolchain with the 1.27.4 /
+1.26.11 cgo security checks. This packaging prerequisite does not change the
+library's Rust MSRV or require `objcopy` on an SDK consumer's machine.
+
 ```
 ./scripts/release/preflight.sh
 ```

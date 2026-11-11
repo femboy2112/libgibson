@@ -24,6 +24,9 @@
 #   --force        if <prefix> already exists and is non-empty, remove it first.
 #   --no-build     skip `cargo build --release` (use existing artifacts under
 #                  ${CARGO_TARGET_DIR:-target}/release; provenance is unverified).
+#
+# Packaging requires objcopy (or OBJCOPY naming an equivalent executable). It is
+# a release-build tool only, not a dependency for installed SDK consumers.
 
 set -euo pipefail
 
@@ -70,6 +73,9 @@ fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
+
+OBJCOPY=${OBJCOPY:-objcopy}
+command -v -- "$OBJCOPY" >/dev/null 2>&1 || die "objcopy is required to package a native static archive (set OBJCOPY to its executable)"
 
 # Single source of truth for the version: Cargo.toml [package] version.
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
@@ -145,6 +151,15 @@ install -m 0644 include/termframe.h "$PREFIX/include/termframe.h"
 install -m 0755 "$SO" "$PREFIX/lib/libgibson.so.1"
 ln -sf libgibson.so.1 "$PREFIX/lib/libgibson.so"
 install -m 0644 "$A"  "$PREFIX/lib/libgibson.a"
+
+# The SDK exports native C ABI machine code, not Rust cross-language LTO input.
+# Go 1.27.4 scans every archive in a -L directory, even when the linker selects
+# the adjacent shared library, and refuses embedded compiler IR/options (#341).
+# Remove only these two compiler-only sections from the INSTALLED copy. Never
+# alter the selected Cargo artifact or snapshots; checksum the final archive below.
+if ! "$OBJCOPY" --remove-section=.llvmbc --remove-section=.llvmcmd "$PREFIX/lib/libgibson.a"; then
+    die "objcopy failed to prepare the installed native static archive"
+fi
 
 # License / doc payload.
 install -m 0644 README.md              "$PREFIX/share/doc/libgibson/README.md"

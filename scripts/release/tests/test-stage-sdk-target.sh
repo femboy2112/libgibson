@@ -43,7 +43,16 @@ print(json.dumps({'reason':'compiler-artifact','target':{'name':'gibson','kind':
 PY
 EOF
 chmod +x "$work/bin/cargo"
-export PATH="$work/bin:$PATH" CARGO_TARGET_DIR="$work/custom target"
+# This fixture deliberately uses five-byte fake artifacts to isolate Cargo output
+# selection. Native archive transformation is exercised separately by the real
+# compiler/objcopy controls in test-native-sdk-archive.sh.
+cat > "$work/bin/fixture-objcopy" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $# -eq 3 && $1 == --remove-section=.llvmbc && $2 == --remove-section=.llvmcmd && -f $3 ]]
+EOF
+chmod +x "$work/bin/fixture-objcopy"
+export PATH="$work/bin:$PATH" CARGO_TARGET_DIR="$work/custom target" OBJCOPY="$work/bin/fixture-objcopy"
 "$work/repo/scripts/release/stage-sdk.sh" --prefix "$work/sdk" >/dev/null
 [[ $(cat "$work/sdk/lib/libgibson.so.1") == fresh ]] || { echo 'FAIL: staged stale shared library' >&2; exit 1; }
 [[ $(cat "$work/sdk/lib/libgibson.a") == fresh ]] || { echo 'FAIL: staged stale static library' >&2; exit 1; }
@@ -75,3 +84,18 @@ printf fresh > "$CARGO_TARGET_DIR/release/libgibson.so"
 "$work/repo/scripts/release/stage-sdk.sh" --no-build --prefix "$work/prebuilt" >/dev/null
 [[ $(cat "$work/prebuilt/lib/libgibson.so.1") == fresh ]]
 echo 'PASS: staged selected cargo artifacts and rejected missing fresh output'
+
+if OBJCOPY="$work/missing-objcopy" "$work/repo/scripts/release/stage-sdk.sh" --prefix "$work/no-objcopy" >/dev/null 2>&1; then
+    echo 'FAIL: missing objcopy was accepted' >&2; exit 1
+fi
+[[ ! -e "$work/no-objcopy" ]] || { echo 'FAIL: missing tool created a staging prefix' >&2; exit 1; }
+cat > "$work/bin/failing-objcopy" <<'EOF'
+#!/bin/sh
+exit 23
+EOF
+chmod +x "$work/bin/failing-objcopy"
+if OBJCOPY="$work/bin/failing-objcopy" "$work/repo/scripts/release/stage-sdk.sh" --prefix "$work/failed-objcopy" >/dev/null 2>&1; then
+    echo 'FAIL: failed objcopy was accepted' >&2; exit 1
+fi
+[[ ! -e "$work/failed-objcopy/SHA256SUMS" ]] || { echo 'FAIL: failed archive transform produced a checksum manifest' >&2; exit 1; }
+echo 'PASS: missing or failing archive transformer fails closed'
