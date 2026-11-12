@@ -15,12 +15,23 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-Development toward **0.7.0** — a playable terminal software-graphics engine
-([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)). This is the working development
-line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 was **released on 2026-11-08** from
-`release/v0.6.0-rc` (tag `v0.6.0` → `492d0fe`) under the approved maintenance-line exception
-(below); its source-version baseline `9a899e1` is never tagged. `GIBSON_ABI_VERSION` stays 1; MSRV
-stays 1.85.
+Development toward **0.7.0**: a playable terminal software-graphics engine
+([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
+
+## [0.7.0-alpha.1] — 2026-11-12 · GitHub prerelease from `main`
+
+A **consumer alpha** of the 0.7 line, cut from `main` so an external application can pin a tag
+for the APIs it asked for. It is **not** a qualified 0.7.0. The v0.7 release gates are still open:
+- output-endpoint identity and resize geometry after a stdout redirect (#348; renderer stack
+  #338 → #339 → #343);
+- the downstream canary on this tag;
+- the separately published GPL adapter (node J);
+- SDK parity.
+
+Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload, and no Go module
+tag. `GIBSON_ABI_VERSION` stays 1 (67 symbols); MSRV stays 1.85. Everything below landed on
+`main` after v0.6.0, which was released 2026-11-08 from `release/v0.6.0-rc` (tag `v0.6.0` →
+`492d0fe`, source baseline `9a899e1`).
 
 ### Added — consumer APIs requested by an external application (Rust only)
 
