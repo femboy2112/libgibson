@@ -18,7 +18,8 @@ exact-main CI 8/8. RXVII then fixed the event-pressure harness race (#255) and b
 to `0.6.0` (merge `9a899e1`, #261), the source-version baseline, which is never tagged.
 **v0.6.0 was released on 2026-11-08** (Release Contract §1, state 2): tag `v0.6.0` → `492d0fe` on
 `release/v0.6.0-rc`, a GitHub prerelease, not on any registry. `main` has since opened
-`0.7.0-dev` for the v0.7 work below ("Longer-term horizon"). The latest published release is
+`0.7.0-dev` for the v0.7 work below ("Longer-term horizon"). The latest published releases are
+**v0.7.0-alpha.1** (2026-11-12, consumer alpha from `main` `1f37849`, not a qualified 0.7.0) and
 **v0.6.0**; **v0.5.0** (`d8c7b99`, GitHub prerelease) is the prior one. *(Until this bump the section
 described the integration as an unmerged candidate.)*
 

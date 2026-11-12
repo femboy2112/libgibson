@@ -12,6 +12,12 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.7.0-alpha.1 released (2026-11-12):** a consumer alpha cut from `main` (tag `v0.7.0-alpha.1` →
+`1f37849`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.1);
+native SDK + Python wheel/sdist; no registry, no Go tag) for an external application that pins tags.
+It is **not** a qualified 0.7.0; the v0.7 gates in the CHANGELOG remain open. `main` now reads
+`0.7.0-alpha.1`. v0.6.0 below remains the maintenance-line release.
+
 **v0.6.0 released (2026-11-08):** [v0.6.0 — Instrumental Renaissance (maintenance-line
 release)](https://github.com/femboy2112/libgibson/releases/tag/v0.6.0) is a GitHub Engineering Alpha
 prerelease (release state 2 of the Release Contract §1; Linux x86_64; native SDK archive + Python
