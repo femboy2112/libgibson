@@ -320,6 +320,11 @@ fn endpoint_child() {
             assert!(rb, "restore after A's hangup must never touch B");
             set(b, &before_b);
             report("CASE_OK");
+            // stdout is A, which just hung up: libtest's closing console write would fail
+            // with EIO and turn a passing case into a nonzero exit (a load-dependent race
+            // seen once in a full run). Route it to /dev/null; the oracle is stderr.
+            let null = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_WRONLY) };
+            assert!(null >= 0 && unsafe { libc::dup2(null, 1) } == 1);
             return;
         }
         "input" => {
