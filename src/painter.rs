@@ -264,7 +264,7 @@ fn paint_node_contents(
                     if cur_x >= max_x {
                         break;
                     }
-                    let written = surface.print_str(
+                    let (written, cut) = surface.print_str_clipped(
                         cur_x,
                         line_y,
                         span.text.as_str(),
@@ -272,6 +272,11 @@ fn paint_node_contents(
                         Some(max_x.saturating_sub(cur_x)),
                     );
                     cur_x += written;
+                    if cut {
+                        // The row ends where this span was cut; a later span must not
+                        // fill the columns it gave up.
+                        break;
+                    }
                 }
             }
         }
