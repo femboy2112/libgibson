@@ -23,7 +23,17 @@ pub fn example_path(name: &str) -> PathBuf {
     static BUILT: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
     let mut built = BUILT.get_or_init(Default::default).lock().unwrap();
     let exe = std::env::current_exe().expect("current executable");
-    let profile = exe.parent().unwrap().parent().unwrap();
+    // `target/<profile>/deps/<test>` on older Cargo; `target/<profile>/build/<pkg>/<hash>/out/<test>`
+    // with the separated build-dir layout (Rust 1.100). Find the profile directory itself.
+    let profile = exe
+        .ancestors()
+        .find(|dir| {
+            matches!(
+                dir.file_name().and_then(|n| n.to_str()),
+                Some("debug" | "release")
+            )
+        })
+        .unwrap_or_else(|| panic!("no debug/release profile directory above {}", exe.display()));
     if !built.contains(name) {
         let mut cmd = std::process::Command::new(env!("CARGO"));
         cmd.current_dir(env!("CARGO_MANIFEST_DIR"))
