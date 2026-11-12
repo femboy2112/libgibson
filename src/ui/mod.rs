@@ -24,5 +24,5 @@ pub use hit::{Eligibility, HitMap, HitMapError, PaintedRegion, ResolvedTarget};
 pub use interaction::*;
 pub use motion::{MotionPreference, MotionRole};
 pub use runtime::*;
-pub use skin::{skins, ResolvedSkin, Skin, UiEnvironment};
+pub use skin::{skins, DepthPalette, ResolvedSkin, Skin, UiEnvironment};
 pub use style::{Density, Elevation, Emphasis, Tone};

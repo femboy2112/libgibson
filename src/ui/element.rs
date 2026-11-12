@@ -47,6 +47,7 @@ pub(crate) enum ElementKind {
     Spacer,
     Text(String),
     Label(String),
+    RichLabel(crate::cell::Line),
     Heading(String),
     Code(String),
     Panel(String),
@@ -306,6 +307,28 @@ pub fn text<A>(value: impl Into<String>) -> Element<A> {
 }
 pub fn label<A>(value: impl Into<String>) -> Element<A> {
     Element::new(ElementKind::Label(value.into()))
+}
+/// A single-row label whose spans each carry their own style: a gutter that
+/// differs from its code, a heading with one coloured word.
+///
+/// Like [`label`] it is exactly one row tall and never wraps; content wider than
+/// the space it is given is clipped, so a caller's row budget stays exact. The
+/// element's own style (tone, emphasis) is the base each span's style is laid
+/// over, so a span's explicit colour wins and an unstyled span looks like a
+/// plain [`label`].
+///
+/// ```
+/// use gibson::cell::{Color, Span, Style};
+/// use gibson::ui::prelude::*;
+///
+/// let gutter: Element<()> = rich_label(vec![
+///     Span::styled("12 │ ", Style::new().dim()),
+///     Span::styled("let x = 1;", Style::new().fg(Color::Green)),
+/// ]);
+/// # let _ = gutter;
+/// ```
+pub fn rich_label<A>(line: impl Into<crate::cell::Line>) -> Element<A> {
+    Element::new(ElementKind::RichLabel(line.into()))
 }
 pub fn heading<A>(value: impl Into<String>) -> Element<A> {
     Element::new(ElementKind::Heading(value.into()))

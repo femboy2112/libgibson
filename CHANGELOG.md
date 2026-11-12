@@ -22,6 +22,39 @@ line, **not a release**: the manifest reads `0.7.0-dev`. v0.6.0 was **released o
 (below); its source-version baseline `9a899e1` is never tagged. `GIBSON_ABI_VERSION` stays 1; MSRV
 stays 1.85.
 
+### Added — consumer APIs requested by an external application (Rust only)
+
+- **`gibson::ui::rich_label(impl Into<Line>)`**: a single-row label whose spans each carry their
+  own style (a gutter that differs from its code, one coloured word in a heading). Exactly one row,
+  never wraps, clips to its width; the element's tone/emphasis is the base each span's style is
+  laid over. Text from the first line break on is dropped and control characters are removed, so
+  an unstyled rich label paints and lays out like `label`.
+- **`Context::resize(cols, rows) -> io::Result<()>`** for headless contexts: resizes the virtual
+  terminal in place, keeping the retained renderer state, so one context can be driven through a
+  sequence of geometries in tests (a `UiRuntime` frame built afterwards sees the new size). Zero
+  dimensions return `InvalidInput`; a terminal-backed context returns `Unsupported`.
+- **`gibson::text::{display_width, char_width}`**: the number of columns the painter advances for
+  text on one row (per grapheme, capped at 2; controls add nothing; a line break ends the row).
+- **Per-colour-depth skin palettes**: `Skin` gains `ansi16` and `ansi256: Option<DepthPalette>`
+  (`DepthPalette { palette, surface, well }`), used at that depth instead of nearest-colour
+  mapping of the truecolor palette, so a skin can keep, e.g., a gold accent and an amber warning
+  distinct at ANSI16 (they otherwise both map to yellow). `Skin::palette_for(depth)` exposes the
+  choice. Built-in skins carry `None` and resolve exactly as before (existing goldens unchanged).
+  The override covers palette, surface and well; title/selection/focus styles are still mapped.
+- **`ResolvedSkin::tone_collisions()`**: tone pairs whose resolved foreground and background are
+  identical at the resolved depth, for skin tests that must keep tones apart.
+- **Breaking (experimental `gibson::ui`, 0.7 minor slot):** a `Skin` written as a complete struct
+  literal must add `ansi16: None, ansi256: None`, and an exhaustive `let Skin { .. }` pattern
+  without `..` must name them; a literal using `..skins::BLACK_ICE` (or any built-in) needs no
+  change. The new inherent `Context::resize` takes precedence over a consumer extension-trait
+  method of the same name.
+- **Fixed:** a multi-span rich text row no longer paints a later span into the columns an earlier
+  span gave up when it was cut (a wide glyph that did not fit, or a line break): the row now ends
+  at the cut. Single-span text is unchanged.
+- Known, not fixed here: layout measures some joined scripts (Arabic lam-alef, ZWJ-joined Hebrew)
+  narrower than the painter paints them, for `label` and `rich_label` alike.
+- No C ABI change.
+
 ### Fixed — raw-mode restore targets the acquired terminal (#345)
 
 - A managed session now restores raw mode on the terminal it acquired, not on whatever stdin

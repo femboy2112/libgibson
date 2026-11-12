@@ -808,6 +808,55 @@ impl Context {
         self.scheduler.mark_dirty();
     }
 
+    /// Resizes a **headless** context's virtual terminal in place, keeping the same
+    /// context (renderer, root, scheduler, captured output), so a test can drive one
+    /// context through a sequence of geometries the way a real terminal's resizes would.
+    /// As on a real resize, the renderer's diff baseline is invalidated: the next frame
+    /// is a full repaint at the new size.
+    ///
+    /// This is the same effect a delivered `Resize(cols, rows)` has through
+    /// [`poll_from`](Self::poll_from): the next render lays out against the new size
+    /// (and a [`UiRuntime`](crate::ui::prelude::UiRuntime) frame built after it sees
+    /// the new width and height). No `Event::Resize` is emitted; callers that route
+    /// events through their own model should feed one themselves if they need it.
+    ///
+    /// # Errors
+    ///
+    /// * [`io::ErrorKind::Unsupported`] on a terminal-backed context: its geometry is
+    ///   observed from the terminal and cannot be overridden.
+    /// * [`io::ErrorKind::InvalidInput`] if either dimension is zero; the geometry is
+    ///   left unchanged.
+    ///
+    /// ```
+    /// use gibson::context::{Context, RenderMode};
+    /// use gibson::node::Node;
+    /// use gibson::cell::Style;
+    ///
+    /// let mut ctx = Context::headless(RenderMode::Fullscreen, 80, 24);
+    /// ctx.set_root(Node::text("hi", Style::default()));
+    /// ctx.render().unwrap();
+    /// ctx.resize(40, 15).unwrap();
+    /// ctx.render().unwrap();
+    /// assert_eq!(ctx.frame_size(), Some((40, 15)));
+    /// assert!(ctx.resize(0, 15).is_err());
+    /// ```
+    pub fn resize(&mut self, cols: u16, rows: u16) -> io::Result<()> {
+        if !self.session.is_headless() {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Context::resize applies only to a headless context; a terminal context observes its geometry from the terminal",
+            ));
+        }
+        if cols == 0 || rows == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Context::resize requires non-zero cols and rows",
+            ));
+        }
+        self.deliver_resize(cols, rows);
+        Ok(())
+    }
+
     /// Returns a snapshot of render statistics.
     ///
     /// Takes `&self`: it overlays the renderer's absolute operation counters
