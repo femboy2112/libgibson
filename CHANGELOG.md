@@ -18,6 +18,28 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
+### Added — textured facades and a grid raycaster (experimental, Rust only)
+
+- **`raster3d::Rasterizer::textured_quad(corners, &RgbRaster, &Camera) -> bool`**: draws an
+  existing raster as a perspective-correct, frustum-clipped, depth-tested quad that shares the
+  z-buffer with meshes and lines, so wireframe edges and textured facades occlude each other
+  correctly in either draw order. Not backface-culled. Work is bounded by the destination: at
+  most `14 × width × height` pixel visits per call (a convex planar quad stays near
+  `2 × width × height`), independent of texture size. (Ported from the unreleased v0.5 spatial
+  branch, with its tests.)
+- **`gibson::raycast`**: `GridMap` (including a seeded, closed, fully reachable `GridMap::maze`),
+  `RayView`, the `Texels` trait and `render` into an `RgbRaster`. Wall textures read left to
+  right on every face, with `u`, `v` in `[0, 1)`. The raycaster core is deterministic across
+  hosts (quantised angle, fixed-polynomial trig) and bounded to `2 × w × h` pixel writes plus
+  `w × max_steps` grid steps, independent of map size; positions beyond `RayView::MAX_COORD`
+  and a `plane` outside `[MIN_PLANE, MAX_PLANE]` are refused. Extracted from the Deep Signal
+  example's renderer (whose own copy is unchanged).
+- **`examples/facade_signal`**: a raycaster walking a maze, rendered live onto the facades of a 3D
+  wireframe city as the camera orbits. Text fallbacks for monochrome and small (<60×20)
+  terminals; reduced motion renders one settled frame and waits on input; refuses to run live
+  when stdout is not a terminal. `--frames N` prints receipts.
+- Consumer acceptance cases: [`docs/FACADE_SIGNAL_ACCEPTANCE.md`](docs/FACADE_SIGNAL_ACCEPTANCE.md).
+
 ## [0.7.0-alpha.1] — 2026-11-12 · GitHub prerelease from `main`
 
 A **consumer alpha** of the 0.7 line, cut from `main` so an external application can pin a tag

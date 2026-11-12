@@ -78,6 +78,8 @@ pub mod plot;
 pub mod raster;
 pub mod raster3d;
 pub mod raster_fx;
+/// Experimental grid raycaster rendering into an `RgbRaster` (see module docs).
+pub mod raycast;
 pub mod renderer;
 pub mod replication;
 pub mod scene;

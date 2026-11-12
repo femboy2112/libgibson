@@ -111,6 +111,11 @@ jobs:
         # the default `cargo test` suite. Build-only coverage is insufficient.
         run: cargo test --example skin_gallery --example polished_agent_ui --example ui_showcase --example large_collection
 
+      - name: Facade flagship example tests
+        # Visible-signal area, determinism, reduced-motion and fallback oracles for
+        # the consumer acceptance cases (docs/FACADE_SIGNAL_ACCEPTANCE.md, rows 8 and 10).
+        run: cargo test --example facade_signal
+
       - name: Documentation
         env:
           RUSTDOCFLAGS: -D warnings

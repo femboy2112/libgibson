@@ -228,6 +228,7 @@ breaking them in a pure patch:
 - `story` — narrative beat/reaction director (`Story`, `StoryDirector`, `Beat`, `TraceRetention`, …)
 - `surface_fx` — ordered endomorphisms over a realized surface
 - `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack
+- `raycast` — the grid raycaster rendering into an `RgbRaster` (0.7.0-alpha.2)
 - `temporal` — experimental temporal cell realization (`TemporalDisplayProcessor`,
   `TemporalBrailleField`, the exact RGB subcell projector, `PresentationProfile`,
   `TemporalSafetyPolicy`, `ResetPolicy`). Rust-only, introduced in the 0.3.0
