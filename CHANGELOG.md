@@ -18,6 +18,14 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
+## [0.7.0-alpha.2] — 2026-11-12 · GitHub prerelease from `main`
+
+A second **consumer alpha** of the 0.7 line, cut from `main`. It is **not** a qualified 0.7.0; the
+open v0.7 gates listed under 0.7.0-alpha.1 are unchanged. Linux x86_64 only, GitHub-only (no
+registry upload, no Go module tag). `GIBSON_ABI_VERSION` stays 1 (67 symbols, unchanged); MSRV
+stays 1.85. Everything below is additive Rust API marked EXPERIMENTAL in
+[`docs/RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md).
+
 ### Added — textured facades and a grid raycaster (experimental, Rust only)
 
 - **`raster3d::Rasterizer::textured_quad(corners, &RgbRaster, &Camera) -> bool`**: draws an
