@@ -384,9 +384,14 @@ enum Look {
     Mono,
 }
 
-fn look(cols: u16, rows: u16, depth: ColorDepth) -> Look {
-    let mono_env =
-        std::env::var_os("NO_COLOR").is_some() || std::env::var("TERM").is_ok_and(|t| t == "dumb");
+/// Whether the environment asks for no colour: a non-empty `NO_COLOR` (no-color.org,
+/// matching the library's own capability detection) or `TERM=dumb`.
+fn mono_env() -> bool {
+    std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty())
+        || std::env::var("TERM").is_ok_and(|t| t == "dumb")
+}
+
+fn look(cols: u16, rows: u16, depth: ColorDepth, mono_env: bool) -> Look {
     if mono_env || depth == ColorDepth::Mono {
         Look::Mono
     } else if cols < MIN_COLS || rows < MIN_ROWS {
@@ -396,7 +401,14 @@ fn look(cols: u16, rows: u16, depth: ColorDepth) -> Look {
     }
 }
 
-fn text_panel(look: &Look, cols: u16, rows: u16, t: f64, buildings: &[Building]) -> Node {
+fn text_panel(
+    look: &Look,
+    cols: u16,
+    rows: u16,
+    t: f64,
+    buildings: &[Building],
+    world: &Signal,
+) -> Node {
     let signals = buildings.iter().filter(|b| b.signal).count();
     let lines = match look {
         Look::TooSmall => vec![
@@ -417,7 +429,7 @@ fn text_panel(look: &Look, cols: u16, rows: u16, t: f64, buildings: &[Building])
             ),
             format!(
                 "signal walker heading: {:.0} deg",
-                ((t * 0.55).to_degrees()).rem_euclid(360.0)
+                world.walker(t).angle.to_degrees().rem_euclid(360.0)
             ),
             "q / Esc to quit".to_string(),
         ],
@@ -468,6 +480,16 @@ fn parse() -> Result<Args, String> {
     Ok(a)
 }
 
+/// The scene time actually rendered: the clock when animating, otherwise the fixed
+/// settled time 0, so a reduced-motion or static frame is identical for any clock.
+fn scene_time(animate: bool, clock: f64) -> f64 {
+    if animate {
+        clock
+    } else {
+        0.0
+    }
+}
+
 /// Raster pixels for a terminal of `cols`×`rows` (half-block: two pixel rows per cell row).
 fn raster_size(cols: u16, rows: u16) -> (u16, u16) {
     (cols, rows.saturating_mul(2))
@@ -486,11 +508,7 @@ fn receipts(a: &Args) -> io::Result<()> {
     let mut total = FrameStats::default();
     let mut last = 0;
     for f in 0..frames {
-        let t = if a.reduced {
-            0.0
-        } else {
-            a.t + f64::from(f) / f64::from(FPS)
-        };
+        let t = scene_time(!a.reduced, a.t + f64::from(f) / f64::from(FPS));
         let fs = Instant::now();
         let s = render_scene(&mut r, &mut signal, &world, &buildings, t, None);
         worst = worst.max(fs.elapsed());
@@ -543,6 +561,13 @@ fn live(a: &Args) -> io::Result<()> {
     let world = Signal::new(a.seed);
     let buildings = city(a.seed);
     let mut ctx = Context::new(RenderMode::Fullscreen)?;
+    if !ctx.is_interactive() {
+        // Not a terminal (redirected or piped): `poll_event` cannot block here, so a
+        // live loop would spin. Use the receipts mode instead.
+        drop(ctx);
+        eprintln!("facade_signal: not an interactive terminal; use --frames N or --ppm FILE");
+        std::process::exit(2);
+    }
     ctx.enter_interactive()?;
     ctx.set_max_fps(FPS);
     let mut signal = RgbRaster::new(SIGNAL_W, SIGNAL_H);
@@ -550,18 +575,18 @@ fn live(a: &Args) -> io::Result<()> {
     let start = Instant::now();
     let frame = Duration::from_secs(1) / FPS;
     let mut dirty = true;
+    let mono = mono_env();
+    let mut next_frame = Instant::now();
     let result = (|| -> io::Result<()> {
         loop {
             let (cols, rows) = ctx.session.terminal_size();
-            let mode = look(cols, rows, ctx.capabilities().color_depth);
+            let mode = look(cols, rows, ctx.capabilities().color_depth, mono);
             // Only the image animates; reduced motion and the text panels are static.
             let animate = !a.reduced && mode == Look::Image;
-            let t = if animate {
-                start.elapsed().as_secs_f64()
-            } else {
-                0.0
-            };
-            if dirty || animate {
+            let t = scene_time(animate, start.elapsed().as_secs_f64());
+            // Render when something changed, or when the next animation frame is due;
+            // input alone never forces an extra frame.
+            if dirty || (animate && Instant::now() >= next_frame) {
                 let node = if mode == Look::Image {
                     let (w, h) = raster_size(cols, rows);
                     if (r.raster.width(), r.raster.height()) != (w, h) {
@@ -570,16 +595,17 @@ fn live(a: &Args) -> io::Result<()> {
                     render_scene(&mut r, &mut signal, &world, &buildings, t, None);
                     Node::raster(r.raster.to_surface())
                 } else {
-                    text_panel(&mode, cols, rows, t, &buildings)
+                    text_panel(&mode, cols, rows, t, &buildings, &world)
                 };
                 ctx.set_root(node);
                 ctx.render_now()?;
                 dirty = false;
+                next_frame = Instant::now() + frame;
             }
             // Animating: wake once per frame. Settled (reduced motion or text mode is
             // static): block until input, so an idle terminal costs no CPU.
             let wait = if animate {
-                frame
+                next_frame.saturating_duration_since(Instant::now())
             } else {
                 Duration::from_secs(3600)
             };
@@ -711,14 +737,39 @@ mod tests {
     }
 
     #[test]
-    fn fallbacks_follow_size_and_depth() {
-        assert_eq!(look(59, 30, ColorDepth::TrueColor), Look::TooSmall);
-        assert_eq!(look(80, 19, ColorDepth::Ansi256), Look::TooSmall);
-        assert_eq!(look(80, 24, ColorDepth::Mono), Look::Mono);
-        if std::env::var_os("NO_COLOR").is_none()
-            && std::env::var("TERM").map_or(true, |t| t != "dumb")
-        {
-            assert_eq!(look(80, 24, ColorDepth::Ansi16), Look::Image);
+    fn reduced_motion_frame_is_identical_for_any_clock() {
+        let world = Signal::new(7);
+        let city = city(7);
+        let render = |clock| {
+            let mut r = Rasterizer::new(80, 48);
+            let mut s = RgbRaster::new(SIGNAL_W, SIGNAL_H);
+            render_scene(
+                &mut r,
+                &mut s,
+                &world,
+                &city,
+                scene_time(false, clock),
+                None,
+            );
+            hash(&r.raster)
+        };
+        let settled = render(0.0);
+        for clock in [0.5, 3.0, 1234.5] {
+            assert_eq!(render(clock), settled, "clock {clock}");
         }
+        assert_ne!(scene_time(true, 3.0), scene_time(false, 3.0), "control");
+    }
+
+    #[test]
+    fn fallbacks_follow_size_and_depth() {
+        assert_eq!(look(59, 30, ColorDepth::TrueColor, false), Look::TooSmall);
+        assert_eq!(look(80, 19, ColorDepth::Ansi256, false), Look::TooSmall);
+        assert_eq!(look(80, 24, ColorDepth::Mono, false), Look::Mono);
+        assert_eq!(look(80, 24, ColorDepth::Ansi16, false), Look::Image);
+        assert_eq!(
+            look(120, 40, ColorDepth::TrueColor, true),
+            Look::Mono,
+            "NO_COLOR / TERM=dumb"
+        );
     }
 }

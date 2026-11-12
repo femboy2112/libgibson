@@ -566,3 +566,19 @@ fn case7_screen_covering_quad_is_bounded() {
         r.stats.z_tests
     );
 }
+
+/// The documented per-call bound (14 × w × h pixel visits) holds even for a folded quad
+/// whose two halves cover the same screen, which exceeds 2 × w × h (independent review).
+#[test]
+fn folded_quad_stays_within_the_documented_bound() {
+    let cam = Camera::default();
+    let (w, h) = (64u16, 64u16);
+    let a = Vec3::new(-50.0, 50.0, 0.5);
+    let b = Vec3::new(50.0, 50.0, 0.5);
+    let c = Vec3::new(0.0, -100.0, 0.5);
+    let mut r = Rasterizer::new(w, h);
+    r.clear((0, 0, 0));
+    r.textured_quad([a, b, c, b], &solid(4, 4, (5, 5, 5)), &cam);
+    let wh = u64::from(w) * u64::from(h);
+    assert!(r.stats.z_tests <= 14 * wh, "z_tests {}", r.stats.z_tests);
+}

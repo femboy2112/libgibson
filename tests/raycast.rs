@@ -179,3 +179,139 @@ fn from_rows_validates_shape() {
         (3, 3, 0, GridMap::OUTSIDE)
     );
 }
+
+/// Records every texture coordinate the renderer asks for.
+struct Probe {
+    seen: std::cell::RefCell<Vec<(f64, f64)>>,
+}
+impl Texels for Probe {
+    fn wall(&self, _m: u8, u: f64, v: f64, _d: f64) -> Rgb {
+        self.seen.borrow_mut().push((u, v));
+        ((u * 255.0) as u8, 0, 0)
+    }
+    fn floor(&self, _x: f64, _y: f64, _d: f64) -> Rgb {
+        (0, 0, 0)
+    }
+    fn ceiling(&self, _x: f64, _y: f64, _d: f64) -> Rgb {
+        (0, 0, 0)
+    }
+}
+
+#[test]
+fn wall_textures_read_left_to_right_on_every_face() {
+    // From the centre of an open 9×9 room, look at the facing wall: its u must grow from
+    // left to right for each of the four headings.
+    let map = GridMap::new(9, 9);
+    for (i, angle) in [0.0, 0.5, 1.0, 1.5].iter().enumerate() {
+        let view = RayView {
+            x: 4.5,
+            y: 4.5,
+            angle: angle * std::f64::consts::PI,
+            ..RayView::default()
+        };
+        let probe = Probe {
+            seen: Default::default(),
+        };
+        let mut r2 = RgbRaster::new(32, 16);
+        render(&map, &view, &probe, &mut r2);
+        // `u` restarts at every cell boundary, so look within the single wall cell straight
+        // ahead: at 4.5 cells with plane 0.66 it spans columns 14..=18 of 32.
+        let row: Vec<u8> = (14..=18).map(|x| r2.get(x, 8).unwrap().0).collect();
+        assert!(row.windows(2).all(|w| w[0] <= w[1]), "heading {i}: {row:?}");
+        assert!(row.first() < row.last(), "heading {i}: u actually varies");
+    }
+}
+
+#[test]
+fn texture_coordinates_stay_in_the_half_open_unit_interval() {
+    let probe = Probe {
+        seen: Default::default(),
+    };
+    let map = GridMap::new(6, 6);
+    let mut r = RgbRaster::new(1, 1);
+    // The exact case that produced u == 1.0 before the fix.
+    render(
+        &map,
+        &RayView {
+            x: 2.0,
+            y: 1.0,
+            angle: 5.0 * std::f64::consts::PI / 4.0,
+            ..RayView::default()
+        },
+        &probe,
+        &mut r,
+    );
+    let maze = GridMap::maze(15, 15, 3);
+    let mut r = RgbRaster::new(48, 24);
+    for i in 0..400 {
+        let f = f64::from(i);
+        let view = RayView {
+            x: 1.0 + (f * 0.37) % 13.0,
+            y: 1.0 + (f * 0.53) % 13.0,
+            angle: f * 0.25,
+            ..RayView::default()
+        };
+        render(&maze, &view, &probe, &mut r);
+        render(
+            &map,
+            &RayView {
+                x: 1.0 + (i % 5) as f64,
+                y: 1.0 + (i / 5 % 5) as f64,
+                ..view
+            },
+            &probe,
+            &mut r,
+        );
+    }
+    let seen = probe.seen.borrow();
+    assert!(seen.len() > 1000);
+    for &(u, v) in seen.iter() {
+        assert!(
+            (0.0..1.0).contains(&u) && (0.0..1.0).contains(&v),
+            "u={u} v={v}"
+        );
+    }
+}
+
+#[test]
+fn extreme_but_finite_views_are_refused_not_panicking() {
+    let map = GridMap::maze(15, 15, 1);
+    for bad in [
+        RayView {
+            x: 1e19,
+            ..view_at(0.0)
+        },
+        RayView {
+            x: -1e19,
+            angle: std::f64::consts::PI,
+            ..view_at(0.0)
+        },
+        RayView {
+            y: 2e9,
+            ..view_at(0.0)
+        },
+        RayView {
+            plane: 1e-310,
+            ..view_at(0.0)
+        },
+        RayView {
+            plane: 1e300,
+            ..view_at(0.0)
+        },
+    ] {
+        let (_, s) = frame(&map, &bad, 16, 8);
+        assert_eq!(s, RayStats::default(), "{bad:?}");
+    }
+    // A viewer far outside a small map, but within MAX_COORD, still renders safely.
+    let (_, s) = frame(
+        &map,
+        &RayView {
+            x: 9.0e8,
+            y: -9.0e8,
+            ..view_at(0.0)
+        },
+        16,
+        8,
+    );
+    assert_eq!(s.columns, 16);
+}

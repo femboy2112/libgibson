@@ -1,12 +1,12 @@
 //! Experimental grid raycaster: a first-person view of a 2D tile map, rendered
-//! into an [`RgbRaster`] that a caller can show directly or map onto a 3D surface
+//! into an [`RgbRaster`](crate::raster::RgbRaster) that a caller can show directly or map onto a 3D surface
 //! with [`Rasterizer::textured_quad`](crate::raster3d::Rasterizer::textured_quad).
 //!
 //! The renderer is the classic DDA wall caster with floor/ceiling casting, taken
 //! out of the Deep Signal example so it can be used as a component. It owns no
 //! game state: the map, the view and the texel functions are the caller's, so the
-//! same inputs always produce the same frame (only basic IEEE operations and
-//! `sqrt` are used). Work is bounded: at most `2 × width × height` pixel writes
+//! same inputs always produce the same frame (only basic IEEE arithmetic, with
+//! sine and cosine from a fixed polynomial rather than the platform's libm). Work is bounded: at most `2 × width × height` pixel writes
 //! (every pixel once for floor/ceiling, at most once more for a wall slice) plus
 //! `width × max_steps` grid steps per call, independent of map size.
 //!
@@ -145,6 +145,19 @@ pub struct RayView {
     pub max_steps: u32,
 }
 
+impl RayView {
+    /// Largest accepted `|x|` / `|y|`: far beyond any `u16` map, small enough that
+    /// cell indices and DDA steps cannot overflow.
+    pub const MAX_COORD: f64 = 1.0e9;
+    /// Smallest accepted `plane` (field of view ≈ 0.0001°).
+    pub const MIN_PLANE: f64 = 1.0e-6;
+    /// Largest accepted `plane` (field of view ≈ 179.99°).
+    pub const MAX_PLANE: f64 = 1.0e6;
+}
+
+/// The largest `f64` below 1.0.
+const LAST_BELOW_ONE: f64 = 1.0 - f64::EPSILON / 2.0;
+
 impl Default for RayView {
     fn default() -> Self {
         Self {
@@ -179,8 +192,12 @@ pub struct RayStats {
 
 /// Renders `view` of `map` into `out` (any size; a zero-sized raster is a no-op).
 /// Every pixel is written by the floor/ceiling pass; wall slices then overwrite
-/// their columns. Non-finite view values, or a non-positive `plane`, render nothing
-/// and return default stats.
+/// their columns. Wall textures run left to right as seen by the viewer (`u` grows
+/// to the right on every face) and `u`, `v` stay in `[0, 1)`.
+///
+/// Refused (nothing rendered, default stats): non-finite view values; a position
+/// further than [`RayView::MAX_COORD`] from the origin; a `plane` outside
+/// `[RayView::MIN_PLANE, RayView::MAX_PLANE]`.
 pub fn render(
     map: &GridMap,
     view: &RayView,
@@ -194,7 +211,9 @@ pub fn render(
         || ![view.x, view.y, view.angle, view.plane]
             .iter()
             .all(|v| v.is_finite())
-        || view.plane <= 0.0
+        || view.x.abs() > RayView::MAX_COORD
+        || view.y.abs() > RayView::MAX_COORD
+        || !(RayView::MIN_PLANE..=RayView::MAX_PLANE).contains(&view.plane)
     {
         return stats;
     }
@@ -278,15 +297,17 @@ pub fn render(
             view.y + dist * rdy
         };
         u -= u.floor();
-        if (!vertical && rdx > 0.0) || (vertical && rdy < 0.0) {
-            u = 1.0 - u;
+        // Mirror the faces whose world coordinate runs right-to-left on screen, so the
+        // texture reads left to right on every face; keep `u` below 1 after the flip.
+        if (!vertical && rdx < 0.0) || (vertical && rdy > 0.0) {
+            u = (1.0 - u).min(LAST_BELOW_ONE);
         }
         let line = focal / dist;
         let top = horizon - line / 2.0;
         let y0 = top.max(0.0).floor() as i32;
         let y1 = (horizon + line / 2.0).min(f64::from(h)).ceil() as i32;
         for y in y0..y1 {
-            let v = ((f64::from(y) + 0.5 - top) / line).clamp(0.0, 0.999_999);
+            let v = ((f64::from(y) + 0.5 - top) / line).clamp(0.0, LAST_BELOW_ONE);
             out.set(x, y, texels.wall(material, u, v, dist));
             stats.pixels_written += 1;
         }

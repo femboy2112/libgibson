@@ -558,10 +558,14 @@ impl Rasterizer {
     /// backface-culled — a media plane shows its texture from either side. Returns
     /// whether any pixel was written. Fog, if set, composites as for triangles.
     ///
-    /// Work is bounded by the destination, not the texture or the quad's world size:
-    /// each of the two triangles visits only raster pixels inside its clipped bounding
-    /// box, so one call performs at most `2 × width × height` depth tests, and the
-    /// texture is sampled (never copied) once per covered pixel.
+    /// Work is bounded by the destination raster, not by the texture or the quad's
+    /// world size: each half is clipped to a polygon of at most 9 vertices and fanned
+    /// into at most 7 sub-triangles, each of which visits only the raster pixels in its
+    /// clipped bounding box, so a call makes at most `14 × width × height` pixel visits
+    /// (a convex planar quad stays near `2 × width × height`). The texture is never
+    /// copied; it is sampled once per depth test, including occluded pixels.
+    /// "Degenerate" means a half whose sub-triangles all have zero projected area; a
+    /// folded quad (non-planar, or self-overlapping) is drawn as its two triangles.
     pub fn textured_quad(
         &mut self,
         corners: [Vec3; 4],
