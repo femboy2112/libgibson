@@ -572,6 +572,32 @@ fn lower_role<A>(
         ElementKind::Spacer => Node::col(),
         ElementKind::Text(s) => Node::text_wrapped(s, style, WrapMode::WordWrap),
         ElementKind::Label(s) => Node::text(s, style).height(1.0),
+        ElementKind::RichLabel(line) => {
+            // One row: nothing from the first line break on (later spans included), and
+            // no control characters, so layout measures exactly what the painter paints.
+            let mut line = line.clone();
+            let mut ended = false;
+            line.spans.retain_mut(|span| {
+                if ended {
+                    return false;
+                }
+                let text = span.text.as_str();
+                let kept = match text.find(['\r', '\n']) {
+                    Some(at) => {
+                        ended = true;
+                        &text[..at]
+                    }
+                    None => text,
+                };
+                if kept.len() != text.len() || kept.chars().any(char::is_control) {
+                    let clean: String = kept.chars().filter(|c| !c.is_control()).collect();
+                    span.text = clean.as_str().into();
+                }
+                span.style = style.overlay(span.style);
+                true
+            });
+            Node::rich_text_wrapped(crate::cell::RichText::from(line), WrapMode::NoWrap).height(1.0)
+        }
         ElementKind::Heading(s) => Node::text(
             s,
             if el.tone == Tone::Neutral {

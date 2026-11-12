@@ -4,5 +4,5 @@ pub use super::element::*;
 pub use super::interaction::{EventOutcome, UiError};
 pub use super::motion::{MotionPreference, MotionRole};
 pub use super::runtime::*;
-pub use super::skin::{skins, Skin, UiEnvironment};
+pub use super::skin::{skins, DepthPalette, Skin, UiEnvironment};
 pub use super::style::{Density, Elevation, Emphasis, Tone};

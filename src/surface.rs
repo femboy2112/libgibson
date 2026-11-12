@@ -414,16 +414,33 @@ impl Surface {
         style: Style,
         max_width: Option<u16>,
     ) -> u16 {
+        self.print_str_clipped(x, y, text, style, max_width).0
+    }
+
+    /// [`print_str`](Self::print_str), also reporting whether the text was cut short (a line
+    /// break, or a glyph that did not fit) rather than printed to its end. A caller laying
+    /// several spans on one row must stop at a cut span: continuing would paint a later span
+    /// into the columns the cut text gave up.
+    pub(crate) fn print_str_clipped(
+        &mut self,
+        x: u16,
+        y: u16,
+        text: &str,
+        style: Style,
+        max_width: Option<u16>,
+    ) -> (u16, bool) {
         if y >= self.height || x >= self.width {
-            return 0;
+            return (0, !text.is_empty());
         }
 
         let max_adv = max_width.unwrap_or(self.width.saturating_sub(x));
         let end_x = (x + max_adv).min(self.width);
 
         let mut curr_x = x;
+        let mut cut = false;
         for grapheme in text.graphemes(true) {
             if grapheme == "\r" || grapheme == "\n" {
+                cut = true;
                 break;
             }
             // Never allow terminal control characters to reach the cell model:
@@ -451,6 +468,7 @@ impl Surface {
             }
 
             if curr_x + w > end_x {
+                cut = true;
                 break;
             }
 
@@ -459,7 +477,7 @@ impl Surface {
             curr_x += w;
         }
 
-        curr_x - x
+        (curr_x - x, cut)
     }
 
     /// Fills a rectangular region with a given cell.

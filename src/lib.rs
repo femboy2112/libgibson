@@ -96,6 +96,7 @@ pub mod story;
 pub mod surface;
 pub mod surface_fx;
 pub mod temporal;
+pub mod text;
 #[cfg(unix)]
 mod tty_source;
 // Internal renderer plumbing (the batched wire transaction — not atomic I/O, see

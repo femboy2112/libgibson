@@ -131,8 +131,32 @@ pub enum ControlRole {
     Tab,
 }
 
+/// Explicit colours a [`Skin`] uses at one reduced colour depth instead of the
+/// nearest-colour mapping of its truecolor palette.
+///
+/// Nearest-colour mapping can merge colours a skin needs kept apart: a gold accent
+/// and an amber warning both land on yellow at [`ColorDepth::Ansi16`]. A
+/// `DepthPalette` lets the skin choose, for example, `BrightYellow` for accent and
+/// `Red` for warning at that depth while keeping its RGB palette on truecolor
+/// terminals. Colours already representable at the depth (base-16 colours at
+/// Ansi16, base-16 or `Color::Ansi256` at Ansi256) are used verbatim; any other colour is
+/// still mapped to its nearest representable colour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DepthPalette {
+    pub palette: Theme,
+    pub surface: Color,
+    /// Recessed instruments and editor surface.
+    pub well: Color,
+}
+
 /// A complete design grammar. All fields are public for local customization.
 /// Theme remains a palette; it gains no new rendering or application semantics.
+///
+/// To define a skin locally, start from a built-in one so new fields keep their
+/// defaults: `Skin { name: "mine", palette, ..skins::BLACK_ICE }`. That copies the
+/// base skin's `ansi16`/`ansi256` too; built-in skins carry `None` today, but a skin
+/// with its own palette should set both explicitly (to `None` or its own
+/// [`DepthPalette`]) so a later built-in override can never replace its colours.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Skin {
     pub name: &'static str,
@@ -140,6 +164,11 @@ pub struct Skin {
     pub surface: Color,
     /// Recessed instruments and editor surface.
     pub well: Color,
+    /// Palette used at [`ColorDepth::Ansi16`] instead of nearest-colour mapping of
+    /// `palette`/`surface`/`well`; `None` keeps the mapping. See [`DepthPalette`].
+    pub ansi16: Option<DepthPalette>,
+    /// Palette used at [`ColorDepth::Ansi256`]; `None` keeps nearest-colour mapping.
+    pub ansi256: Option<DepthPalette>,
     pub chrome: Chrome,
     pub density: Density,
     pub spacing: SpacingTokens,
@@ -165,25 +194,42 @@ impl Default for Skin {
 }
 
 impl Skin {
+    /// The palette, surface and well this skin starts from at `depth`, before
+    /// quantization: the explicit [`DepthPalette`] for Ansi16/Ansi256 when one is
+    /// set, otherwise the skin's own colours.
+    pub fn palette_for(&self, depth: ColorDepth) -> DepthPalette {
+        let explicit = match depth {
+            ColorDepth::Ansi16 => self.ansi16,
+            ColorDepth::Ansi256 => self.ansi256,
+            _ => None,
+        };
+        explicit.unwrap_or(DepthPalette {
+            palette: self.palette,
+            surface: self.surface,
+            well: self.well,
+        })
+    }
+
     /// Resolve palette, geometry, glyph vocabulary, and motion policy once for
     /// an environment. Resolved styles cooperate with renderer quantization.
     pub fn resolve(&self, environment: &UiEnvironment) -> ResolvedSkin {
         let depth = environment.color_depth;
         let color = |c| quantize_color(c, depth).unwrap_or(Color::Reset);
+        let source = self.palette_for(depth);
         let palette = Theme {
-            text: color(self.palette.text),
-            text_muted: color(self.palette.text_muted),
-            accent: color(self.palette.accent),
-            success: color(self.palette.success),
-            warning: color(self.palette.warning),
-            error: color(self.palette.error),
-            border: color(self.palette.border),
-            rail: color(self.palette.rail),
-            code: color(self.palette.code),
-            bg: color(self.palette.bg),
+            text: color(source.palette.text),
+            text_muted: color(source.palette.text_muted),
+            accent: color(source.palette.accent),
+            success: color(source.palette.success),
+            warning: color(source.palette.warning),
+            error: color(source.palette.error),
+            border: color(source.palette.border),
+            rail: color(source.palette.rail),
+            code: color(source.palette.code),
+            bg: color(source.palette.bg),
         };
         let mut styles = palette.styles();
-        let surface = color(self.surface);
+        let surface = color(source.surface);
         // A skin selects its background explicitly, so its muted text must also
         // select the palette's foreground rather than inherit terminal defaults.
         styles.muted = quantize_style(Style::new().fg(palette.text_muted), depth);
@@ -263,7 +309,7 @@ impl Skin {
             chrome: self.chrome,
             background: palette.bg,
             surface,
-            well: color(self.well),
+            well: color(source.well),
             title,
             border: if mono && self.chrome == Chrome::Window {
                 Style::new().bold()
@@ -310,6 +356,34 @@ impl Skin {
     }
 }
 
+/// Whether two resolved colours select the same terminal colour: equal, or a base-16
+/// colour and the `Ansi256` index of the same palette slot.
+fn same_colour(a: Option<Color>, b: Option<Color>) -> bool {
+    const BASE16: [Color; 16] = [
+        Color::Black,
+        Color::Red,
+        Color::Green,
+        Color::Yellow,
+        Color::Blue,
+        Color::Magenta,
+        Color::Cyan,
+        Color::White,
+        Color::BrightBlack,
+        Color::BrightRed,
+        Color::BrightGreen,
+        Color::BrightYellow,
+        Color::BrightBlue,
+        Color::BrightMagenta,
+        Color::BrightCyan,
+        Color::BrightWhite,
+    ];
+    let slot = |c: Color| match c {
+        Color::Ansi256(n) if n < 16 => BASE16[n as usize],
+        other => other,
+    };
+    a.map(slot) == b.map(slot)
+}
+
 /// Inspectable, capability-resolved tokens consumed by semantic lowering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResolvedSkin {
@@ -341,6 +415,50 @@ pub struct ResolvedSkin {
 }
 
 impl ResolvedSkin {
+    /// Pairs of tones whose resolved foreground **and** background colours are
+    /// identical at this skin's resolved colour depth (at [`Emphasis::Normal`]), in
+    /// declaration order. Attributes are deliberately ignored: a bold accent and a
+    /// plain warning in the same yellow still read as the same colour. A base-16
+    /// colour and the 256-colour index naming the same palette slot (`Color::Red` and
+    /// `Color::Ansi256(1)`) count as the same colour. A skin test can assert that tones a user
+    /// must tell apart, such as `Warning` and `Accent`, never collide:
+    ///
+    /// ```
+    /// use gibson::capability::ColorDepth;
+    /// use gibson::ui::prelude::*;
+    /// for depth in [ColorDepth::Ansi16, ColorDepth::Ansi256, ColorDepth::TrueColor] {
+    ///     let env = UiEnvironment { color_depth: depth, ..UiEnvironment::default() };
+    ///     let resolved = skins::BLACK_ICE.resolve(&env);
+    ///     assert!(!resolved.tone_collisions().contains(&(Tone::Warning, Tone::Danger)));
+    /// }
+    /// ```
+    ///
+    /// At [`ColorDepth::Mono`] no colour is emitted, so colour tones collide by
+    /// construction; tone is carried there by status markers and attributes.
+    pub fn tone_collisions(&self) -> Vec<(Tone, Tone)> {
+        const TONES: [Tone; 6] = [
+            Tone::Neutral,
+            Tone::Accent,
+            Tone::Info,
+            Tone::Success,
+            Tone::Warning,
+            Tone::Danger,
+        ];
+        let mut out = Vec::new();
+        for (i, &a) in TONES.iter().enumerate() {
+            for &b in &TONES[i + 1..] {
+                let (sa, sb) = (
+                    self.style(a, Emphasis::Normal),
+                    self.style(b, Emphasis::Normal),
+                );
+                if same_colour(sa.fg, sb.fg) && same_colour(sa.bg, sb.bg) {
+                    out.push((a, b));
+                }
+            }
+        }
+        out
+    }
+
     pub fn style(&self, tone: Tone, emphasis: Emphasis) -> Style {
         let style = match tone {
             Tone::Neutral => match emphasis {
@@ -724,6 +842,8 @@ pub mod skins {
     /// Raised diagnostic windows, plum title bars, segmented meters.
     pub const VAPOR95: Skin = Skin {
         name: "Vapor95",
+        ansi16: None,
+        ansi256: None,
         palette: Theme {
             text: Color::Rgb(38, 29, 49),
             text_muted: Color::Rgb(91, 71, 105),
@@ -801,6 +921,8 @@ pub mod skins {
     /// Near-black instrumentation, sparse rails, acquisition motion.
     pub const BLACK_ICE: Skin = Skin {
         name: "Black Ice",
+        ansi16: None,
+        ansi256: None,
         palette: Theme {
             text: Color::Rgb(222, 240, 242),
             text_muted: Color::Rgb(109, 139, 145),
@@ -867,6 +989,8 @@ pub mod skins {
     /// Open editorial sections, ivory surfaces, cobalt rules, restrained motion.
     pub const SWISS_SIGNAL: Skin = Skin {
         name: "Swiss Signal",
+        ansi16: None,
+        ansi256: None,
         palette: Theme {
             text: Color::Rgb(30, 32, 35),
             text_muted: Color::Rgb(99, 102, 105),
