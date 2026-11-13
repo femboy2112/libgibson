@@ -58,6 +58,13 @@ impl Default for Camera {
         }
     }
 }
+/// Unit right/up/forward vectors of a [`Camera`]; see [`Camera::basis`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CameraBasis {
+    pub right: Vec3,
+    pub up: Vec3,
+    pub forward: Vec3,
+}
 struct View {
     position: Point,
     right: Point,
@@ -102,6 +109,26 @@ impl Camera {
             far: self.far as f64,
             width,
             height,
+        })
+    }
+    /// The camera's orthonormal look-at basis — exactly the one [`Self::project`]
+    /// and the rasterizer use: `forward` points from `position` to `target`,
+    /// `right = up × forward`, `up' = forward × right`. Projected `x` grows along
+    /// `right` and projected `y` grows *against* `up'` (pixel rows grow down).
+    /// `None` when `position == target`, `up` is parallel to the view direction,
+    /// or a component is not finite.
+    pub fn basis(&self) -> Option<CameraBasis> {
+        if !self.position.is_finite() || !self.target.is_finite() || !self.up.is_finite() {
+            return None;
+        }
+        let forward = unit(sub(p(self.target), p(self.position)))?;
+        let right = unit(cross(p(self.up), forward))?;
+        let up = cross(forward, right);
+        let v = |q: Point| Vec3::new(q[0] as f32, q[1] as f32, q[2] as f32);
+        Some(CameraBasis {
+            right: v(right),
+            up: v(up),
+            forward: v(forward),
         })
     }
     /// Project a world point inside the frustum to continuous pixel-space x/y

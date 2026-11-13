@@ -116,6 +116,11 @@ jobs:
         # the consumer acceptance cases (docs/FACADE_SIGNAL_ACCEPTANCE.md, rows 8 and 10).
         run: cargo test --example facade_signal
 
+      - name: Experience grammar example tests
+        # One semantic app through every grammar, selection surviving a live style
+        # switch (experience_lab); Album Flow's pose and fallback laws (album_flow).
+        run: cargo test --example album_flow --example experience_lab
+
       - name: Documentation
         env:
           RUSTDOCFLAGS: -D warnings
