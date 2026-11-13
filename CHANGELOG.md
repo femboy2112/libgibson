@@ -15,8 +15,52 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-Development toward **0.7.0**: a playable terminal software-graphics engine
-([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
+## [0.7.0] — 2026-11-13 · GitHub release from `main`
+
+The first **qualified 0.7 release**. Everything that landed on `main` after v0.6.0 is in it. v0.6.0
+was released 2026-11-08 from `release/v0.6.0-rc` (tag `v0.6.0` → `492d0fe`, source baseline
+`9a899e1`). The six consumer alphas below are its history: each section lists what that alpha
+added, and this section lists only what came after alpha.6. The release gates and how each was met
+are recorded in [`docs/V0_7_QUALIFICATION.md`](docs/V0_7_QUALIFICATION.md) and
+[decision 0002](docs/decisions/0002-v0.7.0-qualification.md).
+
+Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload. The Go module tag
+`bindings/go/v0.7.0` names the same commit as `v0.7.0`. `GIBSON_ABI_VERSION` stays 1 (67 symbols,
+all additive since v0.6.0's 59). MSRV stays 1.85.
+
+**What 0.7 delivers, across the alphas:**
+- A software-graphics engine path through public interfaces: raster ingest, headless event
+  injection, held-key inference, pacing, resize and lifecycle (execution-graph nodes A–I), plus
+  an in-repo clean-room framebuffer adapter (node J, #299). No GPL engine code or game data ships;
+  users supply both.
+- **A terminal lease on Linux.** A managed session restores, reads, writes and measures the
+  terminal it acquired, even after stdin or stdout is redirected (#345, #371). A restored session
+  can no longer touch the next owner's terminal (#330). The supported, refused and excluded cases
+  are in [`docs/TERMINAL_LEASE_CONTRACT.md`](docs/TERMINAL_LEASE_CONTRACT.md).
+- Recovery after a caught owner-thread panic: input (#329), and screen, cursor and renderer through
+  `Context` (#328).
+- C ABI 59 → 67, all additive: injected input, key kinds, capture drain, key-release reporting,
+  terminal size and focus events.
+- C++, Python and Go wrapper parity for headless use (v0.8 slice).
+
+**The API freeze.** Every public module now has a tier in
+[`docs/RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md) §2, and
+`tests/doc_release_contract_tiers.rs` keeps it that way. `text` is CORE (utility tier). The
+following are EXPERIMENTAL:
+- the raster and 3D stack, `ui`, `audio` and `plot`;
+- the v0.5 instrument modules;
+- `event_source` and `hold`.
+
+Experimental means no 0.7.x stability promise; §2 has the details.
+
+**Resource and latency envelope:** [`docs/V07_RESOURCE_ENVELOPE.md`](docs/V07_RESOURCE_ENVELOPE.md).
+
+**Known limitations, unchanged:**
+- Windows key doubling (#292), UNVERIFIED.
+- A shifted key in the screen-switch window (#312).
+- #15 is still present on crossterm's own reader (upstream #1128).
+- A bare `TerminalSession` caller after a caught owner panic is EXPLICITLY EXCLUDED and must
+  redraw itself (#328).
 
 ### Fixed — restore gives back the terminal the lease holds (#330)
 
