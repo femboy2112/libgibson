@@ -56,6 +56,20 @@ pub fn progress_spans(
     let width = width.max(1);
     let fraction = fraction.clamp(0.0, 1.0);
     let eighths = (fraction * (width as f32) * 8.0).round() as usize;
+    progress_spans_eighths(eighths, width, from, to, track)
+}
+
+/// [`progress_spans`] with the filled length given exactly, in eighths of a cell
+/// (clamped to `width × 8`), for callers that must not round up.
+pub fn progress_spans_eighths(
+    eighths: usize,
+    width: usize,
+    from: Color,
+    to: Color,
+    track: Color,
+) -> Vec<Span> {
+    let width = width.max(1);
+    let eighths = eighths.min(width * 8);
     let full = eighths / 8;
     let rem = eighths % 8;
 

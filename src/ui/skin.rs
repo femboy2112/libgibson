@@ -674,20 +674,74 @@ impl ResolvedSkin {
     /// Two rows: label/percentage, then a skin-specific meter. Sampling and
     /// clamping are delegated to `show::progress`; this only realizes its spans.
     pub fn progress(&self, label: &str, fraction: f32, width: u16) -> Node {
+        let fraction = unit(fraction);
+        // Formatted exactly as before (`{:>3.0}` rounds half to even), except that
+        // an unfinished job never reads 100%.
+        let mut readout = format!("{:>3.0}%", fraction * 100.0);
+        if fraction < 1.0 && readout == "100%" {
+            readout = " 99%".to_string();
+        }
+        self.progress_node(
+            label,
+            readout,
+            |inner| {
+                show::progress_spans_eighths(
+                    (fraction * f32::from(inner) * 8.0).round() as usize,
+                    usize::from(inner),
+                    self.palette.accent,
+                    self.palette.success,
+                    self.palette.border,
+                )
+            },
+            width,
+            true,
+        )
+    }
+
+    /// Discrete progress: `label done/total`, a meter rounded *down* to the
+    /// nearest eighth of a cell (never ahead of `done / total`), and no meter at
+    /// all when monochrome or 40 columns or narrower. See [`super::progress_steps`].
+    pub fn progress_steps(&self, label: &str, done: u32, total: u32, width: u16) -> Node {
+        let done = done.min(total);
+        let meter = self.environment.color_depth != ColorDepth::Mono
+            && width.min(self.environment.width) > 40;
+        self.progress_node(
+            label,
+            format!("{done}/{total}"),
+            |inner| {
+                let eighths = if total == 0 {
+                    0
+                } else {
+                    (u64::from(done) * u64::from(inner) * 8 / u64::from(total)) as usize
+                };
+                show::progress_spans_eighths(
+                    eighths,
+                    usize::from(inner),
+                    self.palette.accent,
+                    self.palette.success,
+                    self.palette.border,
+                )
+            },
+            width,
+            meter,
+        )
+    }
+
+    fn progress_node(
+        &self,
+        label: &str,
+        readout: String,
+        spans: impl FnOnce(u16) -> Vec<Span>,
+        width: u16,
+        with_meter: bool,
+    ) -> Node {
         let width = width.min(self.environment.width);
         if width == 0 {
             return Node::col().width(0.0).height(0.0);
         }
-        let fraction = unit(fraction);
         let inset = self.chrome == Chrome::Window && width > 2;
         let inner_width = if inset { width - 2 } else { width };
-        let mut meter = show::progress(
-            fraction,
-            usize::from(inner_width),
-            self.palette.accent,
-            self.palette.success,
-            self.palette.border,
-        );
+        let mut meter = Line::from_spans(spans(inner_width));
         let ascii = self.environment.glyph_mode == SubcellGlyphMode::Ascii;
         for span in &mut meter.spans {
             let glyph = span.text.as_str();
@@ -724,8 +778,16 @@ impl ResolvedSkin {
                 format!("{label} "),
                 self.style(Tone::Neutral, Emphasis::Muted),
             ),
-            Span::styled(format!("{:>3.0}%", fraction * 100.0), self.styles.accent),
+            Span::styled(readout, self.styles.accent),
         ]);
+        if !with_meter {
+            return Node::rich_text_wrapped(
+                RichText::from_lines(vec![heading]),
+                crate::WrapMode::NoWrap,
+            )
+            .width(f32::from(width))
+            .height(1.0);
+        }
         let meter =
             Node::rich_text_wrapped(RichText::from_lines(vec![meter]), crate::WrapMode::NoWrap)
                 .height(1.0);
@@ -744,6 +806,71 @@ impl ResolvedSkin {
             } else {
                 meter
             })
+    }
+
+    /// Half-block realization of fitted pixels in a box exactly `rows` tall; the
+    /// alt text instead when monochrome, the box is under 20 × 6 or there are no
+    /// pixels. See [`super::image`].
+    pub(crate) fn image(
+        &self,
+        fitted: &super::image::Fitted,
+        rows: u16,
+        alt: &str,
+        width: u16,
+    ) -> Node {
+        let width = width.min(self.environment.width);
+        let frame = Node::col().width(f32::from(width)).height(f32::from(rows));
+        let pixels = fitted.refit(width, rows.saturating_mul(2));
+        if self.environment.color_depth == ColorDepth::Mono
+            || width < 20
+            || rows < 6
+            || pixels.width == 0
+        {
+            if rows == 0 {
+                return frame;
+            }
+            let alt: String = alt
+                .split(['\r', '\n'])
+                .next()
+                .unwrap_or("")
+                .chars()
+                .filter(|c| !c.is_control())
+                .collect();
+            let line = Line::from_spans(vec![Span::styled(
+                alt,
+                self.style(Tone::Neutral, Emphasis::Muted),
+            )]);
+            return frame.child(
+                Node::rich_text_wrapped(RichText::from_lines(vec![line]), crate::WrapMode::NoWrap)
+                    .height(1.0),
+            );
+        }
+        let depth = self.environment.color_depth;
+        let w = usize::from(pixels.width);
+        let lines: Vec<Line> = pixels
+            .pixels
+            .chunks(w * 2)
+            .map(|pair| {
+                let (top, bottom) = pair.split_at(w.min(pair.len()));
+                Line::from_spans(
+                    top.iter()
+                        .enumerate()
+                        .map(|(x, &(r, g, b))| {
+                            let mut style = Style::new().fg(Color::Rgb(r, g, b));
+                            style = match bottom.get(x) {
+                                Some(&(r, g, b)) => style.bg(Color::Rgb(r, g, b)),
+                                None => style.bg(self.background),
+                            };
+                            Span::styled("▀", quantize_style(style, depth))
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+        frame.child(
+            Node::rich_text_wrapped(RichText::from_lines(lines), crate::WrapMode::NoWrap)
+                .height(f32::from(pixels.height.div_ceil(2))),
+        )
     }
 
     /// One row of `show::sparkline` samples with capability-safe realization.
