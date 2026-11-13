@@ -12,10 +12,16 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.7.0-alpha.3 released (2026-11-12):** a third consumer alpha from `main` (tag `v0.7.0-alpha.3` →
+`b36f0a6`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.3)):
+consumer UI surfaces `ui::progress_steps`, `ui::toned_label`, `ui::image` and
+`examples/status_states`. ABI v1 (67 symbols) unchanged. Not a qualified 0.7.0. `main` now reads
+`0.7.0-alpha.3`.
+
 **v0.7.0-alpha.2 released (2026-11-12):** a second consumer alpha from `main` (tag `v0.7.0-alpha.2` →
 `e0c2504`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.2)):
 textured facades (`Rasterizer::textured_quad`), `gibson::raycast` and `examples/facade_signal`, all
-experimental. ABI v1 (67 symbols) unchanged. Not a qualified 0.7.0. `main` now reads `0.7.0-alpha.2`.
+experimental. ABI v1 (67 symbols) unchanged. Not a qualified 0.7.0.
 
 **v0.7.0-alpha.1 released (2026-11-12):** a consumer alpha cut from `main` (tag `v0.7.0-alpha.1` →
 `1f37849`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.1);
