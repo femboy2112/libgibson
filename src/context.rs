@@ -485,7 +485,21 @@ impl Context {
         Ok(event)
     }
 
+    /// A caught owner-thread panic ran the panic hook, which left the alternate screen, showed the
+    /// cursor and reset SGR (#328). Before the next write through the renderer: forget the
+    /// renderer's picture of the screen (first, so a failed re-entry still leaves the next frame a
+    /// full repaint), clear the session's cursor flag and re-enter the alternate screen if the
+    /// session was on it. No-op without the notice.
+    fn recover_screen_after_caught_panic(&mut self) -> io::Result<()> {
+        if self.session.take_panic_screen_notice() {
+            self.renderer.forget_physical_state_after_panic();
+            self.session.reenter_alternate_screen_after_panic()?;
+        }
+        Ok(())
+    }
+
     fn render_internal(&mut self) -> io::Result<crate::painter::PaintContext> {
+        self.recover_screen_after_caught_panic()?;
         let mut root = match self.root.take() {
             Some(r) => r,
             None => {
@@ -549,6 +563,7 @@ impl Context {
     /// wrapping; embedded escape sequences are treated as literal text and
     /// cannot corrupt the terminal).
     pub fn commit_text(&mut self, text: &str) -> io::Result<()> {
+        self.recover_screen_after_caught_panic()?;
         self.renderer
             .commit_text(text, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -565,6 +580,7 @@ impl Context {
         text: &str,
         wrap: crate::node::WrapMode,
     ) -> io::Result<()> {
+        self.recover_screen_after_caught_panic()?;
         self.renderer
             .commit_text_with_mode(text, wrap, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -573,6 +589,7 @@ impl Context {
 
     /// Raw ANSI escape hatch. The caller is responsible for the payload.
     pub fn commit_raw_ansi_unchecked(&mut self, text: &str) -> io::Result<()> {
+        self.recover_screen_after_caught_panic()?;
         self.renderer
             .commit_raw_ansi_unchecked(text, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -586,6 +603,7 @@ impl Context {
 
     /// Commits a laid-out UI node directly to immutable scrollback.
     pub fn commit_node(&mut self, node: &mut Node) -> io::Result<()> {
+        self.recover_screen_after_caught_panic()?;
         self.renderer
             .commit_node(node, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -595,6 +613,7 @@ impl Context {
     /// Commits structured rich text to immutable scrollback, routed through the
     /// same wrapping/alignment engine as live nodes.
     pub fn commit_rich_text(&mut self, rich: &RichText) -> io::Result<()> {
+        self.recover_screen_after_caught_panic()?;
         self.renderer
             .commit_rich_text(rich, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -605,6 +624,7 @@ impl Context {
     /// treated as terminal byte streams and are **not** sanitized — escape
     /// sequences reach the terminal. Prefer the safe insertion methods.
     pub fn insert_raw_lines_before_live_unchecked(&mut self, lines: &[&str]) -> io::Result<()> {
+        self.recover_screen_after_caught_panic()?;
         self.renderer.insert_raw_lines_before_live_unchecked(
             lines,
             &mut self.session,
@@ -617,6 +637,7 @@ impl Context {
     /// Inserts safe, width-aware plain text into scrollback above the live region.
     /// Control characters are neutralized by the cell model.
     pub fn insert_text_before_live(&mut self, text: &str) -> io::Result<()> {
+        self.recover_screen_after_caught_panic()?;
         self.renderer
             .insert_text_before_live(text, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -632,6 +653,7 @@ impl Context {
         text: &str,
         wrap: crate::node::WrapMode,
     ) -> io::Result<()> {
+        self.recover_screen_after_caught_panic()?;
         self.renderer.insert_text_before_live_with_mode(
             text,
             wrap,
@@ -644,6 +666,7 @@ impl Context {
 
     /// Inserts a laid-out UI node into scrollback ABOVE the active live region.
     pub fn insert_node_before_live(&mut self, node: &mut Node) -> io::Result<()> {
+        self.recover_screen_after_caught_panic()?;
         self.renderer
             .insert_node_before_live(node, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -653,6 +676,7 @@ impl Context {
     /// Inserts safe rich text into scrollback ABOVE the active live region, using
     /// the width-aware layout engine.
     pub fn insert_rich_text_before_live(&mut self, rich: &RichText) -> io::Result<()> {
+        self.recover_screen_after_caught_panic()?;
         self.renderer
             .insert_rich_text_before_live(rich, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
@@ -666,6 +690,7 @@ impl Context {
 
     /// Clears the live region from the terminal without leaving artifacts.
     pub fn clear_live_region(&mut self) -> io::Result<()> {
+        self.recover_screen_after_caught_panic()?;
         self.renderer
             .clear_live_region(&mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();

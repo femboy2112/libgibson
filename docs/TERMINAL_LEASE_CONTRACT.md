@@ -222,6 +222,7 @@ host's raw mode by LibGibson).
    from the live lease's descriptor (rule 8), so a stale resize cannot report another terminal;
    at worst it is a redundant resize carrying the acquired terminal's true size.
 4. Still open, separate issues: #330 (a restored session can still set modes), #328 (caught
-   owner panic leaves canonical input), #268 (signals: host responsibility documented above;
+   owner panic: input recovered by #329, screen/cursor/renderer by `Context` on its next write;
+   a bare `TerminalSession` caller is not covered), #268 (signals: host responsibility documented above;
    the opt-in shutdown API is undecided). Non-Linux output pinning is UNVERIFIED
    (Windows keeps writing process stdout).

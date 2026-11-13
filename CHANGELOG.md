@@ -18,6 +18,18 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
+### Fixed — screen and cursor after a caught owner-thread panic (#328)
+
+- The panic hook leaves the alternate screen, shows the cursor and resets SGR. If the owner
+  catches the panic and keeps going, the next `Context` render, commit, insert or clear now:
+  - re-enters the alternate screen (fullscreen);
+  - hides the cursor again;
+  - repaints the frame in full instead of diffing against the pre-panic screen.
+
+  Before this, the session kept its old screen and cursor flags, so the frame was diffed onto
+  the main screen with the cursor showing. Input recovery after the same panic is #329. No
+  public API change. PTY test: `tests/caught_panic_screen_pty.rs`.
+
 ### Documentation — termination signals are the host's (#268)
 
 - [`docs/TERMINAL_LEASE_CONTRACT.md`](docs/TERMINAL_LEASE_CONTRACT.md) now states that LibGibson
