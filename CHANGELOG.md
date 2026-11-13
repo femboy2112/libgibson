@@ -18,6 +18,13 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
+## [0.7.0-alpha.4] — 2026-11-13 · GitHub prerelease from `main`
+
+A fourth **consumer alpha** of the 0.7 line, cut from `main`. It is **not** a qualified 0.7.0; the
+open v0.7 gates listed under 0.7.0-alpha.1 are unchanged. Linux x86_64 only, GitHub-only (no
+registry upload, no Go module tag). `GIBSON_ABI_VERSION` stays 1 (67 symbols, unchanged); MSRV
+stays 1.85. The additions below are Rust-only and experimental.
+
 ### Added — experience-tier consumer contract (experimental, Rust only)
 
 - **`ui::experience::Destination::unavailable(reason)`**: the destination stays reachable but is
