@@ -12,12 +12,19 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.7.0-alpha.6 released (2026-11-13):** a sixth consumer alpha from `main` (tag `v0.7.0-alpha.6` →
+`07dd8f2`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.6)):
+after a caught owner-thread panic, the next `Context` write re-enters the alternate screen, hides
+the cursor and repaints in full (#375, #328). It also adds termination-signal docs (#374, #268). No
+public API change. ABI v1 (67 symbols) unchanged. Not a qualified 0.7.0. `main` now reads
+`0.7.0-alpha.6`.
+
 **v0.7.0-alpha.5 released (2026-11-13):** a fifth consumer alpha from `main` (tag `v0.7.0-alpha.5` →
 `7de89f0`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.5)):
 `BladesStyle` / `Blades::with_style` / `Blades::with_skin` (experimental), and on Linux a managed
 session writes and measures the terminal it acquired, not the process's current fd 1 (#371, see
 [TERMINAL_LEASE_CONTRACT.md](TERMINAL_LEASE_CONTRACT.md)). ABI v1 (67 symbols) unchanged. Not a
-qualified 0.7.0. `main` now reads `0.7.0-alpha.5`.
+qualified 0.7.0.
 
 **v0.7.0-alpha.4 released (2026-11-13):** a fourth consumer alpha from `main` (tag `v0.7.0-alpha.4` →
 `0a3126a`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.4)):
