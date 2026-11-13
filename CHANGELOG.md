@@ -18,6 +18,22 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
+### Added — experience-tier consumer contract (experimental, Rust only)
+
+- **`ui::experience::Destination::unavailable(reason)`**: the destination stays reachable but is
+  never live in any grammar. Its content becomes `Unavailable: <reason>`, with no items and no
+  actions. The reason is reported in the new `RequiredSemantics::unavailable`.
+- **`ui::experience::handle_key_outcome`** and **`ExperienceRuntime::handle_key_outcome`** return
+  `KeyOutcome::{Action, Consumed, Unhandled}`.
+  - Keys a grammar does not bind, and `Intent::Back` (Esc and Backspace, which the experience,
+    having no history, never acts on), come back to the application as `Unhandled`.
+  - `handle_key` is unchanged.
+- **`PresentationState::select(key)`**: select an item by its stable id.
+- **`ui::experience::Fallback`**: presents a spatial grammar (for example Blades) only with more
+  than 40 columns, colour and full motion, and otherwise presents `Standard`.
+- **Consumer acceptance E1–E8**: [`docs/EXPERIENCE_ACCEPTANCE.md`](docs/EXPERIENCE_ACCEPTANCE.md)
+  and `tests/experience_minerva.rs`.
+
 ### Added — RGBA rasters and area filtering (experimental, Rust only)
 
 - **`raster::RgbaRaster`** (straight alpha) and `raster::Rgba`.
