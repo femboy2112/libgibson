@@ -70,6 +70,32 @@ impl Fitted {
         })
     }
 
+    /// Like [`Self::from_raster`] but with an exact area (box) filter: every
+    /// source pixel contributes, so painted or photographic art does not alias.
+    /// Reads every source pixel (work `O(source + box)`); stores only the fit.
+    pub fn from_raster_area(raster: &RgbRaster, box_w: u16, box_h: u16) -> Self {
+        let (w, h) = fit_dims(raster.width(), raster.height(), box_w, box_h);
+        if (w, h) == (raster.width(), raster.height()) {
+            return Self::from_raster(raster, box_w, box_h);
+        }
+        let src = raster.pixels();
+        let out = crate::raster::downscale_area_by(
+            raster.width(),
+            raster.height(),
+            |i| {
+                let (r, g, b) = src[i];
+                [r, g, b, 255]
+            },
+            w,
+            h,
+        );
+        Self {
+            width: out.width(),
+            height: out.height(),
+            pixels: out.pixels().iter().map(|&[r, g, b, _]| (r, g, b)).collect(),
+        }
+    }
+
     /// Fits these pixels into a (possibly smaller) box. Never enlarges.
     pub fn refit(&self, box_w: u16, box_h: u16) -> Self {
         if self.width <= box_w && self.height <= box_h {
@@ -107,6 +133,22 @@ mod tests {
         assert_eq!((f.width, f.height), (24, 24));
         assert_eq!(reads.get(), 24 * 24);
         assert_eq!(f.pixels.capacity(), 24 * 24);
+    }
+
+    #[test]
+    fn area_fit_averages_where_nearest_aliases() {
+        // 1-pixel black/white stripes: nearest picks one colour, area gives grey.
+        let mut r = RgbRaster::new(64, 2);
+        for x in 0..64 {
+            let v = if x % 2 == 0 { 0 } else { 255 };
+            r.set(x, 0, (v, v, v));
+            r.set(x, 1, (v, v, v));
+        }
+        let near = Fitted::from_raster(&r, 8, 24);
+        let area = Fitted::from_raster_area(&r, 8, 24);
+        assert_eq!((area.width, area.height), (near.width, near.height));
+        assert!(near.pixels.iter().all(|p| p.0 == 0 || p.0 == 255));
+        assert!(area.pixels.iter().all(|p| p.0 == 128), "{:?}", area.pixels);
     }
 
     #[test]

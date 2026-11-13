@@ -18,6 +18,23 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
+### Added — RGBA rasters and area filtering (experimental, Rust only)
+
+- **`raster::RgbaRaster`** (straight alpha) and `raster::Rgba`.
+  - Constructors: `from_rgba_bytes` (validated like `RgbRaster::from_rgb_bytes`), `from_pixels`
+    (takes ownership, no copy) and `from_rgb`.
+- **`raster::composite_over(&mut RgbRaster, &RgbaRaster, x, y)`**: exact integer "over"
+  compositing.
+  - Negative and out-of-range offsets are clipped, and only the overlap is touched.
+  - **`raster::flatten`** composites onto a solid background.
+- **`raster::downscale_area(&RgbaRaster, w, h)`**: an exact area (box) filter with fractional edge
+  coverage.
+  - Colour is averaged premultiplied by alpha, so soft alpha edges never fringe toward the colour
+    of transparent pixels. A fully transparent result is `[0, 0, 0, 0]`.
+  - All integer arithmetic, so the result is identical on every host.
+- **`ui::image_area`**: an opt-in `ui::image` that fits with the area filter instead of
+  nearest-pixel sampling. Painted art doesn't alias; the cost is reading every source pixel once.
+
 ### Added — camera rigs and city helpers (experimental, Rust only)
 
 - **`gibson::rig`**: `Dolly` (from → to, looking at a fixed target), `Orbit` (yaw swing and lift
