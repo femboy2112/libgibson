@@ -18,7 +18,15 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
-### Fixed — a managed session writes, and measures, the terminal it acquired (Linux)
+## [0.7.0-alpha.5] — 2026-11-13 · GitHub prerelease from `main`
+
+A fifth **consumer alpha** of the 0.7 line, cut from `main`. It is **not** a qualified 0.7.0; the
+open v0.7 gates listed under 0.7.0-alpha.1 are unchanged. Linux x86_64 only, GitHub-only (no
+registry upload, no Go module tag). `GIBSON_ABI_VERSION` stays 1 (67 symbols, unchanged); MSRV
+stays 1.85. The Blades styling below is Rust-only and experimental. The #371 fix changes Linux
+behaviour for managed sessions: managed output and size follow the fd acquired at lease time.
+
+### Fixed — a managed session writes, and measures, the terminal it acquired (Linux, #371)
 
 - A `TerminalSession` that wins the terminal lease holds its own close-on-exec duplicate of
   fd 1. `Context` frames, mode changes, restore bytes and the panic hook all write it, so
