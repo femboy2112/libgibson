@@ -276,6 +276,9 @@ pub struct Destination<A> {
     pub key: Key,
     pub title: String,
     pub content: Content<A>,
+    /// `Some(reason)` when the destination is unavailable; see
+    /// [`Destination::unavailable`].
+    pub unavailable: Option<String>,
 }
 
 impl<A> Destination<A> {
@@ -284,7 +287,25 @@ impl<A> Destination<A> {
             key: key.into(),
             title: title.into(),
             content,
+            unavailable: None,
         }
+    }
+
+    /// Marks the destination unavailable for `reason` (for example "not built").
+    ///
+    /// It stays a destination — reachable on the navigation axis, so the reason
+    /// can be read — but it is never live: its content is replaced by a single
+    /// prose line `Unavailable: <reason>` (so it has no items and no actions, and
+    /// activating it yields nothing in every grammar), and its title gains the
+    /// suffix ` (unavailable)` wherever a grammar shows destination titles. The
+    /// reason is reported in [`super::RequiredSemantics::unavailable`]. Applied
+    /// in the model, so it holds however the experience is presented.
+    pub fn unavailable(mut self, reason: impl Into<String>) -> Self {
+        let reason = reason.into();
+        self.content = Content::Prose(vec![format!("Unavailable: {reason}")]);
+        self.title = format!("{} (unavailable)", self.title);
+        self.unavailable = Some(reason);
+        self
     }
 }
 

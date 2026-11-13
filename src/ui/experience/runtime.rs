@@ -275,4 +275,20 @@ impl<A: Clone + 'static> ExperienceRuntime<A> {
         let slot = self.slots.get(self.current)?;
         super::handle_key(slot.grammar.as_ref(), experience, &mut self.state, key)
     }
+
+    /// [`Self::handle_key`] reporting whether the key was used; see
+    /// [`super::handle_key_outcome`]. An empty runtime leaves every key
+    /// [`super::KeyOutcome::Unhandled`].
+    pub fn handle_key_outcome(
+        &mut self,
+        experience: &Experience<A>,
+        key: &KeyEvent,
+    ) -> super::KeyOutcome<A> {
+        match self.slots.get(self.current) {
+            Some(slot) => {
+                super::handle_key_outcome(slot.grammar.as_ref(), experience, &mut self.state, key)
+            }
+            None => super::KeyOutcome::Unhandled,
+        }
+    }
 }

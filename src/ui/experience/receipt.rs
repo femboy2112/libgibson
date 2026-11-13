@@ -53,6 +53,9 @@ pub struct RequiredSemantics {
     /// actions a grammar surfaces are allowed but not required, and are reachable
     /// only if that grammar binds them to [`super::intent::SemanticInput::Invoke`].
     pub actions: Vec<Key>,
+    /// Every unavailable destination and its reason, in destination order
+    /// (see [`super::Destination::unavailable`]).
+    pub unavailable: Vec<(Key, String)>,
 }
 
 /// Compute the required semantics at the current presentation state. The selection
@@ -106,6 +109,12 @@ pub fn required_semantics<A>(
         }
     }
 
+    let unavailable = experience
+        .destinations
+        .iter()
+        .filter_map(|d| d.unavailable.clone().map(|reason| (d.key.clone(), reason)))
+        .collect();
+
     RequiredSemantics {
         destinations,
         active_destination,
@@ -113,6 +122,7 @@ pub fn required_semantics<A>(
         essential_items,
         all_items,
         actions,
+        unavailable,
     }
 }
 
