@@ -25,6 +25,10 @@
 //! arbitrary host-hook composition are not a supported embedding contract.
 //! Explicit restore, Drop and panic cleanup are best effort, not guarantees after
 //! abort, SIGKILL, OOM or a disconnected output stream.
+//! LibGibson installs no handler for termination signals (SIGTERM, SIGINT, SIGQUIT,
+//! SIGHUP): one delivered with its default action ends the process with the terminal
+//! still raw. A host that wants it restored catches the signal, sets a flag, leaves its
+//! loop and calls `restore()`; see `docs/TERMINAL_LEASE_CONTRACT.md` (#268).
 
 pub mod ansi;
 /// Experimental Rust-only audio realization axis: DSP synthesis, a deterministic offline

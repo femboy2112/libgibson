@@ -18,6 +18,18 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
+### Documentation — termination signals are the host's (#268)
+
+- [`docs/TERMINAL_LEASE_CONTRACT.md`](docs/TERMINAL_LEASE_CONTRACT.md) now states that LibGibson
+  installs no SIGTERM/SIGINT/SIGQUIT/SIGHUP handler, and gives the recommended host pattern:
+  - set an atomic flag in the handler;
+  - check it every iteration of a bounded `run_once` wait (a signal does not shorten the wait);
+  - restore from the loop;
+  - optionally re-raise.
+
+  It keeps SIGHUP at its default action and leaves the loop on any poll error. The crate docs
+  point there. No code change.
+
 ## [0.7.0-alpha.5] — 2026-11-13 · GitHub prerelease from `main`
 
 A fifth **consumer alpha** of the 0.7 line, cut from `main`. It is **not** a qualified 0.7.0; the
