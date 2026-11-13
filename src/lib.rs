@@ -68,6 +68,7 @@ pub mod input;
 mod input_endpoint;
 pub mod instrument_telemetry;
 pub mod layout;
+pub mod media;
 pub mod node;
 /// Validated numeric editors: schema-checked edits that refuse out-of-range or
 /// non-finite input rather than silently clamping an authoritative value (#134).
@@ -154,6 +155,7 @@ pub use input::{
     KeyModifiers, KeyReleaseReporting, MouseButton, MouseEvent, MouseKind, TextInputState,
 };
 pub use layout::{compute_layout, wrap_rich_text, wrap_text};
+pub use media::{Asset, MediaError, MediaKind, SampleFormat, SegMethod};
 pub use node::{
     AlignItems, Dimension, FlexDirection, JustifyContent, LayoutStyle, Node, NodeKind, WrapMode,
 };
