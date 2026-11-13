@@ -87,6 +87,89 @@ acquired terminal. Before this change both followed the redirect. Applications t
 around a live frame should use `Context::insert_text_before_live` / `commit_text` (which write the acquired
 terminal) rather than raw stdout.
 
+## Host responsibility: termination signals (#268)
+
+LibGibson installs **no** handler for a termination signal. The only signal it registers is
+`SIGWINCH`, for resize, through `signal-hook`'s self-pipe. SIGTERM, SIGINT sent with `kill`,
+SIGQUIT and SIGHUP therefore keep the action the host gave them, usually the default, which
+ends the process at once. No `Drop`, no panic hook and no `restore()` runs. The terminal is left
+as the session set it: raw mode (no echo, no canonical input), the cursor hidden, bracketed
+paste on, and the alternate screen or mouse/focus reporting if those were enabled. #268 measured
+this on a PTY: `lflag` was `0o105073` before and `0o5060` after a SIGTERM.
+
+In raw mode a typed **Ctrl+C is a key**, not a signal (`ISIG` is off). It arrives as
+`Event::Key` with `KeyCode::Char('c')` and the control modifier, and the application decides
+what it means. The signals above come from outside: a service manager, `timeout(1)`, `kill`, or
+a parent tearing down a PTY.
+
+**The host owns them.** If the terminal should be restored when one arrives, the host must catch
+it and leave its loop through the normal restore path:
+
+1. **Only record the signal in the handler.** Set an `AtomicBool`; storing to an atomic is
+   async-signal-safe. Never call `restore()`, `Drop` or any LibGibson API from the handler. They
+   take locks, allocate and write the terminal, and none of that is async-signal-safe.
+2. **Check the flag on every loop iteration**, then break and call `ctx.restore()` as on any
+   other quit.
+3. **Bound the wait.** An interrupted poll is resumed for the time left (`EINTR` is retried until
+   `max_wait` runs out), so a signal does **not** cut a `run_once` / `poll_event` call short. The
+   exit latency is up to `max_wait` plus one frame. Use a wait such as 50–100 ms rather than a
+   long or unbounded one. A consumer using this pattern measured a 33–45 ms exit with termios,
+   cursor and paste restored (#268).
+4. **Optionally re-raise.** To let the parent still see a death by that signal, reset it to
+   `SIG_DFL` after `restore()` and raise it again. `examples/deep_signal.rs` does this.
+5. **Optionally add a watchdog.** `restore()` writes, so it blocks if the terminal stopped
+   reading. `examples/deep_signal.rs` gives the orderly stop 3 s, then restores cooked mode from
+   the saved termios with `tcsetattr` and applies the default action anyway.
+   `tests/deep_signal_lifecycle_pty.rs` covers both cases on a PTY.
+
+```rust
+// Cargo.toml of the host: signal-hook = "0.3"
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
+use std::time::Duration;
+use gibson::input::{Event, KeyCode};
+use gibson::{Context, RenderMode};
+
+fn main() -> std::io::Result<()> {
+    let stop = Arc::new(AtomicBool::new(false));
+    for sig in [signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT] {
+        // The handler only stores `true`; everything else happens on the loop thread.
+        signal_hook::flag::register(sig, Arc::clone(&stop))?;
+    }
+    let mut ctx = Context::new(RenderMode::Inline)?;
+    while !stop.load(Ordering::Relaxed) {
+        // Bounded wait: a signal does not shorten this call.
+        match ctx.run_once(Duration::from_millis(50)) {
+            Ok(Some(Event::Key(k))) if k.code == KeyCode::Char('q') => break,
+            Ok(_) => {}
+            Err(_) => break, // includes a hung-up terminal (BrokenPipe): leave, do not retry
+        }
+    }
+    ctx.restore()
+}
+```
+
+**SIGHUP: keep the default action.** A hangup means the terminal is gone, so there is nothing to
+restore, and catching SIGHUP mostly keeps the process alive with no terminal. History: on
+releases before #269, a process that survived SIGHUP could busy-spin in the input poll (#79).
+On Linux, since #269 / #282, a poll on a hung-up terminal returns `Err(BrokenPipe)` promptly
+even with SIGHUP ignored or handled (`tests/pty_hangup_matrix.rs`). Two cautions remain:
+
+- #79's original `run_once` reproducer has not been re-run against the fix.
+- A loop that retries on poll errors would still spin.
+
+A host that does catch or ignore SIGHUP, including one started under `nohup`, must therefore leave
+its loop on any poll error, as the sample does.
+
+**Not covered:** SIGQUIT (default action: core dump, terminal left raw) and job control. A typed
+Ctrl+Z is a key in raw mode. A `kill -TSTP` / `SIGSTOP` stops the process with the terminal
+still raw, and LibGibson does not re-enter its modes on `SIGCONT`. Both are UNVERIFIED beyond
+this description.
+
+**Possible library help (not implemented, an API decision):** an opt-in shutdown request that
+`run_once` / `poll_event` honour, for example a flag the host registers or an `Event::Shutdown`.
+The poll would wake at once, and the host would still restore from its own loop. Until that
+exists, the pattern above is the contract.
+
 ## crossterm interplay (decision)
 
 On Linux the lease enters raw mode **through crossterm** whenever crossterm's `tty_fd()`
@@ -139,5 +222,6 @@ host's raw mode by LibGibson).
    from the live lease's descriptor (rule 8), so a stale resize cannot report another terminal;
    at worst it is a redundant resize carrying the acquired terminal's true size.
 4. Still open, separate issues: #330 (a restored session can still set modes), #328 (caught
-   owner panic leaves canonical input), #268 (signals). Non-Linux output pinning is UNVERIFIED
+   owner panic leaves canonical input), #268 (signals: host responsibility documented above;
+   the opt-in shutdown API is undecided). Non-Linux output pinning is UNVERIFIED
    (Windows keeps writing process stdout).
