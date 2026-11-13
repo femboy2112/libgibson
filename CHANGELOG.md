@@ -18,6 +18,15 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
+### Fixed — restore gives back the terminal the lease holds (#330)
+
+- `TerminalSession::restore()` and `Drop` now decide by lease ownership, not by the public,
+  writable `is_tty` field. Before, an owner that set `is_tty = false` and restored left the
+  terminal raw and the lease `Owned`, so no later session could acquire it. Sessions that never
+  touch `is_tty` behave exactly as before: a non-terminal or headless session never takes the
+  lease. PTY test: `tests/lease_authority_pty.rs`. That test also pins that a restored `Context`
+  cannot render or commit into the next owner's terminal (`NotConnected` since #371).
+
 ## [0.7.0-alpha.6] — 2026-11-13 · GitHub prerelease from `main`
 
 A sixth **consumer alpha** of the 0.7 line, cut from `main`. It is **not** a qualified 0.7.0; the
