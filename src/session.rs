@@ -1141,10 +1141,12 @@ impl TerminalSession {
     ///   writes fail the same way — that is the caller's signal to handle,
     ///   surfaced through the returned `Err`.
     pub fn restore(&mut self) -> io::Result<()> {
-        // Nothing to undo on a non-terminal or headless session, and a session
-        // already restored is a no-op: this is what makes Drop-after-explicit a
-        // clean close instead of a second reset blob on the wire.
-        if !self.is_tty || self.headless || self.restore_attempted {
+        // Nothing to undo on a headless session or without the lease (a non-terminal session
+        // never takes it), and a session already restored is a no-op: this is what makes
+        // Drop-after-explicit a clean close instead of a second reset blob on the wire. The
+        // lease decides, not the public `is_tty` field: an owner that clears `is_tty` still
+        // holds a raw terminal and the lease, and both must be given back (#330).
+        if self.restore_attempted || self.headless || !self.owns_lease {
             return Ok(());
         }
 
