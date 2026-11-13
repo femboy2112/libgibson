@@ -160,7 +160,7 @@ fn worker_panic_leaves_owner_terminal_intact() {
     );
 }
 
-/// Issue #11 / B1: an explicit restore whose stdout writes fail must report the
+/// Issue #11 / B1: an explicit restore whose captured output writes fail must report the
 /// first error, yet still attempt every remaining cleanup step (raw mode, via a
 /// termios path independent of the broken fd) and release the lease.
 #[test]
@@ -180,6 +180,14 @@ fn restore_reports_output_failure_but_still_tears_down() {
     assert!(
         s.contains("RESTORE_RESULT=ERR"),
         "restore() swallowed the output failure instead of reporting it: {s:?}"
+    );
+    assert!(
+        s.contains("OUTPUT_HUP_OBSERVED=1"),
+        "actual output hangup missing: {s:?}"
+    );
+    assert!(
+        s.contains("KERNEL_RAW_BEFORE=true") && s.contains("KERNEL_RAW_AFTER=false"),
+        "kernel input-mode observation missing: {s:?}"
     );
     assert!(
         s.contains("RAW_AFTER=false"),

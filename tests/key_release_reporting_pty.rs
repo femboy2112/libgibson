@@ -13,6 +13,9 @@
 //! delivered named as their presses; keys held together are released independently; nothing is
 //! written and no release is delivered when the application does not opt in (#285 unchanged).
 #![cfg(unix)]
+#[cfg(target_os = "linux")]
+#[path = "common/disconnected_output.rs"]
+mod disconnected_output;
 #[path = "common/pty_capture.rs"]
 mod pty_capture;
 
@@ -915,23 +918,18 @@ fn key_release_reporting_child() {
     } else {
         RenderMode::Fullscreen
     };
+    #[cfg(target_os = "linux")]
+    let mut output_fault =
+        (role == "focus-failed-restore").then(|| disconnected_output::OutputFault::new().unwrap());
     let mut ctx = Context::new(mode).expect("terminal context");
     #[cfg(target_os = "linux")]
     if role == "focus-failed-restore" {
-        use std::os::fd::AsRawFd;
         ctx.session.set_focus_reporting(true).unwrap();
-        // In this dedicated child, redirect only stdout to a writer that fails every write.
-        // Restore must report its failure yet still release ownership and latch the attempt.
-        let saved = unsafe { libc::dup(libc::STDOUT_FILENO) };
-        assert!(saved >= 0);
-        let full = std::fs::OpenOptions::new()
-            .write(true)
-            .open("/dev/full")
-            .unwrap();
-        assert!(unsafe { libc::dup2(full.as_raw_fd(), libc::STDOUT_FILENO) } >= 0);
+        // Disconnect the endpoint captured by this session, not a replacement fd 1.
+        let fault = output_fault.as_mut().unwrap();
+        fault.disconnect();
         let failed = ctx.restore();
-        assert!(unsafe { libc::dup2(saved, libc::STDOUT_FILENO) } >= 0);
-        unsafe { libc::close(saved) };
+        fault.restore_stdout().unwrap();
         assert!(failed.is_err(), "the restore fault must be observed");
         say("FOCUS-RESTORE-FAILED");
         let retry = ctx.session.set_focus_reporting(true);
