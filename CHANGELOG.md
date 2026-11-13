@@ -62,6 +62,30 @@ Experimental means no 0.7.x stability promise; §2 has the details.
 - A bare `TerminalSession` caller after a caught owner panic is EXPLICITLY EXCLUDED and must
   redraw itself (#328).
 
+### Changed — CORE `TerminalSession` / `Context` calls after `restore()` (behaviour change from 0.6.0)
+
+A session or context that has been restored has handed the terminal back, possibly to a newer
+owner, so it no longer changes terminal state. In v0.6.0 these calls returned `Ok`, and some
+re-entered the mode on whatever terminal stdout was.
+- **Enabling calls return `Err` with `io::ErrorKind::NotConnected`:**
+  - `TerminalSession::enter_interactive`, `enter_alternate_screen`, `set_mouse_capture(true)`,
+    `set_focus_reporting(true)` and `set_key_release_reporting(true)`;
+  - `Context::poll_event`, `run_once`, `render` and `commit` (#333, #371).
+- **Teardown calls are `Ok` no-ops:** `leave_alternate_screen`, `set_mouse_capture(false)`,
+  `set_focus_reporting(false)` and `set_key_release_reporting(false)`. Defensive cleanup after
+  restore never fails.
+
+Neither kind writes a byte, so a newer owner's terminal is never touched. Code that kept using a
+session after `restore()` should create a new session instead. The C ABI restores only in
+`gibson_destroy_context`, so C callers are unaffected. Rows:
+[`docs/TERMINAL_LEASE_CONTRACT.md`](docs/TERMINAL_LEASE_CONTRACT.md).
+
+### Fixed — Python wrapper: a native library older than the wrapper is named at import
+
+ABI 1 grows only by additions, so a 0.7 wrapper loaded against a 0.6 library passed the ABI
+check, then failed later with `AttributeError`. It now fails at import with a `RuntimeError` that
+names the missing functions (RELEASE_CONTRACT §4).
+
 ### Fixed — restore gives back the terminal the lease holds (#330)
 
 - `TerminalSession::restore()` and `Drop` now decide by lease ownership, not by the public,

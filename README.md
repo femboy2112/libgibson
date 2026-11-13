@@ -36,7 +36,7 @@ procedural audio.
 >
 > **v0.6.0 is the published engineering-alpha release** (Linux x86_64, GitHub-only
 > prerelease). It is released from the maintenance branch `release/v0.6.0-rc` (tag `v0.6.0`
-> → `492d0fe`), while `main` is the 0.7 development line (now `0.7.0-alpha.6`). The install commands
+> → `492d0fe`), while `main` carries 0.7.0 prepared in source (state 1; not yet tagged). The install commands
 > below point at v0.6.0. v0.5.0 is the prior release.
 >
 > **Known 0.6.0 limit ([#297](https://github.com/femboy2112/libgibson/issues/297)):** a headless
