@@ -1,0 +1,302 @@
+//! The presentation receipt and the semantic-preservation law.
+//!
+//! A grammar records, as it lowers, exactly which semantic ids it represented,
+//! which it drew into a raster (and so attests rather than keys), which required
+//! ids it *declared* it omitted, and which decisions it degraded.
+//! [`required_semantics`] computes what the application semantically requires at
+//! the current state, and the law is checked in two tiers:
+//!
+//! - [`PresentationReceipt::check`] — the bookkeeping tier: the receipt's claims
+//!   against `required_semantics`.
+//! - [`PresentationReceipt::check_rendered`] — the bookkeeping tier *plus* a
+//!   cross-check that every id the receipt claims to represent actually appears
+//!   as a keyed node in the lowered element tree, or is explicitly attested in
+//!   [`PresentationReceipt::rastered`]. This is what closes the "a grammar can
+//!   claim anything in its receipt" hole: a grammar that renders only a title can
+//!   no longer pass by writing an honest-looking ledger. (Pixel *content* of a
+//!   rastered region is beyond the law — that is covered by visual acceptance,
+//!   the milestone's deliberate machine-vs-human split.)
+//!
+//! The law, formally:
+//!
+//! ```text
+//!     π_σ(F_σ(A)) = required_semantics(A)   up to declared responsive omission
+//! ```
+//!
+//! A style may rearrange appearance and navigation freely, but it may not invent
+//! actions, silently lose a required action or destination, change entity
+//! identity, or move the selected object merely because the presentation changed.
+
+use super::intent::PresentationState;
+use super::model::{Content, Experience, Priority};
+use crate::ui::element::Key;
+use std::collections::BTreeSet;
+
+/// What the application semantically requires at a given state. Destinations and
+/// essential items must be represented; the active destination and the current
+/// selection identity are fixed facts a grammar must not alter. Only the
+/// *reachable* (primary) action is required — see [`required_semantics`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequiredSemantics {
+    /// Every destination must be represented (reachable) by every grammar.
+    pub destinations: Vec<Key>,
+    /// The active destination's identity.
+    pub active_destination: Option<Key>,
+    /// The current selection identity within the active destination, if any.
+    pub selected: Option<Key>,
+    /// Essential item ids in the active destination — never an allowed omission.
+    pub essential_items: Vec<Key>,
+    /// All item ids in the active destination (essential or not).
+    pub all_items: Vec<Key>,
+    /// Required action ids: the ids the navigation vocabulary can actually
+    /// *reach* at this state (the selection's / detail's primary action). Extra
+    /// actions a grammar surfaces are allowed but not required, and are reachable
+    /// only if that grammar binds them to [`super::intent::SemanticInput::Invoke`].
+    pub actions: Vec<Key>,
+}
+
+/// Compute the required semantics at the current presentation state. The selection
+/// index is resolved through [`PresentationState::selected_index`] — the one
+/// shared clamping rule — so this never disagrees with a grammar about what is
+/// selected, even after a dynamic rebuild shrinks or reorders a collection.
+pub fn required_semantics<A>(
+    experience: &Experience<A>,
+    state: &PresentationState,
+) -> RequiredSemantics {
+    let destinations: Vec<Key> = experience
+        .destinations
+        .iter()
+        .map(|d| d.key.clone())
+        .collect();
+    let active_index = state.active_index(experience);
+    let active = experience.destinations.get(active_index);
+    let active_destination = active.map(|d| d.key.clone());
+
+    let mut essential_items = Vec::new();
+    let mut all_items = Vec::new();
+    let mut actions = Vec::new();
+    let mut selected = None;
+
+    if let Some(destination) = active {
+        match &destination.content {
+            Content::Collection(items) => {
+                for item in items {
+                    all_items.push(item.key.clone());
+                    if item.priority == Priority::Essential {
+                        essential_items.push(item.key.clone());
+                    }
+                }
+                if let Some(index) = state.selected_index(experience) {
+                    if let Some(item) = items.get(index) {
+                        selected = Some(item.key.clone());
+                        // Only the primary action is reachable (Enter activates it).
+                        if let Some(primary) = item.primary() {
+                            actions.push(primary.key.clone());
+                        }
+                    }
+                }
+            }
+            Content::Detail { actions: acts, .. } => {
+                // Detail's Enter activates the first action; it alone is required.
+                if let Some(primary) = acts.first() {
+                    actions.push(primary.key.clone());
+                }
+            }
+            Content::Prose(_) | Content::Custom(_) => {}
+        }
+    }
+
+    RequiredSemantics {
+        destinations,
+        active_destination,
+        selected,
+        essential_items,
+        all_items,
+        actions,
+    }
+}
+
+/// A single way a presentation failed the preservation law.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LawViolation {
+    /// A required destination is neither represented nor declared omitted.
+    MissingDestination(Key),
+    /// The receipt's active destination disagrees with the semantic state.
+    WrongActiveDestination { expected: Option<Key>, found: Key },
+    /// The receipt's selection disagrees with the semantic state.
+    WrongSelection {
+        expected: Option<Key>,
+        found: Option<Key>,
+    },
+    /// A required (reachable) action is neither represented nor declared omitted.
+    MissingAction(Key),
+    /// An essential item was omitted — essential items may never be omitted.
+    EssentialOmitted(Key),
+    /// A required id is missing entirely (not represented, not declared omitted):
+    /// a *silent* loss, the specific thing the law forbids.
+    SilentLoss(Key),
+    /// The receipt represents an id the application never defined: an invented id.
+    Invented(Key),
+    /// The receipt claims to represent an id that appears neither as a keyed node
+    /// in the lowered element tree nor in the attested rastered set: the receipt
+    /// and the render disagree. Only reported by [`PresentationReceipt::check_rendered`].
+    UnrenderedClaim(Key),
+}
+
+/// A grammar's record of what it represented at a given state. Built by the
+/// grammar as it lowers; checked against [`required_semantics`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresentationReceipt {
+    /// Grammar name (`STANDARD`, `MEDIA_SHELF`, ...).
+    pub style: &'static str,
+    /// The active destination the grammar presented.
+    pub active_destination: Key,
+    /// The selection identity the grammar presented, if any.
+    pub selected: Option<Key>,
+    /// Destination ids represented (made reachable) by the presentation.
+    pub destinations: Vec<Key>,
+    /// Item ids represented in the active destination.
+    pub items: Vec<Key>,
+    /// Action ids represented (surfaced) by the presentation.
+    pub actions: Vec<Key>,
+    /// Ids the grammar drew into a raster rather than a keyed node — it attests to
+    /// these (their pixel content is a visual-acceptance matter, not the law's).
+    pub rastered: Vec<Key>,
+    /// Ids deliberately omitted for responsive reasons — declared, not silent.
+    pub omitted: Vec<Key>,
+    /// Human-readable notes on degraded / unsupported presentation decisions.
+    pub degraded: Vec<String>,
+}
+
+impl PresentationReceipt {
+    /// Start an empty receipt for a style at an active destination.
+    pub fn new(style: &'static str, active_destination: Key) -> Self {
+        Self {
+            style,
+            active_destination,
+            selected: None,
+            destinations: Vec::new(),
+            items: Vec::new(),
+            actions: Vec::new(),
+            rastered: Vec::new(),
+            omitted: Vec::new(),
+            degraded: Vec::new(),
+        }
+    }
+
+    fn declared_omitted(&self, key: &Key) -> bool {
+        self.omitted.contains(key)
+    }
+
+    /// The bookkeeping tier: check the receipt's claims against the required
+    /// semantics. Returns every violation found (empty = the receipt's ledger is
+    /// faithful). Does not look at the render — see [`Self::check_rendered`].
+    pub fn check(&self, required: &RequiredSemantics) -> Vec<LawViolation> {
+        let mut violations = Vec::new();
+
+        // Active destination and selection are fixed facts, not presentation choices.
+        if Some(&self.active_destination) != required.active_destination.as_ref() {
+            violations.push(LawViolation::WrongActiveDestination {
+                expected: required.active_destination.clone(),
+                found: self.active_destination.clone(),
+            });
+        }
+        if self.selected != required.selected {
+            violations.push(LawViolation::WrongSelection {
+                expected: required.selected.clone(),
+                found: self.selected.clone(),
+            });
+        }
+
+        // Every destination must be reachable; destinations may never be omitted.
+        for key in &required.destinations {
+            if !self.destinations.contains(key) {
+                violations.push(LawViolation::MissingDestination(key.clone()));
+            }
+        }
+
+        // Essential items may never be omitted; non-essential items must be either
+        // represented or *declared* omitted (never silently lost).
+        for key in &required.essential_items {
+            if self.declared_omitted(key) {
+                violations.push(LawViolation::EssentialOmitted(key.clone()));
+            } else if !self.items.contains(key) {
+                violations.push(LawViolation::SilentLoss(key.clone()));
+            }
+        }
+        for key in &required.all_items {
+            if required.essential_items.contains(key) {
+                continue;
+            }
+            if !self.items.contains(key) && !self.declared_omitted(key) {
+                violations.push(LawViolation::SilentLoss(key.clone()));
+            }
+        }
+
+        // Reachable actions must be represented or declared omitted.
+        for key in &required.actions {
+            if !self.actions.contains(key) && !self.declared_omitted(key) {
+                violations.push(LawViolation::MissingAction(key.clone()));
+            }
+        }
+
+        // A grammar may not invent an id the application never defined.
+        let defined: Vec<&Key> = required
+            .destinations
+            .iter()
+            .chain(required.all_items.iter())
+            .chain(required.actions.iter())
+            .collect();
+        for key in self
+            .destinations
+            .iter()
+            .chain(self.items.iter())
+            .chain(self.actions.iter())
+        {
+            if !defined.contains(&key) {
+                violations.push(LawViolation::Invented(key.clone()));
+            }
+        }
+
+        violations
+    }
+
+    /// The bookkeeping tier plus a render cross-check: every id the receipt claims
+    /// to represent must appear in `present_keys` (keys actually in the lowered
+    /// element tree) or in [`Self::rastered`] (ids the grammar attests it drew).
+    /// This is the real gate a grammar must pass; it closes the hole where a
+    /// receipt describes a render that was never produced.
+    pub fn check_rendered(
+        &self,
+        present_keys: &BTreeSet<Key>,
+        required: &RequiredSemantics,
+    ) -> Vec<LawViolation> {
+        let mut violations = self.check(required);
+        let rendered = |key: &Key| present_keys.contains(key) || self.rastered.contains(key);
+        for key in self
+            .destinations
+            .iter()
+            .chain(self.items.iter())
+            .chain(self.actions.iter())
+        {
+            if !rendered(key) {
+                violations.push(LawViolation::UnrenderedClaim(key.clone()));
+            }
+        }
+        violations
+    }
+
+    /// Convenience: does this presentation satisfy the bookkeeping law?
+    pub fn preserves(&self, required: &RequiredSemantics) -> bool {
+        self.check(required).is_empty()
+    }
+
+    /// The semantic projection π_σ: the represented ids this presentation claims,
+    /// ignoring layout.
+    pub fn represented(&self) -> impl Iterator<Item = &Key> {
+        self.destinations
+            .iter()
+            .chain(self.items.iter())
+            .chain(self.actions.iter())
+    }
+}
