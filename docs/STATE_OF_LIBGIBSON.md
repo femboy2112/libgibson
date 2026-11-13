@@ -12,11 +12,16 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.7.0-alpha.4 released (2026-11-13):** a fourth consumer alpha from `main` (tag `v0.7.0-alpha.4` →
+`0a3126a`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.4)):
+`ui::experience` with the E1–E8 consumer contract, `raster::RgbaRaster` / `ui::image_area`,
+`gibson::rig` / `gibson::city` / `Camera::basis`, and a `ui::modal` height fix, all experimental.
+ABI v1 (67 symbols) unchanged. Not a qualified 0.7.0. `main` now reads `0.7.0-alpha.4`.
+
 **v0.7.0-alpha.3 released (2026-11-12):** a third consumer alpha from `main` (tag `v0.7.0-alpha.3` →
 `b36f0a6`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.3)):
 consumer UI surfaces `ui::progress_steps`, `ui::toned_label`, `ui::image` and
-`examples/status_states`. ABI v1 (67 symbols) unchanged. Not a qualified 0.7.0. `main` now reads
-`0.7.0-alpha.3`.
+`examples/status_states`. ABI v1 (67 symbols) unchanged. Not a qualified 0.7.0.
 
 **v0.7.0-alpha.2 released (2026-11-12):** a second consumer alpha from `main` (tag `v0.7.0-alpha.2` →
 `e0c2504`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.2)):
