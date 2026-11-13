@@ -110,11 +110,12 @@ fn assert_inline_f2(role: &str) {
     );
     let contents = screen.contents();
     let lines: Vec<&str> = contents.lines().filter(|l| !l.trim().is_empty()).collect();
-    // The first live row may share a line with the test harness's own output, so match its end.
+    // The live region starts on the harness's own "test ... " line and overwrites it from column
+    // 0 without erasing the rest (autowrap off), so that row starts with F2's first line.
     let n = lines.len();
     assert!(
         n >= 2
-            && lines[n - 2].trim_end().ends_with("TOP STATIC LINE")
+            && lines[n - 2].starts_with("TOP STATIC LINE")
             && lines[n - 1].trim_end() == "COUNTER 2",
         "{role}: F2 not the live region; screen: {contents:?}"
     );
