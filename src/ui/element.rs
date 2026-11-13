@@ -48,6 +48,12 @@ pub(crate) enum ElementKind {
     Text(String),
     Label(String),
     RichLabel(crate::cell::Line),
+    TonedLabel(Vec<ToneSpan>),
+    Image {
+        fitted: super::image::Fitted,
+        max: (u16, u16),
+        alt: String,
+    },
     Heading(String),
     Code(String),
     Panel(String),
@@ -65,6 +71,11 @@ pub(crate) enum ElementKind {
     Progress {
         label: String,
         fraction: f32,
+    },
+    ProgressSteps {
+        label: String,
+        done: u32,
+        total: u32,
     },
     Sparkline(Vec<f32>),
     List,
@@ -330,6 +341,108 @@ pub fn label<A>(value: impl Into<String>) -> Element<A> {
 pub fn rich_label<A>(line: impl Into<crate::cell::Line>) -> Element<A> {
     Element::new(ElementKind::RichLabel(line.into()))
 }
+/// One run of text in a [`toned_label`], styled by the skin's semantic tones
+/// rather than by explicit colours, so it follows the active skin and colour depth.
+///
+/// Built with [`tone_span`]; defaults to [`Tone::Neutral`] and [`Emphasis::Normal`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToneSpan {
+    pub(crate) text: String,
+    pub(crate) tone: Tone,
+    pub(crate) emphasis: Emphasis,
+}
+impl ToneSpan {
+    pub fn tone(mut self, tone: Tone) -> Self {
+        self.tone = tone;
+        self
+    }
+    pub fn emphasis(mut self, emphasis: Emphasis) -> Self {
+        self.emphasis = emphasis;
+        self
+    }
+    pub fn strong(self) -> Self {
+        self.emphasis(Emphasis::Strong)
+    }
+    pub fn muted(self) -> Self {
+        self.emphasis(Emphasis::Muted)
+    }
+    pub fn faint(self) -> Self {
+        self.emphasis(Emphasis::Faint)
+    }
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+/// A [`ToneSpan`] with neutral tone and normal emphasis.
+pub fn tone_span(text: impl Into<String>) -> ToneSpan {
+    ToneSpan {
+        text: text.into(),
+        tone: Tone::Neutral,
+        emphasis: Emphasis::Normal,
+    }
+}
+/// A single-row label whose spans each take a semantic [`Tone`] and [`Emphasis`]
+/// from the active skin: one warning-coloured word inside a muted row.
+///
+/// Row, clipping and sanitising behave exactly as in [`rich_label`]: one row,
+/// never wraps, cut on the right, nothing after a line break, no control
+/// characters. Text that comes first is therefore the last to be cut, so put the
+/// word that must survive a narrow terminal first. In monochrome the tones fall
+/// back to the skin's mono treatment (bold, dim) and the words remain.
+///
+/// ```
+/// use gibson::ui::prelude::*;
+///
+/// let provenance: Element<()> = toned_label([
+///     tone_span("SYNTHETIC").tone(Tone::Warning).strong(),
+///     tone_span(" · image · seed 42").muted(),
+/// ]);
+/// # let _ = provenance;
+/// ```
+pub fn toned_label<A>(spans: impl IntoIterator<Item = ToneSpan>) -> Element<A> {
+    Element::new(ElementKind::TonedLabel(spans.into_iter().collect()))
+}
+/// A static picture painted with half-block cells (two pixels per cell, one
+/// above the other) inside a box of at most `max = (columns, rows)` cells.
+///
+/// The raster is resampled once, here, to fit the box with its aspect ratio
+/// preserved and never enlarged beyond one pixel per half-cell. Only the fitted
+/// pixels are kept: construction reads at most `2 × columns × rows` source
+/// pixels and allocates only that many, whatever the raster's size (an
+/// [`RgbRaster`](crate::raster::RgbRaster) is itself capped at [`crate::raster::MAX_RASTER_DIMENSION`]
+/// per side). Sampling is nearest-pixel, so fine detail can alias when shrinking.
+///
+/// The element is always exactly `rows` tall, so swapping one picture for
+/// another, or for its text, never moves the layout below it. It is as wide as
+/// the box, or narrower if the terminal (less the screen's padding) is narrower
+/// or an explicit `.width(..)` is smaller; the picture is then shrunk again,
+/// still within the same pixel budget. Like [`progress`], it does not measure
+/// its parent container, so inside a narrower panel it is clipped, not shrunk:
+/// choose `max` (or `.width(..)`) for the space you place it in.
+///
+/// `alt` is painted instead of any pixels (muted, one row, clipped on the right)
+/// when the colour depth is monochrome, when the box is smaller than 20 × 6
+/// cells, or when the raster is empty. The picture is never animated.
+///
+/// ```
+/// use gibson::ui::prelude::*;
+/// use gibson::raster::RgbRaster;
+///
+/// let decoded = RgbRaster::new(640, 480);
+/// let picture: Element<()> = image(&decoded, (40, 12), "image 640×480 · SYNTHETIC");
+/// # let _ = picture;
+/// ```
+pub fn image<A>(
+    raster: &crate::raster::RgbRaster,
+    max: (u16, u16),
+    alt: impl Into<String>,
+) -> Element<A> {
+    Element::new(ElementKind::Image {
+        fitted: super::image::Fitted::from_raster(raster, max.0, max.1.saturating_mul(2)),
+        max,
+        alt: alt.into(),
+    })
+}
 pub fn heading<A>(value: impl Into<String>) -> Element<A> {
     Element::new(ElementKind::Heading(value.into()))
 }
@@ -376,6 +489,28 @@ pub fn progress<A>(label: impl Into<String>, fraction: f32) -> Element<A> {
     Element::new(ElementKind::Progress {
         label: label.into(),
         fraction,
+    })
+}
+/// Progress counted in discrete steps: `label done/total` and a meter that never
+/// shows more than `done / total` (it rounds down to the nearest eighth of a cell).
+///
+/// Unlike [`progress`] it prints the count instead of a percentage, and it has no
+/// animation of its own, so a settled frame is the same with motion on or off.
+/// When the colour depth is monochrome, or the element is 40 columns wide or
+/// less, the meter is dropped and only the one text row is painted. `done` is
+/// clamped to `total`; a `total` of zero paints `0/0` and an empty meter.
+///
+/// ```
+/// use gibson::ui::prelude::*;
+///
+/// let job: Element<()> = progress_steps("step", 7, 30).width(48);
+/// # let _ = job;
+/// ```
+pub fn progress_steps<A>(label: impl Into<String>, done: u32, total: u32) -> Element<A> {
+    Element::new(ElementKind::ProgressSteps {
+        label: label.into(),
+        done: done.min(total),
+        total,
     })
 }
 pub fn sparkline<A>(values: &[f32]) -> Element<A> {

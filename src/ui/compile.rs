@@ -572,31 +572,24 @@ fn lower_role<A>(
         ElementKind::Spacer => Node::col(),
         ElementKind::Text(s) => Node::text_wrapped(s, style, WrapMode::WordWrap),
         ElementKind::Label(s) => Node::text(s, style).height(1.0),
-        ElementKind::RichLabel(line) => {
-            // One row: nothing from the first line break on (later spans included), and
-            // no control characters, so layout measures exactly what the painter paints.
-            let mut line = line.clone();
-            let mut ended = false;
-            line.spans.retain_mut(|span| {
-                if ended {
-                    return false;
-                }
-                let text = span.text.as_str();
-                let kept = match text.find(['\r', '\n']) {
-                    Some(at) => {
-                        ended = true;
-                        &text[..at]
-                    }
-                    None => text,
-                };
-                if kept.len() != text.len() || kept.chars().any(char::is_control) {
-                    let clean: String = kept.chars().filter(|c| !c.is_control()).collect();
-                    span.text = clean.as_str().into();
-                }
-                span.style = style.overlay(span.style);
-                true
-            });
-            Node::rich_text_wrapped(crate::cell::RichText::from(line), WrapMode::NoWrap).height(1.0)
+        ElementKind::RichLabel(line) => rich_label_node(line, style),
+        ElementKind::TonedLabel(spans) => {
+            let line = crate::cell::Line::from_spans(
+                spans
+                    .iter()
+                    .map(|s| {
+                        crate::cell::Span::styled(
+                            s.text.as_str(),
+                            cx.build.skin.style(s.tone, s.emphasis),
+                        )
+                    })
+                    .collect(),
+            );
+            rich_label_node(&line, style)
+        }
+        ElementKind::Image { fitted, max, alt } => {
+            let width = el.layout.width.unwrap_or(max.0).min(max.0).min(available);
+            cx.build.skin.image(fitted, max.1, alt, width)
         }
         ElementKind::Heading(s) => Node::text(
             s,
@@ -705,6 +698,9 @@ fn lower_role<A>(
         }
         ElementKind::Progress { label, fraction } => {
             cx.build.skin.progress(label, *fraction, width)
+        }
+        ElementKind::ProgressSteps { label, done, total } => {
+            cx.build.skin.progress_steps(label, *done, *total, width)
         }
         ElementKind::Sparkline(values) => cx.build.skin.sparkline(values, width),
         ElementKind::Table { headers, rows } => {
@@ -931,6 +927,33 @@ fn lower_role<A>(
         node = layers;
     }
     node
+}
+
+/// One row: nothing from the first line break on (later spans included), and no
+/// control characters, so layout measures exactly what the painter paints.
+fn rich_label_node(line: &crate::cell::Line, style: crate::Style) -> Node {
+    let mut line = line.clone();
+    let mut ended = false;
+    line.spans.retain_mut(|span| {
+        if ended {
+            return false;
+        }
+        let text = span.text.as_str();
+        let kept = match text.find(['\r', '\n']) {
+            Some(at) => {
+                ended = true;
+                &text[..at]
+            }
+            None => text,
+        };
+        if kept.len() != text.len() || kept.chars().any(char::is_control) {
+            let clean: String = kept.chars().filter(|c| !c.is_control()).collect();
+            span.text = clean.as_str().into();
+        }
+        span.style = style.overlay(span.style);
+        true
+    });
+    Node::rich_text_wrapped(crate::cell::RichText::from(line), WrapMode::NoWrap).height(1.0)
 }
 
 #[cfg(test)]

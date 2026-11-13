@@ -18,6 +18,37 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
+### Added — consumer surfaces requested by an external application (Rust only)
+
+- **`ui::progress_steps(label, done, total)`**: discrete progress that prints `label done/total`
+  rather than a percentage. The meter is rounded *down* to the nearest eighth of a cell, so it is
+  never ahead of `done / total`. It has no animation of its own. It is text-only (one row) when the
+  colour depth is monochrome or the element is 40 columns wide or less. `done` is clamped to
+  `total`; a `total` of 0 paints `0/0`.
+- **`ui::toned_label([tone_span(..).tone(Tone::Warning).strong(), ..])`** and **`ui::ToneSpan`**:
+  a one-row label whose spans take a semantic `Tone`/`Emphasis` from the active skin, so one word
+  can be warning-coloured inside a muted row. Rows, clipping and sanitising are the same as
+  `rich_label`: clipped on the right, so the first span is the last to be cut.
+- **`ui::image(&RgbRaster, (columns, rows), alt)`**: a static half-block picture.
+  - It is fitted inside the box with its aspect ratio preserved and is never enlarged.
+  - Fitting happens once, at construction, by nearest-pixel sampling: at most `2 × columns × rows`
+    source pixels are read and stored.
+  - The element is always exactly `rows` tall.
+  - Only `alt` (one muted row) is painted when the colour depth is monochrome, when the box is
+    under 20 × 6, or when the raster is empty.
+- **`show::progress_spans_eighths`**: a progress meter built from an exact length in eighths of a
+  cell.
+- **`examples/status_states`**: six service-state words with tones and markers, rendered at
+  40×15 mono and 80×24 ANSI-16 for every built-in skin. It reports which states share a colour at
+  each depth. The light built-in skins paint Warning and Danger alike at ANSI-16; there the marker
+  (`!` vs `×`) and the word still differ. No new API.
+- Acceptance tests: `tests/minerva_surfaces.rs`.
+
+### Changed
+
+- **`ui::progress`** no longer reads `100%` before the fraction actually reaches 1.0 (0.996 now
+  reads `99%`). Other percentages and the meter are unchanged.
+
 ## [0.7.0-alpha.2] — 2026-11-12 · GitHub prerelease from `main`
 
 A second **consumer alpha** of the 0.7 line, cut from `main`. It is **not** a qualified 0.7.0; the

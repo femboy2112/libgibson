@@ -10,6 +10,7 @@
 pub mod compile;
 pub mod element;
 pub mod hit;
+mod image;
 pub mod interaction;
 pub mod motion;
 pub mod prelude;
