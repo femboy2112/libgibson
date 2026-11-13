@@ -229,6 +229,7 @@ breaking them in a pure patch:
 - `surface_fx` — ordered endomorphisms over a realized surface
 - `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack
 - `raycast` — the grid raycaster rendering into an `RgbRaster` (0.7.0-alpha.2)
+- `rig`, `city` — camera rigs (`Dolly`, `Orbit`, `Transition`, `Ease`) and wireframe-city geometry helpers for `raster3d`; also `raster3d::Camera::basis` / `CameraBasis` (unreleased)
 - `temporal` — experimental temporal cell realization (`TemporalDisplayProcessor`,
   `TemporalBrailleField`, the exact RGB subcell projector, `PresentationProfile`,
   `TemporalSafetyPolicy`, `ResetPolicy`). Rust-only, introduced in the 0.3.0

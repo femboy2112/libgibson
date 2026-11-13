@@ -34,6 +34,8 @@ pub mod audio;
 pub mod canvas;
 pub mod capability;
 pub mod cell;
+/// Experimental wireframe-city geometry helpers for `raster3d` (see module docs).
+pub mod city;
 pub mod clock;
 pub mod context;
 pub mod diff;
@@ -82,6 +84,8 @@ pub mod raster_fx;
 pub mod raycast;
 pub mod renderer;
 pub mod replication;
+/// Experimental camera rigs (dolly, orbit, transition) for `raster3d` (see module docs).
+pub mod rig;
 pub mod scene;
 pub mod scheduler;
 /// An identity-keyed `Selection` of shapes: insertion-ordered, idempotent,
