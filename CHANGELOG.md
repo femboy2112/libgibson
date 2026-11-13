@@ -42,6 +42,17 @@ Development toward **0.7.0**: a playable terminal software-graphics engine
 - **`raster3d::Camera::basis()` / `CameraBasis`**: the look-at basis (`right`, `up`, `forward`) that
   `project` and the rasterizer use, so callers no longer need to mirror private view maths.
 
+### Added — experience grammars (experimental, Rust only)
+
+- `gibson::ui::experience`: describe an app once as a semantic `Experience`
+  (destinations, collections, items, actions) and realize it through
+  interchangeable grammars — `Standard`, `MediaShelf`, `CrossMedia`, `Panorama`,
+  `Orbital`, `Blades` — with a `PresentationReceipt` checking that required
+  semantics survive, and `ExperienceRuntime` for live style switching that
+  keeps the selection. Not in the C ABI or wrappers. See
+  [`docs/EXPERIENCE_GRAMMARS.md`](docs/EXPERIENCE_GRAMMARS.md).
+- Examples `album_flow` and `experience_lab`.
+
 ## [0.7.0-alpha.3] — 2026-11-12 · GitHub prerelease from `main`
 
 A third **consumer alpha** of the 0.7 line, cut from `main`. It is **not** a qualified 0.7.0; the
