@@ -19,9 +19,9 @@ to `0.6.0` (merge `9a899e1`, #261), the source-version baseline, which is never 
 **v0.6.0 was released on 2026-11-08** (Release Contract §1, state 2): tag `v0.6.0` → `492d0fe` on
 `release/v0.6.0-rc`, a GitHub prerelease, not on any registry. `main` has since opened
 `0.7.0-dev` for the v0.7 work below ("Longer-term horizon"). The latest published releases are
-**v0.7.0-alpha.5** and **v0.7.0-alpha.4** (2026-11-13), **v0.7.0-alpha.3**, **v0.7.0-alpha.2** and
-**v0.7.0-alpha.1** (2026-11-12), consumer alphas from `main` `7de89f0`, `0a3126a`, `b36f0a6`,
-`e0c2504` and `1f37849`, not a qualified 0.7.0, and
+**v0.7.0-alpha.6**, **v0.7.0-alpha.5** and **v0.7.0-alpha.4** (2026-11-13), **v0.7.0-alpha.3**,
+**v0.7.0-alpha.2** and **v0.7.0-alpha.1** (2026-11-12), consumer alphas from `main` `07dd8f2`,
+`7de89f0`, `0a3126a`, `b36f0a6`, `e0c2504` and `1f37849`, not a qualified 0.7.0, and
 **v0.6.0**; **v0.5.0** (`d8c7b99`, GitHub prerelease) is the prior one. *(Until this bump the section
 described the integration as an unmerged candidate.)*
 
