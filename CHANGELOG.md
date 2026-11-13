@@ -18,6 +18,30 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
+### Added — camera rigs and city helpers (experimental, Rust only)
+
+- **`gibson::rig`**: `Dolly` (from → to, looking at a fixed target), `Orbit` (yaw swing and lift
+  around a target) and `Transition` (camera → camera, all fields), with `Ease::{Linear,
+  CubicInOut}`.
+  - Each rig is a pure function of a caller-supplied `t_ms` and `reduced_motion`: no wall clock and
+    no state.
+  - A settled rig returns its final pose exactly, and reduced motion returns that same pose at
+    every time. `settled(t_ms, reduced_motion)` tells a caller when to stop requesting frames.
+  - Easing and orbit phase are evaluated in `f64`; orbit phase uses an integer modulo before
+    conversion.
+- **`gibson::city`**: wireframe helpers that draw lines and return a `Drawn { lines, triangles }`
+  count of submitted primitives:
+  - `grid` (lines placed by index, no drift);
+  - `wire_box`;
+  - `floor_bands`.
+  It also places geometry without drawing:
+  - `facade` (a −z-facing quad for `textured_quad`) and `faces_camera`, a half-space test against
+    the quad's plane;
+  - slot placement: `row_slot`, `alternating_slot`, `fan_slot`, plus `fan_wrap_index`, the first
+    fan index whose angle reaches π. There is no non-overlap guarantee.
+- **`raster3d::Camera::basis()` / `CameraBasis`**: the look-at basis (`right`, `up`, `forward`) that
+  `project` and the rasterizer use, so callers no longer need to mirror private view maths.
+
 ### Added — experience grammars (experimental, Rust only)
 
 - `gibson::ui::experience`: describe an app once as a semantic `Experience`
