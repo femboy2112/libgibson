@@ -17,9 +17,11 @@ procedural audio.
 
 </div>
 
-> **Latest prerelease: [v0.7.0-alpha.1 — consumer alpha](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.1)**
-> (2026-11-12, from `main` `1f37849`). A tagged cut for consumers who pin tags; **not** a qualified
-> 0.7.0 (open v0.7 gates are listed in the [changelog](CHANGELOG.md)).
+> **Latest prerelease: [v0.7.0-alpha.2 — consumer alpha](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.2)**
+> (2026-11-12, from `main` `e0c2504`; adds textured facades and a grid raycaster). A tagged cut for
+> consumers who pin tags; **not** a qualified 0.7.0 (open v0.7 gates are listed in the
+> [changelog](CHANGELOG.md)). The previous cut is
+> [v0.7.0-alpha.1](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.1) (`1f37849`).
 >
 > **Current release: [v0.6.0 — Instrumental Renaissance (maintenance-line release)](https://github.com/femboy2112/libgibson/releases/tag/v0.6.0)** (2026-11-08).
 > Linux x86_64. A native SDK archive is attached to the release. LibGibson is
@@ -29,7 +31,7 @@ procedural audio.
 >
 > **v0.6.0 is the published engineering-alpha release** (Linux x86_64, GitHub-only
 > prerelease). It is released from the maintenance branch `release/v0.6.0-rc` (tag `v0.6.0`
-> → `492d0fe`), while `main` is the 0.7 development line (now `0.7.0-alpha.1`). The install commands
+> → `492d0fe`), while `main` is the 0.7 development line (now `0.7.0-alpha.2`). The install commands
 > below point at v0.6.0. v0.5.0 is the prior release.
 >
 > **Known 0.6.0 limit ([#297](https://github.com/femboy2112/libgibson/issues/297)):** a headless
