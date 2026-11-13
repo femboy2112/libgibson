@@ -725,12 +725,12 @@ impl TerminalSession {
         self.switch_screen_on(&mut out, |o| execute!(o, EnterAlternateScreen), true)
     }
 
-    /// Leaves alternate screen mode; a restored session returns `NotConnected`.
+    /// Leaves alternate screen mode. On a restored session (or one that never held the lease)
+    /// this is a no-op that writes nothing and returns `Ok`: teardown never fails after restore.
     pub fn leave_alternate_screen(&mut self) -> io::Result<()> {
-        if !self.is_tty || self.headless {
+        if !self.is_tty || self.headless || self.restore_attempted || !self.owns_lease {
             return Ok(());
         }
-        self.ensure_mode_owner()?;
         if !self.alt_screen_active {
             return Ok(());
         }
@@ -826,10 +826,13 @@ impl TerminalSession {
     /// failed or partial enable is still disabled on restore. An unconfirmed enable, an uncertain
     /// disable, or a caught owner-thread panic causes the next enable to send a fresh request.
     /// Success means the request was written and flushed, not that the terminal supports it.
-    /// A restored interactive session returns `NotConnected` without changing the current owner's
-    /// reporting modes.
+    /// On a restored interactive session, enabling returns `NotConnected` and disabling is a no-op
+    /// that returns `Ok`; neither writes anything or changes the current owner's reporting modes.
     pub fn set_mouse_capture(&mut self, enable: bool) -> io::Result<()> {
         if !self.is_tty || self.headless {
+            return Ok(());
+        }
+        if !enable && (self.restore_attempted || !self.owns_lease) {
             return Ok(());
         }
         self.ensure_mode_owner()?;
@@ -985,10 +988,22 @@ impl TerminalSession {
     /// except a shifted symbol pressed just before the flags take effect and let go without an
     /// autorepeat (`!` is released as `1`;
     /// [#312](https://github.com/femboy2112/libgibson/issues/312)).
-    /// Idempotent; a no-op off Unix, on a non-TTY or headless session, and on a session that has
-    /// been restored (it no longer holds the terminal).
+    /// Idempotent; a no-op off Unix and on a non-TTY or headless session. On a session that has
+    /// been restored (it no longer holds the terminal), enabling returns `NotConnected` and
+    /// disabling is a no-op that returns `Ok`; neither writes anything.
     pub fn set_key_release_reporting(&mut self, enable: bool) -> io::Result<()> {
         self.key_release_reporting_live();
+        if enable
+            && cfg!(unix)
+            && self.is_tty
+            && !self.headless
+            && (!self.owns_lease || self.restore_attempted)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "terminal session is not active",
+            ));
+        }
         if !cfg!(unix)
             || !self.is_tty
             || self.headless
