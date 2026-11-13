@@ -64,10 +64,39 @@ would kill or reshape it.
 
 Order: **A → {B, C} → D; B → F → G; {B, C, D} → E → H; {B, C} → I → J.**
 
-## Progress ledger (updated 2026-11-08)
+## Progress ledger (updated 2026-11-13)
 
 States: **merged** (on `main`), **partial** (some of the node's oracle met), **not started**. Each
 node closes only on its own oracle, not because this table looks complete.
+
+**v0.7.0 qualification (2026-11-13): final ledger.** Plan: `docs/V0_7_QUALIFICATION.md` (#378).
+Decisions: [`decisions/0002-v0.7.0-qualification.md`](decisions/0002-v0.7.0-qualification.md).
+Where earlier rounds' wording below differs, this governs.
+
+- **Nodes A–I: merged** as recorded in the table at the end of this section. Six consumer
+  prereleases were cut from `main` in this period: `v0.7.0-alpha.1` through `v0.7.0-alpha.6`, the
+  last at `07dd8f2`, all GitHub-only and none published to a registry.
+- **Node J: satisfied for 0.7.0 by the in-repo clean-room adapter #299**, per decision 0002. No
+  GPL port, game data or third-party branding is published. Users supply doomgeneric and a WAD
+  themselves (`bindings/framebuffer_adapter/README.md`, "Using it with an engine and data you
+  supply"). The owner's local port stays private.
+- **Terminal lifecycle:**
+  - The lease is complete: input endpoint (#345, merged by #349), output endpoint and resize
+    geometry (LIB-1), and lease authority (#333, #371, #379; **#330 closed**).
+  - Caught owner panic: input recovered by #329; screen, cursor and renderer by #375 through
+    `Context`. A bare `TerminalSession` caller is EXPLICITLY EXCLUDED (#328).
+  - Signals: the host owns them (#268, option A).
+  - See [`TERMINAL_LEASE_CONTRACT.md`](TERMINAL_LEASE_CONTRACT.md).
+- **#79** no longer reproduces on `b8d076d` (exit 1; the v0.4.0 control still spins).
+- **API freeze:** every public module has a tier in RELEASE_CONTRACT §2, guarded by
+  `tests/doc_release_contract_tiers.rs`.
+- **Resource envelope:** [`V07_RESOURCE_ENVELOPE.md`](V07_RESOURCE_ENVELOPE.md), which restates
+  existing measurements only.
+- **Still open, not 0.7.0 blockers:** #298 (C terminal-size query and focus events), #292
+  (Windows key doubling), #15 on crossterm's own reader (upstream #1128).
+- **Still to do before the tag** (plan WP4–WP7): candidate preflight, parity harness and
+  historical-client checks; the MINERVA canary on the candidate SHA; independent review; the
+  release PR. Nothing here authorizes a tag.
 
 **Renaissance XX (2026-11-08): what merged after the v0.6.0 release.** Checked against `main`
 `3c4a549` and GitHub. Where earlier rounds' wording below differs, this governs. Every
@@ -194,7 +223,7 @@ fixed on Unix (#289; Windows #292).*
 | G. Resize | **merged** (game level and library level) | #266 (`af1498c`) · #279 (`47a216a`) | Real-PTY resize sweep mid-play (80×24 → 120×40 → 40×15 → 100×30 → 80×24, terminal model resized at the exact byte offset): every view row repainted, HUD on the last rows in the right form. Found and fixed a HUD that lagged a late `Resize` event. Library level (#279): a full-size `Node::canvas` on a headless `Context`, resized through an injected `Resize` event (grow, shrink, down to 1×1), is handed exactly the new rect (origin included) on the next due render, and the frame takes exactly the new geometry, every cell's glyph read back from the current paint (a full-size canvas: this checks the readback of a fully repainted frame; physical clearing of uncovered areas is in `whole_renderer_vt100`). A queued but undelivered resize neither renders nor calls the canvas, checked once the frame budget allows a frame. Mutants (resize not marking the scheduler dirty; renderer keeping the old size) fail. |
 | H. Lifecycle | **merged** (game level) | #266 (`af1498c`) · #271 (`82aaae7`) | PTY-tested, with raw mode / alternate screen / hidden cursor checked first: quitting with `q`, Esc or Ctrl-C (a key in raw mode); delivered SIGTERM/SIGINT (restore, trace written, signal re-raised); a delivered signal whose orderly stop cannot finish within a 3 s grace (a terminal that stopped reading blocks every write) still ends the process by that signal, after a watchdog restores cooked mode from the saved termios (`tcsetattr`; tested with stdin the terminal and with stdin redirected, the terminal then reached through `/dev/tty`) — the alternate screen, hidden cursor and focus reporting (`?1004`) need writes and stay, and the trace is not written; a stop signal pending through a failed startup still ends the process by that signal; if the watchdog cannot be started, the signals are not caught at all; a panic in the loop (library hook); unwritable diagnostics, including argument errors (no panic). SIGHUP is not caught (handlers are installed for SIGTERM/SIGINT only; checked from `/proc/<pid>/status` `SigCgt`): a hangup ends the game by SIGHUP within the test's 15 s bound and the `--record` trace is lost. *Updated 2026-11-07:* the stated reason, that a handled or ignored hangup could make `poll_event` busy-spin (**#269**), is superseded: since #282 (`04c0ad2`) a poll on a hung-up terminal returns `BrokenPipe`, also with SIGHUP ignored or handled (`pty_hangup_matrix`, library level), and the game loop ends on a poll error. Not tested at game level: a run with SIGHUP inherited as ignored (e.g. `nohup`); catching SIGHUP to restore and write the trace (not implemented). The rationale comments in `examples/deep_signal.rs` and `tests/deep_signal_lifecycle_pty.rs` predate #282. Not covered: job-control stop (`kill -TSTP`), SIGQUIT. |
 | I. Cross-language leg | **merged** | #278 (`667cef5`) | The installed-SDK forcing consumer (staged prefix, pkg-config only; CI Bindings job and the release cleanroom) drives C (input only through `gibson_push_event` / `gibson_poll_event`) and B: a C-side 48×16-pixel RGB raster, moved only by injected keys, lowered **by the consumer** to half-block cells through the existing styled-span ABI (`gibson_line_add_span` with fg = top pixel, bg = bottom pixel) and read back exactly — every cell of 60 frames (23,040 cells) at TRUECOLOR, with each frame's single injected key checked as delivered. This verifies the cell readback, not the emitted ANSI. 223–336 µs per frame across three runs for the whole loop (input, painting, span construction, render, readback, comparison), release library, development box; load-dependent, not a benchmark. This consumer needs no raster entry point; whether a dedicated one pays for larger rasters is unmeasured. |
-| J. GPL adapter | **partial**: in-repo clean-room adapter merged; GPL port local only | #299 | The GPL engine port itself is never in this repository. In-repo, MIT OR Apache-2.0: `bindings/framebuffer_adapter/`, a generic framebuffer adapter over the installed SDK, with seven properties and 23 negative controls (#299); the real-clock 35 Hz gate covers 80×24, 160×50 and 200×60, and 320×100 is measured but load-dependent, so not gated. A doomgeneric port on top of it runs as a **local, unpublished** prototype; creating its repository needs the owner. Found #297, #298. |
+| J. GPL adapter | **satisfied for 0.7.0** by the in-repo clean-room adapter (decision 0002); GPL port local only, never published | #299 | The GPL engine port itself is never in this repository. In-repo, MIT OR Apache-2.0: `bindings/framebuffer_adapter/`, a generic framebuffer adapter over the installed SDK, with seven properties and 23 negative controls (#299); the real-clock 35 Hz gate covers 80×24, 160×50 and 200×60, and 320×100 is measured but load-dependent, so not gated. A doomgeneric port on top of it runs as a **local, unpublished** prototype; creating its repository needs the owner. Found #297, #298. |
 
 ## Not in v0.7
 
