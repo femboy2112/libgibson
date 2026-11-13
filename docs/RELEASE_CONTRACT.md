@@ -203,6 +203,7 @@ next `0.y` minor and is recorded in the CHANGELOG:
 
 A lower-risk **utility tier** — `ansi`, `canvas`, `clock`, `diff`, `field`,
 `focus`, `geom`, `glitch`, `glyph`, `particles`, `replication`, `scheduler`, `show`,
+`text` (`display_width`, `char_width`; 0.7.0),
 `transition`, `viewport` — is public and treated as CORE (same 0.x promise) unless
 a specific item is marked experimental. Two known specifics: `geom` is core vector
 math *except* `CubicPath3`, which is marked experimental; `show` (composition
@@ -245,6 +246,18 @@ breaking them in a pure patch:
   It is introduced experimentally in the 0.2.0 milestone. `Element`, `Skin`,
   `UiRuntime`, `App`, token types and lowering sidecars all belong to this tier,
   not CORE. See [UI_LAYER.md](UI_LAYER.md).
+- `audio` — the deterministic offline audio engine and HumanMusic scoring (0.4.0; the
+  real-device backend is the optional `audio-cpal` feature). Not exposed through the C ABI.
+- `plot` and the v0.5.0 interactive-instrument surface — `shape`, `selection`, `hit_test`,
+  `world_view`, `gesture`, `edit`, `numeric`, `field_view`, `frame`, `snapshot`, `wire`,
+  `instrument_telemetry` (0.5.0; Rust-only, see §1).
+- `event_source` — injectable, recordable and replayable input sources (Rust-only).
+- `hold` — held-key inference on a simulation timebase (`HoldTracker`; 0.7.0, execution-graph
+  node D). An explicit model; it never synthesizes a key release.
+
+**Unlisted modules.** A public module that this section does not list has no stability
+promise and counts as EXPERIMENTAL until it is listed. `tests/doc_release_contract_tiers.rs`
+fails while any `pub mod` in `src/lib.rs` is missing from this section.
 
 The experimental UI layer does not extend the C ABI or C++/Python/Go wrappers,
 change `GIBSON_ABI_VERSION`, raise the MSRV, or constitute a package release.

@@ -1,8 +1,10 @@
-# Terminal lease contract (Linux scope, v0.7 candidate)
+# Terminal lease contract (Linux scope, v0.7.0)
 
 Status: **input side implemented** (issue #345, merged in #349 as `b3428db`); **output
 endpoint and resize geometry implemented** (LIB-1; the mechanism and tests come from the draft
-stack #338 → #339 → #343 and research #348, without #339's `bind_target` API change). This document is the decision record for which descriptor changes a managed session
+stack #338 → #339 → #343 and research #348, without #339's `bind_target` API change); **lease authority complete** (a restored session
+cannot set modes, #333; a restored `Context` cannot write, #371; restore and `Drop` are decided
+by lease ownership, #379). This document is the decision record for which descriptor changes a managed session
 supports. It is not a public type: the lease is private implementation state.
 
 ## Model
@@ -57,11 +59,14 @@ Rules implemented for the output side:
 | Stable stdin/stdout, same terminal | SUPPORTED | existing PTY suite (`enter_interactive_pty`, `caught_panic_input_pty`, …) unchanged |
 | stdin replaced after acquisition — restore | SUPPORTED: A restored, B untouched, `Ok` | `raw_input_retarget_pty` (#344 oracle, unchanged), `acquired_input_endpoint_pty::retarget_*` (no ctty and controlling A) |
 | stdin replaced then put back (A→B→A) | SUPPORTED | `a_to_b_to_a_restores_a` |
-| stdin replaced — input | SUPPORTED: keys come from A only; B's bytes stay queued for B | `input_comes_from_the_acquired_terminal_after_retarget` |
+| stdin replaced — input, including bytes queued on A and B before the first poll | SUPPORTED: keys come from A only; B's bytes stay queued for B (`FIONREAD` on B unchanged) | `input_comes_from_the_acquired_terminal_after_retarget` |
 | stdin replaced — caught owner panic, re-entry | SUPPORTED: hook restores A, re-entry raws A | `caught_owner_panic_restores_a_not_b` |
 | Repeated restore / Drop after restore | SUPPORTED: no-ops, B untouched | `repeated_restore_and_drop_never_touch_b` |
 | Restore after A hangs up | SAFE: B never touched; result may be `Err` (A is gone) | `hangup_of_a_then_restore_never_touches_b` |
 | New owner after restore | SUPPORTED: acquires the stdin it finds (B), restores B | `fresh_owner_on_b_after_restore_owns_b_only` |
+| Restored session sets a mode (mouse, focus, key-release reporting, alternate screen) while another session owns the lease | SAFE REFUSAL: `NotConnected`, no bytes written, the owner's panic-cleanup flags untouched | `mouse_lease_pty::{restored_session_cannot_enable_or_disable_mouse_for_new_owner, restored_session_cannot_switch_a_new_owners_screen, stale_mouse_calls_cannot_hide_owner_capture_from_panic_cleanup}`, `key_release_reporting_pty` (#333) |
+| Restored `Context` renders or commits text | SAFE REFUSAL: nothing reaches the next owner's terminal | `lease_authority_pty::restored_context_cannot_render_or_commit_into_the_next_owners_terminal` (#371) |
+| Restore / `Drop` authority | SUPPORTED: a session that owns the lease restores, whatever its cached tty flag says; one that never won it touches nothing | `lease_authority_pty::{restore_,drop_}ignores_a_cleared_is_tty_field_while_owning_the_lease` (#379; red, then green, and the mutant restoring the old check is killed) |
 | No controlling terminal (input/raw) | SUPPORTED | all raw/input cases above run with `setsid()` and no ctty |
 | Host entered raw mode **through crossterm** first | SUPPORTED (compat): restore still disables raw mode, as documented | `host_crossterm_raw_is_still_disabled_on_restore` |
 | Host crossterm raw + stdin replaced | SAFE REFUSAL: `restore()` returns `Err`, neither A nor B changed | `host_crossterm_raw_with_retarget_is_refused_without_mutation` |
@@ -76,6 +81,8 @@ Rules implemented for the output side:
 | **Resize geometry** after stdout redirect, with and without ctty | SUPPORTED: getter and event both report the acquired output | `endpoint_geometry_pty::{output_geometry_tracks_the_acquired_endpoint, resize_event_matches_the_acquired_output_geometry}` |
 | Resize read by a poll in flight before acquisition | SAFE REFUSAL (rule 4): that poll returns `Ok(None)`; it never reports another terminal's size | `prior_unmanaged_inflight_poll_must_not_report_a_different_terminal` |
 | Standalone `Renderer` with a caller-supplied writer | EXPLICITLY EXCLUDED: the caller promises the writer reaches the destination its differential state describes (no `bind_target` API change) | documented `Renderer` boundary |
+| Caught owner panic, then more frames through `Context` | SUPPORTED: the next write redraws in full on the screen the session owns, cursor hidden | `caught_panic_screen_pty` (#375), `caught_panic_input_pty` (#329) |
+| Caught owner panic, then more frames from a bare `TerminalSession` caller (no `Context`) | EXPLICITLY EXCLUDED: the panic hook leaves the alternate screen and shows the cursor; a caller that drives `TerminalSession` and its own renderer must re-enter its modes and redraw in full itself | decision (#328, LIB-RC0 G6); `Context` path above |
 | Non-Linux Unix, Windows | UNVERIFIED (compiles; Windows keeps crossterm's raw path) | no runtime test |
 
 ## Consumer note: the application's own stdout writes
@@ -154,7 +161,8 @@ releases before #269, a process that survived SIGHUP could busy-spin in the inpu
 On Linux, since #269 / #282, a poll on a hung-up terminal returns `Err(BrokenPipe)` promptly
 even with SIGHUP ignored or handled (`tests/pty_hangup_matrix.rs`). Two cautions remain:
 
-- #79's original `run_once` reproducer has not been re-run against the fix.
+- #79's original `run_once` reproducer, re-run on `b8d076d`, no longer spins: it exits with
+  code 1. The v0.4.0 control still spins. The probable fix is #282.
 - A loop that retries on poll errors would still spin.
 
 A host that does catch or ignore SIGHUP, including one started under `nohup`, must therefore leave
@@ -214,15 +222,14 @@ host's raw mode by LibGibson).
 | never enter through crossterm (pure bypass) | `host_crossterm_raw_after_acquisition_still_ends_cooked` |
 | parser ignores the lease flag | **survives** on Linux: equivalent mutant while crossterm's record is truthful; only the stale-record cfmakeraw path differs, and it has no LF oracle |
 
-## Open items (release blockers for the v0.7 lifecycle gate)
+## Open items (v0.7 lifecycle gate)
 
 1. ~~Output endpoint identity~~ — implemented (rules 6–7).
 2. ~~Geometry from the acquired output~~ — implemented (rule 8).
 3. A shared input/output generation is **not needed** for geometry: sizes are read at delivery
    from the live lease's descriptor (rule 8), so a stale resize cannot report another terminal;
    at worst it is a redundant resize carrying the acquired terminal's true size.
-4. Still open, separate issues: #330 (a restored session can still set modes), #328 (caught
-   owner panic: input recovered by #329, screen/cursor/renderer by `Context` on its next write;
-   a bare `TerminalSession` caller is not covered), #268 (signals: host responsibility documented above;
-   the opt-in shutdown API is undecided). Non-Linux output pinning is UNVERIFIED
-   (Windows keeps writing process stdout).
+4. ~~#330~~ — closed (#333, #371, #379). ~~#328~~ — `Context` covered (#329, #375); the bare
+   `TerminalSession` case is EXPLICITLY EXCLUDED above. #268 — decided: the host owns
+   termination signals (section above); an opt-in shutdown API is not part of 0.7.0.
+   Non-Linux output pinning stays UNVERIFIED (Windows keeps writing process stdout).
