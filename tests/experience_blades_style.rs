@@ -242,6 +242,22 @@ fn a_skin_palette_follows_its_depth_overrides() {
 }
 
 #[test]
+fn mono_ignores_the_style() {
+    // Mono paints the procedural palette whatever the style, so the frame is the
+    // pre-#369 golden even for a skin and for an inverted (light) explicit style.
+    let e = env(80, 24, ColorDepth::Mono);
+    let mut light = BladesStyle::from_skin(&red_skin(), ColorDepth::TrueColor);
+    light.background = (250, 250, 250);
+    light.planes = vec![(240, 240, 240)];
+    for (name, mut grammar) in [
+        ("with_skin", Blades::with_skin(red_skin())),
+        ("light style", Blades::with_style(light)),
+    ] {
+        assert_eq!(fnv(&paint(&mut grammar, &e)), GOLDEN[3], "{name}");
+    }
+}
+
+#[test]
 fn reset_colours_fall_back_to_procedural_values() {
     let palette = DepthPalette {
         palette: Theme::default(), // text and bg are Color::Reset

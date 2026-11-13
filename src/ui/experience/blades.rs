@@ -603,7 +603,8 @@ fn put_text(
 
 /// The colours Blades paints with. Every field is an exact RGB value. The
 /// renderer quantizes them to the terminal's colour depth like any other cell
-/// colour, and Mono ignores them.
+/// colour. Mono ignores the style entirely: it always paints the procedural
+/// palette, so a Mono frame is the same for every style.
 ///
 /// [`BladesStyle::procedural`] (the default) is the original look: golden-angle
 /// hues on a near-black ground. [`BladesStyle::from_palette`] and
@@ -1227,7 +1228,14 @@ impl<A: Clone> Grammar<A> for Blades {
             active: active_idx,
             selected,
         };
-        let style = self.resolved_style(env.color_depth);
+        // Mono carries no colour, and its Braille plane texture follows luminance, so a
+        // light skin would crowd the text: Mono always paints the procedural palette,
+        // identical for every style.
+        let style = if mono {
+            BladesStyle::procedural()
+        } else {
+            self.resolved_style(env.color_depth)
+        };
         let surface = compose(
             &view,
             &style,
