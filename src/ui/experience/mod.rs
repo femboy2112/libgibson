@@ -71,7 +71,7 @@ pub mod receipt;
 pub mod runtime;
 pub mod standard;
 
-pub use blades::Blades;
+pub use blades::{Blades, BladesStyle};
 pub use cross_media::CrossMedia;
 pub use fallback::Fallback;
 pub use grammar::{FrameDemand, Grammar, Presented};

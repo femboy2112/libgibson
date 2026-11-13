@@ -18,6 +18,18 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
+### Added — Blades in a consumer's colours (experimental, Rust only)
+
+- **`ui::experience::BladesStyle`**, **`Blades::with_style`** and **`Blades::with_skin`** (#369).
+  - `with_skin` derives the colours every frame at the environment's depth, so a skin's
+    explicit `ansi16`/`ansi256` palette applies there.
+  - `BladesStyle::from_palette` / `from_skin` tint plane mid-tones from the skin's `surface`
+    toward `accent` and `rail`, and draw text, title face, rim and selection from `text`,
+    `text_muted` and `accent`. Every field can be overridden.
+  - `Blades::new()` keeps the procedural look byte-for-byte (golden hashes recorded before
+    the change). Stack position, numbered strip labels, per-blade patterns and the rim
+    still identify each blade under any palette.
+
 ## [0.7.0-alpha.4] — 2026-11-13 · GitHub prerelease from `main`
 
 A fourth **consumer alpha** of the 0.7 line, cut from `main`. It is **not** a qualified 0.7.0; the

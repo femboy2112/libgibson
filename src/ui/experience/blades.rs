@@ -39,7 +39,7 @@ use crate::input::{KeyCode, KeyEvent};
 use crate::raster::{Rgb, RgbRaster};
 use crate::surface::{Rect, Surface};
 use crate::ui::element::{button, column, label, raster, row, screen, text, Key};
-use crate::ui::skin::UiEnvironment;
+use crate::ui::skin::{DepthPalette, Skin, UiEnvironment};
 use std::time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -146,18 +146,20 @@ struct Canvas {
     owner: Vec<u16>,
     w: i32,
     h: i32,
+    style: BladesStyle,
 }
 
 impl Canvas {
-    fn new(w: i32, rows: i32) -> Self {
+    fn new(w: i32, rows: i32, style: BladesStyle) -> Self {
         let (w, h) = (w.max(1), (rows * 2).max(2));
         let mut raster = RgbRaster::new(w as u16, h as u16);
-        raster.clear(BG);
+        raster.clear(style.background);
         Self {
             raster,
             owner: vec![NONE; (w * h) as usize],
             w,
             h,
+            style,
         }
     }
 
@@ -182,7 +184,7 @@ impl Canvas {
     }
 
     fn px(&self, x: i32, y: i32) -> Rgb {
-        self.raster.get(x, y).unwrap_or(BG)
+        self.raster.get(x, y).unwrap_or(self.style.background)
     }
 
     fn owns_px(&self, id: usize, x: i32, y: i32) -> bool {
@@ -212,7 +214,7 @@ fn pattern(index: usize, x: i32, y: i32) -> f32 {
     }
 }
 
-fn plane_base(index: usize, depth: f32, t: f32, x: i32, y: i32) -> Rgb {
+fn plane_base(planes: &[Rgb], index: usize, depth: f32, t: f32, x: i32, y: i32) -> Rgb {
     let shade = (1.0 - 0.17 * depth.min(3.0)).max(0.42);
     // A glossier vertical gradient — brighter near the top, a soft specular band,
     // then falling away toward the base — so the blade reads as a lit surface, not a
@@ -220,7 +222,16 @@ fn plane_base(index: usize, depth: f32, t: f32, x: i32, y: i32) -> Rgb {
     let grad = 0.60 - 0.26 * t;
     let gloss = (1.0 - ((t - 0.16) * 4.2).abs()).clamp(0.0, 1.0) * 0.13;
     let v = (grad + gloss + pattern(index, x, y)) * shade;
-    hsv(blade_hue(index), 0.56, v)
+    if planes.is_empty() {
+        return hsv(blade_hue(index), 0.56, v);
+    }
+    // A styled plane: the same lighting law applied to the given colour, scaled so
+    // the plane's mid-tone (`v = 0.60`, the procedural gradient's top) is the colour
+    // itself.
+    let (r, g, b) = planes[index % planes.len()];
+    let k = v / 0.60;
+    let ch = |c: u8| (c as f32 * k).round().clamp(0.0, 255.0) as u8;
+    (ch(r), ch(g), ch(b))
 }
 
 /// Paint one plane: a soft shadow cast on whatever lies behind it, the gradient +
@@ -270,6 +281,7 @@ fn paint_plane(canvas: &mut Canvas, index: usize, plane: &Plane, mono: bool) {
         }
     }
     let span = (yb - yt).max(2) as f32;
+    let rim = canvas.style.rim;
     for y in yt..yb {
         let t = (y - yt) as f32 / span;
         for x in xl..xr {
@@ -277,19 +289,19 @@ fn paint_plane(canvas: &mut Canvas, index: usize, plane: &Plane, mono: bool) {
             if cov <= 0.0 {
                 continue;
             }
-            let mut base = plane_base(index, plane.depth, t, x, y);
+            let mut base = plane_base(&canvas.style.planes, index, plane.depth, t, x, y);
             if mono {
                 // Braille density follows luminance: keep the body sparse so the
                 // bright rim, the pattern and the typography read cleanly.
-                base = mix(BG, base, 0.42);
+                base = mix(canvas.style.background, base, 0.42);
             }
             // The rim follows the (rounded) silhouette: a straight outer edge or any
             // partially-covered corner pixel.
             let edge = x == xl || x == xr - 1 || y == yt || y == yb - 1 || cov < 1.0;
             let c = if edge {
-                mix(base, WHITE, if mono { 0.85 } else { 0.58 })
+                mix(base, rim, if mono { 0.85 } else { 0.58 })
             } else if y == yt + 1 {
-                mix(base, WHITE, 0.16)
+                mix(base, rim, 0.16)
             } else {
                 base
             };
@@ -374,7 +386,12 @@ fn title_width(chars: i32, scale: i32) -> i32 {
 fn bake_title(canvas: &mut Canvas, id: usize, text: &str, x: i32, y: i32, scale: i32) {
     // Full glyph height in pixels, for the face's top-lit vertical sheen.
     let title_h = (5 * scale).max(1) as f32;
-    for (pass, (dx, dy, color)) in [(1, 1, (8, 8, 18)), (0, 0, INK)].into_iter().enumerate() {
+    let (face, face_low, shadow) = (
+        canvas.style.title,
+        canvas.style.title_low,
+        canvas.style.title_shadow,
+    );
+    for (pass, (dx, dy)) in [(1, 1), (0, 0)].into_iter().enumerate() {
         for (ci, ch) in text.chars().enumerate() {
             let glyph = glyph3x5(ch);
             for (r, bits) in glyph.iter().enumerate() {
@@ -393,10 +410,10 @@ fn bake_title(canvas: &mut Canvas, id: usize, text: &str, x: i32, y: i32, scale:
                             // The face carries a top-lit gradient so the big letters
                             // read as a lit surface rather than flat white blocks.
                             let paint = if pass == 0 {
-                                color
+                                shadow
                             } else {
                                 let gy = ((r as i32 * scale + sy) as f32 / title_h).clamp(0.0, 1.0);
-                                mix(WHITE, (184, 188, 216), gy)
+                                mix(face, face_low, gy)
                             };
                             canvas.put(id, px + sx, py + sy, paint);
                         }
@@ -582,13 +599,135 @@ fn put_text(
     cx
 }
 
+// ---- the palette ---------------------------------------------------------------------------
+
+/// The colours Blades paints with. Every field is an exact RGB value. The
+/// renderer quantizes them to the terminal's colour depth like any other cell
+/// colour. Mono ignores the style entirely: it always paints the procedural
+/// palette, so a Mono frame is the same for every style.
+///
+/// [`BladesStyle::procedural`] (the default) is the original look: golden-angle
+/// hues on a near-black ground. [`BladesStyle::from_palette`] and
+/// [`BladesStyle::from_skin`] derive a brand-coloured stack from a skin, and any
+/// field can be overridden afterwards.
+///
+/// Colour is never the only identity channel: stack position, the numbered strip
+/// labels, the per-blade surface pattern and the rim all survive any palette.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BladesStyle {
+    /// The ground behind the stack.
+    pub background: Rgb,
+    /// Plane colours, cycled by destination index (blade `i` uses
+    /// `planes[i % len]`). Each is the mid-tone of its plane, which is then lit
+    /// with the same gradient, gloss, pattern and depth shading as the procedural
+    /// hues. Empty means the procedural golden-angle hues.
+    pub planes: Vec<Rgb>,
+    /// Primary text: titles in small viewports, item titles, near strip labels.
+    pub ink: Rgb,
+    /// Secondary text: subtitles, facets, prose.
+    pub ink_dim: Rgb,
+    /// Labels of deep (far) strips.
+    pub ink_far: Rgb,
+    /// The large pixel title face: `title` at the top of the glyphs, fading to
+    /// `title_low` at the bottom, over a `title_shadow` drop shadow.
+    pub title: Rgb,
+    pub title_low: Rgb,
+    pub title_shadow: Rgb,
+    /// The plane rim and top highlight.
+    pub rim: Rgb,
+    /// The tint blended over the selected item's row.
+    pub selection: Rgb,
+}
+
+impl Default for BladesStyle {
+    fn default() -> Self {
+        Self::procedural()
+    }
+}
+
+impl BladesStyle {
+    /// The original procedural look. `Blades::new()` uses exactly this.
+    pub fn procedural() -> Self {
+        Self {
+            background: BG,
+            planes: Vec::new(),
+            ink: INK,
+            ink_dim: INK_DIM,
+            ink_far: INK_FAR,
+            title: WHITE,
+            title_low: (184, 188, 216),
+            title_shadow: (8, 8, 18),
+            rim: WHITE,
+            selection: WHITE,
+        }
+    }
+
+    /// A stack in a skin's colours at one depth (see [`Skin::palette_for`]).
+    ///
+    /// - The ground is the palette's `bg` (or `surface` when `bg` is
+    ///   `Color::Reset`, which has no RGB value).
+    /// - Planes are the `surface` tinted toward `accent` by 45%, 30%, 60% and
+    ///   toward `rail` by 40%, cycled.
+    /// - Text uses `text` and `text_muted`; deep strips use `text_muted` pulled
+    ///   25% toward the surface.
+    /// - The title face, rim and selection use `accent` and `text`.
+    ///
+    /// A `Color::Reset` entry falls back to the matching procedural colour.
+    pub fn from_palette(palette: &DepthPalette) -> Self {
+        let base = Self::procedural();
+        let theme = &palette.palette;
+        let surface = palette.surface.resolve_rgb().unwrap_or(base.background);
+        let background = theme
+            .bg
+            .resolve_rgb()
+            .or_else(|| palette.surface.resolve_rgb())
+            .unwrap_or(base.background);
+        let accent = theme.accent.resolve_rgb().unwrap_or(base.rim);
+        let rail = theme.rail.resolve_rgb().unwrap_or(accent);
+        let text = theme.text.resolve_rgb().unwrap_or(base.ink);
+        let muted = theme.text_muted.resolve_rgb().unwrap_or(base.ink_dim);
+        Self {
+            background,
+            planes: vec![
+                mix(surface, accent, 0.45),
+                mix(surface, accent, 0.30),
+                mix(surface, accent, 0.60),
+                mix(surface, rail, 0.40),
+            ],
+            ink: text,
+            ink_dim: muted,
+            ink_far: mix(muted, surface, 0.25),
+            title: text,
+            title_low: mix(text, accent, 0.35),
+            title_shadow: mix(background, (0, 0, 0), 0.6),
+            rim: accent,
+            selection: accent,
+        }
+    }
+
+    /// [`Self::from_palette`] of `skin.palette_for(depth)`, so a skin's explicit
+    /// `ansi16`/`ansi256` [`DepthPalette`] applies at those depths.
+    pub fn from_skin(skin: &Skin, depth: ColorDepth) -> Self {
+        Self::from_palette(&skin.palette_for(depth))
+    }
+}
+
+/// Where a [`Blades`] gets its colours.
+#[derive(Debug, Clone)]
+enum StyleSource {
+    Fixed(BladesStyle),
+    /// Resolved per frame at the environment's colour depth.
+    Skin(Box<Skin>),
+}
+
 // ---- the grammar ---------------------------------------------------------------------------
 
-/// The depth-plane grammar. Holds the private stack-offset spring.
+/// The depth-plane grammar. Holds the private stack-offset spring and the palette.
 pub struct Blades {
     stack: DampedSpring,
     last: Option<Duration>,
     initialized: bool,
+    style: StyleSource,
 }
 
 impl Default for Blades {
@@ -598,11 +737,38 @@ impl Default for Blades {
 }
 
 impl Blades {
+    /// Blades in the procedural palette ([`BladesStyle::procedural`]).
     pub fn new() -> Self {
+        Self::with_style(BladesStyle::procedural())
+    }
+
+    /// Blades in an explicit palette.
+    pub fn with_style(style: BladesStyle) -> Self {
         Self {
             stack: DampedSpring::default(),
             last: None,
             initialized: false,
+            style: StyleSource::Fixed(style),
+        }
+    }
+
+    /// Blades in a skin's colours, re-derived every frame at the environment's
+    /// colour depth with [`BladesStyle::from_skin`]. A skin's explicit
+    /// `ansi16`/`ansi256` palettes therefore apply at those depths.
+    pub fn with_skin(skin: Skin) -> Self {
+        Self {
+            stack: DampedSpring::default(),
+            last: None,
+            initialized: false,
+            style: StyleSource::Skin(Box::new(skin)),
+        }
+    }
+
+    /// The palette this grammar paints with at `depth`.
+    pub fn resolved_style(&self, depth: ColorDepth) -> BladesStyle {
+        match &self.style {
+            StyleSource::Fixed(style) => style.clone(),
+            StyleSource::Skin(skin) => BladesStyle::from_skin(skin, depth),
         }
     }
 
@@ -641,8 +807,10 @@ struct View<'a, A> {
     selected: Option<usize>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compose<A>(
     view: &View<'_, A>,
+    style: &BladesStyle,
     p: f32,
     w: i32,
     rows: i32,
@@ -655,7 +823,7 @@ fn compose<A>(
     let stack = Stack::new(n, p, w, rows);
     let near = stack.nearest(view.active);
     let planes: Vec<Plane> = (0..n).map(|i| stack.plane(i)).collect();
-    let mut canvas = Canvas::new(w, rows);
+    let mut canvas = Canvas::new(w, rows, style.clone());
 
     let near_dest = &experience.destinations[near];
     let title = near_dest.title.to_uppercase();
@@ -702,10 +870,11 @@ fn compose<A>(
                 );
             }
             if let (Some((sel, start, _)), false) = (list, mono) {
+                let selection = canvas.style.selection;
                 let r = front.body_row + (sel - start) as i32;
                 for y in r * 2..r * 2 + 2 {
                     for x in (front.x0 - 1)..(front.x1 + 1) {
-                        canvas.raster.blend(x, y, WHITE, 0.22);
+                        canvas.raster.blend(x, y, selection, 0.22);
                     }
                 }
             }
@@ -732,9 +901,9 @@ fn compose<A>(
             ('▼', plane.bot - stack.sr as i32, Sample::Upper)
         };
         let ink = if plane.depth <= 1.5 {
-            Ink::new(INK).bold()
+            Ink::new(canvas.style.ink).bold()
         } else {
-            Ink::new(INK_FAR)
+            Ink::new(canvas.style.ink_far)
         };
         let label_text = format!("{arrow} {:02}  {}", i + 1, dest.title.to_uppercase());
         put_text(
@@ -759,7 +928,7 @@ fn compose<A>(
             front.x0,
             front.title_row,
             &title,
-            &Ink::new(INK).bold(),
+            &Ink::new(canvas.style.ink).bold(),
             Sample::Both,
             mono,
             front.x1,
@@ -815,7 +984,7 @@ fn paint_body<A>(
                 front.x0,
                 front.body_row,
                 "(empty)",
-                &Ink::new(INK_DIM),
+                &Ink::new(canvas.style.ink_dim),
                 Sample::Both,
                 mono,
                 front.x1,
@@ -830,7 +999,7 @@ fn paint_body<A>(
                 let row = front.body_row + offset as i32;
                 let selected = index == sel;
                 let (title, sub) = item_row(item, selected);
-                let ink = Ink::new(INK).reverse(selected && mono);
+                let ink = Ink::new(canvas.style.ink).reverse(selected && mono);
                 let ink = if selected { ink.bold() } else { ink };
                 let next = put_text(
                     surface,
@@ -852,7 +1021,7 @@ fn paint_body<A>(
                         next,
                         row,
                         &sub,
-                        &Ink::new(INK_DIM).reverse(selected && mono),
+                        &Ink::new(canvas.style.ink_dim).reverse(selected && mono),
                         Sample::Both,
                         mono,
                         front.x1 - 2,
@@ -874,7 +1043,7 @@ fn paint_body<A>(
                         front.x1 - 1,
                         row,
                         cue,
-                        &Ink::new(INK_DIM),
+                        &Ink::new(canvas.style.ink_dim),
                         Sample::Both,
                         mono,
                         front.x1,
@@ -891,7 +1060,7 @@ fn paint_body<A>(
                     at.max(front.x0),
                     footer,
                     &counter,
-                    &Ink::new(INK_DIM),
+                    &Ink::new(canvas.style.ink_dim),
                     Sample::Both,
                     mono,
                     front.x1,
@@ -914,7 +1083,7 @@ fn paint_body<A>(
                     front.x0,
                     row,
                     &facet.label,
-                    &Ink::new(INK_DIM),
+                    &Ink::new(canvas.style.ink_dim),
                     Sample::Both,
                     mono,
                     front.x1,
@@ -926,7 +1095,7 @@ fn paint_body<A>(
                     front.x0 + label_w + 2,
                     row,
                     &facet.value,
-                    &Ink::new(INK).bold(),
+                    &Ink::new(canvas.style.ink).bold(),
                     Sample::Both,
                     mono,
                     front.x1,
@@ -946,7 +1115,7 @@ fn paint_body<A>(
                     front.x0,
                     front.body_row + offset as i32,
                     line,
-                    &Ink::new(INK),
+                    &Ink::new(canvas.style.ink),
                     Sample::Both,
                     mono,
                     front.x1,
@@ -1059,7 +1228,24 @@ impl<A: Clone> Grammar<A> for Blades {
             active: active_idx,
             selected,
         };
-        let surface = compose(&view, self.stack.x, w, rows, mono, now, env.color_depth);
+        // Mono carries no colour, and its Braille plane texture follows luminance, so a
+        // light skin would crowd the text: Mono always paints the procedural palette,
+        // identical for every style.
+        let style = if mono {
+            BladesStyle::procedural()
+        } else {
+            self.resolved_style(env.color_depth)
+        };
+        let surface = compose(
+            &view,
+            &style,
+            self.stack.x,
+            w,
+            rows,
+            mono,
+            now,
+            env.color_depth,
+        );
 
         let mut body = column::<A>().gap(0).child(raster::<A>(surface).grow(1.0));
         if footer {
