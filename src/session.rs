@@ -12,7 +12,7 @@ use crossterm::{
 };
 use std::io::{self, stdout, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, Weak};
 use std::thread::ThreadId;
 
 static PANIC_HOOK_SET: AtomicBool = AtomicBool::new(false);
@@ -111,6 +111,167 @@ fn take_key_releases_pushed() -> bool {
 /// panic on the driving thread would not be recognised as the owner.
 static OWNER_THREAD: Mutex<Option<ThreadId>> = Mutex::new(None);
 
+// A weak reference cannot keep a relinquished session's descriptor alive. The hook upgrades it
+// only for the duration of its cleanup; neither this mutex nor OWNER_THREAD is held across I/O.
+static OWNER_OUTPUT: Mutex<Weak<SessionEndpoint>> = Mutex::new(Weak::new());
+
+/// One captured output destination, shared only within a managed session's lifetime.
+/// On Unix this owns a duplicated kernel descriptor, not an fd-number identity guess.
+struct SessionEndpoint {
+    #[cfg(unix)]
+    file: std::fs::File,
+}
+
+impl SessionEndpoint {
+    fn capture_stdout() -> io::Result<Arc<Self>> {
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsFd;
+            let file = stdout().as_fd().try_clone_to_owned()?.into();
+            Ok(Arc::new(Self { file }))
+        }
+        #[cfg(not(unix))]
+        {
+            // Native Windows endpoint pinning is not qualified by this Unix experiment.
+            Ok(Arc::new(Self {}))
+        }
+    }
+
+    /// The geometry of this endpoint: `TIOCGWINSZ` on the held descriptor (Unix). A zero
+    /// size, which a terminal reports while it is going away, is an error.
+    fn size(&self) -> io::Result<(u16, u16)> {
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            let mut ws = std::mem::MaybeUninit::<libc::winsize>::zeroed();
+            // SAFETY: TIOCGWINSZ writes one `winsize` into the pointer; the descriptor is
+            // owned by `self.file` and stays open for the duration of this call.
+            let rc =
+                unsafe { libc::ioctl(self.file.as_raw_fd(), libc::TIOCGWINSZ, ws.as_mut_ptr()) };
+            if rc != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: the ioctl succeeded, so the struct is initialized.
+            let ws = unsafe { ws.assume_init() };
+            if ws.ws_col == 0 || ws.ws_row == 0 {
+                return Err(io::Error::other("terminal reported a zero size"));
+            }
+            Ok((ws.ws_col, ws.ws_row))
+        }
+        #[cfg(not(unix))]
+        {
+            crossterm::terminal::size()
+        }
+    }
+
+    fn is_terminal(&self) -> bool {
+        #[cfg(unix)]
+        {
+            self.file.is_terminal()
+        }
+        #[cfg(not(unix))]
+        {
+            stdout().is_terminal()
+        }
+    }
+}
+
+/// A short-lived strong reference used for a single managed operation.
+struct SessionWriter(Option<Arc<SessionEndpoint>>);
+
+impl SessionWriter {
+    fn endpoint(&self) -> io::Result<&SessionEndpoint> {
+        self.0.as_deref().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotConnected,
+                "session output was relinquished",
+            )
+        })
+    }
+}
+
+impl Write for SessionWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        #[cfg(unix)]
+        {
+            (&self.endpoint()?.file).write(bytes)
+        }
+        #[cfg(not(unix))]
+        {
+            stdout().write(bytes)
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        #[cfg(unix)]
+        {
+            (&self.endpoint()?.file).flush()
+        }
+        #[cfg(not(unix))]
+        {
+            stdout().flush()
+        }
+    }
+}
+
+/// Context output borrows the session endpoint without extending descriptor ownership.
+pub(crate) struct SessionOutput(Weak<SessionEndpoint>);
+
+impl Write for SessionOutput {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.writer()?.write(bytes)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.writer()?.flush()
+    }
+}
+
+impl SessionOutput {
+    fn writer(&self) -> io::Result<SessionWriter> {
+        self.0
+            .upgrade()
+            .map(|p| SessionWriter(Some(p)))
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotConnected,
+                    "session output was relinquished",
+                )
+            })
+    }
+}
+
+fn set_owner_output(output: Weak<SessionEndpoint>) {
+    *OWNER_OUTPUT.lock().unwrap_or_else(|p| p.into_inner()) = output;
+}
+
+/// The geometry the input source reports with a resize: the acquired output's size while a
+/// managed lease holds one, otherwise crossterm's (`/dev/tty`, else stdout).
+///
+/// The lease's endpoint is reached through its `Weak` reference, upgraded only for this one
+/// call. Restore clears that reference before it drops the descriptor, so the size is never
+/// read from a descriptor number the lease no longer owns (or that an unrelated file reused),
+/// and nothing is allocated per poll.
+#[cfg_attr(not(unix), allow(dead_code))]
+pub(crate) fn managed_output_size() -> io::Result<(u16, u16)> {
+    let endpoint = OWNER_OUTPUT
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .upgrade();
+    match endpoint {
+        Some(endpoint) => endpoint.size(),
+        None => crossterm::terminal::size(),
+    }
+}
+
+fn owner_output() -> Option<SessionWriter> {
+    OWNER_OUTPUT
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .upgrade()
+        .map(|p| SessionWriter(Some(p)))
+}
+
 /// Records (or clears) the lease-owning thread. The lock is held only for this
 /// one assignment — never across terminal I/O — so it cannot be poisoned by a
 /// panic mid-restore, and the panic hook can always read it back.
@@ -143,6 +304,8 @@ pub enum TerminalLease {
 
 /// Manages the terminal lifecycle, raw mode, alternate screen, and restoration guards.
 pub struct TerminalSession {
+    /// The interactive lease owns its captured output descriptor until restore or Drop.
+    output_endpoint: Option<Arc<SessionEndpoint>>,
     pub is_tty: bool,
     /// When true, all direct OS terminal manipulation is suppressed while the
     /// session still behaves like a TTY for the renderer. This enables
@@ -186,7 +349,16 @@ pub struct TerminalSession {
 impl TerminalSession {
     /// Creates a new terminal session, detecting whether stdout is an interactive terminal.
     pub fn new() -> io::Result<Self> {
-        let is_tty = stdout().is_terminal();
+        let output = stdout();
+        let mut output_lock = output.lock();
+        // Preserve non-TTY construction, including a closed stdout. Capture a descriptor only
+        // for a candidate interactive session, before any terminal effects or lease publication.
+        let endpoint = if output_lock.is_terminal() {
+            Some(SessionEndpoint::capture_stdout()?)
+        } else {
+            None
+        };
+        let is_tty = endpoint.as_ref().is_some_and(|p| p.is_terminal());
 
         // `new()` is never headless, so a real TTY means we must be the sole
         // owner of this process's terminal. The CAS is the whole contract: lose
@@ -206,9 +378,19 @@ impl TerminalSession {
                         "terminal already owned by another LibGibson TerminalSession in this process",
                     )
                 })?;
+            // Drain pre-existing Rust stdout buffering before bypassing it with the captured
+            // descriptor. Do this only after the lease CAS: a rejected second owner must not
+            // flush another owner's pending output. No reporting state has been published yet.
+            if let Err(error) = output_lock.flush() {
+                TERMINAL_LEASE.store(LEASE_AVAILABLE, Ordering::SeqCst);
+                return Err(error);
+            }
             // Sole owner now: record which thread holds it, so the panic hook
             // only restores for a panic on *this* thread (issue #11, B3).
             set_owner_thread(Some(std::thread::current().id()));
+            if let Some(endpoint) = &endpoint {
+                set_owner_output(Arc::downgrade(endpoint));
+            }
             true
         } else {
             false
@@ -216,6 +398,7 @@ impl TerminalSession {
 
         let session = Self {
             is_tty,
+            output_endpoint: if owns_lease { endpoint } else { None },
             headless: false,
             headless_size: (80, 24),
             raw_mode_enabled: false,
@@ -234,9 +417,20 @@ impl TerminalSession {
             restore_attempted: false,
         };
 
+        drop(output_lock);
         Self::ensure_panic_hook();
 
         Ok(session)
+    }
+
+    fn output_writer(&self) -> SessionWriter {
+        SessionWriter(self.output_endpoint.clone())
+    }
+
+    pub(crate) fn output_sink(&self) -> Option<SessionOutput> {
+        self.output_endpoint
+            .as_ref()
+            .map(|p| SessionOutput(Arc::downgrade(p)))
     }
 
     /// Current process-global terminal-lease state. A vitals monitor, not a
@@ -258,6 +452,7 @@ impl TerminalSession {
     pub fn headless(cols: u16, rows: u16) -> Self {
         Self {
             is_tty: true,
+            output_endpoint: None,
             headless: true,
             headless_size: (cols, rows),
             raw_mode_enabled: false,
@@ -352,30 +547,31 @@ impl TerminalSession {
                     crate::input_endpoint::leave_raw_from_panic_hook();
                     #[cfg(not(unix))]
                     let _ = disable_raw_mode();
-                    let mut out = stdout();
-                    // Disable exactly the reporting modes the owner turned on; the
-                    // hook can't see the session, so it reads the lease-scoped flags.
-                    if take_key_releases_pushed() {
-                        // Before leaving the alternate screen: the push is on its stack. Claimed,
-                        // so the restore that unwinding runs next does not pop again.
-                        let _ = pop_key_releases(&mut out);
-                        // No release will be reported now: stop delivering them (and late
-                        // answers) even if the panic is caught and the caller keeps polling.
-                        crate::input::set_key_releases_delivered(false);
-                        KEY_RELEASES_ENDED.store(true, Ordering::SeqCst);
+                    if let Some(mut out) = owner_output() {
+                        // Disable exactly the reporting modes the owner turned on; the
+                        // hook can't see the session, so it reads the lease-scoped flags.
+                        if take_key_releases_pushed() {
+                            // Before leaving the alternate screen: the push is on its stack. Claimed,
+                            // so the restore that unwinding runs next does not pop again.
+                            let _ = pop_key_releases(&mut out);
+                            // No release will be reported now: stop delivering them (and late
+                            // answers) even if the panic is caught and the caller keeps polling.
+                            crate::input::set_key_releases_delivered(false);
+                            KEY_RELEASES_ENDED.store(true, Ordering::SeqCst);
+                        }
+                        let modes = REPORTING_MODES.load(Ordering::SeqCst);
+                        if modes & REPORT_FOCUS != 0 {
+                            FOCUS_REPORTING_INVALIDATED.store(true, Ordering::SeqCst);
+                            let _ = execute!(out, DisableFocusChange);
+                        }
+                        if modes & REPORT_MOUSE != 0 {
+                            PANIC_MOUSE_CAPTURE_INVALIDATED.store(true, Ordering::SeqCst);
+                            let _ = execute!(out, DisableMouseCapture);
+                        }
+                        let _ = execute!(out, Show, LeaveAlternateScreen, DisableBracketedPaste);
+                        let _ = out.write_all(b"\x1b[0m\x1b[?2026l\x1b[?7h\x1b[?25h\r\n");
+                        let _ = out.flush();
                     }
-                    let modes = REPORTING_MODES.load(Ordering::SeqCst);
-                    if modes & REPORT_FOCUS != 0 {
-                        FOCUS_REPORTING_INVALIDATED.store(true, Ordering::SeqCst);
-                        let _ = execute!(out, DisableFocusChange);
-                    }
-                    if modes & REPORT_MOUSE != 0 {
-                        PANIC_MOUSE_CAPTURE_INVALIDATED.store(true, Ordering::SeqCst);
-                        let _ = execute!(out, DisableMouseCapture);
-                    }
-                    let _ = execute!(out, Show, LeaveAlternateScreen, DisableBracketedPaste);
-                    let _ = out.write_all(b"\x1b[0m\x1b[?2026l\x1b[?7h\x1b[?25h\r\n");
-                    let _ = out.flush();
                 }
 
                 default_hook(info);
@@ -445,7 +641,7 @@ impl TerminalSession {
             }
         }
 
-        self.enable_bracketed_paste_on(&mut stdout())?;
+        self.enable_bracketed_paste_on(&mut self.output_writer())?;
 
         Ok(())
     }
@@ -490,7 +686,7 @@ impl TerminalSession {
         if self.alt_screen_active {
             return Ok(());
         }
-        let mut out = stdout();
+        let mut out = self.output_writer();
         self.switch_screen_on(&mut out, |o| execute!(o, EnterAlternateScreen), true)
     }
 
@@ -503,7 +699,7 @@ impl TerminalSession {
         if !self.alt_screen_active {
             return Ok(());
         }
-        let mut out = stdout();
+        let mut out = self.output_writer();
         self.switch_screen_on(&mut out, |o| execute!(o, LeaveAlternateScreen), false)
     }
 
@@ -602,7 +798,7 @@ impl TerminalSession {
             return Ok(());
         }
         self.ensure_mode_owner()?;
-        self.set_mouse_capture_on(enable, &mut stdout())
+        self.set_mouse_capture_on(enable, &mut self.output_writer())
     }
 
     fn set_mouse_capture_on(&mut self, enable: bool, out: &mut impl Write) -> io::Result<()> {
@@ -658,7 +854,7 @@ impl TerminalSession {
                 Ok(())
             };
         }
-        self.set_focus_reporting_with_writer(enable, &mut stdout())
+        self.set_focus_reporting_with_writer(enable, &mut self.output_writer())
     }
 
     fn set_focus_reporting_with_writer(
@@ -772,7 +968,7 @@ impl TerminalSession {
             // answer onto the screen (and hold it back until a newline).
             self.enter_interactive()?;
         }
-        let mut out = stdout();
+        let mut out = self.output_writer();
         if enable {
             // Flags set before the write, so even a failed or partial enable is unwound.
             self.key_release_reporting_enabled = true;
@@ -820,7 +1016,7 @@ impl TerminalSession {
             // push, once (claimed, so restore, `Drop` and the panic hook never pop it again).
             // Best effort, like the pop in a disable: a failed write is not retried.
             if take_key_releases_pushed() {
-                let _ = pop_key_releases(&mut stdout());
+                let _ = pop_key_releases(&mut self.output_writer());
             }
             self.key_release_reporting_enabled = false;
             #[cfg(unix)]
@@ -934,7 +1130,7 @@ impl TerminalSession {
             }
         };
 
-        let mut out = stdout();
+        let mut out = self.output_writer();
 
         // Unwind opt-in reporting FIRST, reverse of enable order (key releases, focus,
         // then mouse). Each disable is emitted only when the mode was actually enabled,
@@ -1012,6 +1208,8 @@ impl TerminalSession {
             PANIC_MOUSE_CAPTURE_INVALIDATED.store(false, Ordering::SeqCst);
             PANIC_INPUT_MODES_INVALIDATED.store(false, Ordering::SeqCst);
             set_owner_thread(None);
+            set_owner_output(Weak::new());
+            self.output_endpoint = None;
             TERMINAL_LEASE.store(LEASE_AVAILABLE, Ordering::SeqCst);
             self.owns_lease = false;
         }
@@ -1026,6 +1224,10 @@ impl TerminalSession {
     pub fn terminal_size(&self) -> (u16, u16) {
         if self.headless {
             self.headless_size
+        } else if let Some(endpoint) = &self.output_endpoint {
+            // The acquired output, not whichever terminal `/dev/tty` or fd 1 is now. A failed
+            // read keeps the documented fallback rather than asking another terminal.
+            endpoint.size().unwrap_or((80, 24))
         } else if self.is_tty {
             crossterm::terminal::size().unwrap_or((80, 24))
         } else {
@@ -1442,6 +1644,7 @@ mod mouse_capture_fault_tests {
             let mut owner = TerminalSession::headless(80, 24);
             owner.headless = false;
             owner.owns_lease = true;
+            owner.output_endpoint = Some(SessionEndpoint::capture_stdout().unwrap());
             TERMINAL_LEASE.store(LEASE_OWNED, Ordering::SeqCst);
             set_owner_thread(Some(std::thread::current().id()));
             PANIC_MOUSE_CAPTURE_INVALIDATED.store(true, Ordering::SeqCst);

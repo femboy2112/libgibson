@@ -18,6 +18,21 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
+### Fixed — a managed session writes, and measures, the terminal it acquired (Linux)
+
+- A `TerminalSession` that wins the terminal lease holds its own close-on-exec duplicate of
+  fd 1. `Context` frames, mode changes, restore bytes and the panic hook all write it, so
+  redirecting stdout during a session no longer splits frames between two destinations or
+  leaves the acquired terminal unrestored. The descriptor closes exactly once on restore/Drop,
+  and children spawned during a lease do not inherit it.
+- `TerminalSession::terminal_size()` and delivered resize events read that descriptor's size,
+  not crossterm's `/dev/tty`-else-stdout, so both describe the acquired terminal.
+- **Behaviour change:** an application's own `io::stdout()` writes during a lease follow fd 1
+  as it is now, while LibGibson's stay on the acquired terminal. See
+  [`docs/TERMINAL_LEASE_CONTRACT.md`](docs/TERMINAL_LEASE_CONTRACT.md).
+- No public API change; non-TTY stdout behaves as before. The mechanism and tests come from
+  the draft #338 → #339 → #343 stack and #348, without #339's `bind_target` API change.
+
 ### Added — Blades in a consumer's colours (experimental, Rust only)
 
 - **`ui::experience::BladesStyle`**, **`Blades::with_style`** and **`Blades::with_skin`** (#369).

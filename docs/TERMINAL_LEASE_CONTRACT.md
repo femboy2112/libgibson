@@ -1,8 +1,8 @@
 # Terminal lease contract (Linux scope, v0.7 candidate)
 
-Status: **input side implemented** (issue #345, merged in #349 as `b3428db`);
-output identity and resize geometry **not yet qualified** (stack #338 → #339 → #343, research
-#348). This document is the decision record for which descriptor changes a managed session
+Status: **input side implemented** (issue #345, merged in #349 as `b3428db`); **output
+endpoint and resize geometry implemented** (LIB-1; the mechanism and tests come from the draft
+stack #338 → #339 → #343 and research #348, without #339's `bind_target` API change). This document is the decision record for which descriptor changes a managed session
 supports. It is not a public type: the lease is private implementation state.
 
 ## Model
@@ -15,8 +15,8 @@ A managed session (`TerminalSession` / `Context`) that enters interactive mode h
 | **Input endpoint** | `input_endpoint::ACQUIRED` — our own close-on-exec descriptor for the terminal (dup of stdin when it is a tty, else our own open of `/dev/tty`) | first `enter_interactive` |
 | Mode baseline | termios of the input endpoint, read immediately before `cfmakeraw` | raw entry |
 | Input generation | `tty_source::GENERATION`; bumped on acquisition and on restore | acquisition / release |
-| Output endpoint | process `stdout()` **at each write** (unchanged on main) | — (see open items) |
-| Geometry source | `crossterm::terminal::size()`: `/dev/tty` when there is a controlling tty, else stdout | — (see open items) |
+| **Output endpoint** | the session's own close-on-exec duplicate of fd 1, taken when fd 1 is a terminal and the lease is won; `Context` frames, mode and restore bytes, and the panic hook all write it | session construction; closed on restore/Drop |
+| **Geometry source** | `TIOCGWINSZ` on the held output descriptor, for both `terminal_size()` and resize events; crossterm's `/dev/tty`-else-stdout only when no lease holds an output | session construction |
 | Cleanup obligation | `raw_mode_enabled` + `input_endpoint::Acquired::baseline` | raw entry; discharged on restore |
 
 Rules implemented for the input side:
@@ -32,6 +32,23 @@ Rules implemented for the input side:
    blocked on the retired source returns `Ok(None)`; the event it read is **discarded**, never
    delivered as the new owner's input.
 5. The panic hook restores the acquired descriptor without blocking (`try_lock`).
+
+Rules implemented for the output side:
+
+6. A session that wins the lease on a terminal fd 1 holds its own duplicate of it
+   (`F_DUPFD_CLOEXEC`, so spawned children never inherit it). Pending Rust `stdout` buffering
+   is flushed first, and only after the lease is won (a refused second owner flushes nothing).
+7. Every byte LibGibson writes during the lease (frames, mode changes, restore, the panic hook)
+   goes to that descriptor, so the renderer's differential state always describes one
+   destination. Restore clears the panic hook's `Weak` reference, then drops the descriptor:
+   it is closed exactly once, and a reused descriptor number is never written or queried.
+8. `terminal_size()` and every delivered resize read the held descriptor's size at delivery
+   time. The input source reaches it through the same `Weak` reference (upgraded per call; no
+   allocation), so a delivered resize can never describe another terminal. (A poll already in
+   flight before acquisition is refused under rule 4 and delivers nothing.) A failed size read keeps the documented
+   80×24 fallback for the getter and delivers no resize event.
+9. fd 1 that is not a terminal at construction (a pipe, a file, closed) gives a non-TTY session
+   with no held descriptor, exactly as before.
 
 ## Behaviour contract
 
@@ -52,9 +69,23 @@ Rules implemented for the input side:
 | Poll blocked **before** acquisition | SAFE REFUSAL: returns `Ok(None)`, its event discarded; owner receives later input | `poll_blocked_before_acquisition_is_not_delivered_to_the_owner` (syscall-entry evidence from `/proc/self/task/<tid>/syscall`, no sleeps) |
 | Poll blocked under an old generation when **restore** retires the source | SAFE REFUSAL (same code path as above) | mechanism shared; restore-time case has no dedicated test — UNVERIFIED as a separate scenario |
 | Unmanaged `gibson::input::poll_event` with no session | EXPLICITLY EXCLUDED from the lease: resolves its descriptor at source creation, as before | documented API boundary (`input::poll_event` docs) |
-| **stdout redirected** — frames and restore bytes | UNVERIFIED / HOLD: main writes to process stdout at each write, so they follow the redirect | #339 / #343 stack, `handoffs/RENAISSANCE_XXXI.md` |
-| **Resize geometry** after stdout redirect without ctty | UNVERIFIED / red: `size()` falls back to stdout (B) | #348 `resize_event_matches_the_acquired_output_geometry` |
+| **stdout redirected** — frames, mode and restore bytes, panic hook | SUPPORTED: all reach the acquired terminal; nothing reaches the redirect | `session_output_endpoint_pty` (frame A/B cell equality, restore during redirect, modes + caught panic) |
+| Child process spawned during a lease | SUPPORTED: the held descriptor is not inherited | `held_descriptor_is_not_inherited_by_children` |
+| Restore then Drop; descriptor number reused | SUPPORTED: closed exactly once, the reusing file survives | `restore_and_drop_close_the_held_descriptor_exactly_once`, `explicit_restore_closes_the_owned_terminal_descriptor` |
+| fd 1 a pipe, or closed, at construction | SUPPORTED (unchanged): non-TTY session, no descriptor held, lease untouched | `piped_stdout_at_acquisition_holds_no_descriptor`, `closed_stdout_still_allows_a_non_terminal_session` |
+| **Resize geometry** after stdout redirect, with and without ctty | SUPPORTED: getter and event both report the acquired output | `endpoint_geometry_pty::{output_geometry_tracks_the_acquired_endpoint, resize_event_matches_the_acquired_output_geometry}` |
+| Resize read by a poll in flight before acquisition | SAFE REFUSAL (rule 4): that poll returns `Ok(None)`; it never reports another terminal's size | `prior_unmanaged_inflight_poll_must_not_report_a_different_terminal` |
+| Standalone `Renderer` with a caller-supplied writer | EXPLICITLY EXCLUDED: the caller promises the writer reaches the destination its differential state describes (no `bind_target` API change) | documented `Renderer` boundary |
 | Non-Linux Unix, Windows | UNVERIFIED (compiles; Windows keeps crossterm's raw path) | no runtime test |
+
+## Consumer note: the application's own stdout writes
+
+LibGibson writes the terminal it acquired. An application that writes `io::stdout()` itself
+during a lease writes **fd 1 as it is now**: if the application (or a library it uses)
+redirects fd 1, its own bytes follow the redirect while LibGibson's frames stay on the
+acquired terminal. Before this change both followed the redirect. Applications that print
+around a live frame should use `Context::insert_text_before_live` / `commit_text` (which write the acquired
+terminal) rather than raw stdout.
 
 ## crossterm interplay (decision)
 
@@ -102,9 +133,11 @@ host's raw mode by LibGibson).
 
 ## Open items (release blockers for the v0.7 lifecycle gate)
 
-1. Output endpoint identity: bind writes, restore bytes and the renderer's differential state
-   to the acquired output (stack #338 → #339 → #343; #339 has red ordinary acceptance).
-2. Geometry: derive both `terminal_size()` and delivered resize events from the acquired
-   **output** endpoint, not crossterm's `/dev/tty`-else-stdout resolution (#348).
-3. The input endpoint and output endpoint can then share one generation, so a resize from a
-   retired output is refused like a retired input event.
+1. ~~Output endpoint identity~~ — implemented (rules 6–7).
+2. ~~Geometry from the acquired output~~ — implemented (rule 8).
+3. A shared input/output generation is **not needed** for geometry: sizes are read at delivery
+   from the live lease's descriptor (rule 8), so a stale resize cannot report another terminal;
+   at worst it is a redundant resize carrying the acquired terminal's true size.
+4. Still open, separate issues: #330 (a restored session can still set modes), #328 (caught
+   owner panic leaves canonical input), #268 (signals). Non-Linux output pinning is UNVERIFIED
+   (Windows keeps writing process stdout).

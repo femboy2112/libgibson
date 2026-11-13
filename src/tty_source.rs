@@ -963,7 +963,7 @@ pub(crate) fn poll(
         let (receiver, sender) = UnixStream::pair()?;
         sender.set_nonblocking(true)?;
         let id = signal_hook::low_level::pipe::register(libc::SIGWINCH, sender)?;
-        let mut source = TtySource::new(fd, Some(receiver), crossterm::terminal::size)?;
+        let mut source = TtySource::new(fd, Some(receiver), crate::session::managed_output_size)?;
         source._owned = owned;
         source.winch_id = Some(id);
         *guard = Some((generation, source));
