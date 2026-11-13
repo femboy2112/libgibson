@@ -18,6 +18,19 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 Development toward **0.7.0**: a playable terminal software-graphics engine
 ([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
 
+### Fixed — `ui::modal` height
+
+- **A `modal` without an explicit `.height(n)` now sizes to its content** (still capped at 90% of
+  the viewport) instead of a fixed 12 rows.
+  - **The bug:** the fixed 12 rows left about 9 visible content rows. Longer content was clipped
+    silently, with no scroll and no warning: 12 children showed 9, and 30 children on a 40-row
+    screen still showed 9.
+  - **Unchanged:** an explicit `.height(n)` is still authoritative.
+  - **Beyond the cap:** content taller than the 90% bound is clipped deterministically.
+  - **Effect on existing layouts:** a modal with fewer than about 9 content rows is now shorter
+    than before. Set `.height(12)` to keep the old size.
+  - Tests: `tests/modal_sizing.rs` (12 cases).
+
 ## [0.7.0-alpha.3] — 2026-11-12 · GitHub prerelease from `main`
 
 A third **consumer alpha** of the 0.7 line, cut from `main`. It is **not** a qualified 0.7.0; the
