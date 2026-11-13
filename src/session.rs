@@ -55,6 +55,13 @@ static KEY_RELEASES_ENDED: AtomicBool = AtomicBool::new(false);
 /// This notice is lease-scoped; it does not claim recovery of screen, cursor, renderer or capture.
 static PANIC_INPUT_MODES_INVALIDATED: AtomicBool = AtomicBool::new(false);
 
+/// The owner-thread panic hook has written screen cleanup: it left the alternate screen, showed
+/// the cursor and reset SGR (#328). A caught panic leaves the session alive, so the next frame
+/// must neither trust the session's screen and cursor flags nor diff against the renderer's
+/// picture of the screen. Lease-scoped, like the input notice; taken by `Context` before it next
+/// writes through the renderer.
+static PANIC_SCREEN_INVALIDATED: AtomicBool = AtomicBool::new(false);
+
 /// Takes the panic hook's notice that reporting ended, for the Unix source to queue just before an
 /// answer it decodes (#275 review 8). One swap against the owner's
 /// [`take_key_releases_ended`](TerminalSession::take_key_releases_ended): exactly one of them
@@ -548,6 +555,8 @@ impl TerminalSession {
                     #[cfg(not(unix))]
                     let _ = disable_raw_mode();
                     if let Some(mut out) = owner_output() {
+                        // Set before writing: a partial write still changed the screen.
+                        PANIC_SCREEN_INVALIDATED.store(true, Ordering::SeqCst);
                         // Disable exactly the reporting modes the owner turned on; the
                         // hook can't see the session, so it reads the lease-scoped flags.
                         if take_key_releases_pushed() {
@@ -581,7 +590,9 @@ impl TerminalSession {
 
     /// Enables raw mode and bracketed paste for interactive operation. If the owner-thread panic
     /// hook ran and the panic was caught, requests both again on the next interactive entry.
-    /// This input recovery does not restore alternate-screen, cursor, renderer or capture state.
+    /// This is input recovery only. A `Context` recovers the alternate screen, cursor and its
+    /// renderer's picture of the screen on its next write after such a panic (#328); code that
+    /// drives a bare `TerminalSession` does not get that.
     pub fn enter_interactive(&mut self) -> io::Result<()> {
         if !self.is_tty || self.headless {
             return Ok(());
@@ -644,6 +655,30 @@ impl TerminalSession {
         self.enable_bracketed_paste_on(&mut self.output_writer())?;
 
         Ok(())
+    }
+
+    /// Takes the owner-thread panic hook's screen notice (#328). On `true` the hook has shown the
+    /// cursor, so the cursor flag is cleared and the next hide is written again; the caller must
+    /// also discard its renderer's picture of the screen and call
+    /// [`reenter_alternate_screen_after_panic`](Self::reenter_alternate_screen_after_panic).
+    pub(crate) fn take_panic_screen_notice(&mut self) -> bool {
+        if !(self.owns_lease && PANIC_SCREEN_INVALIDATED.swap(false, Ordering::SeqCst)) {
+            return false;
+        }
+        self.cursor_hidden = false;
+        true
+    }
+
+    /// Re-enters the alternate screen that the owner-thread panic hook left, when this session was
+    /// on it (#328). `alt_screen_active` stays set throughout, so a failed re-entry write keeps
+    /// the obligation to leave the alternate screen on restore.
+    pub(crate) fn reenter_alternate_screen_after_panic(&mut self) -> io::Result<()> {
+        if !self.is_tty || self.headless || !self.alt_screen_active {
+            return Ok(());
+        }
+        self.ensure_mode_owner()?;
+        let mut out = self.output_writer();
+        self.switch_screen_on(&mut out, |o| execute!(o, EnterAlternateScreen), true)
     }
 
     fn reconcile_panic_input_modes(&mut self) {
@@ -1207,6 +1242,7 @@ impl TerminalSession {
             KEY_RELEASES_ENDED.store(false, Ordering::SeqCst);
             PANIC_MOUSE_CAPTURE_INVALIDATED.store(false, Ordering::SeqCst);
             PANIC_INPUT_MODES_INVALIDATED.store(false, Ordering::SeqCst);
+            PANIC_SCREEN_INVALIDATED.store(false, Ordering::SeqCst);
             set_owner_thread(None);
             set_owner_output(Weak::new());
             self.output_endpoint = None;
