@@ -330,7 +330,11 @@ fn abi_real_tty_input_drives_state_that_is_rendered() {
         .windows(8)
         .rposition(|w| w == b"\x1b[?1049l")
         .unwrap_or(bytes.len());
-    let mut p = vt100::Parser::new(ROWS, COLS, 0);
+    let mut p = vt100::Parser::new(
+        core::num::NonZeroU16::new(ROWS).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(COLS).expect("vt100 size is non-zero"),
+        0,
+    );
     p.process(&bytes[..end]);
     let screen = p.screen().contents();
     assert!(

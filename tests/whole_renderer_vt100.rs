@@ -21,7 +21,11 @@ impl Harness {
         Self {
             renderer: Renderer::new(gibson::RenderMode::Inline),
             session: TerminalSession::headless(cols, rows),
-            parser: vt100::Parser::new(rows, cols, 0),
+            parser: vt100::Parser::new(
+                core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+                core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+                0,
+            ),
         }
     }
 
@@ -56,7 +60,7 @@ impl Harness {
     }
 
     fn screen_rows(&self) -> Vec<String> {
-        let (_, cols) = (self.parser.screen().size().0, self.parser.screen().size().1);
+        let cols = self.parser.screen().size().1.get();
         self.parser.screen().rows(0, cols).collect()
     }
 
@@ -368,7 +372,10 @@ fn resize_invalidates_anchor_and_resyncs() {
 
     // Simulate terminal resize and tell both the session and the virtual terminal.
     h.session.set_terminal_size(40, 12);
-    h.parser.screen_mut().set_size(12, 40);
+    h.parser.screen_mut().set_size(
+        core::num::NonZeroU16::new(12).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(40).expect("vt100 size is non-zero"),
+    );
 
     let (_, _, full) = h.render(&mut root);
     assert!(full, "resize must force a full re-anchor repaint");
@@ -398,7 +405,10 @@ fn resize_to_narrow_width_reflows_without_panic() {
     ));
     h.render(&mut root);
     h.session.set_terminal_size(20, 8);
-    h.parser.screen_mut().set_size(8, 20);
+    h.parser.screen_mut().set_size(
+        core::num::NonZeroU16::new(8).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(20).expect("vt100 size is non-zero"),
+    );
     h.render(&mut root);
     // No panic; all written rows fit within width.
     for row in h.screen_rows() {
@@ -474,7 +484,10 @@ fn whole_renderer_long_input_survives_resize() {
 
     // Shrink dramatically; the input must re-scroll and keep the cursor in bounds.
     h.session.set_terminal_size(24, 8);
-    h.parser.screen_mut().set_size(8, 24);
+    h.parser.screen_mut().set_size(
+        core::num::NonZeroU16::new(8).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(24).expect("vt100 size is non-zero"),
+    );
     let mut out = Vec::new();
     let (_d, _t, _b, _f, paint) = h
         .renderer
@@ -493,7 +506,11 @@ fn whole_renderer_fullscreen_owns_the_canvas() {
     let rows = 12u16;
     let mut session = TerminalSession::headless(cols, rows);
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
-    let mut parser = vt100::Parser::new(rows, cols, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+        0,
+    );
     let mut out = Vec::new();
 
     let mut root = Node::col()
@@ -591,7 +608,11 @@ fn fs_root_with(base_extra: Node, modal: bool) -> Node {
 fn fullscreen_screen(cols: u16, rows: u16, modal: bool) -> (Vec<String>, u64) {
     let mut renderer = Renderer::new(gibson::RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(cols, rows);
-    let mut parser = vt100::Parser::new(rows, cols, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+        0,
+    );
     let mut out = Vec::new();
     for _ in 0..3 {
         let mut root = fs_root_with(Node::text("detail", Style::default()), modal);
@@ -627,7 +648,11 @@ fn overlay_removal_leaves_no_ghost_cells() {
 fn resize_during_overlay_animation_reanchors_without_panic() {
     let mut renderer = Renderer::new(gibson::RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(44, 16);
-    let mut parser = vt100::Parser::new(16, 44, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(16).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(44).expect("vt100 size is non-zero"),
+        0,
+    );
     let mut out = Vec::new();
 
     let mut root = fs_root_with(Node::text("frame", Style::default()), true);
@@ -637,7 +662,10 @@ fn resize_during_overlay_animation_reanchors_without_panic() {
 
     // Resize mid-animation, then keep rendering the overlay.
     session.set_terminal_size(30, 10);
-    parser.screen_mut().set_size(10, 30);
+    parser.screen_mut().set_size(
+        core::num::NonZeroU16::new(10).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(30).expect("vt100 size is non-zero"),
+    );
     let mut out2 = Vec::new();
     let mut root2 = fs_root_with(Node::text("frame", Style::default()), true);
     renderer
@@ -664,7 +692,11 @@ fn fullscreen_resize_clears_stale_blank_regions_and_accounts_for_clear() {
     let mut renderer = Renderer::new(gibson::RenderMode::Fullscreen);
     renderer.capture_damage = true;
     let mut session = TerminalSession::headless(40, 10);
-    let mut parser = vt100::Parser::new(10, 40, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(10).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(40).expect("vt100 size is non-zero"),
+        0,
+    );
     let mut old = Node::col()
         .width(40.0)
         .height(10.0)
@@ -674,7 +706,10 @@ fn fullscreen_resize_clears_stale_blank_regions_and_accounts_for_clear() {
     renderer.render(&mut old, &mut session, &mut wire).unwrap();
     parser.process(&wire);
     session.set_terminal_size(20, 6);
-    parser.screen_mut().set_size(6, 20);
+    parser.screen_mut().set_size(
+        core::num::NonZeroU16::new(6).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(20).expect("vt100 size is non-zero"),
+    );
     let mut new = Node::stack().width(20.0).height(6.0).child(
         Node::text("NEW", Style::new())
             .width(3.0)

@@ -320,7 +320,11 @@ impl Fs {
         Self {
             renderer: Renderer::new(RenderMode::Fullscreen),
             session: TerminalSession::headless(cols, rows),
-            parser: vt100::Parser::new(rows, cols, 0),
+            parser: vt100::Parser::new(
+                core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+                core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+                0,
+            ),
         }
     }
 

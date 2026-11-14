@@ -15,7 +15,11 @@ fn harness(cols: u16, rows: u16) -> (Renderer, TerminalSession) {
 }
 
 fn screen_of(bytes: &[u8], cols: u16, rows: u16) -> String {
-    let mut parser = vt100::Parser::new(rows, cols, 4000);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+        4000,
+    );
     parser.process(bytes);
     parser.screen().contents()
 }

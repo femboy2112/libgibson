@@ -359,7 +359,11 @@ fn real_viewer_controls_resize_and_escape_restore_both_terminal_modes() {
     cmd.env("TERM", "xterm-256color");
     let mut viewer = Viewer {
         capture: pty_capture::Capture::spawn(cmd, 120, 32, Duration::from_secs(15)),
-        parser: vt100::Parser::new(32, 120, 0),
+        parser: vt100::Parser::new(
+            core::num::NonZeroU16::new(32).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(120).expect("vt100 size is non-zero"),
+            0,
+        ),
         processed: 0,
     };
     viewer.wait_text("EVENT PRESSURE LAB");
@@ -383,7 +387,10 @@ fn real_viewer_controls_resize_and_escape_restore_both_terminal_modes() {
         "frozen viewer emitted bytes"
     );
     for (cols, rows) in [(56, 24), (160, 40), (120, 32)] {
-        viewer.parser.screen_mut().set_size(rows, cols);
+        viewer.parser.screen_mut().set_size(
+            core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+        );
         viewer.capture.resize(cols, rows);
         // Drain during settling: this is UI reflow hygiene, not the collision
         // experiment. The deliberately colliding child has its own PTY above.

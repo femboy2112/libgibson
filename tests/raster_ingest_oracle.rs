@@ -247,7 +247,11 @@ fn every_timed_configuration_emits_exactly_the_lowered_cells() {
             ctx.set_root(Node::raster(surface.clone()));
             ctx.render().unwrap();
             let bytes = ctx.take_output();
-            let mut term = vt100::Parser::new(rows, cols, 0);
+            let mut term = vt100::Parser::new(
+                core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+                core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+                0,
+            );
             term.process(bytes.as_bytes());
             let screen = term.screen();
             let tag = format!("{cols}x{rows} {} {depth:?}", lowering.name());

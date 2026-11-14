@@ -43,7 +43,11 @@ impl Mono {
         let capture = pty_capture::Capture::spawn(cmd, COLS, ROWS, Duration::from_secs(30));
         Mono {
             capture,
-            parser: Parser::new(ROWS, COLS, 0),
+            parser: Parser::new(
+                core::num::NonZeroU16::new(ROWS).expect("vt100 size is non-zero"),
+                core::num::NonZeroU16::new(COLS).expect("vt100 size is non-zero"),
+                0,
+            ),
             processed: 0,
         }
     }

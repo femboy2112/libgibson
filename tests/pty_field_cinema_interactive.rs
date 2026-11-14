@@ -43,7 +43,11 @@ impl Film {
         }
         Film {
             capture: pty_capture::Capture::spawn(cmd, cols, rows, Duration::from_secs(60)),
-            parser: Parser::new(rows, cols, 0),
+            parser: Parser::new(
+                core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+                core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+                0,
+            ),
             processed: 0,
         }
     }

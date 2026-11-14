@@ -45,7 +45,11 @@ impl PtyHarness {
         let initial_termios = capture.initial_termios.clone();
         Self {
             capture,
-            parser: vt100::Parser::new(rows, cols, 8000),
+            parser: vt100::Parser::new(
+                core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+                core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+                8000,
+            ),
             processed: 0,
             #[cfg(unix)]
             initial_termios,
@@ -59,7 +63,10 @@ impl PtyHarness {
     fn resize(&mut self, cols: u16, rows: u16) {
         self.pump();
         self.capture.resize(cols, rows);
-        self.parser.screen_mut().set_size(rows, cols);
+        self.parser.screen_mut().set_size(
+            core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+        );
     }
 
     /// Feeds any new PTY bytes into the virtual terminal model.

@@ -25,7 +25,11 @@ impl Film {
         cmd.env("TERM", "xterm-256color");
         Self {
             capture: pty_capture::Capture::spawn(cmd, cols, rows, Duration::from_secs(30)),
-            parser: vt100::Parser::new(rows, cols, 0),
+            parser: vt100::Parser::new(
+                core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+                core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+                0,
+            ),
             processed: 0,
         }
     }
@@ -55,7 +59,7 @@ impl Film {
         self.capture.write(bytes).expect("send intro input");
     }
 
-    fn assert_frozen(&mut self) -> Vec<u8> {
+    fn assert_frozen(&mut self) -> String {
         // Drain a possible final frame already in flight when the hint arrived.
         self.pump(Duration::from_millis(60));
         let screen = self.parser.screen().contents_formatted();
@@ -69,7 +73,10 @@ impl Film {
     fn resize(&mut self, cols: u16, rows: u16) {
         self.pump(Duration::from_millis(10));
         let bytes = self.capture.raw().len();
-        self.parser.screen_mut().set_size(rows, cols);
+        self.parser.screen_mut().set_size(
+            core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+        );
         self.capture.resize(cols, rows);
         let deadline = Instant::now() + Duration::from_secs(4);
         while self.capture.raw().len() == bytes {

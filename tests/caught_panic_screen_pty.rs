@@ -64,9 +64,17 @@ fn run_case(role: &str) -> (vt100::Parser, vt100::Parser, Vec<u8>) {
         String::from_utf8_lossy(&raw)
     );
     let at = find(&raw, MARKER).expect("marker");
-    let mut at_marker = vt100::Parser::new(24, 80, 0);
+    let mut at_marker = vt100::Parser::new(
+        core::num::NonZeroU16::new(24).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(80).expect("vt100 size is non-zero"),
+        0,
+    );
     at_marker.process(&raw[..at]);
-    let mut at_exit = vt100::Parser::new(24, 80, 0);
+    let mut at_exit = vt100::Parser::new(
+        core::num::NonZeroU16::new(24).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(80).expect("vt100 size is non-zero"),
+        0,
+    );
     at_exit.process(&raw);
     (at_marker, at_exit, raw)
 }

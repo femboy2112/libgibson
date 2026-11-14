@@ -45,7 +45,11 @@ fn actual_story_frames_match_whole_renderer_vt100_across_sizes() {
     for (w, h) in [(56, 24), (80, 24), (120, 32), (160, 40)] {
         let mut renderer = Renderer::new(RenderMode::Fullscreen);
         let mut terminal = TerminalSession::headless(w, h);
-        let mut parser = vt100::Parser::new(h, w, 0);
+        let mut parser = vt100::Parser::new(
+            core::num::NonZeroU16::new(h).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(w).expect("vt100 size is non-zero"),
+            0,
+        );
         for stage in encounter::STAGES {
             let mut e = Encounter::new(stage, true);
             e.update(Duration::from_millis(400), &[]);
@@ -171,10 +175,17 @@ fn ghost_input_never_edits_crash_buffer_and_live_resize_keeps_renderer_correct()
     let cursor = e.input.cursor_grapheme;
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut terminal = TerminalSession::headless(120, 32);
-    let mut parser = vt100::Parser::new(32, 120, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(32).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(120).expect("vt100 size is non-zero"),
+        0,
+    );
     for (w, h) in [(120, 32), (56, 24), (160, 40), (80, 24), (120, 32)] {
         terminal.set_terminal_size(w, h);
-        parser.screen_mut().set_size(h, w);
+        parser.screen_mut().set_size(
+            core::num::NonZeroU16::new(h).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(w).expect("vt100 size is non-zero"),
+        );
         e.tick(Duration::from_millis(150), false);
         let expected = surface(e.frame(w, h), w, h);
         let mut wire = Vec::new();

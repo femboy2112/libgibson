@@ -326,7 +326,11 @@ fn identical_frame_reports_zero_logical_damage() {
 fn resize_during_wireframe_animation_is_safe_and_reanchors() {
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut session = TerminalSession::headless(60, 20);
-    let mut parser = vt100::Parser::new(20, 60, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(20).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(60).expect("vt100 size is non-zero"),
+        0,
+    );
     let mut out = Vec::new();
 
     renderer
@@ -336,7 +340,10 @@ fn resize_during_wireframe_animation_is_safe_and_reanchors() {
     let before = renderer.anchor_resyncs;
 
     session.set_terminal_size(30, 10);
-    parser.screen_mut().set_size(10, 30);
+    parser.screen_mut().set_size(
+        core::num::NonZeroU16::new(10).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(30).expect("vt100 size is non-zero"),
+    );
     let mut out2 = Vec::new();
     renderer
         .render(&mut wireframe_node(0.2, 20, 8), &mut session, &mut out2)

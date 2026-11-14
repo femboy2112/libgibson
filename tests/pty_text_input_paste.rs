@@ -89,7 +89,12 @@ impl Session {
         let capture = pty_capture::Capture::spawn(cmd, COLS, ROWS, Duration::from_secs(90));
         Self {
             capture,
-            parser: vt100::Parser::new_with_callbacks(ROWS, COLS, 200, Effects::default()),
+            parser: vt100::Parser::new_with_callbacks(
+                core::num::NonZeroU16::new(ROWS).expect("vt100 size is non-zero"),
+                core::num::NonZeroU16::new(COLS).expect("vt100 size is non-zero"),
+                200,
+                Effects::default(),
+            ),
             processed: 0,
         }
     }

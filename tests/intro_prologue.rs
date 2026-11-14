@@ -239,7 +239,11 @@ fn prologue_boots_hands_off_to_film_and_restores() {
     cmd.args(["--deterministic", "--color=truecolor"]);
     cmd.env("TERM", "xterm-256color");
     let mut capture = pty_capture::Capture::spawn(cmd, 120, 32, Duration::from_secs(30));
-    let mut parser = vt100::Parser::new(32, 120, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(32).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(120).expect("vt100 size is non-zero"),
+        0,
+    );
     let mut processed = 0usize;
 
     let mut pump = |capture: &mut pty_capture::Capture, parser: &mut vt100::Parser, ms: u64| {
