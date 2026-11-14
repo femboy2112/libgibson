@@ -104,6 +104,17 @@ struct Expr {
     viseme: u8,
 }
 
+impl Expr {
+    /// Closed eyes ignore gaze, so every closed state shares one cached layer.
+    fn eye_key(self) -> (bool, i8) {
+        if self.open {
+            (true, self.gaze)
+        } else {
+            (false, 0)
+        }
+    }
+}
+
 /// A feature band: pixel rows `[y0, y0 + h)`, both even, so it maps to whole cell rows.
 #[derive(Clone, Copy)]
 struct Band {
@@ -298,7 +309,7 @@ impl Arm {
             Arm::Rgb => Node::raster(a.compose_rgb(e)),
             Arm::Rgba { eyes, mouth } => {
                 let mut r = a.base.clone();
-                composite_over(&mut r, &eyes[&(e.open, e.gaze)], 0, 0);
+                composite_over(&mut r, &eyes[&e.eye_key()], 0, 0);
                 composite_over(&mut r, &mouth[usize::from(e.viseme)], 0, 0);
                 Node::raster(r.to_surface())
             }
@@ -307,7 +318,7 @@ impl Arm {
                 .height(f32::from(a.rows))
                 .child(Node::surface(Arc::clone(base)))
                 .child(
-                    Node::surface(Arc::clone(&eyes[&(e.open, e.gaze)]))
+                    Node::surface(Arc::clone(&eyes[&e.eye_key()]))
                         .offset(0.0, (a.eyes.y0 / 2) as f32),
                 )
                 .child(
@@ -327,8 +338,11 @@ const WORDS: [&str; 12] = [
     "than", "needed.",
 ];
 
-fn chat(reply_tokens: usize) -> Node {
-    let mut col = Node::col().flex_grow(1.0);
+/// The chat pane gets an explicit width. Left to flex, a column holding a long wrapped
+/// reply sizes to the reply's unwrapped length (wrapped text reports its full line width
+/// as min-content) and overflows the grid instead of wrapping; see `--layout-probe`.
+fn chat(width: u16, reply_tokens: usize) -> Node {
+    let mut col = Node::col().width(f32::from(width)).flex_shrink(0.0);
     for i in 0..6 {
         col = col.child(Node::text_wrapped(
             format!("[{i}] earlier turn {i}: a settled message that does not change."),
@@ -499,14 +513,10 @@ fn run(
                 } else {
                     24
                 };
-                chat(tokens)
+                chat(cols - av_cols, tokens)
             }
         };
-        let root = Node::row()
-            .width(f32::from(cols))
-            .height(f32::from(rows))
-            .child(av)
-            .child(right);
+        let root = frame_root(cols, rows, av, right, true);
         let t2 = Instant::now();
         ctx.set_root(root);
         ctx.render().expect("headless render");
@@ -534,6 +544,52 @@ fn run(
     }
     s.digest = digest;
     s
+}
+
+/// The two-pane frame. `pin` gives the avatar `flex_shrink(0)`. Without it a `Node::stack`
+/// avatar (intrinsic size 0) can shrink below its declared width beside a growing pane,
+/// while a raster leaf (intrinsic size = its surface) cannot; see `--layout-probe`.
+fn frame_root(cols: u16, rows: u16, avatar: Node, right: Node, pin: bool) -> Node {
+    let avatar = if pin { avatar.flex_shrink(0.0) } else { avatar };
+    Node::row()
+        .width(f32::from(cols))
+        .height(f32::from(rows))
+        .child(avatar)
+        .child(right)
+}
+
+/// The chat column left to flex (`flex_grow(1)`, no width): the probe's control.
+fn flex_chat(reply_tokens: usize) -> Node {
+    let reply: Vec<&str> = (0..reply_tokens).map(|i| WORDS[i % WORDS.len()]).collect();
+    Node::col().flex_grow(1.0).child(Node::text_wrapped(
+        reply.join(" "),
+        Style::default(),
+        WrapMode::WordWrap,
+    ))
+}
+
+/// Prints the computed avatar and right-pane rects for each arm, pinned and unpinned.
+fn layout_probe(cols: u16, rows: u16) {
+    let av_cols = (cols * 3 / 10).max(12);
+    let avatar = Avatar::new(av_cols, rows - 2);
+    let e = expr_at("static", 0);
+    for arm in ["rgb", "cells"] {
+        let a = Arm::build(arm, &avatar);
+        for pin in [false, true] {
+            let mut root = frame_root(cols, rows, a.node(&avatar, e), flex_chat(24), pin);
+            gibson::compute_layout(&mut root, cols, rows).expect("layout");
+            let r = |i: usize| {
+                let c = &root.children[i].computed_rect;
+                format!("{}x{}@{},{}", c.width, c.height, c.x, c.y)
+            };
+            println!(
+                "layout {cols}x{rows} arm={arm} pin={pin} declared={av_cols}x{} avatar={} right={}",
+                rows - 2,
+                r(0),
+                r(1)
+            );
+        }
+    }
 }
 
 /// An OS pipe whose read end is drained by a thread.
@@ -707,6 +763,12 @@ fn parse_grids(s: &str) -> Result<Vec<(u16, u16)>, String> {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--layout-probe") {
+        for (c, r) in [(80, 24), (120, 40), (40, 15)] {
+            layout_probe(c, r);
+        }
+        return;
+    }
     if args.iter().any(|a| a == "--selfcheck") {
         if let Err(e) = selfcheck() {
             eprintln!("avatar_frame_bench selfcheck: FAIL {e}");
