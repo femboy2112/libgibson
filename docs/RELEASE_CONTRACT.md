@@ -102,12 +102,16 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
-- **0.7.1** is **prepared in source** (state 1) on `main`, named "clear SIGBUS 1"
-  ([decision 0004](decisions/0004-release-naming.md)). It promotes the `raster` RGB subset to CORE
+- **0.7.1** "clear SIGBUS 1" ([decision 0004](decisions/0004-release-naming.md)) is the latest
+  such milestone and is **tagged and released on GitHub** (state 2):
+  - tag `v0.7.1` → `835796e` on `main`, with `bindings/go/v0.7.1` on the same commit;
+  - a regular GitHub release of 2026-11-13
+    ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.1)) with the native SDK
+    archive, its checksum and the Python wheel/sdist, not published to any registry.
+
+  It promotes the `raster` RGB subset to CORE
   (decision [0003](decisions/0003-raster-rgb-core-promotion.md), §2) and changes no library code
-  since 0.7.0. It is to be tagged `v0.7.1` (with `bindings/go/v0.7.1`) on a `main` commit as a
-  regular GitHub release, only on the owner's per-tag go. ABI v1 (67 symbols), MSRV 1.85 and
-  Linux x86_64 are unchanged.
+  since 0.7.0. ABI v1 (67 symbols), MSRV 1.85 and Linux x86_64 are unchanged.
 - **0.7.0** is **tagged and released on GitHub** (state 2):
   tag `v0.7.0` → `1df9690` on `main` (and `bindings/go/v0.7.0` on the same commit), a regular
   GitHub release (not a prerelease) of 2026-11-13

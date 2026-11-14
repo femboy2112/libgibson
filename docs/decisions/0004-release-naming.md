@@ -4,7 +4,7 @@
 |---|---|
 | Status | **Decided 2026-11-13.** The owner chose the scheme. The release coordinator settled the details under the owner's delegation. |
 | Contract | [Release Contract §1](../RELEASE_CONTRACT.md#1-versioning-model); [`RELEASING.md`](../RELEASING.md) §6 |
-| First use | 0.7.1: "LibGibson v0.7.1 — clear SIGBUS 1" |
+| First use | 0.7.1: "LibGibson v0.7.1 — clear SIGBUS 1", [released](https://github.com/femboy2112/libgibson/releases/tag/v0.7.1) 2026-11-13 (tag → `835796e`) |
 | Recorded | 2026-11-13 |
 
 ## The scheme
@@ -56,7 +56,7 @@ reference regardless.
 
 ## Release names
 
-The names for v0.1.0 through v0.7.0 were assigned after the fact. They live only in this table.
+The names for v0.1.0 through v0.7.0 were assigned after the fact and live only in this table. From v0.7.1 on, each release carries its name in its title and tag message.
 **Published releases and tags are not edited**: v0.7.0 keeps the title it was published with.
 
 | Release | Name |
@@ -75,6 +75,7 @@ The names for v0.1.0 through v0.7.0 were assigned after the fact. They live only
 | v0.5.0 | clear SIGTRAP 0 |
 | v0.6.0 | clear SIGABRT 0 |
 | v0.7.0 | clear SIGBUS 0 |
+| v0.7.1 | clear SIGBUS 1 (first named release) |
 
 The pre-releases `v0.7.0-alpha.1` through `v0.7.0-alpha.6` have no name.
 

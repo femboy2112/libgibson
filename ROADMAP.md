@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-13): v0.7.1 "clear SIGBUS 1" prepared; v0.7.0 released
+## Current release (updated 2026-11-13): v0.7.1 "clear SIGBUS 1"
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -12,9 +12,15 @@ This document outlines completed work and the planned future milestones for LibG
 - gates and how each was met: [`docs/V0_7_QUALIFICATION.md`](docs/V0_7_QUALIFICATION.md) and
   [decision 0002](docs/decisions/0002-v0.7.0-qualification.md).
 
-**v0.7.1 "clear SIGBUS 1"** is prepared in source (state 1). It promotes the `raster` RGB subset to
-CORE ([decision 0003](docs/decisions/0003-raster-rgb-core-promotion.md)), is the first named release
-([decision 0004](docs/decisions/0004-release-naming.md)), and changes no library code.
+**v0.7.1 "clear SIGBUS 1" was released on 2026-11-13** (state 2):
+- annotated tag `v0.7.1` → `835796e` on `main`, with `bindings/go/v0.7.1` on the same commit;
+- a regular GitHub [release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.1), not on
+  any registry.
+
+It promotes the `raster` RGB subset to CORE
+([decision 0003](docs/decisions/0003-raster-rgb-core-promotion.md)), is the first named release
+([decision 0004](docs/decisions/0004-release-naming.md)), and changes no library code. Its roadmap
+completion audit is in #388.
 
 v0.6.0 (maintenance line, `492d0fe`) is the prior release before 0.7. `v0.7.0-alpha.1` through
 `alpha.6` were consumer prereleases from `main`. The v0.7 status below is authoritative. Older
