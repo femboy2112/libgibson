@@ -28,6 +28,11 @@ tied to the package version (see §5). A package release can advance without
 touching the ABI version; a breaking ABI change bumps `GIBSON_ABI_VERSION` even
 while the package stays 0.x.
 
+**Release names** ([decision 0004](decisions/0004-release-naming.md)): each release also has a
+name, `<utility> <signal> <patch>`, for example 0.7.11 = "clear SIGBUS 11". The name appears in
+the GitHub release title and the tag message only. Tag names and version strings stay plain
+SemVer.
+
 ### 0.x SemVer semantics
 
 LibGibson is pre-1.0, so Cargo's 0.x compatibility rules apply. A consumer who
