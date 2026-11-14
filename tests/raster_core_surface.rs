@@ -41,7 +41,9 @@ fn signatures_are_pinned() {
         r.write_ppm(w)
     }
     let _: fn(&RgbRaster, Vec<u8>) -> std::io::Result<()> = ppm::<Vec<u8>>;
-    let _: fn(&RgbRaster, &mut Vec<u8>) -> std::io::Result<()> = ppm::<&mut Vec<u8>>;
+    // A generic `W` that is a reference has an early-bound lifetime, so name one.
+    let _: fn(&RgbRaster, &'static mut Vec<u8>) -> std::io::Result<()> =
+        ppm::<&'static mut Vec<u8>>;
     let _: fn(&RgbRaster, std::io::Sink) -> std::io::Result<()> = ppm::<std::io::Sink>;
 }
 
