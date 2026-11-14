@@ -15,6 +15,16 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-11-14 · GitHub release from `main` · "clear SIGBUS 2"
+
+A patch release: one CORE layout fix and one stability promotion.
+- **Library code changes since 0.7.1:**
+  - `src/layout.rs`: the #391 fix;
+  - `src/ui/runtime.rs`: rustdoc only.
+  `include/` and `bindings/` differ only in version strings.
+- **Platforms and distribution:** Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload. The Go module tag `bindings/go/v0.7.2` names the same commit as `v0.7.2`.
+- **ABI and MSRV:** `GIBSON_ABI_VERSION` stays 1 (67 symbols, unchanged). MSRV stays 1.85.
+
 ### Changed
 - **Stability: the `raster` RGBA compositing subset is CORE** ([decision 0005](docs/decisions/0005-raster-rgba-core-promotion.md)).
   - **Promoted:** `Rgba`; `RgbaRaster::{new, from_rgba_bytes, width, height, get, pixels}`; `composite_over`; `flatten`.
@@ -29,6 +39,20 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   - **Now:** min-content is the widest unbreakable run: the longest word for `WordWrap`, the widest grapheme for `CharWrap`, and the whole line for `NoWrap`, which is unchanged.
   - **Geometry change:** layouts that used to overflow their row now wrap inside it. Layouts that fit are unaffected: definite and max-content measurement are unchanged.
   - **Still needed:** a sibling that may shrink still gives up a proportional share, because a `flex_grow` column's flex-basis is its max-content. A stack pane's content-based minimum is 0, as in CSS, so pin fixed panes with `flex_shrink(0.0)`.
+
+### Documentation
+- **Terminal lease contract: when to catch SIGHUP and SIGQUIT** (#398).
+  - **When:** keep the default action unless the host has its own hangup cleanup, or SIGHUP can arrive while the terminal is still alive.
+  - **How:** leave the loop on any poll or render error. A lost terminal shows up as `BrokenPipe` from the poll, or as the OS `EIO` from a write, never rewrapped.
+  - **Expect:** `restore()` may return `Err` after a real hangup.
+- **`ui::App` idle cost** (#395). The rustdoc now states that `App` re-lowers and re-renders every iteration at `fps`, by contract (it delivers `AppEvent::Tick` every iteration), and points to `Context::run_once` for idle-zero loops. The opt-in on-demand mode is deferred (#396).
+
+### Development and CI (no library effect)
+- Dev-dependency `vt100` 0.16 → 0.18 (#397, superseding #169). It ports the test oracles to `NonZeroU16` sizes and `String` formatted output. The new xterm-style `set_size` shifted no oracle.
+- `unicode-width` 0.2.2 → 0.2.3 (#256), with `THIRD-PARTY-NOTICES.md` regenerated (#393).
+- Release Preflight now also runs on `Cargo.lock` and `THIRD-PARTY-NOTICES.md` changes (#394). It is still not a required check.
+- CI: `Swatinem/rust-cache` 2.9.2 → 2.9.3 (#196).
+- `examples/avatar_frame_bench.rs` (#390): frame and idle cost of a persistent avatar in three equivalent drawing arms.
 
 ## [0.7.1] — 2026-11-13 · GitHub release from `main` · "clear SIGBUS 1"
 
