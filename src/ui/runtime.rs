@@ -479,6 +479,25 @@ pub enum Control {
 /// Use `UiRuntime` directly when the application already has a loop. This helper
 /// sends Ctrl-C to the application's `Input` handler and then quits, even under
 /// modal capture. It renders one frame on redirected/noninteractive output.
+///
+/// # Idle cost
+///
+/// The loop is paced, not input-driven. Every iteration it calls `view`, lowers
+/// the result, marks the frame dirty and renders it once the `fps` budget
+/// allows. It then waits at most `1 / fps` for input before delivering
+/// [`AppEvent::Tick`]. It does this whether or not anything changed,
+/// because an application may advance its model on `Tick`. An idle `App`
+/// therefore keeps doing layout and paint work at `fps`. The output diff keeps
+/// what it writes to the terminal near zero, but the CPU work remains.
+///
+/// For example, a static view of a text line and a 24×10 image at 30 fps cost
+/// about 0.9% of one core on the development host
+/// (`examples/avatar_frame_bench.rs --idle app`). A `Context::run_once` loop
+/// with the same view cost about 0.01% (`--idle run-once`).
+///
+/// For a long-lived, mostly idle screen, drive a [`Context`] with
+/// [`Context::run_once`]. It waits the full `max_wait` when nothing is pending
+/// and never wakes on its own. Rebuild the root only after input.
 pub struct App {
     mode: RenderMode,
     skin: Skin,
