@@ -12,6 +12,14 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.7.2 "clear SIGBUS 2" released (2026-11-14):**
+- tag `v0.7.2` → `7e7c7b3` on `main`, with `bindings/go/v0.7.2` on the same commit;
+- a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.2).
+
+It fixes wrapped-text min-content in CORE layout (#391) and promotes the `raster` RGBA compositing
+subset (`Rgba`, `RgbaRaster::{new, from_rgba_bytes, width, height, get, pixels}`, `composite_over`,
+`flatten`) to CORE (decision 0005). Library code changed only in `src/layout.rs` and rustdoc.
+
 **v0.7.1 "clear SIGBUS 1" released (2026-11-13):**
 - tag `v0.7.1` → `835796e` on `main`, with `bindings/go/v0.7.1` on the same commit;
 - a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.1).
