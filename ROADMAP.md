@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-14): v0.7.1 "clear SIGBUS 1"; v0.7.2 "clear SIGBUS 2" prepared
+## Current release (updated 2026-11-14): v0.7.2 "clear SIGBUS 2"
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -22,9 +22,13 @@ It promotes the `raster` RGB subset to CORE
 ([decision 0004](docs/decisions/0004-release-naming.md)), and changes no library code. Its roadmap
 completion audit is in #388.
 
-**v0.7.2 "clear SIGBUS 2" is prepared in source** (Release Contract §1, state 1). It fixes the
-CORE layout defect #391 and promotes the `raster` RGBA compositing subset to CORE
-([decision 0005](docs/decisions/0005-raster-rgba-core-promotion.md)).
+**v0.7.2 "clear SIGBUS 2" was released on 2026-11-14** (state 2):
+- annotated tag `v0.7.2` → `7e7c7b3` on `main`, with `bindings/go/v0.7.2` on the same commit;
+- a regular GitHub [release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.2), not on any registry.
+
+It fixes the CORE layout defect #391 and promotes the `raster` RGBA compositing subset to CORE
+([decision 0005](docs/decisions/0005-raster-rgba-core-promotion.md)). Its roadmap completion audit
+is below and in #400.
 
 #### v0.7.2 completion status (authoritative, 2026-11-14)
 
@@ -33,7 +37,7 @@ Each 0.7.2 item, with the evidence that closes it or the recorded deferral that 
 | Item | Status | Evidence |
 |---|---|---|
 | CORE layout: wrapped text min-content (#391) | **Done** | #392 merged as `1a05095` (head `b32ec2d`, 9/9). Red-first run 43604069947: 5 of 6 new tests fail against unchanged library code. Before/after fixture diff: 18 of 27 byte-identical, 9 changed, all overflow-shaped. MINERVA PTY ACK on `500e229`: 1057 passed, 0 failed, byte-identical to its v0.7.1 baseline. |
-| `raster` RGBA compositing subset → CORE (decision 0005) | **Done** (no library code change) | #399 merged as `d9daca9` (head `db3ee89`, 9/9). Guard `tests/raster_rgba_core_surface.rs`. Red mutant run 43613836172 failed the guard as intended (`:157`, 108 vs 109). MINERVA confirmed the call set. Its PTY run on this release candidate is the gate. |
+| `raster` RGBA compositing subset → CORE (decision 0005) | **Done** (no library code change) | #399 merged as `d9daca9` (head `db3ee89`, 9/9). Guard `tests/raster_rgba_core_surface.rs`. Red mutant run 43613836172 failed the guard as intended (`:157`, 108 vs 109). MINERVA confirmed the call set, and its PTY run on the release candidate `c1bc5b3` passed: 1066 passed, 0 failed, 11 ignored, with the call set compiling against CORE and its captured screens byte-identical to v0.7.1. |
 | Terminal lease contract: when to catch SIGHUP/SIGQUIT | **Done** (docs) | #398 merged as `44721fa`. EIO preservation on writes is cited to code. |
 | `ui::App` idle cost documented | **Done** (docs) | #395 merged as `79a5c78`. Measured 0.93% of a core vs 0.01% for `run_once` (#390 bench). |
 | Development and CI hygiene | **Done** | vt100 0.18: #397 (`b2f5c5a`). unicode-width 0.2.3: #256, with notices regenerated in #393. Release Preflight on `Cargo.lock` and notices: #394. rust-cache 2.9.3: #196. Avatar frame bench: #390. |

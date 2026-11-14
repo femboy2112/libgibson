@@ -2,12 +2,13 @@
 
 | | |
 |---|---|
-| Status | **Accepted 2026-11-14, pending the consumer gate; in effect from 0.7.2.** Merged in #399 (red mutant run 43613836172 failed the guard as intended; CI 9/9). It takes effect only if 0.7.2 ships with it, after the consumer gate below. In 0.7.0 and 0.7.1 every RGBA item was EXPERIMENTAL ([decision 0003](0003-raster-rgb-core-promotion.md)). |
+| Status | **Accepted 2026-11-14; in effect from 0.7.2.** Merged in #399 (red mutant run 43613836172 failed the guard as intended; CI 9/9). In 0.7.0 and 0.7.1 every RGBA item was EXPERIMENTAL ([decision 0003](0003-raster-rgb-core-promotion.md)). |
 | Contract | [Release Contract §2](../RELEASE_CONTRACT.md#2-rust-api-stability-pre-10) |
 | Guard | [`tests/raster_rgba_core_surface.rs`](../../tests/raster_rgba_core_surface.rs) |
 | Follows | Decision 0003 kept `Rgba`, `RgbaRaster`, `composite_over`, `downscale_area` and `flatten` EXPERIMENTAL because they had "no external consumer yet", the `Rgba` array shape was undecided, and straight versus premultiplied alpha was "not settled". This decision answers all three for the items a consumer now calls. |
 | Gate | Ships only after MINERVA confirms the call set (done, 2026-11-14) **and** its PTY suite passes against the 0.7.2 candidate. The release then follows [decision 0004](0004-release-naming.md) and the roadmap completion audit. |
 | Recorded | 2026-11-14 |
+| Outcome | **Released in v0.7.2** ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.2), tag → `7e7c7b3`), 2026-11-14. The consumer gate passed: MINERVA's PTY suite on the candidate `c1bc5b3` (same tree as `7e7c7b3`) ran 1066 passed, 0 failed, 11 ignored, including a test that calls the whole promoted set. |
 
 ## Question
 

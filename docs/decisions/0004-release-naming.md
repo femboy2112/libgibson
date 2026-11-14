@@ -76,6 +76,7 @@ The names for v0.1.0 through v0.7.0 were assigned after the fact and live only i
 | v0.6.0 | clear SIGABRT 0 |
 | v0.7.0 | clear SIGBUS 0 |
 | v0.7.1 | clear SIGBUS 1 (first named release) |
+| v0.7.2 | clear SIGBUS 2 |
 
 The pre-releases `v0.7.0-alpha.1` through `v0.7.0-alpha.6` have no name.
 
