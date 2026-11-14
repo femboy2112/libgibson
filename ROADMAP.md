@@ -3,6 +3,17 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
+## Current release (updated 2026-11-13): v0.7.0
+
+**v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2): annotated tag `v0.7.0` →
+`1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the same commit. It is a
+regular GitHub release, not a prerelease, and it is not on any registry. The gates and how each
+was met are in [`docs/V0_7_QUALIFICATION.md`](docs/V0_7_QUALIFICATION.md) and
+[decision 0002](docs/decisions/0002-v0.7.0-qualification.md). This supersedes the "v0.7.0 is not
+yet eligible / not released or qualified yet" notes in the v0.7 horizon below, which are kept as
+history. v0.6.0 (maintenance line, `492d0fe`) is the prior release. The v0.7.0-alpha.1 through
+alpha.6 tags were consumer prereleases from `main`.
+
 ## Current direction (updated 2026-11-08): v0.6.0 — released from the maintenance line (Renaissance XIV–XVII)
 
 **Canonical roadmap: [issue #191](https://github.com/femboy2112/libgibson/issues/191).** This
