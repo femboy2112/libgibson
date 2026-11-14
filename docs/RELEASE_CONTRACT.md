@@ -102,7 +102,13 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
-- **0.7.0** is the latest such milestone and is **tagged and released on GitHub** (state 2):
+- **0.7.1** is **prepared in source** (state 1) on `main`, named "clear SIGBUS 1"
+  ([decision 0004](decisions/0004-release-naming.md)). It promotes the `raster` RGB subset to CORE
+  (decision [0003](decisions/0003-raster-rgb-core-promotion.md), §2) and changes no library code
+  since 0.7.0. It is to be tagged `v0.7.1` (with `bindings/go/v0.7.1`) on a `main` commit as a
+  regular GitHub release, only on the owner's per-tag go. ABI v1 (67 symbols), MSRV 1.85 and
+  Linux x86_64 are unchanged.
+- **0.7.0** is **tagged and released on GitHub** (state 2):
   tag `v0.7.0` → `1df9690` on `main` (and `bindings/go/v0.7.0` on the same commit), a regular
   GitHub release (not a prerelease) of 2026-11-13
   ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0)) with the native SDK
@@ -215,11 +221,11 @@ next `0.y` minor and is recorded in the CHANGELOG:
 - `input` — `Event`, `KeyCode`, `KeyEvent`, `poll_event`
 - `capability` — `TerminalCapabilities`, `Capability`, `ColorDepth`, quantization
 - the **C-ABI-backed subset** (see §5)
-- **Proposed for 0.7.1, not in effect in 0.7.0** ([decision 0003](decisions/0003-raster-rgb-core-promotion.md)):
-  the `raster` RGB subset. That is `Rgb` (the `(u8, u8, u8)` alias), `MAX_RASTER_DIMENSION` (2048),
-  `FrameError` and `RgbRaster` with all of its methods except `to_mono_surface`. The promise
-  covers signatures, traits and the documented edge behaviour, pinned by
-  `tests/raster_core_surface.rs`. It takes effect only when a 0.7.1 that carries it is released.
+- **From 0.7.1** ([decision 0003](decisions/0003-raster-rgb-core-promotion.md)): the `raster` RGB
+  subset. That is `Rgb` (the `(u8, u8, u8)` alias), `MAX_RASTER_DIMENSION` (2048), `FrameError`
+  and `RgbRaster` with all of its methods except `to_mono_surface`. The promise covers signatures,
+  traits and the documented edge behaviour, pinned by `tests/raster_core_surface.rs`. In 0.7.0
+  this subset was EXPERIMENTAL.
 
 A lower-risk **utility tier** — `ansi`, `canvas`, `clock`, `diff`, `field`,
 `focus`, `geom`, `glitch`, `glyph`, `particles`, `replication`, `scheduler`, `show`,
@@ -248,7 +254,7 @@ breaking them in a pure patch:
 - `scene` — entity/effect composition graph (`Scene`, `SceneEntity`, `Effect`, …)
 - `story` — narrative beat/reaction director (`Story`, `StoryDirector`, `Beat`, `TraceRetention`, …)
 - `surface_fx` — ordered endomorphisms over a realized surface
-- `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack (from 0.7.1, `raster` except the proposed CORE subset above)
+- `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack (from 0.7.1, `raster` except the CORE subset above)
 - `raycast` — the grid raycaster rendering into an `RgbRaster` (0.7.0)
 - `raster::RgbaRaster`, `composite_over`, `downscale_area`, `flatten` and `ui::image_area` — RGBA compositing and area filtering (0.7.0)
 - `rig`, `city` — camera rigs (`Dolly`, `Orbit`, `Transition`, `Ease`) and wireframe-city geometry helpers for `raster3d`; also `raster3d::Camera::basis` / `CameraBasis` (0.7.0)
