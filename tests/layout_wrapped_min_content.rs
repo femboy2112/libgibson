@@ -65,23 +65,34 @@ fn word_wrapped_reply_column_fits_its_row() {
 }
 
 #[test]
-fn stack_pane_beside_a_long_reply_keeps_its_declared_width() {
+fn stack_pane_beside_a_long_reply_no_longer_absorbs_an_overflow() {
+    // Before #391 the reply column could not shrink below its unwrapped width, so the row
+    // overflowed and the stack (content-based minimum 0) collapsed to 0 columns. Now the
+    // row fits exactly and the reply wraps.
+    //
+    // A stack that may shrink still gives up its share: the column's flex-basis is its
+    // max-content, and CSS gives a stack's auto minimum as min(specified 24, content 0) = 0.
+    // A fixed pane is pinned with `flex_shrink(0)`, and then it keeps its declared width.
     for (cols, rows) in [(80u16, 24u16), (120, 40), (40, 15)] {
-        let stack = Node::stack()
-            .width(24.0)
-            .height(f32::from(rows - 2))
-            .child(raster_pane());
-        let root = two_panes(
-            cols,
-            rows,
-            stack,
-            Node::text_wrapped(reply(), Style::default(), WrapMode::WordWrap),
+        let stack = || {
+            Node::stack()
+                .width(24.0)
+                .height(f32::from(rows - 2))
+                .child(raster_pane())
+        };
+        let reply = || Node::text_wrapped(reply(), Style::default(), WrapMode::WordWrap);
+
+        let root = two_panes(cols, rows, stack(), reply());
+        let (pane, col) = (rect(&root.children[0]), rect(&root.children[1]));
+        assert!(pane.width > 0, "{cols}x{rows}: stack pane collapsed to 0");
+        assert_eq!(pane.width + col.width, cols, "{cols}x{rows}: row overflows");
+        assert!(
+            rect(&root.children[1].children[0]).height > 1,
+            "{cols}x{rows}"
         );
-        assert_eq!(
-            rect(&root.children[0]).width,
-            24,
-            "{cols}x{rows}: stack pane collapsed"
-        );
+
+        let root = two_panes(cols, rows, stack().flex_shrink(0.0), reply());
+        assert_eq!(rect(&root.children[0]).width, 24, "{cols}x{rows}: pinned");
         assert_eq!(rect(&root.children[1]).width, cols - 24, "{cols}x{rows}");
     }
 }
