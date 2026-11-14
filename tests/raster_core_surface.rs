@@ -135,7 +135,7 @@ fn line_is_inclusive_and_bounded_for_extreme_endpoints() {
     // Endpoints far outside the raster are clipped first, so this returns quickly.
     let mut r = RgbRaster::new(4, 4);
     r.line(i32::MIN, i32::MIN, i32::MAX, i32::MAX, (1, 2, 3));
-    assert!(r.pixels().iter().any(|&p| p == (1, 2, 3)));
+    assert!(r.pixels().contains(&(1, 2, 3)));
 
     let mut empty = RgbRaster::new(0, 0);
     empty.line(0, 0, 10, 10, (1, 2, 3));
