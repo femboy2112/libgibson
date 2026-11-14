@@ -252,6 +252,26 @@ fn convert_style(ls: &LayoutStyle) -> taffy::style::Style {
 }
 
 /// Measures leaf intrinsic content dimensions.
+/// The widest run of `line` that `wrap` will not break (#391): the whole line for
+/// `NoWrap`, the widest grapheme for `CharWrap`, the widest space-separated word for
+/// `WordWrap`. Saturates at `u16::MAX`.
+fn unbreakable_width(line: &str, wrap: WrapMode) -> u16 {
+    let w = match wrap {
+        WrapMode::NoWrap => UnicodeWidthStr::width(line),
+        WrapMode::CharWrap => line
+            .graphemes(true)
+            .map(UnicodeWidthStr::width)
+            .max()
+            .unwrap_or(0),
+        WrapMode::WordWrap => line
+            .split(' ')
+            .map(UnicodeWidthStr::width)
+            .max()
+            .unwrap_or(0),
+    };
+    u16::try_from(w).unwrap_or(u16::MAX)
+}
+
 fn measure_leaf(
     kind: &NodeKind,
     known_dimensions: Size<Option<f32>>,
@@ -266,8 +286,13 @@ fn measure_leaf(
 
     match kind {
         NodeKind::Text { text, wrap, .. } => {
-            let max_w = match available_space.width {
-                AvailableSpace::Definite(w) => w.max(1.0) as u16,
+            // Min-content is the widest unbreakable run (#391), not the unwrapped line.
+            let min_content = (available_space.width == AvailableSpace::MinContent)
+                .then(|| text.split('\n').map(|l| unbreakable_width(l, *wrap)).max())
+                .flatten();
+            let max_w = match (available_space.width, min_content) {
+                (AvailableSpace::Definite(w), _) => w.max(1.0) as u16,
+                (_, Some(m)) => m.max(1),
                 _ => 1000,
             };
 
@@ -279,6 +304,9 @@ fn measure_leaf(
                     width = w;
                 }
             }
+            if let Some(m) = min_content {
+                width = f32::from(m);
+            }
             let height = lines.len() as f32;
 
             Size {
@@ -287,8 +315,23 @@ fn measure_leaf(
             }
         }
         NodeKind::RichText { text, wrap } => {
-            let max_w = match available_space.width {
-                AvailableSpace::Definite(w) => w.max(1.0) as u16,
+            // As for plain text (#391). Spans are joined per line, because a word can
+            // continue across a style change.
+            let min_content = (available_space.width == AvailableSpace::MinContent)
+                .then(|| {
+                    text.lines
+                        .iter()
+                        .map(|line| {
+                            let plain: String =
+                                line.spans.iter().map(|s| s.text.as_str()).collect();
+                            unbreakable_width(&plain, *wrap)
+                        })
+                        .max()
+                })
+                .flatten();
+            let max_w = match (available_space.width, min_content) {
+                (AvailableSpace::Definite(w), _) => w.max(1.0) as u16,
+                (_, Some(m)) => m.max(1),
                 _ => 1000,
             };
 
@@ -299,6 +342,9 @@ fn measure_leaf(
                 if w > width {
                     width = w;
                 }
+            }
+            if let Some(m) = min_content {
+                width = f32::from(m);
             }
             let height = lines.len() as f32;
 
