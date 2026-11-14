@@ -17,9 +17,13 @@ procedural audio.
 
 </div>
 
-> **Current release: [v0.7.0](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0)** (2026-11-13,
-> tag `v0.7.0` → `main` `1df9690`; the Go module tag `bindings/go/v0.7.0` names the same commit).
-> The first qualified 0.7 release adds:
+> **Current release: [v0.7.1 — clear SIGBUS 1](https://github.com/femboy2112/libgibson/releases/tag/v0.7.1)**
+> (2026-11-13, tag `v0.7.1` → `main` `835796e`; the Go module tag `bindings/go/v0.7.1` names the
+> same commit). v0.7.1 promotes the `raster` RGB subset (`Rgb`, `RgbRaster`) to CORE
+> ([decision 0003](docs/decisions/0003-raster-rgb-core-promotion.md)) and changes no library code.
+> It is the first release with a [name](docs/decisions/0004-release-naming.md).
+>
+> Since v0.7.0, the first qualified 0.7 release, the 0.7 line adds:
 > - a terminal lease on Linux;
 > - recovery after a caught owner-thread panic;
 > - C ABI 59 → 67 symbols, all additive (`GIBSON_ABI_VERSION` stays 1);
@@ -165,7 +169,7 @@ of this film ([how it was captured](docs/assets/README.md)).
 ## Install & use
 
 LibGibson ships as **GitHub source plus a native SDK archive** on the
-[release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0). It is not
+[release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.1). It is not
 published to any package registry.
 
 ### Rust
@@ -175,7 +179,7 @@ crate you `use` is `gibson`:
 
 ```toml
 [dependencies]
-libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.7.0" }
+libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.7.1" }
 ```
 
 ```rust
@@ -218,14 +222,14 @@ For a short Python walkthrough using the released SDK, see
 headless starters and a staged-artifact smoke check, see
 [`onboarding/README.md`](onboarding/README.md).
 
-The release attaches `libgibson-0.7.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
+The release attaches `libgibson-0.7.1-linux-x86_64.tar.gz` (with a `.sha256`): headers,
 `libgibson.a`, the versioned shared object (`libgibson.so.1` + a `libgibson.so` dev
 symlink), and a relocatable `pkg-config` file.
 
 ```bash
-sha256sum -c libgibson-0.7.0-linux-x86_64.tar.gz.sha256
-tar -xzf libgibson-0.7.0-linux-x86_64.tar.gz          # -> ./libgibson-0.7.0-linux-x86_64/
-export PKG_CONFIG_PATH="$PWD/libgibson-0.7.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
+sha256sum -c libgibson-0.7.1-linux-x86_64.tar.gz.sha256
+tar -xzf libgibson-0.7.1-linux-x86_64.tar.gz          # -> ./libgibson-0.7.1-linux-x86_64/
+export PKG_CONFIG_PATH="$PWD/libgibson-0.7.1-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 cc app.c $(pkg-config --cflags --libs libgibson) -o app   # C consumer
 ```

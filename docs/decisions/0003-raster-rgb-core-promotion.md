@@ -7,6 +7,7 @@
 | Guard | [`tests/raster_core_surface.rs`](../../tests/raster_core_surface.rs) |
 | Follows | [`V0_7_QUALIFICATION.md`](../V0_7_QUALIFICATION.md) G4: if MINERVA needs more than best-effort stability, promote what it uses to CORE. The 0.7.0 tier review made no promotion and named `raster::{Rgb, RgbRaster}` as the first candidate. |
 | Recorded | 2026-11-13 |
+| Outcome | **Released in v0.7.1** ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.1), tag → `835796e`), 2026-11-13. |
 
 ## Question
 

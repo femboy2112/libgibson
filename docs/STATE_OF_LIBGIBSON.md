@@ -12,6 +12,14 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.7.1 "clear SIGBUS 1" released (2026-11-13):**
+- tag `v0.7.1` → `835796e` on `main`, with `bindings/go/v0.7.1` on the same commit;
+- a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.1).
+
+It promotes the `raster` RGB subset (`Rgb`, `MAX_RASTER_DIMENSION`, `FrameError`, `RgbRaster`
+except `to_mono_surface`) to CORE (decision 0003) and changes no library code since v0.7.0. It is
+the first named release (decision 0004).
+
 **v0.7.0 released (2026-11-13):** the first qualified 0.7 release, from `main` (tag `v0.7.0` →
 `1df9690`, with `bindings/go/v0.7.0` on the same commit;
 [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0), a regular release
