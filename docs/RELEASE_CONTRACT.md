@@ -97,6 +97,13 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
+- **0.7.0** is **prepared in source** (state 1) on `main`. It is the first qualified 0.7 release,
+  to be tagged `v0.7.0` (with `bindings/go/v0.7.0`) on a `main` commit as a regular GitHub
+  release, not a prerelease, only on the owner's explicit per-tag go (decision
+  [0002](decisions/0002-v0.7.0-qualification.md)). It follows six consumer prereleases from `main`
+  (`v0.7.0-alpha.1` through `v0.7.0-alpha.6`). The C ABI grows additively from 59 to 67 symbols
+  with `GIBSON_ABI_VERSION` staying 1. MSRV stays 1.85; Linux x86_64 only.
+
 **Release states.** A version passes through three separate states, and every document
 that names a version says which one it has reached:
 
@@ -229,12 +236,12 @@ breaking them in a pure patch:
 - `story` — narrative beat/reaction director (`Story`, `StoryDirector`, `Beat`, `TraceRetention`, …)
 - `surface_fx` — ordered endomorphisms over a realized surface
 - `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack
-- `raycast` — the grid raycaster rendering into an `RgbRaster` (0.7.0-alpha.2)
-- `raster::RgbaRaster`, `composite_over`, `downscale_area`, `flatten` and `ui::image_area` — RGBA compositing and area filtering (0.7.0-alpha.4)
-- `rig`, `city` — camera rigs (`Dolly`, `Orbit`, `Transition`, `Ease`) and wireframe-city geometry helpers for `raster3d`; also `raster3d::Camera::basis` / `CameraBasis` (0.7.0-alpha.4)
+- `raycast` — the grid raycaster rendering into an `RgbRaster` (0.7.0)
+- `raster::RgbaRaster`, `composite_over`, `downscale_area`, `flatten` and `ui::image_area` — RGBA compositing and area filtering (0.7.0)
+- `rig`, `city` — camera rigs (`Dolly`, `Orbit`, `Transition`, `Ease`) and wireframe-city geometry helpers for `raster3d`; also `raster3d::Camera::basis` / `CameraBasis` (0.7.0)
 - `ui::experience` — semantic experience grammars realizing one `Experience` through
   several presentation grammars (Rust only; see [EXPERIENCE_GRAMMARS.md](EXPERIENCE_GRAMMARS.md))
-  (0.7.0-alpha.4); `BladesStyle`, `Blades::with_style` and `Blades::with_skin` (0.7.0-alpha.5)
+  (0.7.0); `BladesStyle`, `Blades::with_style` and `Blades::with_skin` (0.7.0)
 - `temporal` — experimental temporal cell realization (`TemporalDisplayProcessor`,
   `TemporalBrailleField`, the exact RGB subcell projector, `PresentationProfile`,
   `TemporalSafetyPolicy`, `ResetPolicy`). Rust-only, introduced in the 0.3.0

@@ -3,6 +3,37 @@
 #include <string>
 #include <fcntl.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <cstdlib>
+
+// Since #371 a session writes its own duplicate of the terminal it acquired, not fd 1 as it is
+// later. To make that write fail, point every open descriptor for the same terminal device as
+// fd 1 (fd 0 excepted) at /dev/full. Returns false if nothing could be redirected.
+static bool redirect_terminal_writes_to_full() {
+    struct stat out {};
+    if (::fstat(STDOUT_FILENO, &out) != 0 || !S_ISCHR(out.st_mode)) return false;
+    int full = ::open("/dev/full", O_WRONLY | O_CLOEXEC);
+    if (full < 0) return false;
+    int fds[256]; int n = 0;
+    if (DIR* d = ::opendir("/proc/self/fd")) {
+        while (dirent* e = ::readdir(d)) {
+            int fd = std::atoi(e->d_name);
+            if (fd > 0 && fd != full && n < 256) fds[n++] = fd;
+        }
+        ::closedir(d);
+    }
+    int moved = 0;
+    for (int i = 0; i < n; ++i) {
+        struct stat st {};
+        if (::fstat(fds[i], &st) == 0 && S_ISCHR(st.st_mode) && st.st_rdev == out.st_rdev) {
+            int flags = ::fcntl(fds[i], F_GETFD);
+            if (::dup3(full, fds[i], (flags & FD_CLOEXEC) ? O_CLOEXEC : 0) >= 0) ++moved;
+        }
+    }
+    ::close(full);
+    return moved > 1;  // fd 1 and the session's own descriptor
+}
 
 int main(int argc, char** argv) {
     const std::string mode = argc > 1 ? argv[1] : "normal";
@@ -24,9 +55,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (mode == "io_error") {
-            int fd = ::open("/dev/full", O_WRONLY);
-            if (fd < 0 || ::dup2(fd, STDOUT_FILENO) < 0) return 2;
-            ::close(fd);
+            if (!redirect_terminal_writes_to_full()) return 2;
             try {
                 ctx.set_focus_reporting(true);
             } catch (const gibson::Error& e) {

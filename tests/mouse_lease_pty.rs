@@ -135,7 +135,8 @@ fn restored_session_cannot_enable_or_disable_mouse_for_new_owner() {
         "{}",
         String::from_utf8_lossy(&raw)
     );
-    assert!(String::from_utf8_lossy(&raw).contains("MOUSE_DONE rejected=true,true"));
+    assert!(String::from_utf8_lossy(&raw)
+        .contains("MOUSE_DONE enable_rejected=true,teardown_noop=true"));
 }
 
 #[test]
@@ -166,7 +167,8 @@ fn stale_mouse_calls_cannot_hide_owner_capture_from_panic_cleanup() {
         "{}",
         String::from_utf8_lossy(&raw)
     );
-    assert!(String::from_utf8_lossy(&raw).contains("MOUSE_DONE rejected=true,true"));
+    assert!(String::from_utf8_lossy(&raw)
+        .contains("MOUSE_DONE enable_rejected=true,teardown_noop=true"));
 }
 
 #[test]
@@ -212,7 +214,8 @@ fn restored_session_cannot_switch_a_new_owners_screen() {
         "{}",
         String::from_utf8_lossy(&raw)
     );
-    assert!(String::from_utf8_lossy(&raw).contains("MOUSE_DONE rejected=true,true"));
+    assert!(String::from_utf8_lossy(&raw)
+        .contains("MOUSE_DONE enable_rejected=true,teardown_noop=true"));
 }
 
 #[test]
@@ -281,7 +284,8 @@ fn mouse_lease_child() {
         owner.enter_alternate_screen().unwrap();
         eprintln!("STALE_CALLS_BEGIN");
         let enter_rejected = matches!(old.enter_alternate_screen(), Err(e) if e.kind() == std::io::ErrorKind::NotConnected);
-        let leave_rejected = matches!(old.leave_alternate_screen(), Err(e) if e.kind() == std::io::ErrorKind::NotConnected);
+        // Teardown after restore is an Ok no-op (it still must write nothing).
+        let leave_noop = matches!(old.leave_alternate_screen(), Ok(()));
         // Hostile control: model a partial mode request even though the stale calls
         // report rejection. The ordinary run does not set this variable.
         if std::env::var_os("GIBSON_TEST_STALE_SCREEN_TORN").is_some() {
@@ -289,7 +293,7 @@ fn mouse_lease_child() {
         }
         eprintln!("STALE_CALLS_END");
         owner.restore().unwrap();
-        eprintln!("MOUSE_DONE rejected={enter_rejected},{leave_rejected}");
+        eprintln!("MOUSE_DONE enable_rejected={enter_rejected},teardown_noop={leave_noop}");
         return;
     }
     if role == "owner" {
@@ -342,11 +346,12 @@ fn mouse_lease_child() {
     }
     eprintln!("STALE_CALLS_BEGIN");
     let enable_rejected = matches!(old.set_mouse_capture(true), Err(e) if e.kind() == std::io::ErrorKind::NotConnected);
-    let disable_rejected = matches!(old.set_mouse_capture(false), Err(e) if e.kind() == std::io::ErrorKind::NotConnected);
+    // Teardown after restore is an Ok no-op (it still must write nothing).
+    let disable_noop = matches!(old.set_mouse_capture(false), Ok(()));
     eprintln!("STALE_CALLS_END");
     if role == "panic" {
         assert!(std::panic::catch_unwind(|| panic!("caught owner panic")).is_err());
     }
     owner.restore().unwrap();
-    eprintln!("MOUSE_DONE rejected={enable_rejected},{disable_rejected}");
+    eprintln!("MOUSE_DONE enable_rejected={enable_rejected},teardown_noop={disable_noop}");
 }

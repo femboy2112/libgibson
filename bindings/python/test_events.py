@@ -267,6 +267,23 @@ check(e is not None and e.status == Status.ERR_INVALID_PARAM and not e.last_erro
       "focus error does not reuse stale terminal-size error")
 
 # --- misc -------------------------------------------------------------------------------------
+# The skew guard names every native function the wrapper binds, and reports the missing ones.
+with open(gibson.__file__) as f:
+    bound = set(re.findall(r"_lib\.(gibson_[a-z_0-9]+)", f.read())) - {"gibson_abi_version"}
+check(set(gibson._REQUIRED_SYMBOLS) == bound,
+      f"_REQUIRED_SYMBOLS out of date: {sorted(bound ^ set(gibson._REQUIRED_SYMBOLS))}")
+check(gibson._missing_symbols(gibson._lib) == [], "loaded library provides every bound function")
+
+
+class _OlderLibrary:
+    def __getattr__(self, name):
+        if name == "gibson_take_rendered_output":
+            raise AttributeError(name)
+        return getattr(gibson._lib, name)
+
+
+check(gibson._missing_symbols(_OlderLibrary()) == ["gibson_take_rendered_output"],
+      "a library without a bound function is reported by name")
 raises(Exception, lambda: setattr(Event(), "key_code", 1), "Event is immutable")
 
 if failures:

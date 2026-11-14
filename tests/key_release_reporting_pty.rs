@@ -952,7 +952,9 @@ fn key_release_reporting_child() {
     }
     if role == "restored" {
         ctx.restore().unwrap();
-        ctx.session.set_key_release_reporting(true).unwrap();
+        let enable = ctx.session.set_key_release_reporting(true);
+        assert_eq!(enable.unwrap_err().kind(), std::io::ErrorKind::NotConnected);
+        ctx.session.set_key_release_reporting(false).unwrap();
         assert!(!ctx.session.key_release_reporting_enabled());
         say("DONE");
         return;
