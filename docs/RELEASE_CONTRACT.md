@@ -210,6 +210,11 @@ next `0.y` minor and is recorded in the CHANGELOG:
 - `input` — `Event`, `KeyCode`, `KeyEvent`, `poll_event`
 - `capability` — `TerminalCapabilities`, `Capability`, `ColorDepth`, quantization
 - the **C-ABI-backed subset** (see §5)
+- **Proposed for 0.7.1, not in effect in 0.7.0** ([decision 0003](decisions/0003-raster-rgb-core-promotion.md)):
+  the `raster` RGB subset. That is `Rgb` (the `(u8, u8, u8)` alias), `MAX_RASTER_DIMENSION` (2048),
+  `FrameError` and `RgbRaster` with all of its methods except `to_mono_surface`. The promise
+  covers signatures, traits and the documented edge behaviour, pinned by
+  `tests/raster_core_surface.rs`. It takes effect only when a 0.7.1 that carries it is released.
 
 A lower-risk **utility tier** — `ansi`, `canvas`, `clock`, `diff`, `field`,
 `focus`, `geom`, `glitch`, `glyph`, `particles`, `replication`, `scheduler`, `show`,
@@ -238,7 +243,7 @@ breaking them in a pure patch:
 - `scene` — entity/effect composition graph (`Scene`, `SceneEntity`, `Effect`, …)
 - `story` — narrative beat/reaction director (`Story`, `StoryDirector`, `Beat`, `TraceRetention`, …)
 - `surface_fx` — ordered endomorphisms over a realized surface
-- `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack
+- `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack (from 0.7.1, `raster` except the proposed CORE subset above)
 - `raycast` — the grid raycaster rendering into an `RgbRaster` (0.7.0)
 - `raster::RgbaRaster`, `composite_over`, `downscale_area`, `flatten` and `ui::image_area` — RGBA compositing and area filtering (0.7.0)
 - `rig`, `city` — camera rigs (`Dolly`, `Orbit`, `Transition`, `Ease`) and wireframe-city geometry helpers for `raster3d`; also `raster3d::Camera::basis` / `CameraBasis` (0.7.0)
