@@ -68,7 +68,11 @@ fn launch(trace: &Path, extra: &[&str], redirect: Option<&str>) -> Capture {
         0,
         "raw mode not in effect: c_lflag={lflag:#x}"
     );
-    let mut term = vt100::Parser::new(24, 80, 0);
+    let mut term = vt100::Parser::new(
+        core::num::NonZeroU16::new(24).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(80).expect("vt100 size is non-zero"),
+        0,
+    );
     term.process(cap.raw());
     assert!(
         term.screen().alternate_screen(),
@@ -133,7 +137,11 @@ fn wait_exit(cap: &mut Capture, bound: Duration, collect: bool) -> ExitStatus {
 
 fn assert_restored(cap: &Capture, what: &str) {
     let lflag = cap.local_flags().expect("tcgetattr on the master");
-    let mut term = vt100::Parser::new(24, 80, 0);
+    let mut term = vt100::Parser::new(
+        core::num::NonZeroU16::new(24).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(80).expect("vt100 size is non-zero"),
+        0,
+    );
     term.process(cap.raw());
     let s = term.screen();
     assert_eq!(

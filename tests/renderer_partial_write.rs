@@ -137,7 +137,11 @@ fn clean_fullscreen(f3: fn() -> Node) -> Vec<String> {
     );
     let mut bytes = Vec::new();
     render(&mut r, &mut s, f3(), &mut bytes).unwrap();
-    let mut p = Parser::new(H, W, 0);
+    let mut p = Parser::new(
+        core::num::NonZeroU16::new(H).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(W).expect("vt100 size is non-zero"),
+        0,
+    );
     p.process(&bytes);
     snapshot(&p)
 }
@@ -156,7 +160,11 @@ fn torn_fullscreen(n: usize, f3: fn() -> Node) -> (Vec<String>, bool) {
     let failed = render(&mut r, &mut s, f2(), &mut torn).is_err();
     term.extend_from_slice(&torn.sink);
     render(&mut r, &mut s, f3(), &mut term).unwrap();
-    let mut p = Parser::new(H, W, 0);
+    let mut p = Parser::new(
+        core::num::NonZeroU16::new(H).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(W).expect("vt100 size is non-zero"),
+        0,
+    );
     p.process(&term);
     (snapshot(&p), failed)
 }
@@ -215,7 +223,11 @@ fn inline_abandons_the_torn_region_and_draws_the_next_frame_intact() {
         );
         let mut bytes = Vec::new();
         render(&mut r, &mut s, f3_other(), &mut bytes).unwrap();
-        let mut p = Parser::new(40, W, 0);
+        let mut p = Parser::new(
+            core::num::NonZeroU16::new(40).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(W).expect("vt100 size is non-zero"),
+            0,
+        );
         p.process(&bytes);
         let (crow, _) = p.screen().cursor_position();
         let rows: Vec<String> = p.screen().rows(0, W).take(crow as usize + 1).collect();
@@ -247,7 +259,11 @@ fn inline_abandons_the_torn_region_and_draws_the_next_frame_intact() {
         assert!(render(&mut r, &mut s, f2(), &mut torn).is_err());
         term.extend_from_slice(&torn.sink);
         render(&mut r, &mut s, f3_other(), &mut term).unwrap();
-        let mut p = Parser::new(40, W, 0);
+        let mut p = Parser::new(
+            core::num::NonZeroU16::new(40).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(W).expect("vt100 size is non-zero"),
+            0,
+        );
         p.process(&term);
         let (crow, _) = p.screen().cursor_position();
         let k = clean_rows.len();

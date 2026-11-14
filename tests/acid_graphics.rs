@@ -237,10 +237,17 @@ fn resize_reprojects_history_without_advancing_or_retaining_old_pixels() {
     let history = encounter.visual_history().clone();
     let mut renderer = Renderer::new(RenderMode::Fullscreen);
     let mut terminal = TerminalSession::headless(120, 32);
-    let mut parser = vt100::Parser::new(32, 120, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(32).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(120).expect("vt100 size is non-zero"),
+        0,
+    );
     for (width, height) in [(120, 32), (56, 24), (160, 40), (80, 24), (120, 32)] {
         terminal.set_terminal_size(width, height);
-        parser.screen_mut().set_size(height, width);
+        parser.screen_mut().set_size(
+            core::num::NonZeroU16::new(height).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(width).expect("vt100 size is non-zero"),
+        );
         let mut wire = Vec::new();
         renderer
             .render(

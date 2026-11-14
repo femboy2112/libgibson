@@ -61,7 +61,11 @@ fn render(skin: Skin, env: UiEnvironment) -> (Surface, String, String) {
     context.set_root(node);
     context.render().unwrap();
     let ansi = context.take_output();
-    let mut terminal = vt100::Parser::new(env.height, env.width, 0);
+    let mut terminal = vt100::Parser::new(
+        core::num::NonZeroU16::new(env.height).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(env.width).expect("vt100 size is non-zero"),
+        0,
+    );
     terminal.process(ansi.as_bytes());
     (surface, terminal.screen().contents(), ansi)
 }

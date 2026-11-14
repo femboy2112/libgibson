@@ -55,7 +55,11 @@ impl Session {
         self.capture
             .collect_for(Duration::from_millis(2))
             .expect("drain PTY");
-        let mut parser = vt100::Parser::new(self.rows, self.cols, 0);
+        let mut parser = vt100::Parser::new(
+            core::num::NonZeroU16::new(self.rows).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(self.cols).expect("vt100 size is non-zero"),
+            0,
+        );
         parser.process(self.capture.raw());
         parser.screen().contents()
     }
@@ -138,7 +142,11 @@ impl Session {
             raw.contains("\x1b[0m\x1b[?2026l\x1b[?7h\x1b[?25h"),
             "style, synchronized updates, autowrap or cursor reset missing"
         );
-        let mut parser = vt100::Parser::new(self.rows, self.cols, 0);
+        let mut parser = vt100::Parser::new(
+            core::num::NonZeroU16::new(self.rows).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(self.cols).expect("vt100 size is non-zero"),
+            0,
+        );
         parser.process(raw.as_bytes());
         assert!(!parser.screen().alternate_screen());
         assert!(!parser.screen().hide_cursor());

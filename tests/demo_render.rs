@@ -70,7 +70,11 @@ fn capture(name: &str, args: &[&str], cols: u16, rows: u16, secs: f64) -> (Strin
         let _ = killer.kill();
     }
 
-    let mut parser = vt100::Parser::new(rows, cols, 200);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+        200,
+    );
     // Reconstruct the final ~screen by replaying the tail of the stream.
     parser.process(&raw);
     let screen = parser.screen().contents();

@@ -155,8 +155,10 @@ fn main() -> std::io::Result<()> {
 }
 ```
 
-**SIGHUP: keep the default action.** A hangup means the terminal is gone, so there is nothing to
-restore, and catching SIGHUP mostly keeps the process alive with no terminal. History: on
+**SIGHUP: keep the default action, unless the host has cleanup of its own.** A hangup usually
+means the terminal is gone, so there is nothing to restore, and catching SIGHUP mostly keeps the
+process alive with no terminal. Catching it is right in two cases (see "When to catch SIGHUP"
+below). History: on
 releases before #269, a process that survived SIGHUP could busy-spin in the input poll (#79).
 On Linux, since #269 / #282, a poll on a hung-up terminal returns `Err(BrokenPipe)` promptly
 even with SIGHUP ignored or handled (`tests/pty_hangup_matrix.rs`). Two cautions remain:
@@ -168,7 +170,41 @@ even with SIGHUP ignored or handled (`tests/pty_hangup_matrix.rs`). Two cautions
 A host that does catch or ignore SIGHUP, including one started under `nohup`, must therefore leave
 its loop on any poll error, as the sample does.
 
-**Not covered:** SIGQUIT (default action: core dump, terminal left raw) and job control. A typed
+**When to catch SIGHUP.** Catch it (register it into the same flag as SIGTERM/SIGINT) when either
+case applies:
+
+- **The host has application-level cleanup that must run on hangup.** Examples: cancelling a
+  request it started in another process, flushing a journal, releasing a lock. The default action
+  ends the process before any of that runs.
+- **SIGHUP can arrive while the terminal is still alive.** `kill -HUP`, a service manager or a
+  multiplexer can send it without closing the terminal. Under the default action the terminal is
+  left raw, with the cursor hidden and paste mode on, exactly as for any other uncaught signal.
+
+If you catch it, the pattern is the sample's, with three facts to rely on:
+
+1. **Leave the loop on any poll or render error. Never retry.** After a real hangup, input polls
+   return `Err(ErrorKind::BrokenPipe)` (`src/tty_source.rs`, `hung_up()`), and a frame or commit
+   write fails with the OS error unchanged. On Linux that is `EIO` from the hung-up tty. The write
+   path never rewraps it: `Transaction::commit_counted` returns the writer's own `io::Error`
+   (`src/transaction.rs`), and the renderer propagates it as-is. So
+   `e.kind() == BrokenPipe || e.raw_os_error() == Some(libc::EIO)` identifies a lost terminal.
+   The only non-OS errors on that path are `WriteZero` (the terminal accepted 0 bytes) and
+   `NotConnected` (output used after the session released the terminal). Neither is a hangup.
+2. **Expect `restore()` to return `Err` after a real hangup.** `tcsetattr` on a severed terminal
+   may fail with `EIO`. Restore is best effort there and still completes without hanging
+   (`tests/pty_hangup_restore.rs` records the result but deliberately does not assert it). Treat
+   that error as expected when you are leaving because of a hangup. Don't turn it into a failure
+   exit.
+3. **Do the host's own cleanup before `restore()` only if it cannot block.** Restore writes, so a
+   slow cleanup step placed first delays it. Queue the cleanup, restore, then let the cleanup
+   finish within a bound.
+
+**SIGQUIT.** Its default action ends the process with a core dump and leaves the terminal raw.
+In raw mode a typed Ctrl+\ arrives as a key event, not a signal, so SIGQUIT only comes from
+outside (`kill -QUIT`). A host that wants the terminal restored in that case catches it into the
+same flag. Everything above applies.
+
+**Not covered:** job control. A typed
 Ctrl+Z is a key in raw mode. A `kill -TSTP` / `SIGSTOP` stops the process with the terminal
 still raw, and LibGibson does not re-enter its modes on `SIGCONT`. Both are UNVERIFIED beyond
 this description.

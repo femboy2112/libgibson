@@ -62,7 +62,7 @@ impl Write for FailFirstWrite {
 
 /// Locate `needle` on the virtual screen, returning `(row, col)` of its first cell.
 fn find_on_screen(screen: &vt100::Screen, cols: u16, needle: &str) -> Option<(u16, u16)> {
-    let rows = screen.size().0;
+    let rows = screen.size().0.get();
     for r in 0..rows {
         let line: String = screen.rows(0, cols).nth(r as usize).unwrap_or_default();
         if let Some(byte_col) = line.find(needle) {
@@ -78,7 +78,11 @@ fn fail_once_retry_restyles(mode: gibson::RenderMode) {
     let rows = 4u16;
     let mut renderer = Renderer::new(mode);
     let mut session = TerminalSession::headless(cols, rows); // defaults to truecolor
-    let mut parser = vt100::Parser::new(rows, cols, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+        0,
+    );
 
     // --- Frame A at truecolor: establish the live frame on the virtual terminal. ---
     let mut out_a = Vec::new();

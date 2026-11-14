@@ -85,7 +85,11 @@ impl Walk {
             pty_capture::Capture::spawn(cmd, term_cols, term_rows, Duration::from_secs(60));
         Walk {
             capture,
-            parser: Parser::new(term_rows, term_cols, 0),
+            parser: Parser::new(
+                core::num::NonZeroU16::new(term_rows).expect("vt100 size is non-zero"),
+                core::num::NonZeroU16::new(term_cols).expect("vt100 size is non-zero"),
+                0,
+            ),
             processed: 0,
         }
     }

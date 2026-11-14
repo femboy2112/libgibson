@@ -123,7 +123,11 @@ impl Options {
                 .write_all(context.rendered_bytes())
                 .expect("write capture");
         } else {
-            let mut parser = vt100::Parser::new(self.height, self.width, 0);
+            let mut parser = vt100::Parser::new(
+                core::num::NonZeroU16::new(self.height).expect("vt100 size is non-zero"),
+                core::num::NonZeroU16::new(self.width).expect("vt100 size is non-zero"),
+                0,
+            );
             parser.process(context.rendered_bytes());
             println!("{}", parser.screen().contents());
         }

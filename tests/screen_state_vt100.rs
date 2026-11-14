@@ -6,7 +6,11 @@ use gibson::surface::Surface;
 
 #[test]
 fn test_vt100_screen_state_diff_and_cursor() {
-    let mut parser = vt100::Parser::new(24, 80, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(24).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(80).expect("vt100 size is non-zero"),
+        0,
+    );
 
     let mut s1 = Surface::new(80, 5);
     s1.print_str(0, 0, "Initial Line", Style::default(), None);
@@ -35,7 +39,11 @@ fn test_vt100_screen_state_diff_and_cursor() {
 
 #[test]
 fn test_vt100_autowrap_protection_at_right_margin() {
-    let mut parser = vt100::Parser::new(24, 80, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(24).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(80).expect("vt100 size is non-zero"),
+        0,
+    );
     let mut compiler = AnsiCompiler::new();
 
     // Create a surface of width 80 (exact terminal width)
@@ -61,7 +69,11 @@ fn test_vt100_autowrap_protection_at_right_margin() {
 
 #[test]
 fn test_vt100_cjk_emoji_placement() {
-    let mut parser = vt100::Parser::new(24, 80, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(24).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(80).expect("vt100 size is non-zero"),
+        0,
+    );
     let mut compiler = AnsiCompiler::new();
 
     let mut s = Surface::new(80, 2);

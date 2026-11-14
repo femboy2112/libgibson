@@ -38,7 +38,11 @@ impl Harness {
         let initial_termios = capture.initial_termios.clone();
         Harness {
             capture,
-            parser: Parser::new(ROWS, COLS, 0),
+            parser: Parser::new(
+                core::num::NonZeroU16::new(ROWS).expect("vt100 size is non-zero"),
+                core::num::NonZeroU16::new(COLS).expect("vt100 size is non-zero"),
+                0,
+            ),
             processed: 0,
             initial_termios,
         }
@@ -127,7 +131,11 @@ impl Harness {
         let initial_termios = capture.initial_termios.clone();
         Harness {
             capture,
-            parser: Parser::new(PICK_ROWS, PICK_COLS, 0),
+            parser: Parser::new(
+                core::num::NonZeroU16::new(PICK_ROWS).expect("vt100 size is non-zero"),
+                core::num::NonZeroU16::new(PICK_COLS).expect("vt100 size is non-zero"),
+                0,
+            ),
             processed: 0,
             initial_termios,
         }
@@ -336,7 +344,11 @@ fn workbench_pty_mouse_click_drives_the_model() {
     let initial_termios = capture.initial_termios.clone();
     let mut h = Harness {
         capture,
-        parser: Parser::new(ROWS, COLS, 0),
+        parser: Parser::new(
+            core::num::NonZeroU16::new(ROWS).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(COLS).expect("vt100 size is non-zero"),
+            0,
+        ),
         processed: 0,
         initial_termios,
     };
