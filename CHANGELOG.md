@@ -15,6 +15,14 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Changed
+- **Stability: the `raster` RGBA compositing subset is CORE** ([decision 0005](docs/decisions/0005-raster-rgba-core-promotion.md)).
+  - **Promoted:** `Rgba`; `RgbaRaster::{new, from_rgba_bytes, width, height, get, pixels}`; `composite_over`; `flatten`.
+  - **Promise:** no breaking change within the 0.7 patch line for these items' signatures, traits and documented behaviour. That includes `composite_over`'s exact straight-alpha formula, its fast paths and its clipping.
+  - **Shape:** `Rgba` stays `[u8; 4]`.
+  - **No library code changes.** The rest of the RGBA API stays EXPERIMENTAL: `RgbaRaster::{set, pixels_mut, from_pixels, from_rgb}` and `downscale_area`.
+  - **Guard:** `tests/raster_rgba_core_surface.rs`.
+
 ## [0.7.1] — 2026-11-13 · GitHub release from `main` · "clear SIGBUS 1"
 
 The first named release ([decision 0004](docs/decisions/0004-release-naming.md)). **No library

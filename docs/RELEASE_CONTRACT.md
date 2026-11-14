@@ -230,6 +230,15 @@ next `0.y` minor and is recorded in the CHANGELOG:
   and `RgbRaster` with all of its methods except `to_mono_surface`. The promise covers signatures,
   traits and the documented edge behaviour, pinned by `tests/raster_core_surface.rs`. In 0.7.0
   this subset was EXPERIMENTAL.
+- **From 0.7.2** ([decision 0005](decisions/0005-raster-rgba-core-promotion.md)): the `raster`
+  RGBA compositing subset.
+  - **Items:** `Rgba` (the `[u8; 4]` straight-alpha alias); `RgbaRaster` with `new`,
+    `from_rgba_bytes`, `width`, `height`, `get` and `pixels`; `composite_over`; and `flatten`.
+  - **Promise:** signatures, traits and the documented behaviour, including `composite_over`'s
+    exact formula `(src·a + dst·(255 − a) + 127) / 255`, its `a = 0` / `a = 255` fast paths and
+    its overlap-only clipping. Pinned by `tests/raster_rgba_core_surface.rs`.
+  - **Still EXPERIMENTAL:** `RgbaRaster::{set, pixels_mut, from_pixels, from_rgb}` and
+    `downscale_area`.
 
 A lower-risk **utility tier** — `ansi`, `canvas`, `clock`, `diff`, `field`,
 `focus`, `geom`, `glitch`, `glyph`, `particles`, `replication`, `scheduler`, `show`,
@@ -258,9 +267,9 @@ breaking them in a pure patch:
 - `scene` — entity/effect composition graph (`Scene`, `SceneEntity`, `Effect`, …)
 - `story` — narrative beat/reaction director (`Story`, `StoryDirector`, `Beat`, `TraceRetention`, …)
 - `surface_fx` — ordered endomorphisms over a realized surface
-- `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack (from 0.7.1, `raster` except the CORE subset above)
+- `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack (`raster` except the CORE subsets above: RGB from 0.7.1, RGBA compositing from 0.7.2)
 - `raycast` — the grid raycaster rendering into an `RgbRaster` (0.7.0)
-- `raster::RgbaRaster`, `composite_over`, `downscale_area`, `flatten` and `ui::image_area` — RGBA compositing and area filtering (0.7.0)
+- `raster::RgbaRaster::{set, pixels_mut, from_pixels, from_rgb}`, `raster::downscale_area` and `ui::image_area` — RGBA editing, alternative constructors and area filtering (0.7.0; the rest of the RGBA subset is CORE from 0.7.2, decision 0005)
 - `rig`, `city` — camera rigs (`Dolly`, `Orbit`, `Transition`, `Ease`) and wireframe-city geometry helpers for `raster3d`; also `raster3d::Camera::basis` / `CameraBasis` (0.7.0)
 - `ui::experience` — semantic experience grammars realizing one `Experience` through
   several presentation grammars (Rust only; see [EXPERIENCE_GRAMMARS.md](EXPERIENCE_GRAMMARS.md))
