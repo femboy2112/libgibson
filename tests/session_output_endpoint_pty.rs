@@ -37,7 +37,11 @@ fn snapshots(output: &str) -> (vt100::Screen, vt100::Screen) {
     let start = output.find(START).unwrap() + START.len();
     let after_a = output.find(AFTER_A).unwrap();
     let end = output.find(END).unwrap();
-    let mut parser = vt100::Parser::new(24, 80, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(24).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(80).expect("vt100 size is non-zero"),
+        0,
+    );
     parser.process(&output.as_bytes()[start..after_a]);
     let initial = parser.screen().clone();
     parser.process(&output.as_bytes()[after_a + AFTER_A.len()..end]);

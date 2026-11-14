@@ -372,7 +372,11 @@ mod tests {
                         Duration::ZERO,
                     )
                     .unwrap();
-                    let mut parser = vt100::Parser::new(height, width, 0);
+                    let mut parser = vt100::Parser::new(
+                        core::num::NonZeroU16::new(height).expect("vt100 size is non-zero"),
+                        core::num::NonZeroU16::new(width).expect("vt100 size is non-zero"),
+                        0,
+                    );
                     parser.process(context.rendered_bytes());
                     let visible = parser.screen().contents();
                     assert!(

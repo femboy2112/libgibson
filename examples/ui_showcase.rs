@@ -646,7 +646,11 @@ struct Capture {
 impl Capture {
     fn new(width: u16, height: u16) -> Self {
         Self {
-            parser: vt100::Parser::new(height, width, 0),
+            parser: vt100::Parser::new(
+                core::num::NonZeroU16::new(height).expect("vt100 size is non-zero"),
+                core::num::NonZeroU16::new(width).expect("vt100 size is non-zero"),
+                0,
+            ),
             consumed: 0,
         }
     }
@@ -656,6 +660,7 @@ impl Capture {
         self.parser.process(&bytes[self.consumed..]);
         self.consumed = bytes.len();
         let (rows, cols) = self.parser.screen().size();
+        let (rows, cols) = (rows.get(), cols.get());
         let mut changed = 0;
         for y in 0..rows {
             for x in 0..cols {

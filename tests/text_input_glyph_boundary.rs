@@ -274,7 +274,7 @@ struct Shot {
 
 impl Shot {
     fn row(&self, y: u16) -> String {
-        let cols = self.parser.screen().size().1;
+        let cols = self.parser.screen().size().1.get();
         self.parser
             .screen()
             .rows(0, cols)
@@ -294,7 +294,12 @@ fn shoot_ctx(mut ctx: Context, root: Node, cols: u16, rows: u16) -> Shot {
     ctx.set_root(root);
     let paint = ctx.render().expect("headless render");
     let bytes = ctx.rendered_bytes().to_vec();
-    let mut parser = vt100::Parser::new_with_callbacks(rows, cols, 0, Effects::default());
+    let mut parser = vt100::Parser::new_with_callbacks(
+        core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+        0,
+        Effects::default(),
+    );
     parser.process(&vt_lens(&bytes));
     Shot {
         bytes,
@@ -366,7 +371,11 @@ fn issue_252_pasted_tab_keeps_width_cursor_and_terminal_columns_in_agreement() {
         Node::text_input(&state.text, state.cursor_grapheme, None, Style::default()).height(1.0),
     ));
     ctx.render().unwrap();
-    let mut parser = vt100::Parser::new(4, 40, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(4).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(40).expect("vt100 size is non-zero"),
+        0,
+    );
     parser.process(ctx.rendered_bytes());
     let row0 = parser
         .screen()
@@ -592,7 +601,12 @@ fn hostile_controls_through_the_c_abi_text_input_are_painted_as_replacement_cell
         };
         let what = format!("{name}: C ABI");
         assert_renderer_grammar(&bytes, &what);
-        let mut parser = vt100::Parser::new_with_callbacks(4, 80, 0, Effects::default());
+        let mut parser = vt100::Parser::new_with_callbacks(
+            core::num::NonZeroU16::new(4).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(80).expect("vt100 size is non-zero"),
+            0,
+            Effects::default(),
+        );
         parser.process(&vt_lens(&bytes));
         assert_eq!(
             parser.callbacks().foreign(),
@@ -772,7 +786,11 @@ fn scrolling_keeps_the_cursor_on_its_grapheme_in_a_narrow_input() {
             "@{k}: cursor x {cx} escaped the {width}-cell input"
         );
         assert_eq!(cx as usize, col - scroll, "@{k}: cursor = column - scroll");
-        let mut parser = vt100::Parser::new(3, 20, 0);
+        let mut parser = vt100::Parser::new(
+            core::num::NonZeroU16::new(3).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(20).expect("vt100 size is non-zero"),
+            0,
+        );
         parser.process(&vt_lens(&bytes));
         let (r, c) = parser.screen().cursor_position();
         assert_eq!((c, r), (cx, cy), "@{k}: vt100 cursor");

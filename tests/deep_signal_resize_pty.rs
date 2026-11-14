@@ -12,7 +12,11 @@ use pty_capture::{example_path, Capture};
 use std::time::Duration;
 
 fn screen(raw: &[u8], cols: u16, rows: u16) -> vt100::Parser {
-    let mut p = vt100::Parser::new(rows, cols, 0);
+    let mut p = vt100::Parser::new(
+        core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+        0,
+    );
     p.process(raw);
     p
 }
@@ -36,13 +40,20 @@ fn every_resize_repaints_the_whole_new_geometry() {
         .expect("first frame");
     // One terminal model, resized at the exact byte offset where the PTY was resized - as a
     // real terminal is - so each check sees what a user would.
-    let mut term = vt100::Parser::new(24, 80, 0);
+    let mut term = vt100::Parser::new(
+        core::num::NonZeroU16::new(24).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(80).expect("vt100 size is non-zero"),
+        0,
+    );
     let mut consumed = 0;
     for (cols, rows) in [(120u16, 40u16), (40, 15), (100, 30), (80, 24)] {
         term.process(&cap.raw()[consumed..]);
         consumed = cap.raw().len();
         cap.resize(cols, rows);
-        term.screen_mut().set_size(rows, cols);
+        term.screen_mut().set_size(
+            core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+            core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+        );
         turn_for(&mut cap, 800);
         term.process(&cap.raw()[consumed..]);
         consumed = cap.raw().len();

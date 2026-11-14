@@ -8,7 +8,11 @@ use pty_capture::{example_path, Capture};
 use std::time::{Duration, Instant};
 
 fn parse(raw: &[u8], cols: u16, rows: u16) -> vt100::Parser {
-    let mut p = vt100::Parser::new(rows, cols, 0);
+    let mut p = vt100::Parser::new(
+        core::num::NonZeroU16::new(rows).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(cols).expect("vt100 size is non-zero"),
+        0,
+    );
     p.process(raw);
     p
 }
@@ -44,7 +48,7 @@ fn quit_and_reap(cap: &mut Capture) -> portable_pty::ExitStatus {
 }
 
 /// The view rows (everything above the 2-line HUD), formatted (glyphs + SGR).
-fn view_rows(p: &vt100::Parser, cols: u16, rows: u16) -> Vec<Vec<u8>> {
+fn view_rows(p: &vt100::Parser, cols: u16, rows: u16) -> Vec<String> {
     p.screen()
         .rows_formatted(0, cols)
         .take(usize::from(rows - 2))

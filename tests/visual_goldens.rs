@@ -452,7 +452,11 @@ fn capture_screen(case: &Case) -> String {
     capture.collect_all().expect("capture golden frame");
     let raw = capture.finish();
 
-    let mut parser = vt100::Parser::new(case.rows, case.cols, 0);
+    let mut parser = vt100::Parser::new(
+        core::num::NonZeroU16::new(case.rows).expect("vt100 size is non-zero"),
+        core::num::NonZeroU16::new(case.cols).expect("vt100 size is non-zero"),
+        0,
+    );
     parser.process(&raw);
     // Normalise trailing whitespace per line for stable goldens.
     parser
