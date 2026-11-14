@@ -15,6 +15,12 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Changed
+- **Layout engine: `taffy` 0.14 → 0.15.1** (supersedes #197). No public LibGibson API changes.
+  - **Port:** taffy 0.15 makes `align_items` and `justify_content` plain structs (keyword plus an `AlignmentSafety` field) instead of `Option`s. `convert_style` drops the `Some(...)` wrappers. The constants it uses (`START`, `END`, `CENTER`, `STRETCH`, `SPACE_*`) keep their names and meaning, and an unset field defaults to `NORMAL`, the same as the old `None`.
+  - **Geometry:** unchanged. A before/after dump of 345 layouts is byte-identical across both versions. It covers every align × justify combination in rows, columns, stacks and `offset()` layers, including overflow, negative offsets and oversize layers, plus wrapped-text, chat and `Blades` screens at 20–120 columns. Stacks and `offset()` layers matter because they are absolutely positioned, which is where taffy 0.15's new overflow-safety default applies.
+  - **Dependencies:** `arrayvec` leaves the shipped dependency tree. `THIRD-PARTY-NOTICES.md` is regenerated. taffy 0.15's MSRV is 1.71, so LibGibson's 1.85 is unaffected.
+
 ## [0.7.2] — 2026-11-14 · GitHub release from `main` · "clear SIGBUS 2"
 
 A patch release: one CORE layout fix and one stability promotion.

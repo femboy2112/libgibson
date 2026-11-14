@@ -229,23 +229,23 @@ fn convert_style(ls: &LayoutStyle) -> taffy::style::Style {
     };
 
     if let Some(align) = ls.align_items {
-        style.align_items = Some(match align {
+        style.align_items = match align {
             AlignItems::Start => TaffyAlignItems::START,
             AlignItems::End => TaffyAlignItems::END,
             AlignItems::Center => TaffyAlignItems::CENTER,
             AlignItems::Stretch => TaffyAlignItems::STRETCH,
-        });
+        };
     }
 
     if let Some(justify) = ls.justify_content {
-        style.justify_content = Some(match justify {
+        style.justify_content = match justify {
             JustifyContent::Start => TaffyJustifyContent::START,
             JustifyContent::End => TaffyJustifyContent::END,
             JustifyContent::Center => TaffyJustifyContent::CENTER,
             JustifyContent::SpaceBetween => TaffyJustifyContent::SPACE_BETWEEN,
             JustifyContent::SpaceAround => TaffyJustifyContent::SPACE_AROUND,
             JustifyContent::SpaceEvenly => TaffyJustifyContent::SPACE_EVENLY,
-        });
+        };
     }
 
     style
