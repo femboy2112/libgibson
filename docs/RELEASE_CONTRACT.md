@@ -80,7 +80,7 @@ surface is versioned as a minor to signal its scope — not because anything bro
   [#257](https://github.com/femboy2112/libgibson/issues/257) this entry still called 0.5.0
   "a prepared release candidate, not yet tagged" — the wording of its version-bump commit,
   not reconciled after the tag.)*
-- **0.6.0** is the latest such milestone and is **tagged and released on GitHub** (state 2):
+- **0.6.0** is **tagged and released on GitHub** (state 2):
   tag `v0.6.0` → `492d0fe` (and `bindings/go/v0.6.0` on the same commit), a GitHub prerelease of
   2026-11-08 ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.6.0)) with the
   native SDK archive, its checksum and the Python wheel/sdist; not published to any registry.
@@ -97,12 +97,15 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
-- **0.7.0** is **prepared in source** (state 1) on `main`. It is the first qualified 0.7 release,
-  to be tagged `v0.7.0` (with `bindings/go/v0.7.0`) on a `main` commit as a regular GitHub
-  release, not a prerelease, only on the owner's explicit per-tag go (decision
-  [0002](decisions/0002-v0.7.0-qualification.md)). It follows six consumer prereleases from `main`
-  (`v0.7.0-alpha.1` through `v0.7.0-alpha.6`). The C ABI grows additively from 59 to 67 symbols
-  with `GIBSON_ABI_VERSION` staying 1. MSRV stays 1.85; Linux x86_64 only.
+- **0.7.0** is the latest such milestone and is **tagged and released on GitHub** (state 2):
+  tag `v0.7.0` → `1df9690` on `main` (and `bindings/go/v0.7.0` on the same commit), a regular
+  GitHub release (not a prerelease) of 2026-11-13
+  ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0)) with the native SDK
+  archive, its checksum and the Python wheel/sdist; not published to any registry. It is the first
+  qualified 0.7 release (decision [0002](decisions/0002-v0.7.0-qualification.md)) and follows six
+  consumer prereleases from `main` (`v0.7.0-alpha.1` through `v0.7.0-alpha.6`). The C ABI grows
+  additively from 59 to 67 symbols with `GIBSON_ABI_VERSION` staying 1. MSRV stays 1.85; Linux
+  x86_64 only.
 
 **Release states.** A version passes through three separate states, and every document
 that names a version says which one it has reached:

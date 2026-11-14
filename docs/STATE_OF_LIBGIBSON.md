@@ -12,6 +12,20 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.7.0 released (2026-11-13):** the first qualified 0.7 release, from `main` (tag `v0.7.0` →
+`1df9690`, with `bindings/go/v0.7.0` on the same commit;
+[GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0), a regular release
+rather than a prerelease). It adds:
+- a terminal lease on Linux;
+- owner-panic recovery;
+- C ABI 59 → 67, additive (ABI v1);
+- wrapper parity;
+- the API freeze in RELEASE_CONTRACT §2.
+
+There is one behaviour change. After `restore()`, CORE `TerminalSession`/`Context` calls return
+`NotConnected` or are `Ok` no-ops, and none of them writes a byte. Gates:
+[`V0_7_QUALIFICATION.md`](V0_7_QUALIFICATION.md). The alpha entries below are its history.
+
 **v0.7.0-alpha.6 released (2026-11-13):** a sixth consumer alpha from `main` (tag `v0.7.0-alpha.6` →
 `07dd8f2`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.6)):
 after a caught owner-thread panic, the next `Context` write re-enters the alternate screen, hides

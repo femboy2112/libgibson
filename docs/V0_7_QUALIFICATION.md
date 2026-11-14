@@ -7,6 +7,9 @@ record of results. What actually closed each gate is recorded in
 [`V07_EXECUTION_GRAPH.md`](V07_EXECUTION_GRAPH.md), and the release PR. No v0.7.0 tag is
 authorized by this document; every tag needs its own explicit go.
 
+**Outcome (2026-11-13):** released as `v0.7.0` → `main` `1df9690`
+([release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0)), on the owner's per-tag go.
+
 **Why now.** MINERVA (ProjectGHOST) is preparing its own 1.0.0-rc.1. It wants to pin a LibGibson
 release whose version has no pre-release suffix (`0.7.0`, not `0.7.0-alpha.N`). LibGibson itself
 stays 0.x: [RELEASE_CONTRACT.md](RELEASE_CONTRACT.md) §1 reserves 1.0 for a frozen CORE surface,
