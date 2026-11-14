@@ -50,7 +50,7 @@ are included here for completeness.
 | taffy v0.14.0 | MIT | https://github.com/DioxusLabs/taffy |
 | unicode-ident v1.0.26 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/dtolnay/unicode-ident |
 | unicode-segmentation v1.13.3 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-segmentation |
-| unicode-width v0.2.2 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-width |
+| unicode-width v0.2.3 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-width |
 | zmij v1.0.23 | MIT | https://github.com/dtolnay/zmij |
 
 ## Source ported into LibGibson
