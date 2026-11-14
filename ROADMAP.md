@@ -159,12 +159,18 @@ Each v0.7 item, with the evidence that closes it or the recorded deferral that e
 **Not done in v0.7, each with where it is recorded:**
 - **Windows key doubling (#292)** is **deferred to v0.9.** The execution graph's "Not in v0.7"
   section puts non-Linux qualification in v0.9, and 0.7 is declared Linux x86_64 only.
-- **#312**, a shifted key in the screen-switch window, and **#15** on crossterm's own reader
-  (upstream #1128) are **known limitations, not fixed.** The 0.7.0 CHANGELOG and the execution
-  graph record them. There is no owner decision deferring them to a named version yet.
+- **#312**, a shifted key in the screen-switch window, is **deferred to v0.8.0 as a named fix
+  target** (owner delegation, release coordinator decision of 2026-11-13). If 0.8.0 ships without
+  the fix, it needs a fresh explicit deferral.
+- **#15**, crossterm's own reader (upstream #1128), is **deferred until upstream fixes it**
+  (owner delegation, release coordinator decision of 2026-11-13). It stays a documented,
+  owner-accepted limitation. The upstream status is re-checked at every minor release, starting
+  with 0.8.0.
 - **Renderer target-binding drafts #338 → #339 → #343** are **not merged, by design**
   (V0_7_QUALIFICATION G3). A standalone `Renderer` on an arbitrary writer is EXPLICITLY EXCLUDED
   in the lease contract.
+
+**v0.8.0 named fix targets:** #312 (see above).
 
 **v0.8 and later are not in 0.7.x.** That covers:
 - independent five-language clients with failure codes and lifecycle at parity;
