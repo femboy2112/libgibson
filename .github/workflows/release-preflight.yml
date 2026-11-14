@@ -12,6 +12,10 @@ on:
       - "docs/RELEASE_CONTRACT.md"
       - "docs/RELEASING.md"
       - "CHANGELOG.md"
+      # A dependency bump changes the release closure, so it must regenerate the
+      # notices before it merges (#256 slipped through without this).
+      - "Cargo.lock"
+      - "THIRD-PARTY-NOTICES.md"
       - "abi/**"
       - "bindings/python/pyproject.toml"
       - "bindings/go/gibson/**"
