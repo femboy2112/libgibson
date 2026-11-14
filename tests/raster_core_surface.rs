@@ -1,15 +1,16 @@
-//! Guard for the `raster` subset proposed for CORE in 0.7.1 (decision 0003).
+//! Guard for the `raster` subset that is CORE from 0.7.1 (decision 0003).
 //!
 //! It pins `Rgb`, `MAX_RASTER_DIMENSION`, `FrameError` and `RgbRaster` (except
 //! `to_mono_surface`, which stays EXPERIMENTAL):
-//! - every signature, through function-pointer coercions, so a changed parameter
-//!   or return type stops this file compiling;
+//! - every signature, through function-pointer coercions (and, for `write_ppm`, a
+//!   generic call-shape helper), so a changed parameter or return type stops this
+//!   file compiling;
 //! - the trait set, including the auto traits;
 //! - the documented edge behaviour: clamping, out-of-bounds no-ops, row-major
 //!   layout, blend rounding and clamping, invalid-input no-ops, half-block
 //!   realization and the PPM header.
 //!
-//! A failure here is a break of the proposed CORE surface. Fix the code, or record
+//! A failure here is a break of the CORE surface. Fix the code, or record
 //! the change in RELEASE_CONTRACT §2 and the CHANGELOG under the 0.y rules.
 use gibson::cell::{Cell, Color, Glyph, Style};
 use gibson::raster::{FrameError, Rgb, RgbRaster, MAX_RASTER_DIMENSION};
@@ -33,6 +34,15 @@ fn signatures_are_pinned() {
     let _: fn(&mut RgbRaster, f32, f32, f32, Rgb) = RgbRaster::disc;
     let _: fn(&RgbRaster) -> Surface = RgbRaster::to_surface;
     let _: u16 = MAX_RASTER_DIMENSION;
+
+    // `write_ppm` takes `impl Write`, which cannot coerce to a fn pointer. Pin its
+    // call shape instead: any `W: Write` passed by value, returning `io::Result<()>`.
+    fn ppm<W: std::io::Write>(r: &RgbRaster, w: W) -> std::io::Result<()> {
+        r.write_ppm(w)
+    }
+    let _: fn(&RgbRaster, Vec<u8>) -> std::io::Result<()> = ppm::<Vec<u8>>;
+    let _: fn(&RgbRaster, &mut Vec<u8>) -> std::io::Result<()> = ppm::<&mut Vec<u8>>;
+    let _: fn(&RgbRaster, std::io::Sink) -> std::io::Result<()> = ppm::<std::io::Sink>;
 }
 
 #[test]

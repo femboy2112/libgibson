@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Proposed 2026-11-13. Not in effect.** In 0.7.0 all of `raster` is EXPERIMENTAL. The promotion takes effect only when a 0.7.1 that carries it is released, on the owner's per-tag go. |
+| Status | **Accepted 2026-11-13; in effect from 0.7.1.** Release coordinator review PASS of #386 (the owner delegates to it). In 0.7.0 all of `raster` was EXPERIMENTAL. |
 | Contract | [Release Contract §2](../RELEASE_CONTRACT.md#2-rust-api-stability-pre-10) |
 | Guard | [`tests/raster_core_surface.rs`](../../tests/raster_core_surface.rs) |
 | Follows | [`V0_7_QUALIFICATION.md`](../V0_7_QUALIFICATION.md) G4: if MINERVA needs more than best-effort stability, promote what it uses to CORE. The 0.7.0 tier review made no promotion and named `raster::{Rgb, RgbRaster}` as the first candidate. |
@@ -60,7 +60,7 @@ The surface as it stands at `v0.7.0` (`src/raster.rs`).
 **Determinism.** `blend` uses `f32` and `disc` uses `f64`. Both are basic IEEE operations, so the
 results are identical on the supported Linux x86_64 target.
 
-## Proposal for 0.7.1
+## Promotion in 0.7.1
 
 Promote this subset of `raster` to CORE:
 - `Rgb`;
@@ -94,7 +94,10 @@ need the next `0.y` minor and a CHANGELOG entry, like any CORE change.
   clamping, invalid-input no-ops, line clipping, the disc's closed boundary, half-block
   realization, the PPM bytes and every `FrameError` variant.
 
-It does not pin `to_mono_surface` or the RGBA items.
+`write_ppm` takes `impl Write`, so it cannot coerce to a function pointer. A generic
+call-shape helper pins it instead: any `W: Write` passed by value, returning
+`io::Result<()>`. Its output bytes are pinned by behaviour. The guard does not pin
+`to_mono_surface` or the RGBA items.
 
 ## Not decided here
 

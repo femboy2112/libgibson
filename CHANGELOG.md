@@ -15,23 +15,43 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-### Proposed — `raster` RGB subset to CORE in 0.7.1
+## [0.7.1] — 2026-11-13 · GitHub release from `main` · "clear SIGBUS 1"
 
-[Decision 0003](docs/decisions/0003-raster-rgb-core-promotion.md) proposes promoting `raster::Rgb`,
-`MAX_RASTER_DIMENSION`, `FrameError` and `RgbRaster` (except `to_mono_surface`) from EXPERIMENTAL
-to CORE in 0.7.1. `tests/raster_core_surface.rs` pins that surface: signatures, traits, the
-`(u8, u8, u8)` shape of `Rgb`, and the documented edge behaviour. There is no code change, and in
-0.7.0 the whole module is still EXPERIMENTAL. The RGBA items, `raster3d`, `raster_fx`, `raycast`
-and `to_mono_surface` stay EXPERIMENTAL.
+The first named release ([decision 0004](docs/decisions/0004-release-naming.md)). **No library
+code changed since 0.7.0**: `src/`, `include/` and `bindings/` differ only in version strings.
+Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload. The Go module tag
+`bindings/go/v0.7.1` names the same commit as `v0.7.1`. `GIBSON_ABI_VERSION` stays 1 (67 symbols,
+unchanged). MSRV stays 1.85.
 
-### Release names
+### Changed — `raster` RGB subset promoted to CORE
 
-[Decision 0004](docs/decisions/0004-release-naming.md) gives every release a name. The major
-version maps to a shell utility: 0 is `clear`, and 1 is `cron`, reserved for 1.0. The minor
-version maps to the x86-64 Linux signal with that number, and the patch number follows. 0.7.1
-will be "clear SIGBUS 1". The name goes in release titles and tag messages only; tags and
-versions stay plain SemVer. Published releases are not renamed. Their names are listed in the
-decision.
+[Decision 0003](docs/decisions/0003-raster-rgb-core-promotion.md) promotes `raster::Rgb`,
+`MAX_RASTER_DIMENSION`, `FrameError` and `RgbRaster` (all methods except `to_mono_surface`) from
+EXPERIMENTAL to CORE ([`RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md) §2):
+- no breaking change within the 0.7.x line;
+- a breaking change needs the next `0.y` minor and a CHANGELOG entry.
+
+The promise covers:
+- the signatures and traits;
+- the `(u8, u8, u8)` shape of `Rgb`;
+- the value 2048;
+- row-major pixel order;
+- the documented edge behaviour.
+
+`tests/raster_core_surface.rs` pins all of it. A mutant control (`blend` truncating instead of
+rounding) fails it. The RGBA items, `to_mono_surface`, `raster3d`, `rig`, `city`, `raster_fx`,
+`raycast` and `ui::image_area` stay EXPERIMENTAL. Their reasons are in the decision.
+
+### Documentation
+
+- **Release names** ([decision 0004](docs/decisions/0004-release-naming.md); RELEASE_CONTRACT §1,
+  RELEASING §6). A release is named `<utility> <signal> <patch>`:
+  - the major version maps to a shell utility: 0 is `clear`, and 1 is `cron`, reserved for 1.0;
+  - the minor version maps to the x86-64 Linux signal with that number;
+  - the patch number is always written.
+
+  The name goes in the release title and tag message only. Tags and versions stay plain SemVer.
+  Published releases are not renamed; the decision lists their names.
 
 ## [0.7.0] — 2026-11-13 · GitHub release from `main`
 

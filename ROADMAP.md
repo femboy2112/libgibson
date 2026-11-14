@@ -3,16 +3,22 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-13): v0.7.0
+## Current release (updated 2026-11-13): v0.7.1 "clear SIGBUS 1" prepared; v0.7.0 released
 
-**v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2): annotated tag `v0.7.0` →
-`1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the same commit. It is a
-regular GitHub release, not a prerelease, and it is not on any registry. The gates and how each
-was met are in [`docs/V0_7_QUALIFICATION.md`](docs/V0_7_QUALIFICATION.md) and
-[decision 0002](docs/decisions/0002-v0.7.0-qualification.md). This supersedes the "v0.7.0 is not
-yet eligible / not released or qualified yet" notes in the v0.7 horizon below, which are kept as
-history. v0.6.0 (maintenance line, `492d0fe`) is the prior release. The v0.7.0-alpha.1 through
-alpha.6 tags were consumer prereleases from `main`.
+**v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
+- annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
+  same commit;
+- a regular GitHub release, not a prerelease, and not on any registry;
+- gates and how each was met: [`docs/V0_7_QUALIFICATION.md`](docs/V0_7_QUALIFICATION.md) and
+  [decision 0002](docs/decisions/0002-v0.7.0-qualification.md).
+
+**v0.7.1 "clear SIGBUS 1"** is prepared in source (state 1). It promotes the `raster` RGB subset to
+CORE ([decision 0003](docs/decisions/0003-raster-rgb-core-promotion.md)), is the first named release
+([decision 0004](docs/decisions/0004-release-naming.md)), and changes no library code.
+
+v0.6.0 (maintenance line, `492d0fe`) is the prior release before 0.7. `v0.7.0-alpha.1` through
+`alpha.6` were consumer prereleases from `main`. The v0.7 status below is authoritative. Older
+dated v0.7 notes in "Longer-term horizon" are marked superseded where they contradict it.
 
 ## Current direction (updated 2026-11-08): v0.6.0 — released from the maintenance line (Renaissance XIV–XVII)
 
@@ -132,12 +138,53 @@ ledger (Tier A low-risk, Tier B runtime/API with independent review, Tier C neve
 authorization).
 
 ### Longer-term horizon
+
+#### v0.7 completion status (authoritative, 2026-11-13)
+
+Each v0.7 item, with the evidence that closes it or the recorded deferral that excludes it:
+
+| Item | Status | Evidence |
+|---|---|---|
+| Public raster / input / clock / lifecycle (execution-graph nodes A–I) | **Done** | Merged PRs and oracles per node: [`V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md) table (#262, #263, #265, #266, #271, #273, #276, #278, #279, #283, #284) |
+| Node J: GPL adapter | **Done as revised by owner decision** | [Decision 0002](docs/decisions/0002-v0.7.0-qualification.md): satisfied by the in-repo clean-room `bindings/framebuffer_adapter/` (#299). Users supply the GPL engine and WAD themselves. The "Using it with an engine and data you supply" how-to is in its README (#380). No GPL code or game data is published. |
+| C terminal size and focus (#298) | **Done** | Merged (ABI 65 → 67) |
+| Terminal lease: input, output, geometry, authority | **Done** | #349 (#345), #371, #333, #379 (#330 closed). Contract: [`TERMINAL_LEASE_CONTRACT.md`](docs/TERMINAL_LEASE_CONTRACT.md) |
+| Caught owner panic | **Done through `Context`**; bare `TerminalSession` **EXPLICITLY EXCLUDED** | #329, #375. The exclusion (#328) is recorded in the lease contract and the 0.7.0 CHANGELOG. |
+| Termination signals | **Done: host-owned** (owner option A) | #374 (#268) |
+| External agent-style consumer re-qualified | **Done** | MINERVA canary PASS on the 0.7.0 candidate (V0_7_QUALIFICATION G13) |
+| Release prerequisites (CI, preflight, MSRV, ABI, historical clients, five-language parity, PCM golden, notices, review) | **Done for 0.7.0** | V0_7_QUALIFICATION G7–G17; #384 |
+| API freeze | **Done**; `raster` RGB subset promoted in 0.7.1 | RELEASE_CONTRACT §2, `tests/doc_release_contract_tiers.rs` (#382); decision 0003, `tests/raster_core_surface.rs` (#386) |
+| Resource and latency envelope | **Done** (restated, no new claims) | [`V07_RESOURCE_ENVELOPE.md`](docs/V07_RESOURCE_ENVELOPE.md) (#383) |
+
+**Not done in v0.7, each with where it is recorded:**
+- **Windows key doubling (#292)** is **deferred to v0.9.** The execution graph's "Not in v0.7"
+  section puts non-Linux qualification in v0.9, and 0.7 is declared Linux x86_64 only.
+- **#312**, a shifted key in the screen-switch window, and **#15** on crossterm's own reader
+  (upstream #1128) are **known limitations, not fixed.** The 0.7.0 CHANGELOG and the execution
+  graph record them. There is no owner decision deferring them to a named version yet.
+- **Renderer target-binding drafts #338 → #339 → #343** are **not merged, by design**
+  (V0_7_QUALIFICATION G3). A standalone `Renderer` on an arbitrary writer is EXPLICITLY EXCLUDED
+  in the lease contract.
+
+**v0.8 and later are not in 0.7.x.** That covers:
+- independent five-language clients with failure codes and lifecycle at parity;
+- the 28 documented Rust native-path parity differences;
+- math typesetting feasibility (#334);
+- the remaining `raster` items, `raster3d`, `ui` and other EXPERIMENTAL promotions;
+- terminal/OS matrices (v0.9).
+
+None of these is claimed by 0.7.0 or 0.7.1.
+
+#### Earlier v0.7 notes
+
+*Superseded* marks a statement that the completion status above replaces.
+
 **v0.7 — playable terminal Doom:** public raster / input / clock / lifecycle capabilities and an
 actual playable adapter, the GPL adapter kept in a separate repository; execution graph in
 [`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md) (starts from the merged `main`).
 *Progress 2026-11-08 (RXX):* the resident-agent contracts are merged: bounded C capture (#306),
 headless resize parity (#308), eager interactive entry (#309), and opt-in exact key releases in
-Rust, C and the adapter (#302, #303). **v0.7.0 is not yet eligible for publication:**
+Rust, C and the adapter (#302, #303). *[Superseded: v0.7.0 was released 2026-11-13; see the completion status above.]* At that time, v0.7.0 was not yet eligible for publication:
 - node J's engine port is local only;
 - #298 (C terminal-size and focus) and #292 (Windows) are open;
 - no external agent-style consumer has been re-qualified against this `main`;
@@ -156,7 +203,7 @@ media and sonification are not promoted without a named consumer.
 *Update 2026-11-09 (Renaissance XXIV audit; `main` `43bae9a`):* #298 is now merged
 (65→67 additive C ABI symbols), five-language onboarding #324 is merged and exact-main CI 8/8
 passes. Terminal lease/panic/focus repairs #329/#327/#333 and wrapper parity #325 remain
-draft and require integrated exact-head review; v0.7.0 is **not released or qualified yet**.
+draft and require integrated exact-head review; v0.7.0 was not released or qualified yet *[superseded: released 2026-11-13]*.
 The #312 shifted-key ambiguity is documented, not fixed; #326 demonstrates the missing
 press-provenance discriminator. This update supersedes the older #298-open and
 external-canary assumptions in the historical 2026-11-08 snapshot above.
@@ -168,9 +215,9 @@ installed parity slice are merged, as is #337's fresh-candidate preflight and
 native SDK packaging repair. A downstream v0.6/exact-runtime `b459062` comparison
 passed 451 default tests on each input, without retries. It does not qualify
 unmeasured pressure or a future release tree. The renderer target/endpoint work
-in #338/#339/#343 is still experimental; no v0.7 candidate or release exists.
-Node J's separately published GPL port still needs its deliverable or an explicit
-milestone decision. See [Renaissance XXX](handoffs/RENAISSANCE_XXX.md) for exact
+in #338/#339/#343 is still experimental; no v0.7 candidate or release existed yet *[superseded: v0.7.0 released 2026-11-13]*.
+Node J's separately published GPL port still needed its deliverable or an explicit
+milestone decision *[superseded: decision 0002 revised node J; see the completion status above]*. See [Renaissance XXX](handoffs/RENAISSANCE_XXX.md) for exact
 SHAs, receipts and remaining gates. This supersedes the draft/integration status
 in the historical November 9 update above.
 
