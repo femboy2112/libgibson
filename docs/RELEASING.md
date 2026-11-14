@@ -108,8 +108,11 @@ Land any changelog/version changes via PR; keep `main` green.
 These are the ignition steps. Perform them **only** when a human has explicitly said
 to publish this specific version.
 
-1. **Tag:** `git tag v<version> && git push origin v<version>`
-2. **GitHub Release:** `gh release create v<version>` with notes from the changelog;
+1. **Tag:** `git tag -a v<version>` with its first message line
+   `LibGibson v<version> — <name>`, then `git push origin v<version>`. Look the name up in
+   [decision 0004](decisions/0004-release-naming.md). The tag ref stays plain `v<version>`.
+2. **GitHub Release:** `gh release create v<version>` titled `LibGibson v<version> — <name>`,
+   with notes from the changelog;
    attach the `linux-x86_64` bundle and its `SHA256SUMS`.
 3. **crates.io:** `cargo publish --dry-run` first, then `cargo publish`.
 4. **Python wrapper:** build the sdist/wheel and, once the wrapper publication

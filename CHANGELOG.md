@@ -15,6 +15,15 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Release names
+
+[Decision 0004](docs/decisions/0004-release-naming.md) gives every release a name. The major
+version maps to a shell utility: 0 is `clear`, and 1 is `cron`, reserved for 1.0. The minor
+version maps to the x86-64 Linux signal with that number, and the patch number follows. 0.7.1
+will be "clear SIGBUS 1". The name goes in release titles and tag messages only; tags and
+versions stay plain SemVer. Published releases are not renamed. Their names are listed in the
+decision.
+
 ## [0.7.0] — 2026-11-13 · GitHub release from `main`
 
 The first **qualified 0.7 release**. Everything that landed on `main` after v0.6.0 is in it. v0.6.0
