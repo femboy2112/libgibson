@@ -28,6 +28,11 @@ tied to the package version (see §5). A package release can advance without
 touching the ABI version; a breaking ABI change bumps `GIBSON_ABI_VERSION` even
 while the package stays 0.x.
 
+**Release names** ([decision 0004](decisions/0004-release-naming.md)): each release also has a
+name, `<utility> <signal> <patch>`, for example 0.7.11 = "clear SIGBUS 11". The name appears in
+the GitHub release title and the tag message only. Tag names and version strings stay plain
+SemVer.
+
 ### 0.x SemVer semantics
 
 LibGibson is pre-1.0, so Cargo's 0.x compatibility rules apply. A consumer who
@@ -80,7 +85,7 @@ surface is versioned as a minor to signal its scope — not because anything bro
   [#257](https://github.com/femboy2112/libgibson/issues/257) this entry still called 0.5.0
   "a prepared release candidate, not yet tagged" — the wording of its version-bump commit,
   not reconciled after the tag.)*
-- **0.6.0** is the latest such milestone and is **tagged and released on GitHub** (state 2):
+- **0.6.0** is **tagged and released on GitHub** (state 2):
   tag `v0.6.0` → `492d0fe` (and `bindings/go/v0.6.0` on the same commit), a GitHub prerelease of
   2026-11-08 ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.6.0)) with the
   native SDK archive, its checksum and the Python wheel/sdist; not published to any registry.
@@ -96,6 +101,26 @@ surface is versioned as a minor to signal its scope — not because anything bro
   `GIBSON_ABI_VERSION` staying 1**. Experimental Rust surfaces changed shape where the
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
+
+- **0.7.1** "clear SIGBUS 1" ([decision 0004](decisions/0004-release-naming.md)) is the latest
+  such milestone and is **tagged and released on GitHub** (state 2):
+  - tag `v0.7.1` → `835796e` on `main`, with `bindings/go/v0.7.1` on the same commit;
+  - a regular GitHub release of 2026-11-13
+    ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.1)) with the native SDK
+    archive, its checksum and the Python wheel/sdist, not published to any registry.
+
+  It promotes the `raster` RGB subset to CORE
+  (decision [0003](decisions/0003-raster-rgb-core-promotion.md), §2) and changes no library code
+  since 0.7.0. ABI v1 (67 symbols), MSRV 1.85 and Linux x86_64 are unchanged.
+- **0.7.0** is **tagged and released on GitHub** (state 2):
+  tag `v0.7.0` → `1df9690` on `main` (and `bindings/go/v0.7.0` on the same commit), a regular
+  GitHub release (not a prerelease) of 2026-11-13
+  ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0)) with the native SDK
+  archive, its checksum and the Python wheel/sdist; not published to any registry. It is the first
+  qualified 0.7 release (decision [0002](decisions/0002-v0.7.0-qualification.md)) and follows six
+  consumer prereleases from `main` (`v0.7.0-alpha.1` through `v0.7.0-alpha.6`). The C ABI grows
+  additively from 59 to 67 symbols with `GIBSON_ABI_VERSION` staying 1. MSRV stays 1.85; Linux
+  x86_64 only.
 
 **Release states.** A version passes through three separate states, and every document
 that names a version says which one it has reached:
@@ -200,9 +225,15 @@ next `0.y` minor and is recorded in the CHANGELOG:
 - `input` — `Event`, `KeyCode`, `KeyEvent`, `poll_event`
 - `capability` — `TerminalCapabilities`, `Capability`, `ColorDepth`, quantization
 - the **C-ABI-backed subset** (see §5)
+- **From 0.7.1** ([decision 0003](decisions/0003-raster-rgb-core-promotion.md)): the `raster` RGB
+  subset. That is `Rgb` (the `(u8, u8, u8)` alias), `MAX_RASTER_DIMENSION` (2048), `FrameError`
+  and `RgbRaster` with all of its methods except `to_mono_surface`. The promise covers signatures,
+  traits and the documented edge behaviour, pinned by `tests/raster_core_surface.rs`. In 0.7.0
+  this subset was EXPERIMENTAL.
 
 A lower-risk **utility tier** — `ansi`, `canvas`, `clock`, `diff`, `field`,
 `focus`, `geom`, `glitch`, `glyph`, `particles`, `replication`, `scheduler`, `show`,
+`text` (`display_width`, `char_width`; 0.7.0),
 `transition`, `viewport` — is public and treated as CORE (same 0.x promise) unless
 a specific item is marked experimental. Two known specifics: `geom` is core vector
 math *except* `CubicPath3`, which is marked experimental; `show` (composition
@@ -227,12 +258,13 @@ breaking them in a pure patch:
 - `scene` — entity/effect composition graph (`Scene`, `SceneEntity`, `Effect`, …)
 - `story` — narrative beat/reaction director (`Story`, `StoryDirector`, `Beat`, `TraceRetention`, …)
 - `surface_fx` — ordered endomorphisms over a realized surface
-- `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack
-- `raycast` — the grid raycaster rendering into an `RgbRaster` (0.7.0-alpha.2)
-- `rig`, `city` — camera rigs (`Dolly`, `Orbit`, `Transition`, `Ease`) and wireframe-city geometry helpers for `raster3d`; also `raster3d::Camera::basis` / `CameraBasis` (unreleased)
+- `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack (from 0.7.1, `raster` except the CORE subset above)
+- `raycast` — the grid raycaster rendering into an `RgbRaster` (0.7.0)
+- `raster::RgbaRaster`, `composite_over`, `downscale_area`, `flatten` and `ui::image_area` — RGBA compositing and area filtering (0.7.0)
+- `rig`, `city` — camera rigs (`Dolly`, `Orbit`, `Transition`, `Ease`) and wireframe-city geometry helpers for `raster3d`; also `raster3d::Camera::basis` / `CameraBasis` (0.7.0)
 - `ui::experience` — semantic experience grammars realizing one `Experience` through
   several presentation grammars (Rust only; see [EXPERIENCE_GRAMMARS.md](EXPERIENCE_GRAMMARS.md))
-  (unreleased, toward 0.7.0)
+  (0.7.0); `BladesStyle`, `Blades::with_style` and `Blades::with_skin` (0.7.0)
 - `temporal` — experimental temporal cell realization (`TemporalDisplayProcessor`,
   `TemporalBrailleField`, the exact RGB subcell projector, `PresentationProfile`,
   `TemporalSafetyPolicy`, `ResetPolicy`). Rust-only, introduced in the 0.3.0
@@ -244,6 +276,18 @@ breaking them in a pure patch:
   It is introduced experimentally in the 0.2.0 milestone. `Element`, `Skin`,
   `UiRuntime`, `App`, token types and lowering sidecars all belong to this tier,
   not CORE. See [UI_LAYER.md](UI_LAYER.md).
+- `audio` — the deterministic offline audio engine and HumanMusic scoring (0.4.0; the
+  real-device backend is the optional `audio-cpal` feature). Not exposed through the C ABI.
+- `plot` and the v0.5.0 interactive-instrument surface — `shape`, `selection`, `hit_test`,
+  `world_view`, `gesture`, `edit`, `numeric`, `field_view`, `frame`, `snapshot`, `wire`,
+  `instrument_telemetry` (0.5.0; Rust-only, see §1).
+- `event_source` — injectable, recordable and replayable input sources (Rust-only).
+- `hold` — held-key inference on a simulation timebase (`HoldTracker`; 0.7.0, execution-graph
+  node D). An explicit model; it never synthesizes a key release.
+
+**Unlisted modules.** A public module that this section does not list has no stability
+promise and counts as EXPERIMENTAL until it is listed. `tests/doc_release_contract_tiers.rs`
+fails while any `pub mod` in `src/lib.rs` is missing from this section.
 
 The experimental UI layer does not extend the C ABI or C++/Python/Go wrappers,
 change `GIBSON_ABI_VERSION`, raise the MSRV, or constitute a package release.

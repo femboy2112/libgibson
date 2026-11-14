@@ -15,8 +15,232 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-Development toward **0.7.0**: a playable terminal software-graphics engine
-([`docs/V07_EXECUTION_GRAPH.md`](docs/V07_EXECUTION_GRAPH.md)).
+## [0.7.1] — 2026-11-13 · GitHub release from `main` · "clear SIGBUS 1"
+
+The first named release ([decision 0004](docs/decisions/0004-release-naming.md)). **No library
+code changed since 0.7.0**: `src/`, `include/` and `bindings/` differ only in version strings.
+Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload. The Go module tag
+`bindings/go/v0.7.1` names the same commit as `v0.7.1`. `GIBSON_ABI_VERSION` stays 1 (67 symbols,
+unchanged). MSRV stays 1.85.
+
+### Changed — `raster` RGB subset promoted to CORE
+
+[Decision 0003](docs/decisions/0003-raster-rgb-core-promotion.md) promotes `raster::Rgb`,
+`MAX_RASTER_DIMENSION`, `FrameError` and `RgbRaster` (all methods except `to_mono_surface`) from
+EXPERIMENTAL to CORE ([`RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md) §2):
+- no breaking change within the 0.7.x line;
+- a breaking change needs the next `0.y` minor and a CHANGELOG entry.
+
+The promise covers:
+- the signatures and traits;
+- the `(u8, u8, u8)` shape of `Rgb`;
+- the value 2048;
+- row-major pixel order;
+- the documented edge behaviour.
+
+`tests/raster_core_surface.rs` pins all of it. A mutant control (`blend` truncating instead of
+rounding) fails it. The RGBA items, `to_mono_surface`, `raster3d`, `rig`, `city`, `raster_fx`,
+`raycast` and `ui::image_area` stay EXPERIMENTAL. Their reasons are in the decision.
+
+### Documentation
+
+- **Release names** ([decision 0004](docs/decisions/0004-release-naming.md); RELEASE_CONTRACT §1,
+  RELEASING §6). A release is named `<utility> <signal> <patch>`:
+  - the major version maps to a shell utility: 0 is `clear`, and 1 is `cron`, reserved for 1.0;
+  - the minor version maps to the x86-64 Linux signal with that number;
+  - the patch number is always written.
+
+  The name goes in the release title and tag message only. Tags and versions stay plain SemVer.
+  Published releases are not renamed; the decision lists their names.
+
+## [0.7.0] — 2026-11-13 · GitHub release from `main`
+
+The first **qualified 0.7 release**. Everything that landed on `main` after v0.6.0 is in it. v0.6.0
+was released 2026-11-08 from `release/v0.6.0-rc` (tag `v0.6.0` → `492d0fe`, source baseline
+`9a899e1`). The six consumer alphas below are its history: each section lists what that alpha
+added, and this section lists only what came after alpha.6. The release gates and how each was met
+are recorded in [`docs/V0_7_QUALIFICATION.md`](docs/V0_7_QUALIFICATION.md) and
+[decision 0002](docs/decisions/0002-v0.7.0-qualification.md).
+
+Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload. The Go module tag
+`bindings/go/v0.7.0` names the same commit as `v0.7.0`. `GIBSON_ABI_VERSION` stays 1 (67 symbols,
+all additive since v0.6.0's 59). MSRV stays 1.85.
+
+**What 0.7 delivers, across the alphas:**
+- A software-graphics engine path through public interfaces: raster ingest, headless event
+  injection, held-key inference, pacing, resize and lifecycle (execution-graph nodes A–I), plus
+  an in-repo clean-room framebuffer adapter (node J, #299). No GPL engine code or game data ships;
+  users supply both.
+- **A terminal lease on Linux.** A managed session restores, reads, writes and measures the
+  terminal it acquired, even after stdin or stdout is redirected (#345, #371). A restored session
+  can no longer touch the next owner's terminal (#330). The supported, refused and excluded cases
+  are in [`docs/TERMINAL_LEASE_CONTRACT.md`](docs/TERMINAL_LEASE_CONTRACT.md).
+- Recovery after a caught owner-thread panic: input (#329), and screen, cursor and renderer through
+  `Context` (#328).
+- C ABI 59 → 67, all additive: injected input, key kinds, capture drain, key-release reporting,
+  terminal size and focus events.
+- C++, Python and Go wrapper parity for headless use (v0.8 slice).
+
+**The API freeze.** Every public module now has a tier in
+[`docs/RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md) §2, and
+`tests/doc_release_contract_tiers.rs` keeps it that way. `text` is CORE (utility tier). The
+following are EXPERIMENTAL:
+- the raster and 3D stack, `ui`, `audio` and `plot`;
+- the v0.5 instrument modules;
+- `event_source` and `hold`.
+
+Experimental means no 0.7.x stability promise; §2 has the details.
+
+**Resource and latency envelope:** [`docs/V07_RESOURCE_ENVELOPE.md`](docs/V07_RESOURCE_ENVELOPE.md).
+
+**Known limitations, unchanged:**
+- Windows key doubling (#292), UNVERIFIED.
+- A shifted key in the screen-switch window (#312).
+- #15 is still present on crossterm's own reader (upstream #1128).
+- A bare `TerminalSession` caller after a caught owner panic is EXPLICITLY EXCLUDED and must
+  redraw itself (#328).
+
+### Changed — CORE `TerminalSession` / `Context` calls after `restore()` (behaviour change from 0.6.0)
+
+A session or context that has been restored has handed the terminal back, possibly to a newer
+owner, so it no longer changes terminal state. In v0.6.0 these calls returned `Ok`, and some
+re-entered the mode on whatever terminal stdout was.
+- **Enabling calls return `Err` with `io::ErrorKind::NotConnected`:**
+  - `TerminalSession::enter_interactive`, `enter_alternate_screen`, `set_mouse_capture(true)`,
+    `set_focus_reporting(true)` and `set_key_release_reporting(true)`;
+  - `Context::poll_event`, `run_once`, `render` and `commit` (#333, #371).
+- **Teardown calls are `Ok` no-ops:** `leave_alternate_screen`, `set_mouse_capture(false)`,
+  `set_focus_reporting(false)` and `set_key_release_reporting(false)`. Defensive cleanup after
+  restore never fails.
+
+Neither kind writes a byte, so a newer owner's terminal is never touched. Code that kept using a
+session after `restore()` should create a new session instead. The C ABI restores only in
+`gibson_destroy_context`, so C callers are unaffected. Rows:
+[`docs/TERMINAL_LEASE_CONTRACT.md`](docs/TERMINAL_LEASE_CONTRACT.md).
+
+### Fixed — Python wrapper: a native library older than the wrapper is named at import
+
+ABI 1 grows only by additions, so a 0.7 wrapper loaded against a 0.6 library passed the ABI
+check, then failed later with `AttributeError`. It now fails at import with a `RuntimeError` that
+names the missing functions (RELEASE_CONTRACT §4).
+
+### Fixed — restore gives back the terminal the lease holds (#330)
+
+- `TerminalSession::restore()` and `Drop` now decide by lease ownership, not by the public,
+  writable `is_tty` field. Before, an owner that set `is_tty = false` and restored left the
+  terminal raw and the lease `Owned`, so no later session could acquire it. Sessions that never
+  touch `is_tty` behave exactly as before: a non-terminal or headless session never takes the
+  lease. PTY test: `tests/lease_authority_pty.rs`. That test also pins that a restored `Context`
+  cannot render or commit into the next owner's terminal (`NotConnected` since #371).
+
+## [0.7.0-alpha.6] — 2026-11-13 · GitHub prerelease from `main`
+
+A sixth **consumer alpha** of the 0.7 line, cut from `main`. It is **not** a qualified 0.7.0; the
+open v0.7 gates listed under 0.7.0-alpha.1 are unchanged. Linux x86_64 only, GitHub-only (no
+registry upload, no Go module tag). `GIBSON_ABI_VERSION` stays 1 (67 symbols, unchanged); MSRV
+stays 1.85. No public API change.
+
+- **#375**: screen, cursor and renderer recovery after a caught owner-thread panic (#328).
+- **#374**: termination-signal docs (#268). The host owns SIGTERM and SIGINT.
+
+### Fixed — screen and cursor after a caught owner-thread panic (#328)
+
+- The panic hook leaves the alternate screen, shows the cursor and resets SGR. If the owner
+  catches the panic and keeps going, the next `Context` render, commit, insert or clear now:
+  - re-enters the alternate screen (fullscreen);
+  - hides the cursor again;
+  - repaints the frame in full instead of diffing against the pre-panic screen.
+
+  Before this, the session kept its old screen and cursor flags, so the frame was diffed onto
+  the main screen with the cursor showing. Input recovery after the same panic is #329. No
+  public API change. PTY test: `tests/caught_panic_screen_pty.rs`.
+
+### Documentation — termination signals are the host's (#268)
+
+- [`docs/TERMINAL_LEASE_CONTRACT.md`](docs/TERMINAL_LEASE_CONTRACT.md) now states that LibGibson
+  installs no SIGTERM/SIGINT/SIGQUIT/SIGHUP handler, and gives the recommended host pattern:
+  - set an atomic flag in the handler;
+  - check it every iteration of a bounded `run_once` wait (a signal does not shorten the wait);
+  - restore from the loop;
+  - optionally re-raise.
+
+  It keeps SIGHUP at its default action and leaves the loop on any poll error. The crate docs
+  point there. No code change.
+
+## [0.7.0-alpha.5] — 2026-11-13 · GitHub prerelease from `main`
+
+A fifth **consumer alpha** of the 0.7 line, cut from `main`. It is **not** a qualified 0.7.0; the
+open v0.7 gates listed under 0.7.0-alpha.1 are unchanged. Linux x86_64 only, GitHub-only (no
+registry upload, no Go module tag). `GIBSON_ABI_VERSION` stays 1 (67 symbols, unchanged); MSRV
+stays 1.85. The Blades styling below is Rust-only and experimental. The #371 fix changes Linux
+behaviour for managed sessions: managed output and size follow the fd acquired at lease time.
+
+### Fixed — a managed session writes, and measures, the terminal it acquired (Linux, #371)
+
+- A `TerminalSession` that wins the terminal lease holds its own close-on-exec duplicate of
+  fd 1. `Context` frames, mode changes, restore bytes and the panic hook all write it, so
+  redirecting stdout during a session no longer splits frames between two destinations or
+  leaves the acquired terminal unrestored. The descriptor closes exactly once on restore/Drop,
+  and children spawned during a lease do not inherit it.
+- `TerminalSession::terminal_size()` and delivered resize events read that descriptor's size,
+  not crossterm's `/dev/tty`-else-stdout, so both describe the acquired terminal.
+- **Behaviour change:** an application's own `io::stdout()` writes during a lease follow fd 1
+  as it is now, while LibGibson's stay on the acquired terminal. See
+  [`docs/TERMINAL_LEASE_CONTRACT.md`](docs/TERMINAL_LEASE_CONTRACT.md).
+- No public API change; non-TTY stdout behaves as before. The mechanism and tests come from
+  the draft #338 → #339 → #343 stack and #348, without #339's `bind_target` API change.
+
+### Added — Blades in a consumer's colours (experimental, Rust only)
+
+- **`ui::experience::BladesStyle`**, **`Blades::with_style`** and **`Blades::with_skin`** (#369).
+  - `with_skin` derives the colours every frame at the environment's depth, so a skin's
+    explicit `ansi16`/`ansi256` palette applies there.
+  - `BladesStyle::from_palette` / `from_skin` tint plane mid-tones from the skin's `surface`
+    toward `accent` and `rail`, and draw text, title face, rim and selection from `text`,
+    `text_muted` and `accent`. Every field can be overridden.
+  - `Blades::new()` keeps the procedural look byte-for-byte (golden hashes recorded before
+    the change). Stack position, numbered strip labels, per-blade patterns and the rim
+    still identify each blade under any palette.
+
+## [0.7.0-alpha.4] — 2026-11-13 · GitHub prerelease from `main`
+
+A fourth **consumer alpha** of the 0.7 line, cut from `main`. It is **not** a qualified 0.7.0; the
+open v0.7 gates listed under 0.7.0-alpha.1 are unchanged. Linux x86_64 only, GitHub-only (no
+registry upload, no Go module tag). `GIBSON_ABI_VERSION` stays 1 (67 symbols, unchanged); MSRV
+stays 1.85. The additions below are Rust-only and experimental.
+
+### Added — experience-tier consumer contract (experimental, Rust only)
+
+- **`ui::experience::Destination::unavailable(reason)`**: the destination stays reachable but is
+  never live in any grammar. Its content becomes `Unavailable: <reason>`, with no items and no
+  actions. The reason is reported in the new `RequiredSemantics::unavailable`.
+- **`ui::experience::handle_key_outcome`** and **`ExperienceRuntime::handle_key_outcome`** return
+  `KeyOutcome::{Action, Consumed, Unhandled}`.
+  - Keys a grammar does not bind, and `Intent::Back` (Esc and Backspace, which the experience,
+    having no history, never acts on), come back to the application as `Unhandled`.
+  - `handle_key` is unchanged.
+- **`PresentationState::select(key)`**: select an item by its stable id.
+- **`ui::experience::Fallback`**: presents a spatial grammar (for example Blades) only with more
+  than 40 columns, colour and full motion, and otherwise presents `Standard`.
+- **Consumer acceptance E1–E8**: [`docs/EXPERIENCE_ACCEPTANCE.md`](docs/EXPERIENCE_ACCEPTANCE.md)
+  and `tests/experience_minerva.rs`.
+
+### Added — RGBA rasters and area filtering (experimental, Rust only)
+
+- **`raster::RgbaRaster`** (straight alpha) and `raster::Rgba`.
+  - Constructors: `from_rgba_bytes` (validated like `RgbRaster::from_rgb_bytes`), `from_pixels`
+    (takes ownership, no copy) and `from_rgb`.
+- **`raster::composite_over(&mut RgbRaster, &RgbaRaster, x, y)`**: exact integer "over"
+  compositing.
+  - Negative and out-of-range offsets are clipped, and only the overlap is touched.
+  - **`raster::flatten`** composites onto a solid background.
+- **`raster::downscale_area(&RgbaRaster, w, h)`**: an exact area (box) filter with fractional edge
+  coverage.
+  - Colour is averaged premultiplied by alpha, so soft alpha edges never fringe toward the colour
+    of transparent pixels. A fully transparent result is `[0, 0, 0, 0]`.
+  - All integer arithmetic, so the result is identical on every host.
+- **`ui::image_area`**: an opt-in `ui::image` that fits with the area filter instead of
+  nearest-pixel sampling. Painted art doesn't alias; the cost is reading every source pixel once.
 
 ### Added — camera rigs and city helpers (experimental, Rust only)
 
@@ -52,6 +276,19 @@ Development toward **0.7.0**: a playable terminal software-graphics engine
   keeps the selection. Not in the C ABI or wrappers. See
   [`docs/EXPERIENCE_GRAMMARS.md`](docs/EXPERIENCE_GRAMMARS.md).
 - Examples `album_flow` and `experience_lab`.
+
+### Fixed — `ui::modal` height
+
+- **A `modal` without an explicit `.height(n)` now sizes to its content** (still capped at 90% of
+  the viewport) instead of a fixed 12 rows.
+  - **The bug:** the fixed 12 rows left about 9 visible content rows. Longer content was clipped
+    silently, with no scroll and no warning: 12 children showed 9, and 30 children on a 40-row
+    screen still showed 9.
+  - **Unchanged:** an explicit `.height(n)` is still authoritative.
+  - **Beyond the cap:** content taller than the 90% bound is clipped deterministically.
+  - **Effect on existing layouts:** a modal with fewer than about 9 content rows is now shorter
+    than before. Set `.height(12)` to keep the old size.
+  - Tests: `tests/modal_sizing.rs` (12 cases).
 
 ## [0.7.0-alpha.3] — 2026-11-12 · GitHub prerelease from `main`
 

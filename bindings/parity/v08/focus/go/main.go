@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -15,6 +16,39 @@ func must(err error) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
+}
+
+// Since #371 a session writes its own duplicate of the terminal it acquired, not fd 1 as it is
+// later. Point every open descriptor for fd 1's terminal device (fd 0 excepted) at /dev/full and
+// report how many were moved.
+func redirectTerminalWritesToFull() int {
+	var out syscall.Stat_t
+	must(syscall.Fstat(1, &out))
+	full, err := syscall.Open("/dev/full", syscall.O_WRONLY|syscall.O_CLOEXEC, 0)
+	must(err)
+	entries, err := os.ReadDir("/proc/self/fd")
+	must(err)
+	moved := 0
+	for _, e := range entries {
+		fd, convErr := strconv.Atoi(e.Name())
+		if convErr != nil || fd == 0 || fd == full {
+			continue
+		}
+		var st syscall.Stat_t
+		if syscall.Fstat(fd, &st) != nil || st.Mode&syscall.S_IFMT != syscall.S_IFCHR || st.Rdev != out.Rdev {
+			continue
+		}
+		flags, _, _ := syscall.Syscall(syscall.SYS_FCNTL, uintptr(fd), syscall.F_GETFD, 0)
+		dupFlags := 0
+		if flags&syscall.FD_CLOEXEC != 0 {
+			dupFlags = syscall.O_CLOEXEC
+		}
+		if syscall.Dup3(full, fd, dupFlags) == nil {
+			moved++
+		}
+	}
+	must(syscall.Close(full))
+	return moved
 }
 
 func main() {
@@ -44,10 +78,9 @@ func main() {
 		return
 	}
 	if mode == "io_error" {
-		fd, openErr := syscall.Open("/dev/full", syscall.O_WRONLY, 0)
-		must(openErr)
-		must(syscall.Dup2(fd, 1))
-		must(syscall.Close(fd))
+		if redirectTerminalWritesToFull() < 2 {
+			os.Exit(2)
+		}
 		err = ctx.SetFocusReporting(true)
 		var ge *gibson.Error
 		if !errors.As(err, &ge) || ge.Status != gibson.StatusIO || !strings.Contains(ge.LastError, "os error 28") {

@@ -17,29 +17,29 @@ procedural audio.
 
 </div>
 
-> **Latest prerelease: [v0.7.0-alpha.3 — consumer alpha](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.3)**
-> (2026-11-12, from `main` `b36f0a6`; adds `ui::progress_steps`, `ui::toned_label` and `ui::image`).
-> A tagged cut for consumers who pin tags; **not** a qualified 0.7.0 (open v0.7 gates are listed in
-> the [changelog](CHANGELOG.md)). Earlier cuts:
-> [v0.7.0-alpha.2](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.2) (`e0c2504`) and
-> [v0.7.0-alpha.1](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.1) (`1f37849`).
+> **Current release: [v0.7.1 — clear SIGBUS 1](https://github.com/femboy2112/libgibson/releases/tag/v0.7.1)**
+> (2026-11-13, tag `v0.7.1` → `main` `835796e`; the Go module tag `bindings/go/v0.7.1` names the
+> same commit). v0.7.1 promotes the `raster` RGB subset (`Rgb`, `RgbRaster`) to CORE
+> ([decision 0003](docs/decisions/0003-raster-rgb-core-promotion.md)) and changes no library code.
+> It is the first release with a [name](docs/decisions/0004-release-naming.md).
 >
-> **Current release: [v0.6.0 — Instrumental Renaissance (maintenance-line release)](https://github.com/femboy2112/libgibson/releases/tag/v0.6.0)** (2026-11-08).
-> Linux x86_64. A native SDK archive is attached to the release. LibGibson is
-> distributed as **GitHub source + that SDK** — it is *not* on crates.io, PyPI, or
-> the Go module proxy. See the [changelog](CHANGELOG.md) and
-> [install options](#install--use) below.
+> Since v0.7.0, the first qualified 0.7 release, the 0.7 line adds:
+> - a terminal lease on Linux;
+> - recovery after a caught owner-thread panic;
+> - C ABI 59 → 67 symbols, all additive (`GIBSON_ABI_VERSION` stays 1);
+> - C++, Python and Go wrapper parity for headless use;
+> - an API freeze with every public module tiered.
 >
-> **v0.6.0 is the published engineering-alpha release** (Linux x86_64, GitHub-only
-> prerelease). It is released from the maintenance branch `release/v0.6.0-rc` (tag `v0.6.0`
-> → `492d0fe`), while `main` is the 0.7 development line (now `0.7.0-alpha.3`). The install commands
-> below point at v0.6.0. v0.5.0 is the prior release.
+> Linux x86_64. A native SDK archive and the Python wheel/sdist are attached to the release.
+> LibGibson is distributed as **GitHub source + that SDK**. It is *not* on crates.io, PyPI, or the
+> Go module proxy. See the [changelog](CHANGELOG.md), including its behaviour change for
+> `TerminalSession`/`Context` calls after `restore()`, and the [install options](#install--use)
+> below.
 >
-> **Known 0.6.0 limit ([#297](https://github.com/femboy2112/libgibson/issues/297)):** a headless
-> C context's ANSI capture grows for its lifetime and 0.6.0 has no C drain; bound it by replacing
-> the context once it passes a byte budget. The additive drain (`gibson_take_rendered_output`,
-> `gibson_clear_rendered_output`) is on `main` for v0.7 and unreleased (PR
-> [#306](https://github.com/femboy2112/libgibson/pull/306)).
+> v0.6.0 (2026-11-08, maintenance branch `release/v0.6.0-rc`, tag → `492d0fe`) is the prior
+> release, and v0.7.0-alpha.1 through alpha.6 were consumer prereleases from `main`. v0.7.0 adds
+> the bounded C capture drain (`gibson_take_rendered_output`, `gibson_clear_rendered_output`) that
+> 0.6.0 lacked ([#297](https://github.com/femboy2112/libgibson/issues/297)).
 
 > **Engineering alpha.** Linux x86_64 is the best-tested environment. The core
 > engine is implemented and tested; Scene, Story, software graphics, and audio /
@@ -169,7 +169,7 @@ of this film ([how it was captured](docs/assets/README.md)).
 ## Install & use
 
 LibGibson ships as **GitHub source plus a native SDK archive** on the
-[release](https://github.com/femboy2112/libgibson/releases/tag/v0.6.0). It is not
+[release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.1). It is not
 published to any package registry.
 
 ### Rust
@@ -179,7 +179,7 @@ crate you `use` is `gibson`:
 
 ```toml
 [dependencies]
-libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.6.0" }
+libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.7.1" }
 ```
 
 ```rust
@@ -222,14 +222,14 @@ For a short Python walkthrough using the released SDK, see
 headless starters and a staged-artifact smoke check, see
 [`onboarding/README.md`](onboarding/README.md).
 
-The release attaches `libgibson-0.6.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
+The release attaches `libgibson-0.7.1-linux-x86_64.tar.gz` (with a `.sha256`): headers,
 `libgibson.a`, the versioned shared object (`libgibson.so.1` + a `libgibson.so` dev
 symlink), and a relocatable `pkg-config` file.
 
 ```bash
-sha256sum -c libgibson-0.6.0-linux-x86_64.tar.gz.sha256
-tar -xzf libgibson-0.6.0-linux-x86_64.tar.gz          # -> ./libgibson-0.6.0-linux-x86_64/
-export PKG_CONFIG_PATH="$PWD/libgibson-0.6.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
+sha256sum -c libgibson-0.7.1-linux-x86_64.tar.gz.sha256
+tar -xzf libgibson-0.7.1-linux-x86_64.tar.gz          # -> ./libgibson-0.7.1-linux-x86_64/
+export PKG_CONFIG_PATH="$PWD/libgibson-0.7.1-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 cc app.c $(pkg-config --cflags --libs libgibson) -o app   # C consumer
 ```

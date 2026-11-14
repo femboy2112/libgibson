@@ -63,6 +63,89 @@ if _loaded_abi_version != EXPECTED_ABI_VERSION:
         f"compatible libgibson (see docs/RELEASE_CONTRACT.md)."
     )
 
+# Every native function this wrapper binds. ABI 1 grows only by additions, so a library that
+# reports ABI 1 can still be older than this wrapper. Name what is missing now rather than fail
+# later with an AttributeError (RELEASE_CONTRACT §4). test_events.py keeps this list complete.
+_REQUIRED_SYMBOLS = (
+    "gibson_clear_live_region",
+    "gibson_clear_rendered_output",
+    "gibson_commit",
+    "gibson_commit_node",
+    "gibson_commit_raw_ansi_unchecked",
+    "gibson_commit_rich_text",
+    "gibson_commit_text",
+    "gibson_create_context",
+    "gibson_create_headless_context",
+    "gibson_destroy_context",
+    "gibson_get_frame_cell",
+    "gibson_get_frame_cell_glyph",
+    "gibson_get_frame_cells",
+    "gibson_get_frame_size",
+    "gibson_get_rendered_output",
+    "gibson_get_stats",
+    "gibson_insert_node_before_live",
+    "gibson_insert_raw_lines_before_live_unchecked",
+    "gibson_insert_rich_text_before_live",
+    "gibson_insert_text_before_live",
+    "gibson_last_error_message",
+    "gibson_line_add_span",
+    "gibson_line_free",
+    "gibson_line_new",
+    "gibson_line_set_align",
+    "gibson_node_add_child",
+    "gibson_node_border_box",
+    "gibson_node_box_col",
+    "gibson_node_box_row",
+    "gibson_node_dim",
+    "gibson_node_free",
+    "gibson_node_rail",
+    "gibson_node_rich_text",
+    "gibson_node_rule",
+    "gibson_node_set_flex_grow",
+    "gibson_node_set_gap",
+    "gibson_node_set_height",
+    "gibson_node_set_max_width",
+    "gibson_node_set_min_width",
+    "gibson_node_set_padding",
+    "gibson_node_set_padding_sides",
+    "gibson_node_set_percent_width",
+    "gibson_node_set_width",
+    "gibson_node_spinner",
+    "gibson_node_stack",
+    "gibson_node_text",
+    "gibson_node_text_input",
+    "gibson_poll_event",
+    "gibson_poll_event_kind",
+    "gibson_push_event",
+    "gibson_push_event_kind",
+    "gibson_render",
+    "gibson_render_if_due",
+    "gibson_request_render",
+    "gibson_rich_text_add_line",
+    "gibson_rich_text_free",
+    "gibson_rich_text_new",
+    "gibson_set_color_depth",
+    "gibson_set_max_fps",
+    "gibson_set_root_node",
+    "gibson_set_sync_updates",
+    "gibson_stats_init",
+    "gibson_take_rendered_output",
+)
+
+
+def _missing_symbols(lib):
+    return [name for name in _REQUIRED_SYMBOLS if not hasattr(lib, name)]
+
+
+_missing = _missing_symbols(_lib)
+if _missing:
+    raise RuntimeError(
+        "LibGibson version skew: the loaded native library reports ABI "
+        f"{_loaded_abi_version} but lacks {len(_missing)} function(s) this wrapper needs "
+        f"({', '.join(_missing)}). It is older than this wrapper; install a libgibson at least as "
+        "new as the wrapper (see docs/RELEASE_CONTRACT.md §4)."
+    )
+
 # Enums
 class RenderMode:
     INLINE = 0

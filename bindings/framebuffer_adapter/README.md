@@ -142,6 +142,26 @@ Game data is never bundled; the port must refuse to start without a user-supplie
 this MIT OR Apache-2.0 code into a GPL-2.0 program is compatible in that direction and leaves
 LibGibson's license unaffected.
 
+### Using it with an engine and data you supply
+
+LibGibson ships the adapter only. It ships no engine, no port and no game data. To play a
+doomgeneric-style engine in your terminal, use a WAD you are allowed to use.
+
+1. **Install the SDK** from a LibGibson release (or `scripts/release/stage-sdk.sh --prefix
+   <dir>`), so that `pkg-config --cflags --libs libgibson` works.
+2. **Get the engine yourself.** Clone [doomgeneric](https://github.com/ozkl/doomgeneric)
+   (GPL-2.0).
+3. **Write its platform file** with the hooks mapped as in the table above, and copy
+   `fb_adapter.c` / `fb_adapter.h` next to it. They keep their `MIT OR Apache-2.0` header. Build
+   with your compiler and `$(pkg-config --cflags --libs libgibson)`. The result is your own GPL-2.0
+   program; do not add it to this repository.
+4. **Supply the data.** Download a WAD you have the right to use, for example
+   [Freedoom](https://freedoom.github.io/) (BSD-3-Clause; keep its `COPYING.txt` with it). Run your
+   build with `-iwad <path>`.
+
+Terminal behaviour is the adapter's (above): `q` (if configured), SIGINT and SIGTERM restore the
+terminal, a hangup ends the loop, and resizes are handled by the pump.
+
 ## Evidence
 
 Measured 2026-11-07 on the development box (8 cores, ~7 GB RAM shared with other work, Linux),

@@ -142,6 +142,20 @@ impl PresentationState {
         }
     }
 
+    /// Select the item `key` in the active destination — by the caller's stable
+    /// id, never by position, so it survives later reorders. Returns `false`
+    /// (and changes nothing) if the active destination has no such item.
+    pub fn select<A>(&mut self, experience: &Experience<A>, key: &Key) -> bool {
+        let active_index = self.active_index(experience);
+        match experience.destinations.get(active_index) {
+            Some(destination) if item_key_index(destination, key).is_some() => {
+                self.selection.insert(destination.key.clone(), key.clone());
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Store the selection of the active destination by item index (resolving the
     /// item key so the choice survives later reorders).
     fn set_selected_index<A>(&mut self, experience: &Experience<A>, index: usize) {

@@ -1,4 +1,5 @@
 import os
+import stat
 import sys
 import gibson
 
@@ -19,9 +20,25 @@ if mode == "events":
     ctx.close()
     print("FOCUS_INPUT_OK", file=sys.stderr)
 elif mode == "io_error":
-    write_fd = os.open("/dev/full", os.O_WRONLY)
-    os.dup2(write_fd, 1)
-    os.close(write_fd)
+    # Since #371 the session writes its own duplicate of the acquired terminal, not fd 1 as it
+    # is later: point every descriptor for fd 1's terminal device (fd 0 excepted) at /dev/full.
+    out = os.fstat(1)
+    full = os.open("/dev/full", os.O_WRONLY | os.O_CLOEXEC)
+    moved = 0
+    for name in os.listdir("/proc/self/fd"):
+        fd = int(name)
+        if fd in (0, full):
+            continue
+        try:
+            st = os.fstat(fd)
+        except OSError:
+            continue
+        if stat.S_ISCHR(st.st_mode) and st.st_rdev == out.st_rdev:
+            os.dup2(full, fd, inheritable=os.get_inheritable(fd))
+            moved += 1
+    os.close(full)
+    if moved < 2:
+        raise SystemExit(2)
     try:
         ctx.set_focus_reporting(True)
     except gibson.GibsonError as exc:

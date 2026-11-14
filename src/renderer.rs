@@ -188,6 +188,13 @@ impl Renderer {
         self.last_cursor_x = 0;
     }
 
+    /// The owner-thread panic hook wrote to the terminal behind the renderer's back (left the
+    /// alternate screen, showed the cursor, reset SGR, ended the line). Void the picture of the
+    /// screen exactly as a torn write does, so the next frame re-establishes it in full (#328).
+    pub(crate) fn forget_physical_state_after_panic(&mut self) {
+        self.poison_physical_state();
+    }
+
     /// Coordinates of the cells changed by the most recent rendered frame.
     ///
     /// Empty unless [`Renderer::capture_damage`] was enabled for that frame.

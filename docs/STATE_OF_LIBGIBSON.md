@@ -12,11 +12,52 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.7.1 "clear SIGBUS 1" released (2026-11-13):**
+- tag `v0.7.1` → `835796e` on `main`, with `bindings/go/v0.7.1` on the same commit;
+- a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.1).
+
+It promotes the `raster` RGB subset (`Rgb`, `MAX_RASTER_DIMENSION`, `FrameError`, `RgbRaster`
+except `to_mono_surface`) to CORE (decision 0003) and changes no library code since v0.7.0. It is
+the first named release (decision 0004).
+
+**v0.7.0 released (2026-11-13):** the first qualified 0.7 release, from `main` (tag `v0.7.0` →
+`1df9690`, with `bindings/go/v0.7.0` on the same commit;
+[GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0), a regular release
+rather than a prerelease). It adds:
+- a terminal lease on Linux;
+- owner-panic recovery;
+- C ABI 59 → 67, additive (ABI v1);
+- wrapper parity;
+- the API freeze in RELEASE_CONTRACT §2.
+
+There is one behaviour change. After `restore()`, CORE `TerminalSession`/`Context` calls return
+`NotConnected` or are `Ok` no-ops, and none of them writes a byte. Gates:
+[`V0_7_QUALIFICATION.md`](V0_7_QUALIFICATION.md). The alpha entries below are its history.
+
+**v0.7.0-alpha.6 released (2026-11-13):** a sixth consumer alpha from `main` (tag `v0.7.0-alpha.6` →
+`07dd8f2`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.6)):
+after a caught owner-thread panic, the next `Context` write re-enters the alternate screen, hides
+the cursor and repaints in full (#375, #328). It also adds termination-signal docs (#374, #268). No
+public API change. ABI v1 (67 symbols) unchanged. Not a qualified 0.7.0. `main` now reads
+`0.7.0-alpha.6`.
+
+**v0.7.0-alpha.5 released (2026-11-13):** a fifth consumer alpha from `main` (tag `v0.7.0-alpha.5` →
+`7de89f0`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.5)):
+`BladesStyle` / `Blades::with_style` / `Blades::with_skin` (experimental), and on Linux a managed
+session writes and measures the terminal it acquired, not the process's current fd 1 (#371, see
+[TERMINAL_LEASE_CONTRACT.md](TERMINAL_LEASE_CONTRACT.md)). ABI v1 (67 symbols) unchanged. Not a
+qualified 0.7.0.
+
+**v0.7.0-alpha.4 released (2026-11-13):** a fourth consumer alpha from `main` (tag `v0.7.0-alpha.4` →
+`0a3126a`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.4)):
+`ui::experience` with the E1–E8 consumer contract, `raster::RgbaRaster` / `ui::image_area`,
+`gibson::rig` / `gibson::city` / `Camera::basis`, and a `ui::modal` height fix, all experimental.
+ABI v1 (67 symbols) unchanged. Not a qualified 0.7.0.
+
 **v0.7.0-alpha.3 released (2026-11-12):** a third consumer alpha from `main` (tag `v0.7.0-alpha.3` →
 `b36f0a6`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.3)):
 consumer UI surfaces `ui::progress_steps`, `ui::toned_label`, `ui::image` and
-`examples/status_states`. ABI v1 (67 symbols) unchanged. Not a qualified 0.7.0. `main` now reads
-`0.7.0-alpha.3`.
+`examples/status_states`. ABI v1 (67 symbols) unchanged. Not a qualified 0.7.0.
 
 **v0.7.0-alpha.2 released (2026-11-12):** a second consumer alpha from `main` (tag `v0.7.0-alpha.2` →
 `e0c2504`, [GitHub prerelease](https://github.com/femboy2112/libgibson/releases/tag/v0.7.0-alpha.2)):

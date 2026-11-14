@@ -10,6 +10,10 @@ pub type Rgb = (u8, u8, u8);
 /// Normal terminal rasters are orders of magnitude smaller than this ceiling.
 pub const MAX_RASTER_DIMENSION: u16 = 2048;
 
+mod rgba;
+pub(crate) use rgba::downscale_area_by;
+pub use rgba::{composite_over, downscale_area, flatten, Rgba, RgbaRaster};
+
 /// Why a caller-supplied byte buffer could not be ingested as RGB pixels (#129).
 ///
 /// Ingest **rejects** bad input rather than clamping or truncating it: silently

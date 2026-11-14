@@ -443,6 +443,22 @@ pub fn image<A>(
         alt: alt.into(),
     })
 }
+/// [`image`] with an exact area (box) filter instead of nearest-pixel
+/// sampling, for painted or photographic art that would otherwise alias. An
+/// explicit opt-in: it reads every source pixel once at construction (work
+/// proportional to the raster, not the box) and still stores only the fitted
+/// pixels. Everything else is as for [`image`].
+pub fn image_area<A>(
+    raster: &crate::raster::RgbRaster,
+    max: (u16, u16),
+    alt: impl Into<String>,
+) -> Element<A> {
+    Element::new(ElementKind::Image {
+        fitted: super::image::Fitted::from_raster_area(raster, max.0, max.1.saturating_mul(2)),
+        max,
+        alt: alt.into(),
+    })
+}
 pub fn heading<A>(value: impl Into<String>) -> Element<A> {
     Element::new(ElementKind::Heading(value.into()))
 }
