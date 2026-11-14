@@ -15,6 +15,15 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Proposed — `raster` RGB subset to CORE in 0.7.1
+
+[Decision 0003](docs/decisions/0003-raster-rgb-core-promotion.md) proposes promoting `raster::Rgb`,
+`MAX_RASTER_DIMENSION`, `FrameError` and `RgbRaster` (except `to_mono_surface`) from EXPERIMENTAL
+to CORE in 0.7.1. `tests/raster_core_surface.rs` pins that surface: signatures, traits, the
+`(u8, u8, u8)` shape of `Rgb`, and the documented edge behaviour. There is no code change, and in
+0.7.0 the whole module is still EXPERIMENTAL. The RGBA items, `raster3d`, `raster_fx`, `raycast`
+and `to_mono_surface` stay EXPERIMENTAL.
+
 ### Release names
 
 [Decision 0004](docs/decisions/0004-release-naming.md) gives every release a name. The major
