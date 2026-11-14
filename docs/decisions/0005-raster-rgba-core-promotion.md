@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Proposed 2026-11-14.** Release coordinator approval to prepare it (ASC-6). It takes effect only if 0.7.2 ships with it, after the consumer gate below. In 0.7.0 and 0.7.1 every RGBA item was EXPERIMENTAL ([decision 0003](0003-raster-rgb-core-promotion.md)). |
+| Status | **Accepted 2026-11-14, pending the consumer gate; in effect from 0.7.2.** Merged in #399 (red mutant run 43613836172 failed the guard as intended; CI 9/9). It takes effect only if 0.7.2 ships with it, after the consumer gate below. In 0.7.0 and 0.7.1 every RGBA item was EXPERIMENTAL ([decision 0003](0003-raster-rgb-core-promotion.md)). |
 | Contract | [Release Contract §2](../RELEASE_CONTRACT.md#2-rust-api-stability-pre-10) |
 | Guard | [`tests/raster_rgba_core_surface.rs`](../../tests/raster_rgba_core_surface.rs) |
 | Follows | Decision 0003 kept `Rgba`, `RgbaRaster`, `composite_over`, `downscale_area` and `flatten` EXPERIMENTAL because they had "no external consumer yet", the `Rgba` array shape was undecided, and straight versus premultiplied alpha was "not settled". This decision answers all three for the items a consumer now calls. |

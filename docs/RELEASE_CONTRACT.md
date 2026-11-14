@@ -102,6 +102,13 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
+- **0.7.2** is **prepared in source** (state 1) on `main`, named "clear SIGBUS 2"
+  ([decision 0004](decisions/0004-release-naming.md)). It fixes the CORE layout defect #391
+  (wrapped-text min-content) and promotes the `raster` RGBA compositing subset to CORE
+  ([decision 0005](decisions/0005-raster-rgba-core-promotion.md), §2). It is to be tagged
+  `v0.7.2` (with `bindings/go/v0.7.2`) on a `main` commit as a regular GitHub release, only on
+  the release coordinator's per-tag go. ABI v1 (67 symbols), MSRV 1.85 and Linux x86_64 are
+  unchanged.
 - **0.7.1** "clear SIGBUS 1" ([decision 0004](decisions/0004-release-naming.md)) is the latest
   such milestone and is **tagged and released on GitHub** (state 2):
   - tag `v0.7.1` → `835796e` on `main`, with `bindings/go/v0.7.1` on the same commit;
