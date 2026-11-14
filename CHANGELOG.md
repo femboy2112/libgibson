@@ -20,8 +20,15 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   - **Promoted:** `Rgba`; `RgbaRaster::{new, from_rgba_bytes, width, height, get, pixels}`; `composite_over`; `flatten`.
   - **Promise:** no breaking change within the 0.7 patch line for these items' signatures, traits and documented behaviour. That includes `composite_over`'s exact straight-alpha formula, its fast paths and its clipping.
   - **Shape:** `Rgba` stays `[u8; 4]`.
-  - **No library code changes.** The rest of the RGBA API stays EXPERIMENTAL: `RgbaRaster::{set, pixels_mut, from_pixels, from_rgb}` and `downscale_area`.
+  - **The promotion itself changes no library code.** The rest of the RGBA API stays EXPERIMENTAL: `RgbaRaster::{set, pixels_mut, from_pixels, from_rgb}` and `downscale_area`.
   - **Guard:** `tests/raster_rgba_core_surface.rs`.
+
+### Fixed
+- **Layout (CORE): wrapped text reports its real min-content width** ([#391](https://github.com/femboy2112/libgibson/issues/391)).
+  - **Before:** `Node::text_wrapped` and `Node::rich_text_wrapped` measured their min-content at a 1000-column wrap, i.e. as the whole unwrapped line. A `flex_grow` column holding a long reply therefore could not shrink to its row: it was laid out 149 columns wide in an 80-column grid and clipped instead of wrapped. A `Node::stack` sibling collapsed to 0 columns.
+  - **Now:** min-content is the widest unbreakable run: the longest word for `WordWrap`, the widest grapheme for `CharWrap`, and the whole line for `NoWrap`, which is unchanged.
+  - **Geometry change:** layouts that used to overflow their row now wrap inside it. Layouts that fit are unaffected: definite and max-content measurement are unchanged.
+  - **Still needed:** a sibling that may shrink still gives up a proportional share, because a `flex_grow` column's flex-basis is its max-content. A stack pane's content-based minimum is 0, as in CSS, so pin fixed panes with `flex_shrink(0.0)`.
 
 ## [0.7.1] — 2026-11-13 · GitHub release from `main` · "clear SIGBUS 1"
 
