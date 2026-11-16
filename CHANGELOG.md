@@ -15,6 +15,14 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+## [0.7.3] — 2026-11-16 · GitHub release from `main` · "clear SIGBUS 3"
+
+A patch release with one renderer addition: an opt-in inline resize policy for #403. The default is unchanged.
+- **Library code changes since 0.7.2:** `src/renderer.rs`, `src/context.rs` and `src/lib.rs` (#404). `include/` and `bindings/` differ only in version strings.
+- **Platforms and distribution:** Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload. The Go module tag `bindings/go/v0.7.3` names the same commit as `v0.7.3`.
+- **ABI and MSRV:** `GIBSON_ABI_VERSION` stays 1 (67 symbols, unchanged). MSRV stays 1.85.
+- **Default output:** byte-identical to 0.7.2, pinned by a golden recorded on tag `v0.7.2`.
+
 ### Added
 - **Inline renderer: an opt-in resize policy that leaves a clean live viewport** ([#403](https://github.com/femboy2112/libgibson/issues/403)). Rust only; the C ABI is unchanged (67 symbols, ABI 1).
   - **`InlineResizePolicy`**, set with `Context::set_inline_resize_policy` (or `Renderer::set_inline_resize_policy`):
@@ -28,6 +36,9 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
     - `tests/inline_resize_reanchor_report.rs`.
     - `tests/pty_inline_resize_reanchor.rs`: a real PTY, plus ignored tmux runs; 3 of 4 are red on v0.7.2.
     - The golden test above.
+
+### Documentation
+- The v0.7.2 release record: ROADMAP, Release Contract §1, decisions 0004 and 0005, README (#401).
 
 ## [0.7.2] — 2026-11-14 · GitHub release from `main` · "clear SIGBUS 2"
 
