@@ -5,7 +5,7 @@
 use gibson::cell::Style;
 use gibson::context::{Context, RenderMode};
 use gibson::node::Node;
-use gibson::ReanchorReport;
+use gibson::{InlineResizePolicy, ReanchorReport};
 
 fn rows(n: u16) -> Node {
     Node::col().children(
@@ -18,6 +18,7 @@ fn rows(n: u16) -> Node {
 #[test]
 fn the_reanchoring_frame_reports_its_rewind_and_geometry() {
     let mut ctx = Context::headless(RenderMode::Inline, 40, 15);
+    ctx.set_inline_resize_policy(InlineResizePolicy::ReclaimLiveRows);
     ctx.commit_text("history").unwrap();
     ctx.set_root(rows(14));
     ctx.render().unwrap();
@@ -49,6 +50,7 @@ fn the_reanchoring_frame_reports_its_rewind_and_geometry() {
 #[test]
 fn a_commit_after_the_resize_settles_the_reanchor() {
     let mut ctx = Context::headless(RenderMode::Inline, 40, 15);
+    ctx.set_inline_resize_policy(InlineResizePolicy::ReclaimLiveRows);
     ctx.set_root(rows(5));
     ctx.render().unwrap();
     ctx.resize(30, 10).unwrap();
@@ -74,4 +76,26 @@ fn fullscreen_reports_the_reanchor_without_a_rewind() {
         .reanchor
         .expect("fullscreen re-anchors too");
     assert_eq!((r.from, r.to, r.rewound_rows), ((40, 15), (50, 20), 0));
+}
+
+#[test]
+fn the_default_policy_reports_the_reanchor_without_a_rewind() {
+    let mut ctx = Context::headless(RenderMode::Inline, 40, 15);
+    assert_eq!(
+        ctx.inline_resize_policy(),
+        InlineResizePolicy::PreserveAbove
+    );
+    ctx.set_root(rows(14));
+    ctx.render().unwrap();
+    ctx.resize(80, 24).unwrap();
+    ctx.set_root(rows(23));
+    ctx.render().unwrap();
+    let r = ctx
+        .last_frame_report()
+        .reanchor
+        .expect("the frame after a resize re-anchors");
+    assert_eq!(
+        (r.from, r.to, r.previous_live_height, r.rewound_rows),
+        ((40, 15), (80, 24), 14, 0)
+    );
 }

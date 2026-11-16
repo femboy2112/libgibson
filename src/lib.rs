@@ -165,7 +165,8 @@ pub use numeric::{NumericEdit, NumericError, NumericField, NumericInput, Numeric
 pub use painter::{paint, PaintContext};
 pub use particles::{Particle, ParticleSystem, Rng};
 pub use renderer::{
-    AnchorState, FrameReport, InsertStrategy, ReanchorReport, RenderMode, Renderer,
+    AnchorState, FrameReport, InlineResizePolicy, InsertStrategy, ReanchorReport, RenderMode,
+    Renderer,
 };
 pub use replication::Replication;
 pub use scene::{

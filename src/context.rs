@@ -166,6 +166,33 @@ impl Context {
         self.session.capabilities()
     }
 
+    /// Selects how an inline live region is re-established after a terminal resize (#403).
+    ///
+    /// The default, [`InlineResizePolicy::PreserveAbove`](crate::InlineResizePolicy::PreserveAbove),
+    /// is the v0.7.2 behavior byte for byte. It never touches committed history, but can leave
+    /// rows of the old live region above the new one.
+    /// [`InlineResizePolicy::ReclaimLiveRows`](crate::InlineResizePolicy::ReclaimLiveRows) leaves a
+    /// clean live viewport, provided the terminal keeps the cursor's line on a shrink. Read its
+    /// premise before opting in. Rust only: the C ABI is unchanged.
+    ///
+    /// ```
+    /// use gibson::context::{Context, RenderMode};
+    /// use gibson::InlineResizePolicy;
+    ///
+    /// let mut ctx = Context::headless(RenderMode::Inline, 80, 24);
+    /// assert_eq!(ctx.inline_resize_policy(), InlineResizePolicy::PreserveAbove);
+    /// ctx.set_inline_resize_policy(InlineResizePolicy::ReclaimLiveRows);
+    /// assert_eq!(ctx.inline_resize_policy(), InlineResizePolicy::ReclaimLiveRows);
+    /// ```
+    pub fn set_inline_resize_policy(&mut self, policy: crate::InlineResizePolicy) {
+        self.renderer.set_inline_resize_policy(policy);
+    }
+
+    /// The current [`InlineResizePolicy`](crate::InlineResizePolicy).
+    pub fn inline_resize_policy(&self) -> crate::InlineResizePolicy {
+        self.renderer.inline_resize_policy()
+    }
+
     /// Enables recording of per-frame dirty-cell coordinates (for damage-map
     /// debug overlays). Off by default because it allocates per frame.
     pub fn set_capture_damage(&mut self, on: bool) {

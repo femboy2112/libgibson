@@ -15,16 +15,19 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-### Fixed
-- **Inline renderer: a resize no longer leaves stale live rows, and cleanup after a resize no longer reaches committed history** ([#403](https://github.com/femboy2112/libgibson/issues/403)).
-  - **Before:** the first inline frame after a resize erased only from the cursor row down. The old live region's other rows stayed on screen above the new region, and the frame's own row allocation could scroll them into scrollback. `Context::clear_live_region()`, commits and history insertions issued after a resize but before the next frame walked the old region downward with the old geometry. On a shrunk screen that scrolled blank rows into scrollback.
-  - **Now:** the re-anchoring frame first moves up by the cursor's row inside the old region, then erases to the end of the screen. The terminal clamps that move at the screen top. Live rows are painted with autowrap off, so a reflowing terminal can't merge them, and nothing committed lies between the cursor and the region's top. History is never touched. `clear_live_region()`, commits and insertions use the same bounded erase while a resize is outstanding. An insertion in that state erases the region instead of replaying the old-geometry frame, and the next frame allocates a fresh region.
-  - **New, Rust only:** `FrameReport::reanchor: Option<ReanchorReport>` (`from`, `to`, `previous_live_height`, `rewound_rows`) reports what the re-anchoring frame did. The C ABI is unchanged.
+### Added
+- **Inline renderer: an opt-in resize policy that leaves a clean live viewport** ([#403](https://github.com/femboy2112/libgibson/issues/403)). Rust only; the C ABI is unchanged (67 symbols, ABI 1).
+  - **`InlineResizePolicy`**, set with `Context::set_inline_resize_policy` (or `Renderer::set_inline_resize_policy`):
+    - **`PreserveAbove`** is the default and is v0.7.2's behavior byte for byte. `tests/inline_resize_preserve_above_golden.rs` pins it against bytes recorded on tag `v0.7.2`. The first frame after a resize erases only from the cursor row down. It never moves above the cursor, so it cannot touch committed history on any terminal. The cost is cosmetic: rows of the old live region stay above the new region, or get scrolled into scrollback.
+    - **`ReclaimLiveRows`** is the opt-in. The first frame after a resize rewinds by the cursor's row inside the old region, then erases to the end of the screen. The terminal clamps that move at the screen top. Live rows are painted with autowrap off, so a reflowing terminal can't merge them. `clear_live_region()`, commits and history insertions issued before that frame use the same bounded erase, instead of walking the old region downward with the old geometry. An insertion in that state erases the region instead of replaying the old-geometry frame.
+  - **Premise of `ReclaimLiveRows`:** the terminal keeps the cursor on its own line when it shrinks. Verified on tmux and on the `vt100` 0.18 model, which follows xterm. Unverified on kitty and VTE. Under a terminal that clamps the cursor upward without scrolling (the `vt100` 0.16 model), the rewind can erase committed history. That is why it is opt-in in a patch release. The default is planned to flip in 0.8 once more terminals are verified.
+  - **`FrameReport::reanchor: Option<ReanchorReport>`** (`from`, `to`, `previous_live_height`, `rewound_rows`) reports what a re-anchoring frame did, under either policy.
   - **Limitation (documented on `ReanchorReport`):** rows that the *terminal* pushes into scrollback during a shrink are out of reach of any escape sequence. They stay there as that frame's last image, and a later grow that pulls scrollback down can show them again above the live region. Use fullscreen mode, or re-commit a transcript, when pristine scrollback matters.
   - **Tests:**
-    - `tests/inline_resize_reanchor.rs`: vt100 0.18 reconstruction covering grow, shrink, the issue's sequence with and without `clear_live_region()`, threshold jitter, a short region, and a commit after a resize.
+    - `tests/inline_resize_reanchor.rs`: vt100 0.18 reconstruction covering grow, shrink, the issue's sequence with and without `clear_live_region()`, threshold jitter, a short region, and a commit after a resize. 5 of these 7 are red on v0.7.2.
     - `tests/inline_resize_reanchor_report.rs`.
-    - `tests/pty_inline_resize_reanchor.rs`: a real PTY, plus ignored tmux runs.
+    - `tests/pty_inline_resize_reanchor.rs`: a real PTY, plus ignored tmux runs; 3 of 4 are red on v0.7.2.
+    - The golden test above.
 
 ## [0.7.2] — 2026-11-14 · GitHub release from `main` · "clear SIGBUS 2"
 

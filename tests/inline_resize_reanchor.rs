@@ -1,4 +1,6 @@
-//! Issue #403: an inline live region after a terminal resize.
+//! Issue #403: an inline live region after a terminal resize, under the opt-in
+//! `InlineResizePolicy::ReclaimLiveRows`. (The default `PreserveAbove` is pinned byte for byte to
+//! v0.7.2 by `tests/inline_resize_preserve_above_golden.rs`.)
 //!
 //! Before any further frame, a resize may already have changed the physical screen. vt100 0.18
 //! models xterm here. A shrink first drops blank rows below the cursor, then pushes rows off the
@@ -26,6 +28,7 @@ use core::num::NonZeroU16;
 use gibson::cell::Style;
 use gibson::context::{Context, RenderMode};
 use gibson::node::Node;
+use gibson::InlineResizePolicy;
 use std::collections::BTreeSet;
 
 const HISTORY: &str = "SYNTHETIC-HISTORY";
@@ -47,7 +50,11 @@ fn nz(v: u16) -> NonZeroU16 {
 impl Term {
     fn new(cols: u16, rows: u16) -> Self {
         Self {
-            ctx: Context::headless(RenderMode::Inline, cols, rows),
+            ctx: {
+                let mut ctx = Context::headless(RenderMode::Inline, cols, rows);
+                ctx.set_inline_resize_policy(InlineResizePolicy::ReclaimLiveRows);
+                ctx
+            },
             vt: vt100::Parser::new(nz(rows), nz(cols), 512),
             cols,
             rows,

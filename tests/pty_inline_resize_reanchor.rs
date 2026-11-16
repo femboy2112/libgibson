@@ -1,5 +1,6 @@
 //! Issue #403 on a real PTY: a terminal-backed inline `Context` (geometry read from the PTY,
-//! `Resize` delivered by SIGWINCH) re-anchors a full-height live region across resizes.
+//! `Resize` delivered by SIGWINCH) under the opt-in `InlineResizePolicy::ReclaimLiveRows`
+//! re-anchors a full-height live region across resizes.
 //!
 //! `examples/inline_resize_reanchor_probe.rs` commits one history line, then renders frame `n`
 //! (rows `f<n>-r0`..) at full inline height, and frame `n + 1` after each delivered resize.
@@ -70,6 +71,7 @@ impl VtPty {
     fn spawn(clear: bool) -> Self {
         let mut cmd =
             CommandBuilder::new(pty_capture::example_path("inline_resize_reanchor_probe"));
+        cmd.arg("--reclaim");
         if clear {
             cmd.arg("--clear");
         }
@@ -268,7 +270,7 @@ fn run_tmux(clear: bool) {
         socket: format!("gibson403-{}-{clear}", std::process::id()),
     };
     let probe = pty_capture::example_path("inline_resize_reanchor_probe");
-    let mut command = probe.display().to_string();
+    let mut command = format!("{} --reclaim", probe.display());
     if clear {
         command.push_str(" --clear");
     }

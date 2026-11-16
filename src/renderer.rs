@@ -58,10 +58,37 @@ pub enum AnchorState {
     },
 }
 
+/// How an inline live region is re-established after a terminal resize (issue #403).
+///
+/// Set with [`Context::set_inline_resize_policy`](crate::Context::set_inline_resize_policy) or
+/// [`Renderer::set_inline_resize_policy`]. Fullscreen rendering owns its canvas and is unaffected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum InlineResizePolicy {
+    /// The default, and the v0.7.2 behavior byte for byte: the first frame after a resize erases
+    /// only from the cursor row down. It never moves above the cursor, so it cannot touch
+    /// committed history on any terminal. The cost is cosmetic: rows of the old live region
+    /// above the cursor stay on screen above the new region, or get scrolled into scrollback.
+    #[default]
+    PreserveAbove,
+    /// Reclaim the old live region's rows: the first frame after a resize rewinds to the old
+    /// region's top, then erases to the end of the screen. `clear_live_region`, commits and
+    /// history insertions issued before that frame use the same bounded erase. The live viewport
+    /// is clean.
+    ///
+    /// **Premise:** the terminal keeps the cursor on its own line when it shrinks (dropping blank
+    /// rows below the cursor, then pushing rows off the top into scrollback). Verified on tmux
+    /// and on the `vt100` crate's model since 0.18, which follows xterm. Unverified on kitty and
+    /// VTE. A terminal that instead clamps the cursor upward without scrolling (the `vt100` 0.16
+    /// model) breaks the premise. There, the rewind can reach and erase committed history. See
+    /// [`ReanchorReport`] for the full contract and its limitation.
+    ReclaimLiveRows,
+}
+
 /// What the renderer did to re-establish its live region after a terminal geometry change
 /// (issue #403). Reported on [`FrameReport::reanchor`] for the frame that re-anchored.
 ///
-/// # The inline resize contract
+/// # The inline resize contract under [`InlineResizePolicy::ReclaimLiveRows`]
 ///
 /// A terminal applies a resize *before* the application hears about it. Mainstream emulators
 /// (xterm, VTE, kitty, tmux, and the `vt100` crate since 0.18) keep the cursor on its own line:
@@ -95,8 +122,8 @@ pub struct ReanchorReport {
     /// Height of the live region before the resize.
     pub previous_live_height: u16,
     /// Rows the renderer moved up before erasing: the cursor's row inside the old region. Zero
-    /// in fullscreen mode, when the region was a single row, or when the frame recovered from an
-    /// uncertain (torn) write instead.
+    /// under [`InlineResizePolicy::PreserveAbove`], in fullscreen mode, when the cursor was on
+    /// the region's top row, or when the frame recovered from an uncertain (torn) write instead.
     pub rewound_rows: u16,
 }
 
@@ -182,6 +209,7 @@ pub struct Renderer {
     /// what to report. Survives a frame that failed without delivering a byte; consumed by the
     /// frame that lands.
     pending_reanchor: Option<ReanchorReport>,
+    inline_resize_policy: InlineResizePolicy,
 }
 
 impl Renderer {
@@ -214,6 +242,7 @@ impl Renderer {
             physical_uncertain: false,
             owed_reanchor: false,
             pending_reanchor: None,
+            inline_resize_policy: InlineResizePolicy::PreserveAbove,
         }
     }
 
@@ -240,6 +269,23 @@ impl Renderer {
         self.pending_reanchor = None;
     }
 
+    /// Selects how an inline live region is re-established after a resize (#403). Takes effect
+    /// from the next frame, clear, commit or insertion.
+    pub fn set_inline_resize_policy(&mut self, policy: InlineResizePolicy) {
+        self.inline_resize_policy = policy;
+    }
+
+    /// The current [`InlineResizePolicy`].
+    pub fn inline_resize_policy(&self) -> InlineResizePolicy {
+        self.inline_resize_policy
+    }
+
+    /// Whether this renderer reclaims an inline region's rows across a resize (#403).
+    fn reclaims_live_rows(&self) -> bool {
+        self.mode == RenderMode::Inline
+            && self.inline_resize_policy == InlineResizePolicy::ReclaimLiveRows
+    }
+
     /// Whether the terminal geometry changed since the last frame landed: the live region's
     /// relative metadata then describes a screen the terminal has already resized (#403).
     fn geometry_changed_since_frame(&self, session: &TerminalSession) -> bool {
@@ -250,7 +296,7 @@ impl Renderer {
     /// Whether an inline live region (or an owed re-anchor) is outstanding across a resize, so
     /// clearing or committing must use the bounded erase (#403).
     fn resize_erase_due(&self, session: &TerminalSession) -> bool {
-        self.mode == RenderMode::Inline
+        self.reclaims_live_rows()
             && !self.physical_uncertain
             && (self.pending_reanchor.is_some()
                 || (self.live_region_height > 0 && self.geometry_changed_since_frame(session)))
@@ -566,12 +612,14 @@ impl Renderer {
                 }
                 if is_full_repaint {
                     if reanchor {
-                        // Issue #403: rewind to the old region's top first (the terminal clamps
+                        // Issue #403, `InlineResizePolicy::ReclaimLiveRows` only (the default
+                        // `PreserveAbove` keeps v0.7.2's bytes): rewind to the old region's top
+                        // first (the terminal clamps
                         // the move at the screen top), then erase to the end of the screen, so
                         // no stale live row survives above the new region. A recovery frame has
                         // already abandoned the torn region and stepped below it: no rewind.
                         let rewind = match self.pending_reanchor {
-                            Some(p) if !recover => p.rewound_rows,
+                            Some(p) if !recover && self.reclaims_live_rows() => p.rewound_rows,
                             _ => 0,
                         };
                         if rewind > 0 {
@@ -698,7 +746,7 @@ impl Renderer {
             write_duration,
             reanchor: if reanchor {
                 self.pending_reanchor.take().map(|mut p| {
-                    if recover || self.mode == RenderMode::Fullscreen {
+                    if recover || !self.reclaims_live_rows() {
                         p.rewound_rows = 0;
                     }
                     p
