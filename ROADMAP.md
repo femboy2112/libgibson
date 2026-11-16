@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-14): v0.7.2 "clear SIGBUS 2"
+## Current release (updated 2026-11-16): v0.7.2 "clear SIGBUS 2"; v0.7.3 "clear SIGBUS 3" prepared
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -29,6 +29,27 @@ completion audit is in #388.
 It fixes the CORE layout defect #391 and promotes the `raster` RGBA compositing subset to CORE
 ([decision 0005](docs/decisions/0005-raster-rgba-core-promotion.md)). Its roadmap completion audit
 is below and in #400.
+
+**v0.7.3 "clear SIGBUS 3" is prepared in source** (state 1), to be tagged on `main` on the
+release coordinator's go after the consumer gate on the exact candidate. It adds the opt-in
+`InlineResizePolicy::ReclaimLiveRows` for the inline resize defect #403. The default is
+byte-identical to v0.7.2.
+
+#### v0.7.3 completion status (authoritative, 2026-11-16)
+
+Each 0.7.3 item, with the evidence that closes it or the recorded deferral that excludes it:
+
+| Item | Status | Evidence |
+|---|---|---|
+| #403 inline resize: a clean live viewport without risking committed history | **Done**, opt-in (EXPERIMENTAL) | #404 merged as `7b0d07b` (head `81ffe3a`, CI 43864898163 8/8 plus Release Preflight 43864898171). **Red first:** run 43818836137 on the tests-only commit `df95893`, 5 of 7 failing on v0.7.2, all stale live rows. **Default unchanged:** `PreserveAbove` equals bytes recorded on tag `v0.7.2` (golden sha256 `22168a18…5220e`, 3216 bytes), and a discriminator test shows the opt-in differs. **Real terminal:** tmux shows 1 stale live row per resize step on v0.7.2 and 0 with the opt-in; the PTY/tmux file is 3 of 4 red on v0.7.2 and 4 of 4 green. **vt100 0.16.2 vs 0.18.1 matrix:** in the #403 comment. **Consumer gate:** MINERVA's run on this release candidate. |
+| v0.7.2 release record | **Done** (docs) | #401 merged as `0f116da`. |
+
+**Not in v0.7.3, each with where it is recorded:**
+- **`ReclaimLiveRows` as the default** is planned for 0.8, after kitty and VTE are verified to keep the cursor line on a shrink. Its premise and the 0.8 plan are in the #403 comment and on the type. Under the vt100 0.16 model the opt-in can erase history; that is why it is opt-in in a patch.
+- **taffy 0.15 (#402, supersedes #197)** is not in 0.7.3 (release coordinator decision). It waits for its own consumer ACK.
+- **rtrb 0.4 (#195)** stays held: the audio/PCM path is frozen.
+- **`ui::App` on-demand loop (#396)** stays deferred.
+- **Carried, unchanged:** #312 (the v0.8.0 fix target), #15 (waits for upstream crossterm #1128), #292 (v0.9).
 
 #### v0.7.2 completion status (authoritative, 2026-11-14)
 

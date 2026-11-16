@@ -102,6 +102,12 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
+- **0.7.3** is **prepared in source** (state 1) on `main`, named "clear SIGBUS 3"
+  ([decision 0004](decisions/0004-release-naming.md)). It adds the opt-in
+  `InlineResizePolicy::ReclaimLiveRows` for #403 (EXPERIMENTAL, §2). The default
+  `PreserveAbove` is byte-identical to 0.7.2. It is to be tagged `v0.7.3` (with
+  `bindings/go/v0.7.3`) on a `main` commit as a regular GitHub release, only on the release
+  coordinator's per-tag go. ABI v1 (67 symbols), MSRV 1.85 and Linux x86_64 are unchanged.
 - **0.7.2** "clear SIGBUS 2" ([decision 0004](decisions/0004-release-naming.md)) is the latest
   such milestone and is **tagged and released on GitHub** (state 2):
   - tag `v0.7.2` → `7e7c7b3` on `main`, with `bindings/go/v0.7.2` on the same commit;
@@ -279,6 +285,12 @@ breaking them in a pure patch:
 - `surface_fx` — ordered endomorphisms over a realized surface
 - `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack (`raster` except the CORE subsets above: RGB from 0.7.1, RGBA compositing from 0.7.2)
 - `raycast` — the grid raycaster rendering into an `RgbRaster` (0.7.0)
+- `renderer::InlineResizePolicy`, `renderer::ReanchorReport`, the `FrameReport::reanchor` field
+  and `Context::{set_inline_resize_policy, inline_resize_policy}` (0.7.3, #403). The default
+  policy is planned to change in 0.8, once more terminals are verified to keep the cursor line
+  on a shrink. The default `PreserveAbove`'s bytes are pinned to 0.7.2 by
+  `tests/inline_resize_preserve_above_golden.rs`. `FrameReport` itself stays CORE; the field is
+  an additive `#[non_exhaustive]` change.
 - `raster::RgbaRaster::{set, pixels_mut, from_pixels, from_rgb}`, `raster::downscale_area` and `ui::image_area` — RGBA editing, alternative constructors and area filtering (0.7.0; the rest of the RGBA subset is CORE from 0.7.2, decision 0005)
 - `rig`, `city` — camera rigs (`Dolly`, `Orbit`, `Transition`, `Ease`) and wireframe-city geometry helpers for `raster3d`; also `raster3d::Camera::basis` / `CameraBasis` (0.7.0)
 - `ui::experience` — semantic experience grammars realizing one `Experience` through
