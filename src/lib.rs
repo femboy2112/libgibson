@@ -164,7 +164,9 @@ pub use node::{
 pub use numeric::{NumericEdit, NumericError, NumericField, NumericInput, NumericSchemaError};
 pub use painter::{paint, PaintContext};
 pub use particles::{Particle, ParticleSystem, Rng};
-pub use renderer::{AnchorState, FrameReport, InsertStrategy, RenderMode, Renderer};
+pub use renderer::{
+    AnchorState, FrameReport, InsertStrategy, ReanchorReport, RenderMode, Renderer,
+};
 pub use replication::Replication;
 pub use scene::{
     Channel, Easing, Effect, EffectBundle, Presentation, ResolvedEntity, Scene, SceneEntity,

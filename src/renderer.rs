@@ -58,6 +58,48 @@ pub enum AnchorState {
     },
 }
 
+/// What the renderer did to re-establish its live region after a terminal geometry change
+/// (issue #403). Reported on [`FrameReport::reanchor`] for the frame that re-anchored.
+///
+/// # The inline resize contract
+///
+/// A terminal applies a resize *before* the application hears about it. Mainstream emulators
+/// (xterm, VTE, kitty, tmux, and the `vt100` crate since 0.18) keep the cursor on its own line:
+/// a shrink drops blank rows below the cursor and then pushes rows off the top into scrollback,
+/// and a grow may pull scrollback rows back down. Live-region rows are painted with autowrap
+/// off, so they never carry a soft-wrap flag and a reflowing terminal cannot merge them. The
+/// rows of the old live region that are still on screen therefore sit directly above the
+/// cursor, exactly [`rewound_rows`](Self::rewound_rows) rows up, and nothing committed lies in
+/// between.
+///
+/// On the first inline frame after a resize the renderer rewinds that many rows (the terminal
+/// clamps the move at the top of the screen) and erases to the end of the screen before
+/// allocating the new region. The live viewport is then clean and committed history above the
+/// region is never touched. [`Context::clear_live_region`](crate::Context::clear_live_region),
+/// commits and history insertions issued after a resize but before the next frame follow the same
+/// bounded erase.
+///
+/// **Limitation.** Rows the *terminal* pushed into scrollback during a shrink are out of reach
+/// of any escape sequence. They stay in scrollback as the last image of that frame, and a later
+/// grow that pulls scrollback back down can show them again above the live region. Use
+/// [`RenderMode::Fullscreen`] (which owns the canvas) or re-commit a transcript when pristine
+/// scrollback matters. An emulator that clamps the cursor upward on a shrink *without* scrolling
+/// would break the rows-above-the-cursor premise; none of the emulators above does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ReanchorReport {
+    /// Terminal geometry `(cols, rows)` of the last frame before the resize.
+    pub from: (u16, u16),
+    /// Terminal geometry `(cols, rows)` of the re-anchored frame.
+    pub to: (u16, u16),
+    /// Height of the live region before the resize.
+    pub previous_live_height: u16,
+    /// Rows the renderer moved up before erasing: the cursor's row inside the old region. Zero
+    /// in fullscreen mode, when the region was a single row, or when the frame recovered from an
+    /// uncertain (torn) write instead.
+    pub rewound_rows: u16,
+}
+
 /// Rust-side timing/accounting snapshot for the most recent live frame.
 ///
 /// This deliberately does not extend the ABI-v1 RenderStats layout. Generation
@@ -74,6 +116,9 @@ pub struct FrameReport {
     pub full_repaint: bool,
     pub generation_duration: Duration,
     pub write_duration: Duration,
+    /// `Some` for the frame that re-established the live region after a terminal geometry
+    /// change (issue #403); `None` otherwise.
+    pub reanchor: Option<ReanchorReport>,
 }
 
 impl FrameReport {
@@ -133,6 +178,10 @@ pub struct Renderer {
     /// byte: the geometry was already observed, so the retry must still owe the canvas reset the
     /// resize required (RXIV review finding 3). Cleared when a frame lands.
     owed_reanchor: bool,
+    /// The re-anchor a geometry change made due (issue #403): what to rewind before erasing, and
+    /// what to report. Survives a frame that failed without delivering a byte; consumed by the
+    /// frame that lands.
+    pending_reanchor: Option<ReanchorReport>,
 }
 
 impl Renderer {
@@ -164,6 +213,7 @@ impl Renderer {
             last_frame_report: FrameReport::default(),
             physical_uncertain: false,
             owed_reanchor: false,
+            pending_reanchor: None,
         }
     }
 
@@ -186,6 +236,51 @@ impl Renderer {
         self.live_region_height = 0;
         self.last_cursor_y = 0;
         self.last_cursor_x = 0;
+        // Any owed rewind was measured from that cursor too: it is void with it (#403).
+        self.pending_reanchor = None;
+    }
+
+    /// Whether the terminal geometry changed since the last frame landed: the live region's
+    /// relative metadata then describes a screen the terminal has already resized (#403).
+    fn geometry_changed_since_frame(&self, session: &TerminalSession) -> bool {
+        self.last_terminal_size
+            .is_some_and(|size| size != session.terminal_size())
+    }
+
+    /// Whether an inline live region (or an owed re-anchor) is outstanding across a resize, so
+    /// clearing or committing must use the bounded erase (#403).
+    fn resize_erase_due(&self, session: &TerminalSession) -> bool {
+        self.mode == RenderMode::Inline
+            && !self.physical_uncertain
+            && (self.pending_reanchor.is_some()
+                || (self.live_region_height > 0 && self.geometry_changed_since_frame(session)))
+    }
+
+    /// Issue #403: erases whatever of the live region a resize left on screen, without walking
+    /// rows downward (on a shrunk screen that would scroll blank rows into scrollback) and
+    /// without moving above the region's top (the terminal clamps the rewind at the screen
+    /// top, and nothing committed lies between the cursor and the region's top). Leaves the
+    /// cursor at the column-0 start of the erased area and returns `true`; returns `false`
+    /// (emitting nothing) when no resize is outstanding, so the caller keeps its ordinary path.
+    fn erase_live_after_resize(
+        &self,
+        tx: &mut TerminalTransaction<'_>,
+        session: &TerminalSession,
+    ) -> bool {
+        if !self.resize_erase_due(session) {
+            return false;
+        }
+        let rewind = match self.pending_reanchor {
+            // A geometry change was already observed by a frame that failed without a byte:
+            // the region's metadata is reset, the owed rewind is the only record of it.
+            Some(pending) => pending.rewound_rows,
+            None => self.last_cursor_y,
+        };
+        if rewind > 0 {
+            write!(tx.buffer, "\x1b[{}A", rewind).ok();
+        }
+        tx.push(b"\r\x1b[J");
+        true
     }
 
     /// The owner-thread panic hook wrote to the terminal behind the renderer's back (left the
@@ -266,6 +361,24 @@ impl Renderer {
         }
         let had_prior_state = self.last_terminal_size.is_some()
             && (self.previous_surface.is_some() || self.live_region_height > 0);
+        if had_prior_state {
+            // Capture where the old region physically is BEFORE the anchor is invalidated: the
+            // cursor's row inside it is exactly how far its top lies above the cursor (#403).
+            let rewound_rows = if self.mode == RenderMode::Inline && !self.physical_uncertain {
+                self.last_cursor_y
+            } else {
+                0
+            };
+            self.pending_reanchor = Some(ReanchorReport {
+                from: self.last_terminal_size.unwrap_or((cols, rows)),
+                to: (cols, rows),
+                previous_live_height: self.live_region_height,
+                rewound_rows,
+            });
+        } else if let Some(pending) = &mut self.pending_reanchor {
+            // A re-anchor still owed by a frame that failed to land: keep its rewind, retarget.
+            pending.to = (cols, rows);
+        }
         self.last_terminal_size = Some((cols, rows));
         self.invalidate_anchor(had_prior_state);
         had_prior_state
@@ -388,6 +501,7 @@ impl Renderer {
                 full_repaint: false,
                 generation_duration: frame_start.elapsed(),
                 write_duration: Duration::ZERO,
+                reanchor: None,
             };
             return Ok((0, total_cells, 0, false, paint_ctx));
         }
@@ -452,8 +566,17 @@ impl Renderer {
                 }
                 if is_full_repaint {
                     if reanchor {
-                        // Erase from the current row downward before rebuilding:
-                        // after reflow this discards stale live-region artifacts.
+                        // Issue #403: rewind to the old region's top first (the terminal clamps
+                        // the move at the screen top), then erase to the end of the screen, so
+                        // no stale live row survives above the new region. A recovery frame has
+                        // already abandoned the torn region and stepped below it: no rewind.
+                        let rewind = match self.pending_reanchor {
+                            Some(p) if !recover => p.rewound_rows,
+                            _ => 0,
+                        };
+                        if rewind > 0 {
+                            write!(tx.buffer, "\x1b[{}A", rewind).ok();
+                        }
                         tx.push(b"\r\x1b[J");
                     }
                     // First frame of this live region: allocate (H - 1) rows of
@@ -573,6 +696,16 @@ impl Renderer {
             full_repaint: is_full_repaint,
             generation_duration,
             write_duration,
+            reanchor: if reanchor {
+                self.pending_reanchor.take().map(|mut p| {
+                    if recover || self.mode == RenderMode::Fullscreen {
+                        p.rewound_rows = 0;
+                    }
+                    p
+                })
+            } else {
+                None
+            },
         };
 
         self.previous_surface = Some(next_surface);
@@ -629,7 +762,9 @@ impl Renderer {
             self.compiler.current_style = Style::default();
         }
 
-        if self.live_region_height > 0 {
+        if self.erase_live_after_resize(&mut tx, session) {
+            // A resize is outstanding (#403): the bounded erase already cleared the region.
+        } else if self.live_region_height > 0 {
             if self.last_cursor_y > 0 {
                 write!(tx.buffer, "\x1b[{}A\r", self.last_cursor_y).ok();
             } else {
@@ -666,8 +801,10 @@ impl Renderer {
             }
         };
 
-        // Committing finalizes live state; the next live frame starts fresh.
+        // Committing finalizes live state; the next live frame starts fresh. Any re-anchor a
+        // resize made due is settled too: the region it would rewind over is gone (#403).
         self.invalidate_anchor(false);
+        self.pending_reanchor = None;
         // INLINE: the lines landed on a fresh line with a known SGR state, so the physical position
         // is known again (a torn region before them stays abandoned in scrollback). FULLSCREEN: the
         // canvas is still uncertain — the next frame must re-establish it (review finding 4).
@@ -905,7 +1042,12 @@ impl Renderer {
         // `CSI L` actually being supported. Unknown capability is NOT treated as
         // supported: we fall back to the always-correct repaint path.
         let anchor_stable = matches!(self.anchor, AnchorState::Stable { .. });
-        let use_fast = self.live_region_height > 0
+        // Issue #403: a resize the region has not been re-established after. The preserved live
+        // framebuffer has the old geometry, so it is not replayed: the region is erased (bounded)
+        // and the next frame allocates a fresh one below the inserted lines.
+        let resized = self.resize_erase_due(session);
+        let use_fast = !resized
+            && self.live_region_height > 0
             && anchor_stable
             && session.insert_line_supported()
             && combined_height <= term_rows
@@ -928,7 +1070,10 @@ impl Renderer {
             // the preserved live framebuffer, then restore exact cursor state.
             strategy = InsertStrategy::RepaintFallback;
 
-            if self.live_region_height > 0 {
+            if resized {
+                let erased = self.erase_live_after_resize(&mut tx, session);
+                debug_assert!(erased, "`resized` implies an outstanding bounded erase");
+            } else if self.live_region_height > 0 {
                 if self.last_cursor_y > 0 {
                     write!(tx.buffer, "\x1b[{}A\r", self.last_cursor_y).ok();
                 } else {
@@ -942,7 +1087,9 @@ impl Renderer {
                 tx.push(b"\r\n");
             }
 
-            if let Some(prev) = self.previous_surface.clone() {
+            if resized {
+                // Not replayed: the next frame re-establishes the region at the new geometry.
+            } else if let Some(prev) = self.previous_surface.clone() {
                 // current cursor row is now region row 0
                 self.compiler.reset_cursor(0, 0);
                 let diff = compute_diff(None, &prev);
@@ -1017,6 +1164,11 @@ impl Renderer {
         if self.mode == RenderMode::Inline {
             self.physical_uncertain = false;
         }
+        if resized {
+            // The region was erased, not replayed: the next frame starts a fresh one (#403).
+            self.invalidate_anchor(false);
+            self.pending_reanchor = None;
+        }
 
         self.history_insertions += 1;
         self.total_insertion_bytes += bytes as u64;
@@ -1054,29 +1206,35 @@ impl Renderer {
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<usize> {
-        if !session.is_tty || self.live_region_height == 0 {
+        let resized = self.resize_erase_due(session);
+        if !session.is_tty || (self.live_region_height == 0 && !resized) {
             return Ok(0);
         }
 
         let mut tx = TerminalTransaction::new(writer, session.sync_updates());
         tx.begin();
-        if self.last_cursor_y > 0 {
-            write!(tx.buffer, "\x1b[{}A\r", self.last_cursor_y).ok();
+        if resized {
+            let erased = self.erase_live_after_resize(&mut tx, session);
+            debug_assert!(erased, "`resized` implies an outstanding bounded erase");
         } else {
-            tx.push(b"\r");
-        }
-
-        for i in 0..self.live_region_height {
-            tx.push(b"\x1b[K");
-            if i + 1 < self.live_region_height {
-                tx.push(b"\r\n");
+            if self.last_cursor_y > 0 {
+                write!(tx.buffer, "\x1b[{}A\r", self.last_cursor_y).ok();
+            } else {
+                tx.push(b"\r");
             }
-        }
 
-        if self.live_region_height > 1 {
-            write!(tx.buffer, "\x1b[{}A\r", self.live_region_height - 1).ok();
-        } else {
-            tx.push(b"\r");
+            for i in 0..self.live_region_height {
+                tx.push(b"\x1b[K");
+                if i + 1 < self.live_region_height {
+                    tx.push(b"\r\n");
+                }
+            }
+
+            if self.live_region_height > 1 {
+                write!(tx.buffer, "\x1b[{}A\r", self.live_region_height - 1).ok();
+            } else {
+                tx.push(b"\r");
+            }
         }
 
         let bytes = match tx.commit_counted() {
@@ -1091,6 +1249,7 @@ impl Renderer {
         };
 
         self.invalidate_anchor(false);
+        self.pending_reanchor = None;
         self.total_control_bytes += bytes as u64;
         Ok(bytes)
     }
