@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-16): v0.7.2 "clear SIGBUS 2"; v0.7.3 "clear SIGBUS 3" prepared
+## Current release (updated 2026-11-16): v0.7.3 "clear SIGBUS 3"
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -30,8 +30,11 @@ It fixes the CORE layout defect #391 and promotes the `raster` RGBA compositing 
 ([decision 0005](docs/decisions/0005-raster-rgba-core-promotion.md)). Its roadmap completion audit
 is below and in #400.
 
-**v0.7.3 "clear SIGBUS 3" is prepared in source** (state 1), to be tagged on `main` on the
-release coordinator's go after the consumer gate on the exact candidate. It adds the opt-in
+**v0.7.3 "clear SIGBUS 3" was released on 2026-11-16** (state 2):
+- annotated tag `v0.7.3` → `64225d4` on `main`, with `bindings/go/v0.7.3` on the same commit;
+- a regular GitHub [release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.3), not on any registry.
+
+It adds the opt-in
 `InlineResizePolicy::ReclaimLiveRows` for the inline resize defect #403. The default is
 byte-identical to v0.7.2.
 
@@ -41,7 +44,7 @@ Each 0.7.3 item, with the evidence that closes it or the recorded deferral that 
 
 | Item | Status | Evidence |
 |---|---|---|
-| #403 inline resize: a clean live viewport without risking committed history | **Done**, opt-in (EXPERIMENTAL) | #404 merged as `7b0d07b` (head `81ffe3a`, CI 43864898163 8/8 plus Release Preflight 43864898171). **Red first:** run 43818836137 on the tests-only commit `df95893`, 5 of 7 failing on v0.7.2, all stale live rows. **Default unchanged:** `PreserveAbove` equals bytes recorded on tag `v0.7.2` (golden sha256 `22168a18…5220e`, 3216 bytes), and a discriminator test shows the opt-in differs. **Real terminal:** tmux shows 1 stale live row per resize step on v0.7.2 and 0 with the opt-in; the PTY/tmux file is 3 of 4 red on v0.7.2 and 4 of 4 green. **vt100 0.16.2 vs 0.18.1 matrix:** in the #403 comment. **Consumer gate:** MINERVA's run on this release candidate. |
+| #403 inline resize: a clean live viewport without risking committed history | **Done**, opt-in (EXPERIMENTAL) | #404 merged as `7b0d07b` (head `81ffe3a`, CI 43864898163 8/8 plus Release Preflight 43864898171). **Red first:** run 43818836137 on the tests-only commit `df95893`, 5 of 7 failing on v0.7.2, all stale live rows. **Default unchanged:** `PreserveAbove` equals bytes recorded on tag `v0.7.2` (golden sha256 `22168a18…5220e`, 3216 bytes), and a discriminator test shows the opt-in differs. **Real terminal:** tmux shows 1 stale live row per resize step on v0.7.2 and 0 with the opt-in; the PTY/tmux file is 3 of 4 red on v0.7.2 and 4 of 4 green. **vt100 0.16.2 vs 0.18.1 matrix:** in the #403 comment. **Consumer gate:** MINERVA's 2×2 run ({0.7.2, 0.7.3} × {vt100 0.16, 0.18}) on candidate `fda73a1` cleared 0.7.3. Its reds were pre-existing in the consumer, and the raw FLOW bytes under `PreserveAbove` were identical. |
 | v0.7.2 release record | **Done** (docs) | #401 merged as `0f116da`. |
 
 **Not in v0.7.3, each with where it is recorded:**
