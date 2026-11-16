@@ -302,9 +302,8 @@ fn run_tmux(clear: bool) {
             "{label}: committed history lost or duplicated\n{}",
             all.join("\n")
         );
-        // tmux applies the resize before the probe hears of it, so the rows it pushed can't be
-        // told apart from outside. Report the stale rows as a receipt; the contract asserted
-        // above is history + a clean live region.
+        // tmux applies the resize before the probe hears of it, so the rows it pushed into its
+        // history can't be told apart from outside: scrollback totals are a receipt only.
         let stale = all
             .iter()
             .filter(|r| frame_step(r).is_some_and(|s| s != step))
@@ -314,6 +313,15 @@ fn run_tmux(clear: bool) {
             .filter(|r| frame_step(r).is_some_and(|s| s != step))
             .count();
         eprintln!("{label}: stale rows total={stale} visible={stale_visible}");
+        // The discriminator: v0.7.2 leaves one stale live row visible above the region at every
+        // step of this sequence in tmux; the bounded re-anchor leaves none. (tmux pushes a
+        // cleared screen into its history, so `total` counts erased copies, not visible rows.)
+        assert_eq!(
+            stale_visible,
+            0,
+            "{label}: stale live rows visible\n{}",
+            vis.join("\n")
+        );
     }
     let _ = tmux.cmd(&["send-keys", "-t", "probe", "q"]);
 }
