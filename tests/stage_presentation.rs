@@ -2,7 +2,7 @@ use gibson::raster::{Rgb, RgbRaster, RgbaRaster};
 use gibson::stage::*;
 use gibson::ui::experience::FrameDemand;
 use gibson::ui::prelude::*;
-use gibson::{Context, Node, Rect, RenderMode, Surface, TextInputState};
+use gibson::{Context, Node, RenderMode, Surface, TextInputState};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
