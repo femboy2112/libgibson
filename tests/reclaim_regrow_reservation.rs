@@ -122,6 +122,7 @@ fn cells(vt: &vt100::Parser, cols: u16, rows: u16) -> Vec<String> {
 
 #[test]
 fn full_height_reclaim_matches_fresh_through_the_18_step_regrow_sequence() {
+    let mut mismatches = Vec::new();
     for capacity in [0, 4096] {
         let mut actual = Term::new(
             40,
@@ -141,19 +142,19 @@ fn full_height_reclaim_matches_fresh_through_the_18_step_regrow_sequence() {
                 InlineResizePolicy::ReclaimLiveRows,
             );
             fresh.draw(step, rows - 1, None);
-            assert_eq!(
-                actual.vt.screen().cursor_position(),
-                fresh.vt.screen().cursor_position(),
-                "capacity={capacity}, step={step}, report={:?}",
-                actual.ctx.last_frame_report()
-            );
-            assert_eq!(
-                cells(&actual.vt, cols, rows),
-                cells(&fresh.vt, cols, rows),
-                "capacity={capacity}, step={step}"
-            );
+            if actual.vt.screen().cursor_position() != fresh.vt.screen().cursor_position()
+                || cells(&actual.vt, cols, rows) != cells(&fresh.vt, cols, rows)
+            {
+                mismatches.push(format!(
+                    "capacity={capacity}, step={step}, cursor={:?} fresh={:?}, report={:?}",
+                    actual.vt.screen().cursor_position(),
+                    fresh.vt.screen().cursor_position(),
+                    actual.ctx.last_frame_report()
+                ));
+            }
         }
     }
+    assert!(mismatches.is_empty(), "regrow mismatches: {mismatches:#?}");
 }
 
 #[test]
