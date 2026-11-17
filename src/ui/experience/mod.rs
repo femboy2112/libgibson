@@ -92,7 +92,12 @@ use crate::input::KeyEvent;
 /// a grammar-independent state change, returning the typed application action to
 /// dispatch if one was activated.
 ///
-/// This is the single entry point an application calls on input: the grammar
+/// When mounting a Presented tree in a host UiRuntime, route the event through
+/// UiRuntime::handle_event first. Only an unconsumed key reaches this function.
+/// Standard and Blades bind represented buttons to their typed payloads; invoking
+/// both routes for the same consumed activation would deliver the action twice.
+///
+/// For grammar-only input, this is the entry point: the grammar
 /// decides *which* key means *which* intent, [`apply_intent`] decides what that
 /// intent *does* (identically for every grammar), and the application receives
 /// back only its own typed action — never a key code, never an intent.

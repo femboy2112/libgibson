@@ -98,8 +98,11 @@ impl<A: Clone> Grammar<A> for Standard {
                 let mut column = column::<A>().gap(1).child(listing.grow(1.0));
                 if let Some(primary) = items.get(selected).and_then(|item| item.primary()) {
                     receipt.actions.push(primary.key.clone());
-                    column =
-                        column.child(button(primary.label.clone()).key(primary.key.to_string()));
+                    column = column.child(
+                        button(primary.label.clone())
+                            .key(primary.key.to_string())
+                            .on_press(primary.invoke.clone()),
+                    );
                 }
                 column
             }
@@ -116,8 +119,11 @@ impl<A: Clone> Grammar<A> for Standard {
                 let mut action_row = row::<A>().gap(2);
                 for action in actions {
                     receipt.actions.push(action.key.clone());
-                    action_row =
-                        action_row.child(button(action.label.clone()).key(action.key.to_string()));
+                    action_row = action_row.child(
+                        button(action.label.clone())
+                            .key(action.key.to_string())
+                            .on_press(action.invoke.clone()),
+                    );
                 }
                 fields.child(action_row)
             }

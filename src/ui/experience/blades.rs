@@ -1170,7 +1170,7 @@ impl<A: Clone> Grammar<A> for Blades {
         }
 
         let selected = state.selected_index(experience);
-        let mut primary: Option<(Key, String)> = None;
+        let mut primary: Option<(Key, String, A)> = None;
         match &active.content {
             Content::Collection(items) => {
                 // Every item is drawn on the foremost plane (the list scrolls to keep
@@ -1181,15 +1181,23 @@ impl<A: Clone> Grammar<A> for Blades {
                 }
                 if let Some(item) = selected.and_then(|i| items.get(i)) {
                     receipt.selected = Some(item.key.clone());
-                    primary = item
-                        .primary()
-                        .map(|action| (action.key.clone(), action.label.clone()));
+                    primary = item.primary().map(|action| {
+                        (
+                            action.key.clone(),
+                            action.label.clone(),
+                            action.invoke.clone(),
+                        )
+                    });
                 }
             }
             Content::Detail { actions, .. } => {
-                primary = actions
-                    .first()
-                    .map(|action| (action.key.clone(), action.label.clone()));
+                primary = actions.first().map(|action| {
+                    (
+                        action.key.clone(),
+                        action.label.clone(),
+                        action.invoke.clone(),
+                    )
+                });
             }
             Content::Prose(_) => {}
             Content::Custom(custom) => {
@@ -1204,12 +1212,16 @@ impl<A: Clone> Grammar<A> for Blades {
         let footer = env.height >= 10;
         let mut footer_row = row::<A>().gap(2);
         if footer {
-            if let Some((key, text_label)) = &primary {
+            if let Some((key, text_label, invoke)) = &primary {
                 receipt.actions.push(key.clone());
-                footer_row = footer_row.child(button::<A>(text_label.clone()).key(key.to_string()));
+                footer_row = footer_row.child(
+                    button::<A>(text_label.clone())
+                        .key(key.to_string())
+                        .on_press(invoke.clone()),
+                );
             }
             footer_row = footer_row.child(label::<A>("↑↓ blade   ←→ item   ↵ select"));
-        } else if let Some((key, _)) = &primary {
+        } else if let Some((key, _, _)) = &primary {
             receipt.omitted.push(key.clone());
             receipt
                 .degraded
