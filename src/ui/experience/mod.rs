@@ -92,7 +92,25 @@ use crate::input::KeyEvent;
 /// a grammar-independent state change, returning the typed application action to
 /// dispatch if one was activated.
 ///
-/// This is the single entry point an application calls on input: the grammar
+/// A mounted Presented tree needs a scoped host routing recipe:
+///
+/// 1. Give active modal, focused editor and custom-handler capture priority.
+/// 2. For arrow/selection keys owned by this pane, route to Experience BEFORE
+///    generic UiRuntime focus traversal when focus belongs to this Presented's
+///    `receipt.actions`, or when the declared active pane has no UI focus.
+///    No focus inside a pane is not permission to steal focus from another pane.
+/// 3. Enter, pointer activation and Tab go through the UI route first. Forward
+///    only unconsumed keys owned by this Experience as navigation fallback.
+///
+/// Use [`handle_key_outcome`] to stop on `Consumed` even when no action is emitted.
+/// Never forward an event after either route consumes it. Standard and Blades
+/// bind represented buttons to typed payloads; invoking both activation routes
+/// would deliver twice. Hosts own pane-ownership decisions and preserve their
+/// declared pane when rebuilding after selection; LG does not enforce them.
+/// Once-only delivery is a documented host consumption contract; LG cannot stop
+/// a host that deliberately calls both routes. UiRuntime remains the focus owner.
+///
+/// For grammar-only input, this is the entry point: the grammar
 /// decides *which* key means *which* intent, [`apply_intent`] decides what that
 /// intent *does* (identically for every grammar), and the application receives
 /// back only its own typed action — never a key code, never an intent.
