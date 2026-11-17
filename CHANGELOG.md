@@ -15,6 +15,9 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+- Experimental Stage raster resolution over RGB underlays, with layout-derived anchors, signed pixel offsets, aggregate limits and placement receipts.
+
+
 ### Added
 - Experimental Rust-only `stage::map_actions` adapts press, edit, custom-event
   and modal-dismissal actions without flattening a semantic subtree. Mount the

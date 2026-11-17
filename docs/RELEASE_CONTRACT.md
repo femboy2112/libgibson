@@ -311,7 +311,7 @@ breaking them in a pure patch:
   It is introduced experimentally in the 0.2.0 milestone. `Element`, `Skin`,
   `UiRuntime`, `App`, token types and lowering sidecars all belong to this tier,
   not CORE. See [UI_LAYER.md](UI_LAYER.md).
-- `stage` — experimental semantic composition helpers. Action adaptation preserves
+- `stage` — experimental semantic composition and resolved RGB raster helpers. Action adaptation preserves
   semantic subtrees for one host `UiRuntime`; no input dispatcher or terminal owner.
 - `audio` — the deterministic offline audio engine and HumanMusic scoring (0.4.0; the
   real-device backend is the optional `audio-cpal` feature). Not exposed through the C ABI.
