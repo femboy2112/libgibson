@@ -181,14 +181,28 @@ fn shared_and_offscreen_sources_still_consume_aggregate_budget() {
         ..limits()
     }; // canvas8 + 2*4 per plane
     assert_eq!(
-        resolve_raster(&root(2, 2), (2, 2), &rgb(2, 2), &[a.clone()], budget).unwrap_err(),
+        resolve_raster(
+            &root(2, 2),
+            (2, 2),
+            &rgb(2, 2),
+            std::slice::from_ref(&a),
+            budget
+        )
+        .unwrap_err(),
         RasterError::Budget
     );
     let budget = RasterLimits {
         pixels: 16,
         ..limits()
     };
-    assert!(resolve_raster(&root(2, 2), (2, 2), &rgb(2, 2), &[a.clone()], budget).is_ok());
+    assert!(resolve_raster(
+        &root(2, 2),
+        (2, 2),
+        &rgb(2, 2),
+        std::slice::from_ref(&a),
+        budget
+    )
+    .is_ok());
     assert_eq!(
         resolve_raster(&root(2, 2), (2, 2), &rgb(2, 2), &[a, b], budget).unwrap_err(),
         RasterError::Budget
