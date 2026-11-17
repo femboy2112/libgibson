@@ -12,6 +12,15 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.7.3 "clear SIGBUS 3" released (2026-11-16):**
+- tag `v0.7.3` → `64225d4` on `main`, with `bindings/go/v0.7.3` on the same commit;
+- a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.3).
+
+It adds the opt-in, EXPERIMENTAL `InlineResizePolicy::ReclaimLiveRows`, which gives a clean inline
+viewport after a resize on terminals that keep the cursor line on a shrink (#403, #404). The
+default `PreserveAbove` is byte-identical to v0.7.2. Library code changed only in
+`src/renderer.rs`, `src/context.rs` and `src/lib.rs`.
+
 **v0.7.2 "clear SIGBUS 2" released (2026-11-14):**
 - tag `v0.7.2` → `7e7c7b3` on `main`, with `bindings/go/v0.7.2` on the same commit;
 - a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.2).
