@@ -225,3 +225,19 @@ generation/write, not total Stage/producer cost or terminal presentation time.
 The synthetic tests retain action identity and a single UiRuntime. They do not
 clear the consumer integration, physical resize/pointer, private-art appearance,
 performance or fresh-author gates.
+
+## Integrated public-API fixture
+
+[`stage_integrated_fixture.rs`](../tests/stage_integrated_fixture.rs) is a small
+headless host recipe composing action mapping, keyed RGB planes and explicit-time
+presentation. It uses one UiRuntime and Context, both Standard and Blades, a
+procedural alpha sprite, typed actions and an editor. Its scripted samples cover
+non-renewing producer deadlines, current-pose reversal, responsive rebuilds,
+strict reduced motion, declared omissions and settled ticks with no generation
+or output. The scoped input-routing recipe stays host-owned; Enter is UI-first.
+Fixed-width spacers explicitly clear their default growth with `.grow(0.)`.
+
+These are integration receipts over an RGB substrate and logical geometry. They
+do not clear physical resize/pointer, private-art appearance, performance or the
+independent fresh-author gate. Semantic panes reserve their new room immediately;
+only graphical crop rectangles animate.
