@@ -120,6 +120,21 @@ pub fn resolve_raster(
 /// Use before structurally editing `compiled.node`; such edits invalidate its
 /// frame-local join. No previous-frame mapping or external identity table is used.
 /// Noninteractive explicit keys are supported, including chrome/overlay wrappers.
+///
+/// ```
+/// use gibson::{raster::{RgbRaster, RgbaRaster}, stage::*, ui::prelude::*};
+/// use std::{sync::Arc, time::Duration};
+/// let tree = column::<()>().key("presence").width(2).height(2);
+/// let mut ui = UiRuntime::new(skins::SWISS_SIGNAL);
+/// let frame = ui.frame(&tree, UiEnvironment { width: 2, height: 2,
+///     ..Default::default() }, Duration::ZERO)?;
+/// let plane = RasterPlane { anchor: RasterAnchor::Key(Key::named("presence")),
+///     source: Arc::new(RgbaRaster::new(2, 4)), offset_px: (0, 1), z: 0 };
+/// let resolved = resolve_compiled_raster(&frame, (2, 2), &RgbRaster::new(2, 4),
+///     &[plane], RasterLimits { planes: 4, nodes: 32, pixels: 128 })?;
+/// assert_eq!(resolved.placements[0].origin_px, (0, 1));
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub fn resolve_compiled_raster<A>(
     compiled: &Compiled<A>,
     viewport: (u16, u16),
