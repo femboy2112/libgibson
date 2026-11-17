@@ -1,7 +1,6 @@
 //! Synthetic owned-terminal resize probe. No application data, art or model.
 //! Arguments: receipt-file, reclaim|preserve, inline|fullscreen, retained|fresh-step.
 use gibson::{Context, InlineResizePolicy, Node, RenderMode, Style};
-use serde_json::json;
 use std::fs::OpenOptions;
 use std::io::{self, Read, Write};
 
@@ -74,12 +73,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             ctx.render()?;
             let report = ctx.last_frame_report();
+            let rewound = report
+                .reanchor
+                .map_or_else(|| "null".to_owned(), |r| r.rewound_rows.to_string());
             writeln!(
                 receipt,
-                "{}",
-                json!({"step":step,"cols":cols,"rows":rows,"height":height,
-                "full_repaint":report.full_repaint,"bytes":report.bytes_emitted,
-                "rewound_rows":report.reanchor.map(|r|r.rewound_rows)})
+                "{{\"step\":{step},\"cols\":{cols},\"rows\":{rows},\"height\":{height},\"full_repaint\":{},\"bytes\":{},\"rewound_rows\":{rewound}}}",
+                report.full_repaint, report.bytes_emitted
             )?;
             receipt.flush()?;
             let mut command = [0u8; 1];
