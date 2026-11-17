@@ -24,9 +24,11 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 ### Changed (Behavior change, experimental)
 - Standard primary/detail action buttons and Blades represented footer buttons
   now carry their typed `on_press` payload. Pointer/headless UI activation emits
-  actions where those slots previously had no callback. Embedded hosts route
-  UiRuntime consumption first and Experience navigation only as fallback, so
-  each activation is delivered once. Omitted/raster-only chrome stays inert.
+  actions where those slots previously had no callback. Embedded hosts give
+  modal/editor/custom capture priority, route Experience-owned selection keys
+  Experience-first and activation/Tab UI-first, and stop after consumption.
+  Hosts own pane routing; LG does not enforce it. Omitted/raster-only chrome
+  stays inert.
 
 ### Added
 - Experimental Stage raster resolution over RGB underlays, with same-frame semantic Key anchors, signed pixel offsets, aggregate limits and placement receipts.

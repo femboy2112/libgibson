@@ -307,6 +307,12 @@ not consumed. Tab / Shift-Tab traverse. Enter activates an action; unmodified
 Space activates non-editor controls. `.on_event(...)` gives a focused custom
 control its unhandled events, for example an application-owned `ViewportState`.
 
+Mounted Experience panes apply the scoped ownership recipe in
+[Stage mounting](STAGE.md) before generic arrow traversal: modal/editor/custom
+capture first, owned Experience selection keys Experience-first, activation/Tab
+UI-first. Ordinary UI shortcut routing above stays unchanged. Hosts decide which
+pane owns a key and never forward an already consumed event.
+
 A topmost modal captures keyboard/paste routing. Escape invokes its optional
 `.on_dismiss(Action)`; unbound keys do not leak to the background. Nested modal
 capture restores the previous live focus on removal, falling back if that key

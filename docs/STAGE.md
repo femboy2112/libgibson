@@ -38,8 +38,16 @@ existing compiler rejects duplicates. Positional keys retain their structural
 meaning and are unsuitable for identity across arbitrary reordering.
 
 For an Experience grammar, adapt its `Presented.element` before compilation and
-retain its receipt and demand. Keep its existing navigation state and route keys
-to that grammar only when the host's modal/editor routing leaves them unconsumed.
+retain its receipt and demand. Keep its navigation state. Give modal, editor and
+custom-handler capture priority. For arrow/selection keys owned by the active
+Experience pane, route to Experience before generic UI arrow traversal when UI
+focus belongs to that frame's `Presented.receipt.actions`, or the active pane has
+no UI focus. An unrelated focused pane retains its keys. Enter/pointer/Tab go
+UI-first; forward only unconsumed owned keys as Experience fallback. Use
+`handle_key_outcome` so consumed navigation stops routing even without an action.
+Never forward an already consumed event. Hosts choose pane ownership and preserve
+it after rebuilding; LG does not enforce this routing contract or add a second
+focus owner.
 Action mapping cannot distinguish actions a producer already erased to `()` or
 restore nested controls flattened into a Surface. Producers needing distinct
 controls must expose the semantic tree and meaningful action payloads.

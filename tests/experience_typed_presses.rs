@@ -68,27 +68,60 @@ fn grammars() -> Vec<Box<dyn Grammar<Inner>>> {
     vec![Box::new(Standard), Box::new(Blades::new())]
 }
 
-// Executable host integration recipe, not a second runtime or production dispatcher.
-// The double-delivery mutant removes this consumed guard; the once-only test must fail.
-fn route(
-    ui: &mut UiRuntime<Host>,
+// Executable scoped host recipe; the caller chooses this Experience's pane.
+// Compiled sidecars and receipt keys belong to the same frame as UiRuntime.
+fn grammar_route(
     grammar: &dyn Grammar<Inner>,
     experience: &Experience<Inner>,
     state: &mut PresentationState,
     event: &Event,
 ) -> EventOutcome<Host> {
-    let mut out = ui.handle_event(event);
-    if !out.consumed {
-        if let Event::Key(k) = event {
-            match handle_key_outcome(grammar, experience, state, k) {
-                KeyOutcome::Action(a) => {
-                    out.actions.push(Host::Inner(a));
-                    out.consumed = true;
-                }
-                KeyOutcome::Consumed => out.consumed = true,
-                KeyOutcome::Unhandled => {}
-            }
+    let Event::Key(k) = event else {
+        return EventOutcome::default();
+    };
+    match handle_key_outcome(grammar, experience, state, k) {
+        KeyOutcome::Action(a) => EventOutcome {
+            actions: vec![Host::Inner(a)],
+            consumed: true,
+        },
+        KeyOutcome::Consumed => EventOutcome {
+            actions: vec![],
+            consumed: true,
+        },
+        KeyOutcome::Unhandled => EventOutcome::default(),
+    }
+}
+fn route(
+    ui: &mut UiRuntime<Host>,
+    compiled: &Compiled<Host>,
+    action_keys: &[Key],
+    grammar: &dyn Grammar<Inner>,
+    experience: &Experience<Inner>,
+    state: &mut PresentationState,
+    event: &Event,
+) -> EventOutcome<Host> {
+    let capture_first = compiled.interactions.active_modal().is_some()
+        || ui
+            .focus()
+            .and_then(|k| compiled.interactions.get(k))
+            .is_some_and(|i| i.input.is_some() || i.on_event.is_some());
+    let owns_pane = !capture_first && ui.focus().is_none_or(|k| action_keys.contains(k));
+    let owned_selection = owns_pane
+        && matches!(event, Event::Key(k) if matches!(k.code,
+        KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right
+        | KeyCode::Home | KeyCode::End | KeyCode::Char('h' | 'j' | 'k' | 'l')));
+    if owned_selection {
+        let out = grammar_route(grammar, experience, state, event);
+        if out.consumed {
+            return out;
         }
+        return ui.handle_event(event); // Grammar did not bind it; do not try it twice.
+    }
+    let mut out = ui.handle_event(event);
+    if !out.consumed && owns_pane {
+        let fallback = grammar_route(grammar, experience, state, event);
+        out.actions.extend(fallback.actions);
+        out.consumed = fallback.consumed;
     }
     out
 }
@@ -184,55 +217,107 @@ fn host_delivers_consumed_activation_once_and_keeps_unconsumed_navigation_fallba
     for mut g in grammars() {
         let mut state = PresentationState::new(&e);
         let shown = g.present(&e, &state, &env(), Duration::ZERO);
+        let keys = shown.receipt.actions;
         let mut ui = UiRuntime::new(skins::SWISS_SIGNAL);
-        ui.frame(
-            &map_actions(shown.element, Host::Inner),
-            env(),
-            Duration::ZERO,
-        )
-        .unwrap();
+        let compiled = ui
+            .frame(
+                &map_actions(shown.element, Host::Inner),
+                env(),
+                Duration::ZERO,
+            )
+            .unwrap();
         assert!(ui.set_focus(&key("open-a")));
-        let out = route(&mut ui, g.as_ref(), &e, &mut state, &event(KeyCode::Enter));
+        let out = route(
+            &mut ui,
+            &compiled,
+            &keys,
+            g.as_ref(),
+            &e,
+            &mut state,
+            &event(KeyCode::Enter),
+        );
         assert!(out.consumed);
         assert_eq!(
             out.actions,
             [Host::Inner(Inner::Open("a".into()))],
             "one physical activation, one payload"
         );
-        ui.frame(&column::<Host>(), env(), Duration::ZERO).unwrap();
+        let compiled = ui.frame(&column::<Host>(), env(), Duration::ZERO).unwrap();
         assert_eq!(
-            route(&mut ui, g.as_ref(), &e, &mut state, &event(KeyCode::Enter)).actions,
+            route(
+                &mut ui,
+                &compiled,
+                &keys,
+                g.as_ref(),
+                &e,
+                &mut state,
+                &event(KeyCode::Enter)
+            )
+            .actions,
             [Host::Inner(Inner::Open("a".into()))]
         );
     }
 }
 
 #[test]
-fn modal_and_editor_consumption_prevent_background_navigation_or_invocation() {
+fn modal_editor_and_custom_capture_prevent_background_navigation_or_invocation() {
     let e = collection(&["a", "b"]);
     let mut state = PresentationState::new(&e);
     let mut g = Standard;
     let shown = g.present(&e, &state, &env(), Duration::ZERO);
+    let keys = shown.receipt.actions;
     let tree = column()
         .child(map_actions(shown.element, Host::Inner))
         .overlay(modal("Blocked").key("modal").on_dismiss(Host::Dismiss));
     let mut ui = UiRuntime::new(skins::SWISS_SIGNAL);
-    ui.frame(&tree, env(), Duration::ZERO).unwrap();
-    let out = route(&mut ui, &g, &e, &mut state, &event(KeyCode::Enter));
-    assert!(out.consumed);
-    assert!(out.actions.is_empty());
+    let compiled = ui.frame(&tree, env(), Duration::ZERO).unwrap();
+    for code in [KeyCode::Enter, KeyCode::Down] {
+        let out = route(&mut ui, &compiled, &keys, &g, &e, &mut state, &event(code));
+        assert!(out.consumed);
+        assert!(out.actions.is_empty());
+        assert_eq!(state.selected_index(&e), Some(0));
+    }
     let input = TextInputState::with_text("draft");
     let tree = text_input(&input)
         .key("editor")
         .on_edit(|s| Host::Edited(s.text));
-    ui.frame(&tree, env(), Duration::ZERO).unwrap();
-    let before = state.selected_index(&e);
-    let out = route(&mut ui, &g, &e, &mut state, &event(KeyCode::Down));
+    let compiled = ui.frame(&tree, env(), Duration::ZERO).unwrap();
+    let out = route(
+        &mut ui,
+        &compiled,
+        &keys,
+        &g,
+        &e,
+        &mut state,
+        &event(KeyCode::Down),
+    );
     assert!(out.consumed);
-    assert_eq!(state.selected_index(&e), before);
-    let out = route(&mut ui, &g, &e, &mut state, &Event::Paste("!".into()));
+    assert_eq!(state.selected_index(&e), Some(0));
+    let out = route(
+        &mut ui,
+        &compiled,
+        &keys,
+        &g,
+        &e,
+        &mut state,
+        &Event::Paste("!".into()),
+    );
     assert!(out.consumed);
     assert_eq!(out.actions, [Host::Edited("draft!".into())]);
+    let tree = column::<Host>().key("custom").on_event(|_| Host::Outside);
+    let compiled = ui.frame(&tree, env(), Duration::ZERO).unwrap();
+    let out = route(
+        &mut ui,
+        &compiled,
+        &keys,
+        &g,
+        &e,
+        &mut state,
+        &event(KeyCode::Down),
+    );
+    assert!(out.consumed);
+    assert_eq!(out.actions, [Host::Outside]);
+    assert_eq!(state.selected_index(&e), Some(0));
 }
 
 #[test]
@@ -272,20 +357,185 @@ fn selected_identity_and_latest_payload_follow_reorder_and_model_rebuild() {
     }
 }
 
+fn mounted(element: Element<Inner>, extras: usize) -> Element<Host> {
+    column()
+        .child(map_actions(element, Host::Inner))
+        .children((0..extras).map(|i| {
+            button("Outside")
+                .key(format!("outside-{i}"))
+                .on_press(Host::Outside)
+        }))
+}
+
 #[test]
-fn ui_first_host_preserves_experience_arrow_navigation() {
+fn scoped_host_preserves_experience_selection_with_other_focusables() {
     let e = collection(&["a", "b"]);
-    let mut failures = Vec::new();
     for mut g in grammars() {
-        let mut state = PresentationState::new(&e);
-        let shown = g.present(&e, &state, &env(), Duration::ZERO);
-        let mut ui = UiRuntime::new(skins::SWISS_SIGNAL);
-        ui.frame(&map_actions(shown.element, Host::Inner), env(), Duration::ZERO).unwrap();
-        let arrow = if g.name() == "STANDARD" { KeyCode::Down } else { KeyCode::Right };
-        let out = route(&mut ui, g.as_ref(), &e, &mut state, &event(arrow));
-        if state.selected_index(&e) != Some(1) {
-            failures.push(format!("{} selected={:?} consumed={} focus={:?}", g.name(), state.selected_index(&e), out.consumed, ui.focus()));
+        for extras in [0, 2] {
+            let mut state = PresentationState::new(&e);
+            let shown = g.present(&e, &state, &env(), Duration::ZERO);
+            let keys = shown.receipt.actions;
+            let mut ui = UiRuntime::new(skins::SWISS_SIGNAL);
+            let compiled = ui
+                .frame(&mounted(shown.element, extras), env(), Duration::ZERO)
+                .unwrap();
+            assert!(ui.set_focus(&key("open-a")));
+            let arrow = if g.name() == "STANDARD" {
+                KeyCode::Down
+            } else {
+                KeyCode::Right
+            };
+            let out = route(
+                &mut ui,
+                &compiled,
+                &keys,
+                g.as_ref(),
+                &e,
+                &mut state,
+                &event(arrow),
+            );
+            assert!(out.consumed);
+            assert!(out.actions.is_empty());
+            assert_eq!(
+                state.selected_index(&e),
+                Some(1),
+                "owned arrow changes Experience selection"
+            );
+            assert_eq!(
+                ui.focus(),
+                Some(&key("open-a")),
+                "selection does not run generic focus traversal"
+            );
+            for (code, want) in [(KeyCode::Home, 0), (KeyCode::End, 1)] {
+                assert!(
+                    route(
+                        &mut ui,
+                        &compiled,
+                        &keys,
+                        g.as_ref(),
+                        &e,
+                        &mut state,
+                        &event(code)
+                    )
+                    .consumed
+                );
+                assert_eq!(state.selected_index(&e), Some(want));
+            }
+            let shown = g.present(&e, &state, &env(), Duration::from_millis(50));
+            let keys = shown.receipt.actions;
+            let compiled = ui
+                .frame(
+                    &mounted(shown.element, extras),
+                    env(),
+                    Duration::from_millis(50),
+                )
+                .unwrap();
+            assert!(ui.set_focus(&key("open-b"))); // Host preserves its declared pane after rebuilding.
+            assert_eq!(
+                route(
+                    &mut ui,
+                    &compiled,
+                    &keys,
+                    g.as_ref(),
+                    &e,
+                    &mut state,
+                    &event(KeyCode::Enter)
+                )
+                .actions,
+                [Host::Inner(Inner::Open("b".into()))]
+            );
+            if extras > 0 {
+                assert!(
+                    route(
+                        &mut ui,
+                        &compiled,
+                        &keys,
+                        g.as_ref(),
+                        &e,
+                        &mut state,
+                        &event(KeyCode::Tab)
+                    )
+                    .consumed
+                );
+                assert_eq!(ui.focus(), Some(&key("outside-0")), "Tab stays UI-first");
+            }
         }
     }
-    assert!(failures.is_empty(), "UI-first routing swallowed Experience navigation: {failures:#?}");
+}
+
+#[test]
+fn unrelated_host_focus_keeps_ui_arrow_traversal_and_does_not_navigate_the_pane() {
+    let e = collection(&["a", "b"]);
+    let mut state = PresentationState::new(&e);
+    let mut g = Standard;
+    let shown = g.present(&e, &state, &env(), Duration::ZERO);
+    let keys = shown.receipt.actions;
+    let mut ui = UiRuntime::new(skins::SWISS_SIGNAL);
+    let compiled = ui
+        .frame(&mounted(shown.element, 2), env(), Duration::ZERO)
+        .unwrap();
+    assert!(ui.set_focus(&key("outside-0")));
+    let out = route(
+        &mut ui,
+        &compiled,
+        &keys,
+        &g,
+        &e,
+        &mut state,
+        &event(KeyCode::Down),
+    );
+    assert!(out.consumed);
+    assert_eq!(ui.focus(), Some(&key("outside-1")));
+    assert_eq!(state.selected_index(&e), Some(0));
+}
+
+#[test]
+fn one_runtime_routes_selection_to_the_owning_presented_receipt_only() {
+    let mut first = collection(&["first-a", "first-b"]);
+    first.destinations[0].key = key("first-items");
+    let mut second = collection(&["second-a", "second-b"]);
+    second.destinations[0].key = key("second-items");
+    let mut a = PresentationState::new(&first);
+    let mut b = PresentationState::new(&second);
+    let mut standard = Standard;
+    let mut blades = Blades::new();
+    let p = standard.present(&first, &a, &env(), Duration::ZERO);
+    let q = blades.present(&second, &b, &env(), Duration::ZERO);
+    let akeys = p.receipt.actions;
+    let bkeys = q.receipt.actions;
+    let tree = column()
+        .child(map_actions(p.element, Host::Inner))
+        .child(map_actions(q.element, Host::Inner));
+    let mut ui = UiRuntime::new(skins::SWISS_SIGNAL);
+    let compiled = ui.frame(&tree, env(), Duration::ZERO).unwrap();
+    assert!(ui.set_focus(&key("open-first-a")));
+    assert!(
+        route(
+            &mut ui,
+            &compiled,
+            &akeys,
+            &standard,
+            &first,
+            &mut a,
+            &event(KeyCode::Down)
+        )
+        .consumed
+    );
+    assert_eq!(a.selected_index(&first), Some(1));
+    assert_eq!(b.selected_index(&second), Some(0));
+    assert!(ui.set_focus(&key("open-second-a")));
+    assert!(
+        route(
+            &mut ui,
+            &compiled,
+            &bkeys,
+            &blades,
+            &second,
+            &mut b,
+            &event(KeyCode::Right)
+        )
+        .consumed
+    );
+    assert_eq!(a.selected_index(&first), Some(1));
+    assert_eq!(b.selected_index(&second), Some(1));
 }
