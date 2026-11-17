@@ -202,6 +202,11 @@ fn convert_length_percentage_auto(dim: Dimension) -> LengthPercentageAuto {
 fn convert_style(ls: &LayoutStyle) -> taffy::style::Style {
     let mut style = taffy::style::Style::default();
     style.display = Display::Flex;
+    // taffy 0.15 defaults to `Position::Static` (CSS); 0.14 defaulted to
+    // `Relative`. Every node must stay a containing block, or absolutely
+    // positioned layers (stack children, `offset`) resolve their percentage
+    // sizes and insets against the root viewport instead of their parent.
+    style.position = Position::Relative;
 
     style.flex_direction = match ls.direction {
         FlexDirection::Row => TaffyFlexDirection::Row,
@@ -229,23 +234,23 @@ fn convert_style(ls: &LayoutStyle) -> taffy::style::Style {
     };
 
     if let Some(align) = ls.align_items {
-        style.align_items = Some(match align {
+        style.align_items = match align {
             AlignItems::Start => TaffyAlignItems::START,
             AlignItems::End => TaffyAlignItems::END,
             AlignItems::Center => TaffyAlignItems::CENTER,
             AlignItems::Stretch => TaffyAlignItems::STRETCH,
-        });
+        };
     }
 
     if let Some(justify) = ls.justify_content {
-        style.justify_content = Some(match justify {
+        style.justify_content = match justify {
             JustifyContent::Start => TaffyJustifyContent::START,
             JustifyContent::End => TaffyJustifyContent::END,
             JustifyContent::Center => TaffyJustifyContent::CENTER,
             JustifyContent::SpaceBetween => TaffyJustifyContent::SPACE_BETWEEN,
             JustifyContent::SpaceAround => TaffyJustifyContent::SPACE_AROUND,
             JustifyContent::SpaceEvenly => TaffyJustifyContent::SPACE_EVENLY,
-        });
+        };
     }
 
     style
@@ -576,6 +581,45 @@ mod tests {
         assert!(wrapped.len() >= 3);
         for line in &wrapped {
             assert!(UnicodeWidthStr::width(&line[..]) <= 15);
+        }
+    }
+
+    /// Absolutely positioned layers resolve against their parent, not the
+    /// viewport, even when the parent is shorter than the viewport and sits
+    /// below a sibling. taffy 0.15 made `Static` the default `position`;
+    /// `convert_style` must keep every node a containing block.
+    #[test]
+    fn absolute_layers_resolve_against_their_parent_not_the_viewport() {
+        let mut root = Node::col()
+            .child(Node::text("head", Style::default()).height(2.0))
+            .child(
+                Node::col()
+                    .width(12.0)
+                    .child(Node::text("body", Style::default()).height(4.0))
+                    .child(
+                        Node::text("layer", Style::default())
+                            .percent_width(100.0)
+                            .percent_height(100.0)
+                            .offset(0.0, 0.0),
+                    ),
+            )
+            .child(
+                Node::stack()
+                    .height(3.0)
+                    .child(Node::text("under", Style::default()))
+                    .child(Node::text("over", Style::default()).percent_height(100.0)),
+            );
+        compute_layout(&mut root, 20, 24).unwrap();
+
+        let panel = &root.children[1];
+        assert_eq!((panel.computed_rect.y, panel.computed_rect.height), (2, 4));
+        let layer = &panel.children[1].computed_rect;
+        assert_eq!((layer.x, layer.y, layer.width, layer.height), (0, 2, 12, 4));
+
+        let stack = &root.children[2];
+        assert_eq!((stack.computed_rect.y, stack.computed_rect.height), (6, 3));
+        for child in &stack.children {
+            assert_eq!((child.computed_rect.y, child.computed_rect.height), (6, 3));
         }
     }
 

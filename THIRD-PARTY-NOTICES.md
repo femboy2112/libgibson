@@ -15,7 +15,6 @@ are included here for completeness.
 
 | Package | License | Repository |
 |---------|---------|------------|
-| arrayvec v0.7.8 | MIT OR Apache-2.0 | https://github.com/bluss/arrayvec |
 | bitflags v2.13.2 | MIT OR Apache-2.0 | https://github.com/bitflags/bitflags |
 | castaway v0.2.4 | MIT | https://github.com/sagebind/castaway |
 | cfg-if v1.0.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/cfg-if |
@@ -47,7 +46,7 @@ are included here for completeness.
 | smallvec v1.16.1 | MIT OR Apache-2.0 | https://github.com/servo/rust-smallvec |
 | static_assertions v1.1.0 | MIT OR Apache-2.0 | https://github.com/nvzqz/static-assertions-rs |
 | syn v2.0.119 | MIT OR Apache-2.0 | https://github.com/dtolnay/syn |
-| taffy v0.14.0 | MIT | https://github.com/DioxusLabs/taffy |
+| taffy v0.15.1 | MIT | https://github.com/DioxusLabs/taffy |
 | unicode-ident v1.0.26 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/dtolnay/unicode-ident |
 | unicode-segmentation v1.13.3 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-segmentation |
 | unicode-width v0.2.3 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-width |
