@@ -64,13 +64,35 @@ fn local_tree() -> Element<Local> {
         )
 }
 
-#[test]
-fn maps_every_action_channel_including_overlay_dismissal() {
+fn mapped_local() -> Compiled<Host> {
     let cx = BuildCx::new(skins::SWISS_SIGNAL, UiEnvironment::default());
-    let frame = compile(&map_actions(local_tree(), Host::Local), &cx).unwrap();
-    let get = |name| frame.interactions.get(&Key::named(name)).unwrap();
-    assert_eq!(get("inner-press").on_press, Some(Host::Local(Local::Press)));
-    let editor = get("inner-edit");
+    compile(&map_actions(local_tree(), Host::Local), &cx).unwrap()
+}
+
+#[test]
+fn maps_press_actions() {
+    let frame = mapped_local();
+    assert_eq!(
+        frame
+            .interactions
+            .get(&Key::named("inner-press"))
+            .unwrap()
+            .on_press,
+        Some(Host::Local(Local::Press))
+    );
+    assert!(
+        frame
+            .interactions
+            .get(&Key::named("inner-disabled"))
+            .unwrap()
+            .disabled
+    );
+}
+
+#[test]
+fn maps_edit_actions_and_preserves_input_snapshot() {
+    let frame = mapped_local();
+    let editor = frame.interactions.get(&Key::named("inner-edit")).unwrap();
     assert_eq!(editor.input.as_ref().unwrap().cursor_grapheme, 3);
     assert_eq!(editor.input.as_ref().unwrap().text, "kept draft");
     let mut next = TextInputState::new();
@@ -79,16 +101,31 @@ fn maps_every_action_channel_including_overlay_dismissal() {
         editor.on_edit.as_ref().unwrap()(next),
         Host::Local(Local::Edit("new draft".into()))
     );
+}
+
+#[test]
+fn maps_custom_events() {
+    let frame = mapped_local();
     let custom = event(KeyCode::Char('x'));
     assert_eq!(
-        get("inner-custom").on_event.as_ref().unwrap()(custom.clone()),
+        frame
+            .interactions
+            .get(&Key::named("inner-custom"))
+            .unwrap()
+            .on_event
+            .as_ref()
+            .unwrap()(custom.clone()),
         Host::Local(Local::Custom(custom))
     );
+}
+
+#[test]
+fn maps_modal_dismissal_in_overlays() {
+    let frame = mapped_local();
     assert_eq!(
         frame.interactions.active_modal().unwrap().on_dismiss,
         Some(Host::Local(Local::Dismiss))
     );
-    assert!(get("inner-disabled").disabled);
 }
 
 #[test]
@@ -165,16 +202,30 @@ fn duplicate_inner_and_outer_keys_are_rejected_without_renaming_or_focus_change(
     let env = UiEnvironment::default();
     ui.frame(&host_tree(false), env, Duration::ZERO).unwrap();
     ui.set_focus(&Key::named("composer"));
+    let callbacks = std::rc::Rc::new(std::cell::Cell::new(0));
+    let observed = std::rc::Rc::clone(&callbacks);
     let invalid = column()
         .child(button("Outer").key("same").on_press(Host::Outer))
         .child(map_actions(
             button("Inner").key("same").on_press(Local::Press),
             Host::Local,
-        ));
+        ))
+        .child(
+            presented(move |_| {
+                observed.set(observed.get() + 1);
+                Node::col()
+            })
+            .key("callback"),
+        );
     assert!(
         matches!(ui.frame(&invalid, env, Duration::from_millis(1)), Err(UiError::DuplicateKey(k)) if k==Key::named("same"))
     );
     assert_eq!(ui.focus(), Some(&Key::named("composer")));
+    assert_eq!(callbacks.get(), 0);
+    assert_eq!(
+        ui.handle_event(&Event::Paste("still owned".into())).actions,
+        [Host::Draft("still owned".into())]
+    );
 }
 
 #[test]
@@ -201,6 +252,114 @@ fn mapped_target_moves_with_paint_and_keeps_its_typed_action() {
     assert_eq!(hits.hit(4, 2).unwrap().key, Key::named("mounted-action"));
     assert!(hits.hit(0, 0).is_none());
     assert_eq!(ui.focus(), Some(&Key::named("mounted-action")));
+    assert_eq!(
+        ui.handle_event(&event(KeyCode::Enter)).actions,
+        [Host::Local(Local::Press)]
+    );
+}
+
+fn sibling_mounts(reverse: bool) -> Element<Host> {
+    let inner = map_actions(
+        raw(Node::text("INNER", Style::new()).width(12.0).height(1.0))
+            .key("inner")
+            .on_press(Local::Press),
+        Host::Local,
+    );
+    let outer = raw(Node::text("OUTER", Style::new()).width(12.0).height(1.0))
+        .key("outer")
+        .on_press(Host::Outer);
+    let children = if reverse {
+        vec![inner, outer]
+    } else {
+        vec![outer, inner]
+    };
+    row()
+        .key("host-row")
+        .width(40)
+        .height(2)
+        .gap(0)
+        .padding(0)
+        .children(children)
+}
+
+fn assert_sibling_paint_and_actions(frame: &mut Compiled<Host>) -> u16 {
+    compute_layout(&mut frame.node, 40, 8).unwrap();
+    let mut surface = Surface::new(40, 8);
+    paint(&frame.node, &mut surface);
+    let hits = frame.hit_map(surface.area()).unwrap();
+    let mut inner_x = None;
+    for (key, initial, action) in [
+        ("inner", "I", Host::Local(Local::Press)),
+        ("outer", "O", Host::Outer),
+    ] {
+        let target = hits
+            .targets()
+            .iter()
+            .find(|t| t.key == Key::named(key))
+            .unwrap();
+        assert!(!target.rect.is_empty());
+        assert_eq!(
+            surface
+                .get(target.rect.x, target.rect.y)
+                .unwrap()
+                .glyph
+                .grapheme
+                .as_str(),
+            initial
+        );
+        let hit = hits.hit(target.rect.x, target.rect.y).unwrap();
+        assert_eq!(hit.key, Key::named(key));
+        assert_eq!(
+            frame.interactions.get(&hit.key).unwrap().on_press,
+            Some(action)
+        );
+        if key == "inner" {
+            inner_x = Some(target.rect.x);
+        }
+    }
+    inner_x.unwrap()
+}
+
+#[test]
+fn typed_inner_and_outer_actions_have_distinct_paint_derived_targets() {
+    let mut ui = UiRuntime::new(skins::SWISS_SIGNAL);
+    let mut frame = ui
+        .frame(
+            &sibling_mounts(false),
+            UiEnvironment::default(),
+            Duration::ZERO,
+        )
+        .unwrap();
+    assert_sibling_paint_and_actions(&mut frame);
+    assert!(ui.set_focus(&Key::named("inner")));
+    assert_eq!(
+        ui.handle_event(&event(KeyCode::Enter)).actions,
+        [Host::Local(Local::Press)]
+    );
+    assert!(ui.set_focus(&Key::named("outer")));
+    assert_eq!(
+        ui.handle_event(&event(KeyCode::Enter)).actions,
+        [Host::Outer]
+    );
+}
+
+#[test]
+fn reordered_named_mounts_keep_keys_focus_and_action_identity() {
+    let mut ui = UiRuntime::new(skins::SWISS_SIGNAL);
+    let env = UiEnvironment::default();
+    let mut before = ui
+        .frame(&sibling_mounts(false), env, Duration::ZERO)
+        .unwrap();
+    let before_x = assert_sibling_paint_and_actions(&mut before);
+    let keys: Vec<_> = before.keys.keys().cloned().collect();
+    ui.set_focus(&Key::named("inner"));
+    let mut after = ui
+        .frame(&sibling_mounts(true), env, Duration::from_millis(1))
+        .unwrap();
+    let after_x = assert_sibling_paint_and_actions(&mut after);
+    assert_ne!(before_x, after_x, "the named mount actually moves");
+    assert_eq!(after.keys.keys().cloned().collect::<Vec<_>>(), keys);
+    assert_eq!(ui.focus(), Some(&Key::named("inner")));
     assert_eq!(
         ui.handle_event(&event(KeyCode::Enter)).actions,
         [Host::Local(Local::Press)]
