@@ -102,6 +102,8 @@ pub mod session;
 pub mod shape;
 pub mod show;
 pub mod snapshot;
+/// Experimental semantic mounting helpers; input and focus stay with `ui::UiRuntime`.
+pub mod stage;
 pub mod story;
 pub mod surface;
 pub mod surface_fx;

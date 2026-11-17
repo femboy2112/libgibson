@@ -15,6 +15,12 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Added
+- Experimental Rust-only `stage::map_actions` adapts press, edit, custom-event
+  and modal-dismissal actions without flattening a semantic subtree. Mount the
+  result in the host's ordinary `Element` tree and reconcile once with its
+  existing `UiRuntime`. Keys and application-owned state are preserved.
+
 ### Behavior change
 - Semantic UI `raw` and `presented` imports clear foreign or hand-authored
   `Node::tag` indices throughout the visual subtree. An imported control can no
