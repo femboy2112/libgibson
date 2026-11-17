@@ -225,3 +225,28 @@ generation/write, not total Stage/producer cost or terminal presentation time.
 The synthetic tests retain action identity and a single UiRuntime. They do not
 clear the consumer integration, physical resize/pointer, private-art appearance,
 performance or fresh-author gates.
+
+## Integrated public-API fixture
+
+[`stage_integrated_fixture.rs`](../tests/stage_integrated_fixture.rs) is a small
+headless host recipe composing action mapping, keyed RGB planes and explicit-time
+presentation. It uses one UiRuntime and Context, both Standard and Blades, a
+procedural alpha sprite, typed actions and an editor. Its scripted samples cover
+non-renewing producer deadlines, current-pose reversal, responsive rebuilds,
+strict reduced motion, declared omissions and settled ticks with no generation
+or output. The scoped input-routing recipe stays host-owned; Enter is UI-first.
+Fixed-width spacers explicitly clear their default growth with `.grow(0.)`.
+
+These are integration receipts over an RGB substrate and logical geometry. They
+do not clear physical resize/pointer, private-art appearance, performance or the
+independent fresh-author gate. Semantic panes reserve their new room immediately;
+only graphical crop rectangles animate.
+
+Budget producer-root padding explicitly. This fixture mounts the producer with
+`map_actions(presented.element, Host::Inner).padding(0)`, leaving height automatic.
+Blades already budgets its raster body and footer against its local environment.
+Its nested Screen otherwise inherits padding/density resolved from the host's
+global UiEnvironment: the named baseline test records a 16-row body becoming a
+20-row Screen under the spacious 24-row host, clipping the footer. The paired
+zero-padding mount fits the declared allocation. This is host composition using
+existing builders; a wrapper height alone does not remove inner Screen padding.
