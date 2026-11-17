@@ -271,3 +271,21 @@ fn selected_identity_and_latest_payload_follow_reorder_and_model_rebuild() {
             .all(|a| *a != Inner::Inspect(99)));
     }
 }
+
+#[test]
+fn ui_first_host_preserves_experience_arrow_navigation() {
+    let e = collection(&["a", "b"]);
+    let mut failures = Vec::new();
+    for mut g in grammars() {
+        let mut state = PresentationState::new(&e);
+        let shown = g.present(&e, &state, &env(), Duration::ZERO);
+        let mut ui = UiRuntime::new(skins::SWISS_SIGNAL);
+        ui.frame(&map_actions(shown.element, Host::Inner), env(), Duration::ZERO).unwrap();
+        let arrow = if g.name() == "STANDARD" { KeyCode::Down } else { KeyCode::Right };
+        let out = route(&mut ui, g.as_ref(), &e, &mut state, &event(arrow));
+        if state.selected_index(&e) != Some(1) {
+            failures.push(format!("{} selected={:?} consumed={} focus={:?}", g.name(), state.selected_index(&e), out.consumed, ui.focus()));
+        }
+    }
+    assert!(failures.is_empty(), "UI-first routing swallowed Experience navigation: {failures:#?}");
+}
