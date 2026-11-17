@@ -147,7 +147,81 @@ planes have an empty clip receipt. RGB composition reads the current destination
 under each plane; only after all planes are composed is the entire RGB frame
 converted to half-block cells once. Capability quantization stays with Renderer.
 
-No caches, input method, terminal ownership, animation clock or demand ledger are
-added. The next seam supplies timing and joined inspection. These synthetic RGB
-receipts do not clear physical inline resize debt or establish performance or
-appearance on a consumer's private artwork.
+These RGB receipts do not clear physical inline resize debt or establish
+performance or appearance on a consumer's private artwork.
+
+## Explicit-time presentation and inspection (experimental)
+
+`PresentationDriver` retains temporal metadata only: keyed rectangle segments and
+absolute source deadlines. It owns no Node, RGBA source, Surface, decoder cache,
+terminal, focus ring or event loop. There is no input/event/invalidate method.
+`FrameParts` consumes the current whole-tree `Compiled<A>` and returns its action
+sidecars in `StageFrame<A>`. Build all producers and the one UiRuntime at the same
+caller-supplied `Duration`; backward time is refused. For a backward seek, replay
+with fresh driver, UiRuntime and any stateful producers.
+
+The driver admits the existing raster limits and solves Node/taffy layout once
+under the declared viewport. It transports this frame's `geometry_paths` through
+an ordinary fixed viewport wrapper. Graphical planes require `RasterAnchor::Key`;
+raw `FramePath` remains available through seam 2, not as temporal identity. All
+planes sharing a key follow that key's layout rectangle. Their explicit residual
+`offset_px` remains pixel alignment, not an implicitly animated target.
+
+A changed layout rectangle retargets a linear graphical segment from the OLD
+segment sampled at exactly `now`. Both origin and extent interpolate in the
+existing 1x2 raster basis; the extent crops unchanged source pixels, never scales
+or resamples them. The transition is at most 400 ms of caller time (longer options
+are refused). Zero duration snaps. Late samples coalesce to current presentation,
+not a replay backlog. Current ancestor/viewport clipping still applies. A graphical
+pose can differ from its target layout allocation while moving; both are reported.
+Semantic text and hit geometry take their current layout immediately, reserving
+room at once. Animated semantic-pane translation is not implemented.
+
+Reduced/None Stage motion snaps immediately and schedules zero further graphical
+animation frames. The strict reduced host fixture compiles UI and grammars with
+`MotionPreference::None`, rather than UiRuntime's optional brief-emphasis Reduced
+mode. This is an explicit host realization, not a change to global UI behaviour.
+External `After` requests stay literal: an informational timer is not silently
+removed by a placement preference. With all producers `OnChange` and no active
+segments, `next_deadline()` is `None`.
+
+Supply the complete live `SourceDemand` roster each resolved frame. Source roots
+must be explicit keys in that frame; duplicates and missing roots are errors.
+`After(d)` arms `now+d` only when that source has no pending request. Re-observing
+it before the deadline does not renew it: 100 set at 0 stays due at 100 after an
+unrelated frame at 90. A due request is consumed once on a resolved frame at or
+after its deadline; a fresh demand can then arm from current time. `OnChange`
+clears it and omission from the roster retires it. The separate animation pulse
+also does not renew before due and never extends beyond its active segment end.
+The next deadline is the minimum of all pending requests.
+
+Use that absolute deadline in the host's existing Context scheduler. A real input
+or due request can dirty Context; a settled idle tick must not rebuild/dirty it.
+Context still applies its ordinary FPS budget. Do not busy-poll an already-due
+Stage request while Context is throttled: wait on Context's pending frame budget,
+then resolve once at the current caller time. Stage creates no loop or thread.
+A zero external delay is an explicit immediate request, not an internal loop.
+
+RGB composition and half-block realization happen once, then the existing painter
+paints semantic UI above the RGB layer for snapshot cells. Opaque UI backgrounds
+occlude normally; arbitrary alpha over glyph pixels remains unsupported.
+`StageFrame::to_node()` sends ordinary background-plus-semantic Nodes to Context,
+preserving focused editor caret/scroll metadata that a flat Surface would lose.
+Its pure callbacks replay at the captured frame time. Each emitted frame therefore
+has a driver target-layout solve and Context's ordinary render-layout solve; the
+snapshot paint and Context paint are also separate. No caching/optimization or
+CPU budget is claimed. Arbitrary Node callbacks retain their existing contract.
+
+`ResolvedFrameSnapshot` joins current RGB and final pre-capability cells, semantic
+key state, the same-frame keyed geometry, focus, existing paint-derived targets,
+graphical poses/clips/z/source dimensions, caller-declared omissions, due source
+keys and the next absolute deadline. Implicit keys lack explicit locators;
+children pruned by ancestor clipping have no fabricated painted region. Existing
+`fx` disclosures remain pre-effect bounds. The viewport and pointer targets are
+logical, not certification of physical inline origin. Optional `FrameReport` is
+attached only AFTER successful Context submission and describes Context's own
+generation/write, not total Stage/producer cost or terminal presentation time.
+
+The synthetic tests retain action identity and a single UiRuntime. They do not
+clear the consumer integration, physical resize/pointer, private-art appearance,
+performance or fresh-author gates.

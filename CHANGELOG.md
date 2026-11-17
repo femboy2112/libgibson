@@ -31,6 +31,9 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   stays inert.
 
 ### Added
+- Experimental Stage explicit-time graphical rect transitions, non-renewing
+  absolute demand joins and resolved frame snapshots. Reduced placement snaps;
+  semantic panes retain immediate layout. Context remains the terminal owner.
 - Experimental Stage raster resolution over RGB underlays, with same-frame semantic Key anchors, signed pixel offsets, aggregate limits and placement receipts.
 - Experimental Rust-only `stage::map_actions` adapts press, edit, custom-event
   and modal-dismissal actions without flattening a semantic subtree. Mount the
