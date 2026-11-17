@@ -1,6 +1,7 @@
 //! Experimental semantic composition helpers over the existing UI runtime.
 //!
-//! Mount semantic subtrees as ordinary [`Element`] children, before compilation.
+//! Mount semantic subtrees as ordinary [`Element`](crate::ui::Element) children,
+//! before compilation.
 //! One [`crate::ui::UiRuntime`] then reconciles all keys, targets and modal focus.
 //! This module owns no input dispatcher, terminal session or application state.
 //! Raster placement and presentation timing are not supplied by this first seam.
