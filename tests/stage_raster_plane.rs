@@ -253,8 +253,34 @@ fn border_ancestor_clip_blocks_pixels_even_after_presentation_move() {
     p.offset_px = (-1, -2);
     let under = rgb(6, 4);
     let out = resolve_raster(&tree, (6, 4), &under, &[p], limits()).unwrap();
+    assert_eq!(out.pixels.get(1, 3), Some((230, 0, 0)));
     assert_eq!(out.placements[0].clip_px, Rect::new(1, 2, 3, 2));
     assert_eq!(out.pixels.get(0, 2), under.get(0, 2));
     assert_eq!(out.pixels.get(1, 1), under.get(1, 1));
     assert_eq!(out.pixels.get(1, 2), Some((230, 0, 0)));
+}
+
+// Deliberate negative contract control: a reused path is NOT a semantic identity.
+// A host that reorders must resolve paths anew; this oracle catches stale reuse.
+#[test]
+#[should_panic(expected = "path anchor drift")]
+fn stale_path_after_reorder_fails_the_semantic_placement_oracle() {
+    let old = Node::row()
+        .width(6.)
+        .height(1.)
+        .child(root(2, 1))
+        .child(root(4, 1));
+    let reordered = Node::row()
+        .width(6.)
+        .height(1.)
+        .child(old.children[1].clone())
+        .child(old.children[0].clone());
+    let mut p = plane(source(&[[240, 0, 0, 255]], 1));
+    p.path = vec![0]; // stale: the intended 2-cell allocation is now child 1.
+    let frame = resolve_raster(&reordered, (6, 1), &rgb(6, 1), &[p], limits()).unwrap();
+    assert_eq!(
+        frame.pixels.get(4, 0),
+        Some((240, 0, 0)),
+        "path anchor drift"
+    );
 }

@@ -65,7 +65,18 @@ additional world transform.
 
 Each plane selects a Node child-index path in the current supplied tree. An empty
 path selects the root. Paths describe this layout, not persistent identity; use
-UiRuntime's keys for semantic identity. Presentation offsets apply after layout:
+UiRuntime's keys for semantic identity. **UNSETTLED:** this seam has no semantic
+Key anchor. Reusing a path after reorder can select the wrong valid node; a valid
+path is not an identity check. Resolve paths anew from the same frame and validate
+expected placement, or do not use this API for reorderable semantic mounts. The
+negative reorder control deliberately fails a pixel-placement oracle on stale
+path reuse; it does not claim the resolver refuses all stale paths. Compiled keys
+alone carry semantic state, not a Node geometry mapping; only interactive target
+tags presently join keys to paint. General keyed geometry needs an approved
+mapping seam rather than guessing lowering paths. This limitation must be settled
+before treating path-based composition as a semantic mounting solution.
+
+Presentation offsets apply after layout:
 the anchor still reserves its original flow allocation, and moving its raster
 does not reflow siblings. Sources are never implicitly scaled. Pixels outside
 the translated allocation or ancestor/viewport clip are omitted, with the exact
