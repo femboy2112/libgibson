@@ -535,7 +535,7 @@ mod tests {
                     .height(2)
                     .gap(0)
                     .padding(0)
-                    .child(spacer().width(x))
+                    .child(spacer().width(x).grow(0.))
                     .child(column().key("art").width(2).height(2)),
             )
             .child(
