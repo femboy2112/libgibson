@@ -15,7 +15,14 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Changed (experimental, breaking for literal constructors)
+- Experimental `Compiled::geometry_paths` joins explicit semantic keys to the
+  same frame's lowered Node geometry. Literal `Compiled { .. }` constructors must
+  supply this new field. This experimental UI break requires a 0.y release bump
+  under the release contract; no version is bumped in this change.
+
 ### Added
+- Experimental Stage raster resolution over RGB underlays, with same-frame semantic Key anchors, signed pixel offsets, aggregate limits and placement receipts.
 - Experimental Rust-only `stage::map_actions` adapts press, edit, custom-event
   and modal-dismissal actions without flattening a semantic subtree. Mount the
   result in the host's ordinary `Element` tree and reconcile once with its

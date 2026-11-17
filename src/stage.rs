@@ -4,7 +4,8 @@
 //! before compilation.
 //! One [`crate::ui::UiRuntime`] then reconciles all keys, targets and modal focus.
 //! This module owns no input dispatcher, terminal session or application state.
-//! Raster placement and presentation timing are not supplied by this first seam.
+//! Resolved raster composition uses layout-derived anchors and signed pixel offsets.
+//! Presentation timing belongs to a later seam.
 
 use crate::ui::Element;
 use crate::{Event, TextInputState};
@@ -85,3 +86,9 @@ fn map_tree<A: 'static, B: 'static>(element: Element<A>, map: Arc<dyn Fn(A) -> B
         effects: element.effects,
     }
 }
+
+mod raster_plane;
+pub use raster_plane::{
+    resolve_compiled_raster, resolve_raster, RasterAnchor, RasterError, RasterLimits,
+    RasterPlacement, RasterPlane, ResolvedRaster,
+};

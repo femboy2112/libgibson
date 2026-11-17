@@ -83,6 +83,11 @@ pub struct Compiled<A> {
     /// Eligible pointer targets in lowering order; a node's [`Node::tag`] indexes
     /// this. Feed it to [`Compiled::hit_map`] to resolve painted cells to keys.
     pub targets: Vec<TargetSpec>,
+    /// Experimental frame-local geometry join for explicit semantic keys.
+    /// Produced by this lowering pass, including noninteractive elements.
+    /// Paths locate the element's actual node through chrome/overlay wrappers.
+    /// Structural edits to `node` invalidate this join; use it before such edits.
+    pub geometry_paths: BTreeMap<Key, Vec<usize>>,
 }
 pub(crate) struct UiMetadata<A> {
     pub interactions: InteractionMap<A>,
@@ -254,7 +259,8 @@ pub(crate) fn lower_with_metadata<A>(
     metadata: UiMetadata<A>,
 ) -> Compiled<A> {
     let mut section = 0;
-    let node = lower(
+    let mut geometry = Vec::new();
+    let mut node = lower(
         root,
         cx,
         &mut vec![],
@@ -262,12 +268,61 @@ pub(crate) fn lower_with_metadata<A>(
         false,
         None,
         &metadata.tags,
+        &mut geometry,
     );
+    let mut geometry_paths = BTreeMap::new();
+    collect_geometry(&mut node, &geometry, &mut geometry_paths);
     Compiled {
         node,
         interactions: metadata.interactions,
         keys: metadata.keys,
         targets: metadata.targets,
+        geometry_paths,
+    }
+}
+
+// During lowering, explicit-key roots carry temporary high-bit locators in the
+// existing tag slot. Host interaction indices are below 16384 (metadata limit),
+// and raw/presented imports clear all tags. No marker escapes this compilation:
+// the final geometry walk restores the exact original target tag before publish.
+// This follows actual wrapper construction without guessing semantic→Node paths
+// or adding a second persistent identity field/registry to Node.
+const GEOMETRY_MARKER: u32 = 1 << 31;
+fn collect_geometry(
+    node: &mut Node,
+    records: &[(Key, Option<u32>)],
+    out: &mut BTreeMap<Key, Vec<usize>>,
+) {
+    enum Visit<'a> {
+        Enter(&'a mut Node, Option<usize>),
+        Leave,
+    }
+    let mut path = Vec::new();
+    let mut pending = vec![Visit::Enter(node, None)];
+    while let Some(visit) = pending.pop() {
+        match visit {
+            Visit::Leave => {
+                path.pop();
+            }
+            Visit::Enter(node, index) => {
+                if let Some(index) = index {
+                    path.push(index);
+                }
+                if let Some(tag) = node.tag.filter(|tag| tag & GEOMETRY_MARKER != 0) {
+                    let (key, original_tag) = &records[(tag & !GEOMETRY_MARKER) as usize];
+                    out.insert(key.clone(), path.clone());
+                    node.tag = *original_tag;
+                }
+                pending.push(Visit::Leave);
+                pending.extend(
+                    node.children
+                        .iter_mut()
+                        .enumerate()
+                        .rev()
+                        .map(|(i, child)| Visit::Enter(child, Some(i))),
+                );
+            }
+        }
     }
 }
 
@@ -440,6 +495,7 @@ fn container(
         }
     }
 }
+#[allow(clippy::too_many_arguments)]
 fn lower<A>(
     el: &Element<A>,
     cx: &PresentationCx,
@@ -448,6 +504,7 @@ fn lower<A>(
     disabled: bool,
     inherited_density: Option<Density>,
     tags: &HashMap<Key, u32>,
+    geometry: &mut Vec<(Key, Option<u32>)>,
 ) -> Node {
     lower_role(
         el,
@@ -458,6 +515,7 @@ fn lower<A>(
         inherited_density,
         None,
         tags,
+        geometry,
     )
 }
 
@@ -471,6 +529,7 @@ fn lower_role<A>(
     inherited_density: Option<Density>,
     control_role: Option<ControlRole>,
     tags: &HashMap<Key, u32>,
+    geometry: &mut Vec<(Key, Option<u32>)>,
 ) -> Node {
     let id = key(el, path);
     let disabled = disabled || el.disabled;
@@ -533,6 +592,7 @@ fn lower_role<A>(
                 Some(density),
                 matches!(el.kind, ElementKind::Tabs).then_some(ControlRole::Tab),
                 tags,
+                geometry,
             );
             path.pop();
             n
@@ -906,6 +966,11 @@ fn lower_role<A>(
     if let Some(&idx) = tags.get(&id) {
         node.tag = Some(idx);
     }
+    if let Some(explicit_key) = &el.key {
+        let marker = GEOMETRY_MARKER | geometry.len() as u32;
+        geometry.push((explicit_key.clone(), node.tag));
+        node.tag = Some(marker);
+    }
     if !el.overlays.is_empty() {
         // An in-flow base plus absolute overlay children keeps intrinsic sizing.
         // A Stack makes *all* children absolute, so using it here would discard
@@ -939,7 +1004,16 @@ fn lower_role<A>(
         layers = layers.child(node);
         for (i, overlay) in el.overlays.iter().enumerate() {
             path.extend([usize::MAX, i]);
-            let mut floating = lower(overlay, cx, path, section, disabled, Some(density), tags);
+            let mut floating = lower(
+                overlay,
+                cx,
+                path,
+                section,
+                disabled,
+                Some(density),
+                tags,
+                geometry,
+            );
             // Mount out of flow without erasing an expert Node's local offset.
             floating.layout_style.absolute = true;
             layers = layers.child(floating);
