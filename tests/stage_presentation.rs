@@ -71,11 +71,11 @@ impl Fixture {
         let before = if self.right {
             spacer().grow(1.)
         } else {
-            spacer().width(x)
+            spacer().width(x).grow(0.)
         };
         let art = column().key("art").width(w).height(h).padding(0).gap(0);
         let sibling = if self.right {
-            spacer().key("sibling").width(0)
+            spacer().key("sibling").width(0).grow(0.)
         } else {
             spacer().key("sibling").grow(1.)
         };
