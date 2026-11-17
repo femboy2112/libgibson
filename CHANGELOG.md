@@ -15,6 +15,13 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Fixed
+- Full-height inline `ReclaimLiveRows` reanchors reserve the spare terminal row
+  when allocating after resize, scrolling restored old rows out of the visible
+  viewport instead of leaving a stale row above the new region on regrow.
+  The rewind remains bounded to the tracked live region. `PreserveAbove`, short
+  live regions and torn-write recovery retain their existing allocation paths.
+
 ### Added
 - Experimental Rust-only `stage::map_actions` adapts press, edit, custom-event
   and modal-dismissal actions without flattening a semantic subtree. Mount the

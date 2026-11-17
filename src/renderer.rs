@@ -108,7 +108,10 @@ pub enum InlineResizePolicy {
 ///
 /// **Limitation.** Rows the *terminal* pushed into scrollback during a shrink are out of reach
 /// of any escape sequence. They stay in scrollback as the last image of that frame, and a later
-/// grow that pulls scrollback back down can show them again above the live region. Use
+/// grow that pulls scrollback back down can show them again above a shorter live region.
+/// A full-height Reclaim reanchor reserves the spare terminal row as well, scrolling
+/// those restored rows back out of the visible viewport without erasing above the
+/// tracked region. Their prior image still remains in native scrollback. Use
 /// [`RenderMode::Fullscreen`] (which owns the canvas) or re-commit a transcript when pristine
 /// scrollback matters. An emulator that clamps the cursor upward on a shrink *without* scrolling
 /// would break the rows-above-the-cursor premise; none of the emulators above does.
@@ -627,13 +630,26 @@ impl Renderer {
                         }
                         tx.push(b"\r\x1b[J");
                     }
-                    // First frame of this live region: allocate (H - 1) rows of
-                    // terminal space, then rewind to the region top.
-                    if surface_height > 1 {
-                        for _ in 0..(surface_height - 1) {
+                    // A full-height Reclaim reanchor also reserves the terminal's
+                    // spare row. Growing can restore abandoned rows above the old
+                    // region; H-1 newlines leave one such row visible. Reserving H
+                    // scrolls it out instead of erasing above the tracked region.
+                    // PreserveAbove, short regions and torn-write recovery keep
+                    // their existing allocation semantics.
+                    let allocation_rows = if reanchor
+                        && !recover
+                        && self.reclaims_live_rows()
+                        && surface_height == max_inline_rows
+                    {
+                        surface_height
+                    } else {
+                        surface_height.saturating_sub(1)
+                    };
+                    if allocation_rows > 0 {
+                        for _ in 0..allocation_rows {
                             tx.push(b"\r\n");
                         }
-                        write!(tx.buffer, "\x1b[{}A\r", surface_height - 1).ok();
+                        write!(tx.buffer, "\x1b[{}A\r", allocation_rows).ok();
                     } else {
                         tx.push(b"\r");
                     }
