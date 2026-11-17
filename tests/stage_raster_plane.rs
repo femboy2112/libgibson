@@ -1,5 +1,5 @@
 use gibson::raster::{RgbRaster, RgbaRaster};
-use gibson::stage::{resolve_raster, RasterError, RasterLimits, RasterPlane};
+use gibson::stage::{resolve_raster, RasterAnchor, RasterError, RasterLimits, RasterPlane};
 use gibson::{Node, Rect, Style};
 use std::sync::Arc;
 
@@ -32,7 +32,7 @@ fn source(p: &[[u8; 4]], w: u16) -> Arc<RgbaRaster> {
 }
 fn plane(s: Arc<RgbaRaster>) -> RasterPlane {
     RasterPlane {
-        path: vec![],
+        anchor: RasterAnchor::FramePath(vec![]),
         source: s,
         offset_px: (0, 0),
         z: 0,
@@ -135,7 +135,7 @@ fn layout_makes_room_and_offsets_do_not_reflow_siblings() {
             .child(root(2, 2).flex_shrink(0.))
             .child(Node::text("reader", Style::default()).flex_grow(1.));
         let mut p = plane(source(&[[200, 0, 0, 255]; 4], 2));
-        p.path = vec![0];
+        p.anchor = RasterAnchor::FramePath(vec![0]);
         p.offset_px = (1, 1);
         let out = resolve_raster(&tree, (width, 2), &rgb(width, 2), &[p], limits()).unwrap();
         assert_eq!(out.placements[0].layout_rect, Rect::new(0, 0, 2, 2));
@@ -150,7 +150,7 @@ fn nested_allocation_clips_large_source_without_resizing_it() {
     let s = source(&[[30, 50, 70, 255]; 32], 8);
     let tree = root(8, 3).child(root(2, 1));
     let mut p = plane(Arc::clone(&s));
-    p.path = vec![0];
+    p.anchor = RasterAnchor::FramePath(vec![0]);
     let under = rgb(8, 3);
     let out = resolve_raster(&tree, (8, 3), &under, &[p], limits()).unwrap();
     assert_eq!(out.placements[0].clip_px, Rect::new(0, 0, 2, 2));
@@ -214,7 +214,7 @@ fn admission_rejects_missing_paths_nodes_layers_and_viewports() {
     let r = root(2, 2);
     let under = rgb(2, 2);
     let mut p = plane(source(&[[1, 2, 3, 255]], 1));
-    p.path = vec![9];
+    p.anchor = RasterAnchor::FramePath(vec![9]);
     assert_eq!(
         resolve_raster(&r, (2, 2), &under, &[p], limits()).unwrap_err(),
         RasterError::MissingAnchor(0)
@@ -263,7 +263,7 @@ fn border_ancestor_clip_blocks_pixels_even_after_presentation_move() {
         .height(4.)
         .child(root(4, 2));
     let mut p = plane(source(&[[230, 0, 0, 255]; 32], 4));
-    p.path = vec![0];
+    p.anchor = RasterAnchor::FramePath(vec![0]);
     p.offset_px = (-1, -2);
     let under = rgb(6, 4);
     let out = resolve_raster(&tree, (6, 4), &under, &[p], limits()).unwrap();
@@ -274,27 +274,143 @@ fn border_ancestor_clip_blocks_pixels_even_after_presentation_move() {
     assert_eq!(out.pixels.get(1, 2), Some((230, 0, 0)));
 }
 
-// Deliberate negative contract control: a reused path is NOT a semantic identity.
-// A host that reorders must resolve paths anew; this oracle catches stale reuse.
 #[test]
-#[should_panic(expected = "path anchor drift")]
-fn stale_path_after_reorder_fails_the_semantic_placement_oracle() {
-    let old = Node::row()
-        .width(6.)
-        .height(1.)
-        .child(root(2, 1))
-        .child(root(4, 1));
-    let reordered = Node::row()
-        .width(6.)
-        .height(1.)
-        .child(old.children[1].clone())
-        .child(old.children[0].clone());
+fn keyed_plane_follows_unequal_siblings_after_reorder_and_resize() {
+    use gibson::stage::resolve_compiled_raster;
+    use gibson::ui::prelude::*;
+    let mut ui = UiRuntime::new(skins::SWISS_SIGNAL);
     let mut p = plane(source(&[[240, 0, 0, 255]], 1));
-    p.path = vec![0]; // stale: the intended 2-cell allocation is now child 1.
-    let frame = resolve_raster(&reordered, (6, 1), &rgb(6, 1), &[p], limits()).unwrap();
+    p.anchor = RasterAnchor::Key(Key::named("sprite"));
+    for (swapped, width, expected_x) in [(false, 6, 0), (true, 6, 4), (false, 10, 0), (true, 10, 4)]
+    {
+        let sprite = column::<()>()
+            .key("sprite")
+            .width(2)
+            .height(1)
+            .padding(0)
+            .gap(0);
+        let other = column::<()>()
+            .key("other")
+            .width(4)
+            .height(1)
+            .padding(0)
+            .gap(0);
+        let tree = row()
+            .key("host")
+            .width(width)
+            .height(1)
+            .padding(0)
+            .gap(0)
+            .children(if swapped {
+                vec![other, sprite]
+            } else {
+                vec![sprite, other]
+            });
+        let compiled = ui
+            .frame(
+                &tree,
+                UiEnvironment {
+                    width,
+                    height: 1,
+                    ..Default::default()
+                },
+                std::time::Duration::ZERO,
+            )
+            .unwrap();
+        let out = resolve_compiled_raster(
+            &compiled,
+            (width, 1),
+            &rgb(width, 1),
+            std::slice::from_ref(&p),
+            limits(),
+        )
+        .unwrap();
+        assert_eq!(
+            out.pixels.get(expected_x, 0),
+            Some((240, 0, 0)),
+            "keyed pixel follows sprite"
+        );
+        assert_eq!(out.placements[0].layout_rect.x, expected_x as u16);
+        assert_eq!(compiled.keys.len(), 3);
+        assert!(
+            compiled.targets.is_empty(),
+            "noninteractive anchors need no fabricated target"
+        );
+    }
+}
+
+#[test]
+fn absent_key_is_refused_and_duplicate_keys_fail_before_lowering() {
+    use gibson::stage::resolve_compiled_raster;
+    use gibson::ui::prelude::*;
+    let cx = BuildCx::new(skins::SWISS_SIGNAL, UiEnvironment::default());
+    let tree = column::<()>().key("existing");
+    let compiled = compile(&tree, &cx).unwrap();
+    let mut p = plane(source(&[[0; 4]], 1));
+    p.anchor = RasterAnchor::Key(Key::named("absent"));
     assert_eq!(
-        frame.pixels.get(4, 0),
-        Some((240, 0, 0)),
-        "path anchor drift"
+        resolve_compiled_raster(
+            &compiled,
+            (2, 2),
+            &rgb(2, 2),
+            std::slice::from_ref(&p),
+            limits()
+        )
+        .unwrap_err(),
+        RasterError::MissingAnchor(0)
     );
+    p.anchor = RasterAnchor::Key(Key::named("existing"));
+    assert_eq!(
+        resolve_raster(&compiled.node, (2, 2), &rgb(2, 2), &[p], limits()).unwrap_err(),
+        RasterError::MissingAnchor(0),
+        "Key anchoring requires the Compiled frame, not an unrelated lookup table"
+    );
+    let duplicate = column::<()>()
+        .child(column().key("same"))
+        .child(column().key("same"));
+    assert!(
+        matches!(compile(&duplicate,&cx),Err(UiError::DuplicateKey(key)) if key==Key::named("same"))
+    );
+}
+
+#[test]
+fn same_lowering_join_tracks_chrome_overlays_and_restores_all_interaction_tags() {
+    use gibson::ui::prelude::*;
+    for skin in [skins::SWISS_SIGNAL, skins::VAPOR95, skins::BLACK_ICE] {
+        let tree = panel::<u8>("Panel")
+            .key("panel")
+            .child(
+                column()
+                    .key("noninteractive")
+                    .child(button("run").key("run").on_press(7)),
+            )
+            .overlay(
+                modal("Modal")
+                    .key("modal")
+                    .on_dismiss(8)
+                    .child(button("close").key("close").on_press(9)),
+            );
+        let compiled = compile(&tree, &BuildCx::new(skin, UiEnvironment::default())).unwrap();
+        assert_eq!(compiled.geometry_paths.len(), 5);
+        for name in ["panel", "noninteractive", "run", "modal", "close"] {
+            let key = Key::named(name);
+            let mut node = &compiled.node;
+            for &i in &compiled.geometry_paths[&key] {
+                node = &node.children[i];
+            }
+            match node.tag {
+                Some(tag) => assert_eq!(compiled.targets[tag as usize].key, key),
+                None => assert!(name == "panel" || name == "noninteractive"),
+            }
+        }
+        let mut stack = vec![&compiled.node];
+        while let Some(node) = stack.pop() {
+            assert!(
+                node.tag
+                    .is_none_or(|tag| (tag as usize) < compiled.targets.len()),
+                "no temporary geometry marker escapes"
+            );
+            stack.extend(&node.children);
+        }
+    }
 }

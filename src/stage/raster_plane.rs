@@ -1,14 +1,26 @@
 //! Resolved RGB composition. All signed placement is in raster pixels.
 use crate::raster::{composite_over, RgbRaster, RgbaRaster, MAX_RASTER_DIMENSION};
+use crate::ui::{Compiled, Key};
 use crate::{layout, painter, Node, Rect, Surface};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
-/// An immutable source anchored to a child-index path in the supplied layout.
-/// Paths are resolved anew each call; semantic identity remains with UiRuntime.
+/// An anchor within the exact frame supplied for resolution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RasterAnchor {
+    /// Explicit semantic identity, resolved using the same Compiled frame's join.
+    Key(Key),
+    /// Low-level unstable Node path. Re-resolve for every frame and structural edit.
+    /// This is not semantic identity and does not follow an element after reorder.
+    FramePath(Vec<usize>),
+}
+
+/// An immutable source anchored within the supplied layout.
+/// Key identity remains with UiRuntime; low-level FramePath anchors are unstable.
 #[derive(Debug, Clone)]
 pub struct RasterPlane {
-    /// Empty selects the root; each index selects an ordinary Node child.
-    pub path: Vec<usize>,
+    /// Semantic Key, or an explicit frame-local low-level escape hatch.
+    pub anchor: RasterAnchor,
     /// Straight-alpha source pixels. No scaling, re-cropping or cache is implicit.
     pub source: Arc<RgbaRaster>,
     /// Signed raster-pixel offset AFTER layout (one cell = 1x2 pixels).
@@ -90,7 +102,8 @@ pub struct ResolvedRaster {
 /// by the type signature: there is no glyph-to-RGB inference or terminal alpha.
 /// Paint semantic text ABOVE this plane using the existing painter/runtime.
 /// This function adds no hit targets, input route, timer, cache or terminal owner.
-/// Limits and all anchor paths are checked before layout; caller callbacks remain
+/// Key anchors require [`resolve_compiled_raster`]; this raw-Node entry accepts
+/// only frame-local paths. Limits and all anchor paths are checked before layout; caller callbacks remain
 /// subject to the existing Node layout contract. Empty viewports are refused.
 pub fn resolve_raster(
     root: &Node,
@@ -99,6 +112,48 @@ pub fn resolve_raster(
     planes: &[RasterPlane],
     limits: RasterLimits,
 ) -> Result<ResolvedRaster, RasterError> {
+    resolve_impl(root, None, viewport, underlay, planes, limits)
+}
+
+/// Resolves semantic Key anchors through this same frame's lowering geometry join.
+///
+/// Use before structurally editing `compiled.node`; such edits invalidate its
+/// frame-local join. No previous-frame mapping or external identity table is used.
+/// Noninteractive explicit keys are supported, including chrome/overlay wrappers.
+pub fn resolve_compiled_raster<A>(
+    compiled: &Compiled<A>,
+    viewport: (u16, u16),
+    underlay: &RgbRaster,
+    planes: &[RasterPlane],
+    limits: RasterLimits,
+) -> Result<ResolvedRaster, RasterError> {
+    resolve_impl(
+        &compiled.node,
+        Some(&compiled.geometry_paths),
+        viewport,
+        underlay,
+        planes,
+        limits,
+    )
+}
+
+fn resolve_impl(
+    root: &Node,
+    keys: Option<&BTreeMap<Key, Vec<usize>>>,
+    viewport: (u16, u16),
+    underlay: &RgbRaster,
+    planes: &[RasterPlane],
+    limits: RasterLimits,
+) -> Result<ResolvedRaster, RasterError> {
+    let path_for = |i: usize| -> Result<&[usize], RasterError> {
+        match &planes[i].anchor {
+            RasterAnchor::FramePath(path) => Ok(path),
+            RasterAnchor::Key(key) => keys
+                .and_then(|keys| keys.get(key))
+                .map(Vec::as_slice)
+                .ok_or(RasterError::MissingAnchor(i)),
+        }
+    };
     let (w, h) = viewport;
     let ph = u32::from(h) * 2;
     if w == 0
@@ -122,7 +177,7 @@ pub fn resolve_raster(
             return Err(RasterError::Budget);
         }
         let mut anchor = root;
-        for &index in &plane.path {
+        for &index in path_for(i)? {
             anchor = anchor
                 .children
                 .get(index)
@@ -153,7 +208,7 @@ pub fn resolve_raster(
         let mut anchor = &resolved;
         let mut parent_clip = area;
         let (mut ox, mut oy) = (0, 0);
-        for &index in &plane.path {
+        for &index in path_for(i)? {
             let visible = painter::visible_rect(anchor, parent_clip, ox, oy);
             parent_clip = painter::child_clip_rect(anchor, visible);
             let child = &anchor.children[index];

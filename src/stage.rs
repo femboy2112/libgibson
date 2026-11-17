@@ -89,5 +89,6 @@ fn map_tree<A: 'static, B: 'static>(element: Element<A>, map: Arc<dyn Fn(A) -> B
 
 mod raster_plane;
 pub use raster_plane::{
-    resolve_raster, RasterError, RasterLimits, RasterPlacement, RasterPlane, ResolvedRaster,
+    resolve_compiled_raster, resolve_raster, RasterAnchor, RasterError, RasterLimits,
+    RasterPlacement, RasterPlane, ResolvedRaster,
 };

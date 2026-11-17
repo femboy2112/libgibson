@@ -63,18 +63,20 @@ Existing painter traversal supplies ancestor clips and positioned/camera origins
 No negative coordinate is passed to `WorldView::raster_to_cell`. There is no
 additional world transform.
 
-Each plane selects a Node child-index path in the current supplied tree. An empty
-path selects the root. Paths describe this layout, not persistent identity; use
-UiRuntime's keys for semantic identity. **UNSETTLED:** this seam has no semantic
-Key anchor. Reusing a path after reorder can select the wrong valid node; a valid
-path is not an identity check. Resolve paths anew from the same frame and validate
-expected placement, or do not use this API for reorderable semantic mounts. The
-negative reorder control deliberately fails a pixel-placement oracle on stale
-path reuse; it does not claim the resolver refuses all stale paths. Compiled keys
-alone carry semantic state, not a Node geometry mapping; only interactive target
-tags presently join keys to paint. General keyed geometry needs an approved
-mapping seam rather than guessing lowering paths. This limitation must be settled
-before treating path-based composition as a semantic mounting solution.
+Use `RasterAnchor::Key` with `resolve_compiled_raster` and the same `Compiled`
+frame that owns the semantic tree. The compiler records an experimental
+`geometry_paths` join during that exact lowering pass for every explicit Key,
+including noninteractive layout elements. It follows the actual nodes through
+chrome and overlay wrappers. No persistent identity registry or guessed semantic
+path conversion is added. Missing keys are refused before layout; duplicate keys
+remain compiler errors. Reorder/resize uses the new frame's join, so the raster
+follows its element. Do not structurally edit `compiled.node` before resolution;
+structural edits invalidate this frame-local join.
+
+`RasterAnchor::FramePath` remains a low-level escape hatch for raw Node trees.
+It is explicitly unstable across reorder and must be re-resolved for every frame
+or structural edit. `resolve_raster` accepts these raw paths; a Key passed without
+its Compiled frame is refused. Semantic consumers should use the keyed entry.
 
 Presentation offsets apply after layout:
 the anchor still reserves its original flow allocation, and moving its raster
@@ -91,12 +93,32 @@ let tree = Node::row().width(8.).height(2.)
 let mut underlay = RgbRaster::new(8, 4);
 underlay.clear((20, 40, 60)); // The actual, current RGB substrate.
 let pixels = RgbaRaster::from_pixels(1, 1, vec![[200, 0, 0, 128]]).unwrap();
-let plane = RasterPlane { path: vec![0], source: Arc::new(pixels),
+let plane = RasterPlane { anchor: RasterAnchor::FramePath(vec![0]), source: Arc::new(pixels),
     offset_px: (-1, 1), z: 0 };
 let frame = resolve_raster(&tree, (8, 2), &underlay, &[plane],
     RasterLimits { planes: 8, nodes: 64, pixels: 4096 })?;
 assert_eq!(frame.surface.width, 8);
 # Ok::<(), RasterError>(())
+```
+
+For semantic placement, compile the complete action-typed tree once with the
+host UiRuntime, then use the same resulting frame:
+
+```rust
+use gibson::{raster::{RgbRaster, RgbaRaster}, stage::*, ui::prelude::*};
+use std::{sync::Arc, time::Duration};
+let tree = row::<()>().width(8).height(2).gap(0)
+    .child(column().key("presence").width(2).height(2))
+    .child(column().key("reading").grow(1.));
+let mut ui = UiRuntime::new(skins::SWISS_SIGNAL);
+let compiled = ui.frame(&tree, UiEnvironment { width: 8, height: 2,
+    ..Default::default() }, Duration::ZERO)?;
+let plane = RasterPlane { anchor: RasterAnchor::Key(Key::named("presence")),
+    source: Arc::new(RgbaRaster::new(2, 4)), offset_px: (0, 1), z: 0 };
+let raster = resolve_compiled_raster(&compiled, (8, 2), &RgbRaster::new(8, 4),
+    &[plane], RasterLimits { planes: 8, nodes: 64, pixels: 4096 })?;
+// Paint semantic content above raster.surface; retain compiled interaction sidecars.
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 The underlay must be opaque RGB, exactly one pixel per cell horizontally and two
