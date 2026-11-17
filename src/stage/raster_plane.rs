@@ -152,23 +152,28 @@ pub fn resolve_compiled_raster<A>(
     )
 }
 
-fn resolve_impl(
+pub(super) fn path_for<'a>(
+    planes: &'a [RasterPlane],
+    keys: Option<&'a BTreeMap<Key, Vec<usize>>>,
+    i: usize,
+) -> Result<&'a [usize], RasterError> {
+    match &planes[i].anchor {
+        RasterAnchor::FramePath(path) => Ok(path),
+        RasterAnchor::Key(key) => keys
+            .and_then(|keys| keys.get(key))
+            .map(Vec::as_slice)
+            .ok_or(RasterError::MissingAnchor(i)),
+    }
+}
+
+pub(super) fn admit(
     root: &Node,
     keys: Option<&BTreeMap<Key, Vec<usize>>>,
     viewport: (u16, u16),
     underlay: &RgbRaster,
     planes: &[RasterPlane],
     limits: RasterLimits,
-) -> Result<ResolvedRaster, RasterError> {
-    let path_for = |i: usize| -> Result<&[usize], RasterError> {
-        match &planes[i].anchor {
-            RasterAnchor::FramePath(path) => Ok(path),
-            RasterAnchor::Key(key) => keys
-                .and_then(|keys| keys.get(key))
-                .map(Vec::as_slice)
-                .ok_or(RasterError::MissingAnchor(i)),
-        }
-    };
+) -> Result<(), RasterError> {
     let (w, h) = viewport;
     let ph = u32::from(h) * 2;
     if w == 0
@@ -192,7 +197,7 @@ fn resolve_impl(
             return Err(RasterError::Budget);
         }
         let mut anchor = root;
-        for &index in path_for(i)? {
+        for &index in path_for(planes, keys, i)? {
             anchor = anchor
                 .children
                 .get(index)
@@ -215,44 +220,113 @@ fn resolve_impl(
         }
         stack.extend(&node.children);
     }
+    Ok(())
+}
+
+pub(super) struct AnchorGeometry {
+    pub rect: Rect,
+    pub origin_px: (i64, i64),
+    pub parent_clip: Rect,
+}
+pub(super) fn locate(
+    root: &Node,
+    path: &[usize],
+    area: Rect,
+    i: usize,
+) -> Result<AnchorGeometry, RasterError> {
+    let mut anchor = root;
+    let mut parent_clip = area;
+    let (mut ox, mut oy) = (0, 0);
+    for &index in path {
+        let visible = painter::visible_rect(anchor, parent_clip, ox, oy);
+        parent_clip = painter::child_clip_rect(anchor, visible);
+        let child = anchor
+            .children
+            .get(index)
+            .ok_or(RasterError::MissingAnchor(i))?;
+        (ox, oy) = painter::child_origin(anchor, child, ox, oy);
+        anchor = child;
+    }
+    let r = anchor.computed_rect;
+    let x = i64::from(r.x) + i64::from(ox);
+    let y = 2 * (i64::from(r.y) + i64::from(oy));
+    Ok(AnchorGeometry {
+        rect: r,
+        origin_px: (x, y),
+        parent_clip,
+    })
+}
+
+fn resolve_impl(
+    root: &Node,
+    keys: Option<&BTreeMap<Key, Vec<usize>>>,
+    viewport: (u16, u16),
+    underlay: &RgbRaster,
+    planes: &[RasterPlane],
+    limits: RasterLimits,
+) -> Result<ResolvedRaster, RasterError> {
+    admit(root, keys, viewport, underlay, planes, limits)?;
     let mut resolved = root.clone();
-    layout::compute_layout(&mut resolved, w, h).map_err(RasterError::Layout)?;
-    let area = Rect::new(0, 0, w, h);
+    layout::compute_layout(&mut resolved, viewport.0, viewport.1).map_err(RasterError::Layout)?;
+    let (pixels, surface, placements) =
+        compose_prepared(&resolved, keys, viewport, underlay, planes, None)?;
+    Ok(ResolvedRaster {
+        layout: resolved,
+        pixels,
+        surface,
+        placements,
+    })
+}
+
+pub(super) fn compose_prepared(
+    resolved: &Node,
+    keys: Option<&BTreeMap<Key, Vec<usize>>>,
+    viewport: (u16, u16),
+    underlay: &RgbRaster,
+    planes: &[RasterPlane],
+    poses: Option<&BTreeMap<Key, super::driver::PixelRect>>,
+) -> Result<(RgbRaster, Surface, Vec<RasterPlacement>), RasterError> {
+    let area = Rect::new(0, 0, viewport.0, viewport.1);
     let mut placements = Vec::with_capacity(planes.len());
     for (i, plane) in planes.iter().enumerate() {
-        let mut anchor = &resolved;
-        let mut parent_clip = area;
-        let (mut ox, mut oy) = (0, 0);
-        for &index in path_for(i)? {
-            let visible = painter::visible_rect(anchor, parent_clip, ox, oy);
-            parent_clip = painter::child_clip_rect(anchor, visible);
-            let child = &anchor.children[index];
-            (ox, oy) = painter::child_origin(anchor, child, ox, oy);
-            anchor = child;
-        }
-        let r = anchor.computed_rect;
-        let x = (i64::from(r.x) + i64::from(ox)) + i64::from(plane.offset_px.0);
-        let y = 2 * (i64::from(r.y) + i64::from(oy)) + i64::from(plane.offset_px.1);
+        let g = locate(resolved, path_for(planes, keys, i)?, area, i)?;
+        let pose = if let RasterAnchor::Key(key) = &plane.anchor {
+            poses.and_then(|p| p.get(key)).copied()
+        } else {
+            None
+        };
+        let (bx, by, bw, bh) = match pose {
+            Some(p) => (i64::from(p.x), i64::from(p.y), p.width, p.height),
+            None => (
+                g.origin_px.0,
+                g.origin_px.1,
+                u32::from(g.rect.width),
+                2 * u32::from(g.rect.height),
+            ),
+        };
+        let x = bx + i64::from(plane.offset_px.0);
+        let y = by + i64::from(plane.offset_px.1);
         let origin = (
             i32::try_from(x).map_err(|_| RasterError::Coordinate(i))?,
             i32::try_from(y).map_err(|_| RasterError::Coordinate(i))?,
         );
-        let x0 = x.max(i64::from(parent_clip.x));
-        let y0 = y.max(2 * i64::from(parent_clip.y));
-        let x1 = (x + i64::from(r.width.min(plane.source.width())))
-            .min(i64::from(parent_clip.x) + i64::from(parent_clip.width));
-        let y1 = (y + (2 * i64::from(r.height)).min(i64::from(plane.source.height())))
-            .min(2 * (i64::from(parent_clip.y) + i64::from(parent_clip.height)));
-        let clip = if x1 <= x0 || y1 <= y0 {
+        let clip = g.parent_clip;
+        let x0 = x.max(i64::from(clip.x));
+        let y0 = y.max(2 * i64::from(clip.y));
+        let x1 = (x + i64::from(bw.min(u32::from(plane.source.width()))))
+            .min(i64::from(clip.x) + i64::from(clip.width));
+        let y1 = (y + i64::from(bh.min(u32::from(plane.source.height()))))
+            .min(2 * (i64::from(clip.y) + i64::from(clip.height)));
+        let clip_px = if x1 <= x0 || y1 <= y0 {
             Rect::default()
         } else {
             Rect::new(x0 as u16, y0 as u16, (x1 - x0) as u16, (y1 - y0) as u16)
         };
         placements.push(RasterPlacement {
             plane: i,
-            layout_rect: r,
+            layout_rect: g.rect,
             origin_px: origin,
-            clip_px: clip,
+            clip_px,
             z: plane.z,
         });
     }
@@ -293,10 +367,5 @@ fn resolve_impl(
         }
     }
     let surface = pixels.to_surface();
-    Ok(ResolvedRaster {
-        layout: resolved,
-        pixels,
-        surface,
-        placements,
-    })
+    Ok((pixels, surface, placements))
 }

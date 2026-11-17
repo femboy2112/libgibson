@@ -5,7 +5,7 @@
 //! One [`crate::ui::UiRuntime`] then reconciles all keys, targets and modal focus.
 //! This module owns no input dispatcher, terminal session or application state.
 //! Resolved raster composition uses layout-derived anchors and signed pixel offsets.
-//! Presentation timing belongs to a later seam.
+//! Presentation timing uses explicit caller time and absolute non-renewing demands.
 
 use crate::ui::Element;
 use crate::{Event, TextInputState};
@@ -91,4 +91,10 @@ mod raster_plane;
 pub use raster_plane::{
     resolve_compiled_raster, resolve_raster, RasterAnchor, RasterError, RasterLimits,
     RasterPlacement, RasterPlane, ResolvedRaster,
+};
+
+mod driver;
+pub use driver::{
+    FrameParts, KeySnapshot, PixelRect, PlaneSnapshot, PresentationDriver, PresentationOptions,
+    ResolvedFrameSnapshot, SourceDemand, StageError, StageFrame,
 };

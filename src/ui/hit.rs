@@ -20,6 +20,7 @@ use crate::hit_test::{HitLayers, TargetId};
 use crate::node::Node;
 use crate::painter::{child_clip_rect, child_origin, visible_rect};
 use crate::surface::Rect;
+use std::collections::BTreeMap;
 
 /// One node's painted geometry, in paint order.
 ///
@@ -128,8 +129,45 @@ impl<A> Compiled<A> {
             false,
             &mut order,
             &mut out,
+            &mut Vec::new(),
+            None,
+            &mut BTreeMap::new(),
         );
         out
+    }
+
+    // Same painter walk, with transient paths joined to this frame's existing
+    // geometry_paths. No new public identity or persistent path registry.
+    pub(crate) fn painted_key_regions(
+        &self,
+        area: Rect,
+    ) -> (Vec<PaintedRegion>, BTreeMap<Key, PaintedRegion>) {
+        let lookup: BTreeMap<Vec<usize>, Key> = self
+            .geometry_paths
+            .iter()
+            .map(|(k, p)| (p.clone(), k.clone()))
+            .collect();
+        let mut locations = BTreeMap::new();
+        let mut out = Vec::new();
+        let mut order = 0;
+        walk(
+            &self.node,
+            area,
+            0,
+            0,
+            area,
+            false,
+            &mut order,
+            &mut out,
+            &mut Vec::new(),
+            Some(&lookup),
+            &mut locations,
+        );
+        let keyed = locations
+            .into_iter()
+            .map(|(k, i)| (k, out[i].clone()))
+            .collect();
+        (out, keyed)
     }
 
     /// Resolves the painted layout into a [`HitMap`]: a layered spatial index plus
@@ -223,6 +261,9 @@ fn walk(
     fx_ancestor: bool,
     order: &mut u32,
     out: &mut Vec<PaintedRegion>,
+    path: &mut Vec<usize>,
+    lookup: Option<&BTreeMap<Vec<usize>, Key>>,
+    locations: &mut BTreeMap<Key, usize>,
 ) {
     let visible = visible_rect(node, clip, ox, oy);
     let natural = visible_rect(node, surface_area, ox, oy);
@@ -239,6 +280,10 @@ fn walk(
         fx,
     });
 
+    if let Some(key) = lookup.and_then(|lookup| lookup.get(path)) {
+        locations.insert(key.clone(), me);
+    }
+
     // The painter early-returns on an empty rect — it paints nothing and descends
     // into no children — so the walk must stop here too, or it would invent
     // targets the surface never drew.
@@ -248,9 +293,23 @@ fn walk(
     }
 
     let child_clip = child_clip_rect(node, visible);
-    for child in &node.children {
+    for (i, child) in node.children.iter().enumerate() {
+        path.push(i);
         let (cx, cy) = child_origin(node, child, ox, oy);
-        walk(child, child_clip, cx, cy, surface_area, fx, order, out);
+        walk(
+            child,
+            child_clip,
+            cx,
+            cy,
+            surface_area,
+            fx,
+            order,
+            out,
+            path,
+            lookup,
+            locations,
+        );
+        path.pop();
     }
     out[me].subtree_end = *order;
 }

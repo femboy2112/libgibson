@@ -13,6 +13,21 @@ use taffy::style::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+// Actual invocation counts for the Stage/Context integration unit receipt only.
+// No counter or new API is present in a normal library build.
+#[cfg(test)]
+std::thread_local! {
+    static LAYOUT_PASSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+pub(crate) fn layout_passes() -> usize {
+    LAYOUT_PASSES.with(|n| n.get())
+}
+#[cfg(test)]
+pub(crate) fn reset_layout_passes() {
+    LAYOUT_PASSES.with(|n| n.set(0));
+}
+
 /// Wraps text into lines according to the specified wrap mode and maximum width.
 pub fn wrap_text(text: &str, wrap: WrapMode, max_width: u16) -> Vec<String> {
     if text.is_empty() {
@@ -531,6 +546,8 @@ pub fn compute_layout(
     available_width: u16,
     available_height: u16,
 ) -> Result<Rect, String> {
+    #[cfg(test)]
+    LAYOUT_PASSES.with(|n| n.set(n.get() + 1));
     let mut taffy = TaffyTree::new();
     let root_id = build_taffy_tree(&mut taffy, root).map_err(|e| format!("{:?}", e))?;
 
