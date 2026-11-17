@@ -96,6 +96,8 @@ use crate::input::KeyEvent;
 /// UiRuntime::handle_event first. Only an unconsumed key reaches this function.
 /// Standard and Blades bind represented buttons to their typed payloads; invoking
 /// both routes for the same consumed activation would deliver the action twice.
+/// Once-only delivery is a documented host consumption contract; LG cannot stop
+/// a host that deliberately calls both routes.
 ///
 /// For grammar-only input, this is the entry point: the grammar
 /// decides *which* key means *which* intent, [`apply_intent`] decides what that
