@@ -337,6 +337,37 @@ impl Fixture {
 fn typed_activation(f: &mut Fixture, p: &Produced, id: &str) {
     let k = key(&format!("open-{id}"));
     assert!(p.receipt.actions.contains(&k));
+    if !p
+        .frame
+        .snapshot
+        .targets
+        .iter()
+        .any(|t| t.key == k && !t.rect.is_empty())
+    {
+        let c = &p.frame.compiled;
+        let path = &c.geometry_paths[&key("experience")];
+        let mut wrapper = &c.node;
+        for &i in path {
+            wrapper = &wrapper.children[i];
+        }
+        let screen = &wrapper.children[0];
+        eprintln!("DIAG grammar={} action={id} viewport={:?} producer-wrapper={:?} screen={:?} screen-height-style={:?}", f.grammar.name(), p.frame.snapshot.viewport, wrapper.computed_rect, screen.computed_rect, screen.layout_style.height);
+        eprintln!(
+            "DIAG keyed regions={:?}",
+            p.frame
+                .snapshot
+                .keys
+                .iter()
+                .map(|(k, v)| (k, v.layout_rect, v.painted.as_ref().map(|r| r.visible)))
+                .collect::<Vec<_>>()
+        );
+        eprintln!("DIAG snapshot targets={:?}", p.frame.snapshot.targets);
+        eprintln!(
+            "DIAG public hitmap={:?}",
+            c.hit_map(p.frame.snapshot.viewport)
+                .map(|h| h.targets().to_vec())
+        );
+    }
     assert!(p
         .frame
         .snapshot
