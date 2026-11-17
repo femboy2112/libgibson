@@ -132,7 +132,7 @@ fn layout_makes_room_and_offsets_do_not_reflow_siblings() {
         let tree = Node::row()
             .width(width as f32)
             .height(2.)
-            .child(root(2, 2))
+            .child(root(2, 2).flex_shrink(0.))
             .child(Node::text("reader", Style::default()).flex_grow(1.));
         let mut p = plane(source(&[[200, 0, 0, 255]; 4], 2));
         p.path = vec![0];
