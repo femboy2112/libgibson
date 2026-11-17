@@ -7,7 +7,8 @@ use gibson::ui::experience::{
 };
 use gibson::ui::prelude::*;
 use gibson::{
-    Context, Event, KeyCode, KeyEvent, KeyModifiers, Node, RenderMode, Surface, TextInputState,
+    Context, Dimension, Event, KeyCode, KeyEvent, KeyModifiers, Node, Rect, RenderMode, Surface,
+    TextInputState,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -76,6 +77,7 @@ struct Fixture {
     info: FrameDemand,
     motion: MotionPreference,
     image: Arc<RgbaRaster>,
+    producer_padding: Option<u16>,
     builds: usize,
     paints: Arc<AtomicUsize>,
 }
@@ -110,6 +112,7 @@ impl Fixture {
             info: FrameDemand::After(ms(100)),
             motion,
             image: Arc::new(image),
+            producer_padding: Some(0),
             builds: 0,
             paints: Arc::new(AtomicUsize::new(0)),
         }
@@ -136,7 +139,12 @@ impl Fixture {
             .present(&self.experience, &self.state, &grammar_env, now);
         let receipt = shown.receipt;
         let demand = shown.demand; // Actual producer output, never replaced by a constant.
-        let mounted = map_actions(shown.element, Host::Inner);
+        let mut mounted = map_actions(shown.element, Host::Inner);
+        // Blades budgets its RGB body and footer against its local environment;
+        // do not add the host skin's Screen padding outside that allocation.
+        if let Some(padding) = self.producer_padding {
+            mounted = mounted.padding(padding);
+        }
         let before = spacer().width(self.x).grow(0.); // Fixed width: #413.
         let art = column().key("art").width(8).height(4).padding(0).gap(0);
         let sibling = spacer().key("sibling").grow(1.);
@@ -421,6 +429,7 @@ fn pixels(f: &Fixture, p: &Produced, x: u16) {
 fn all_three_seams_preserve_actions_pixels_deadlines_and_settled_work() {
     for grammar in grammars() {
         let mut f = Fixture::new(grammar, MotionPreference::Full);
+        eprintln!("INTEGRATED BEGIN {}", f.grammar.name());
         let mut first = f.resolve(ms(0));
         assert_eq!(first.demand, FrameDemand::OnChange);
         assert_eq!(
@@ -547,6 +556,7 @@ fn all_three_seams_preserve_actions_pixels_deadlines_and_settled_work() {
         pixels(&f, &end, 0);
         f.submit(&mut end);
         assert_eq!(end.frame.snapshot.next_deadline, None);
+        eprintln!("INTEGRATED PASS {}", f.grammar.name());
     }
 }
 
@@ -590,4 +600,62 @@ fn strict_reduced_and_none_keep_literal_timers_and_declared_narrow_omissions() {
             f.submit(&mut narrow);
         }
     }
+}
+
+#[test]
+fn blades_mount_records_inherited_padding_overflow_and_explicit_zero_padding() {
+    let mut f = Fixture::new(Box::new(Blades::new()), MotionPreference::None);
+    f.producer_padding = None;
+    let unconstrained = f.resolve(ms(0));
+    let c = &unconstrained.frame.compiled;
+    let mut wrapper = &c.node;
+    for &i in &c.geometry_paths[&key("experience")] {
+        wrapper = &wrapper.children[i];
+    }
+    let screen = &wrapper.children[0];
+    assert_eq!(wrapper.computed_rect, Rect::new(0, 8, 80, 16));
+    assert_eq!(screen.computed_rect, Rect::new(0, 8, 80, 20));
+    assert_eq!(screen.layout_style.height, Dimension::Auto);
+    let action = &unconstrained.frame.snapshot.keys[&key("open-a")];
+    assert_eq!(action.layout_rect, Some(Rect::new(2, 25, 7, 1)));
+    assert!(
+        action.painted.is_none(),
+        "viewport-clipped ancestor prunes footer action"
+    );
+    assert!(unconstrained.receipt.actions.contains(&key("open-a")));
+    assert!(!unconstrained
+        .frame
+        .snapshot
+        .targets
+        .iter()
+        .any(|t| t.key == key("open-a")));
+    let hit = c.hit_map(unconstrained.frame.snapshot.viewport).unwrap();
+    assert_eq!(
+        hit.targets()
+            .iter()
+            .map(|t| (&t.key, t.rect))
+            .collect::<Vec<_>>(),
+        unconstrained
+            .frame
+            .snapshot
+            .targets
+            .iter()
+            .map(|t| (&t.key, t.rect))
+            .collect::<Vec<_>>()
+    );
+    f.producer_padding = Some(0);
+    let mut fitted = f.resolve(ms(0));
+    let c = &fitted.frame.compiled;
+    let mut wrapper = &c.node;
+    for &i in &c.geometry_paths[&key("experience")] {
+        wrapper = &wrapper.children[i];
+    }
+    assert_eq!(wrapper.children[0].computed_rect, Rect::new(0, 8, 80, 16));
+    assert_eq!(wrapper.children[0].layout_style.height, Dimension::Auto);
+    let action = &fitted.frame.snapshot.keys[&key("open-a")];
+    assert_eq!(action.layout_rect.unwrap().y, 23);
+    assert!(!action.painted.as_ref().unwrap().visible.is_empty());
+    typed_activation(&mut f, &fitted, "a");
+    f.submit(&mut fitted);
+    eprintln!("PADDING PAIR: inherited Screen20/action25 clipped; explicit0 Screen16/action23 visible; public hitmap agrees");
 }

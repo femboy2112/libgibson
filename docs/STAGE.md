@@ -241,3 +241,12 @@ These are integration receipts over an RGB substrate and logical geometry. They
 do not clear physical resize/pointer, private-art appearance, performance or the
 independent fresh-author gate. Semantic panes reserve their new room immediately;
 only graphical crop rectangles animate.
+
+Budget producer-root padding explicitly. This fixture mounts the producer with
+`map_actions(presented.element, Host::Inner).padding(0)`, leaving height automatic.
+Blades already budgets its raster body and footer against its local environment.
+Its nested Screen otherwise inherits padding/density resolved from the host's
+global UiEnvironment: the named baseline test records a 16-row body becoming a
+20-row Screen under the spacious 24-row host, clipping the footer. The paired
+zero-padding mount fits the declared allocation. This is host composition using
+existing builders; a wrapper height alone does not remove inner Screen padding.
