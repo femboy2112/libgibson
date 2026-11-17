@@ -15,6 +15,13 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Behavior change
+- Semantic UI `raw` and `presented` imports clear foreign or hand-authored
+  `Node::tag` indices throughout the visual subtree. An imported control can no
+  longer alias an unrelated host action or panic on an out-of-range target index.
+  Actions bound on the semantic wrapper still receive a fresh host target;
+  transforming a node within its original `Compiled` preserves its hit tags.
+
 ### Changed
 - **Layout engine: `taffy` 0.14 → 0.15.1** (supersedes #197). No public LibGibson API changes.
   - **Port:** taffy 0.15 makes `align_items` and `justify_content` plain structs (keyword plus an `AlignmentSafety` field) instead of `Option`s. `convert_style` drops the `Some(...)` wrappers. The constants it uses (`START`, `END`, `CENTER`, `STRETCH`, `SPACE_*`) keep their names and meaning, and an unset field defaults to `NORMAL`, the same as the old `None`.

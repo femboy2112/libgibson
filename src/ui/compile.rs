@@ -271,6 +271,18 @@ pub(crate) fn lower_with_metadata<A>(
     }
 }
 
+/// Raw/presented nodes have no provenance in this compilation's target table.
+/// Clear even in-range indices: they could silently alias an unrelated action.
+/// The semantic wrapper gets its legitimate host tag later in `lower_role`.
+fn without_hit_tags(mut node: Node) -> Node {
+    let mut pending = vec![&mut node];
+    while let Some(current) = pending.pop() {
+        current.tag = None;
+        pending.extend(&mut current.children);
+    }
+    node
+}
+
 fn rule(cx: &PresentationCx, width: u16) -> Node {
     Node::text(
         cx.build.skin.glyphs.horizontal.repeat(width as usize),
@@ -828,11 +840,11 @@ fn lower_role<A>(
         }
         ElementKind::Viewport(x, y) => Node::viewport(*x, *y).children(children),
         ElementKind::Raw(raw) => {
-            let mut n = raw.clone();
+            let mut n = without_hit_tags(raw.clone());
             n.children.extend(children);
             n
         }
-        ElementKind::Presented(build) => build(cx),
+        ElementKind::Presented(build) => without_hit_tags(build(cx)),
     };
     if matches!(el.kind, ElementKind::Row | ElementKind::Tabs)
         && el

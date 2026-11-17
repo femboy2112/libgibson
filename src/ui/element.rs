@@ -563,6 +563,13 @@ pub fn toast<A>(value: impl Into<String>) -> Element<A> {
 pub fn viewport<A>(x: i32, y: i32) -> Element<A> {
     Element::new(ElementKind::Viewport(x, y))
 }
+/// Imports a visual node subtree, preserving its layout and paint content.
+///
+/// Lowering clears every imported `Node::tag`, including hand-authored tags:
+/// numeric target indices belong to their originating `Compiled`, not this host.
+/// Bind actions on the semantic wrapper to obtain a fresh host target. To keep
+/// an existing compiled tree interactive through a Scene transform, retain that
+/// same `Compiled` and its sidecars rather than re-importing its node here.
 pub fn raw<A>(node: Node) -> Element<A> {
     Element::new(ElementKind::Raw(node))
 }
@@ -573,6 +580,8 @@ pub fn raw<A>(node: Node) -> Element<A> {
 /// bind those on the returned element. Its layout is preserved just like
 /// [`raw`]. Semantic motion and `.post_process` are applied outside its node,
 /// so do not apply the same `cx.motions` chain again inside the callback.
+/// All hit tags on the returned node and its descendants are cleared before
+/// assigning the semantic wrapper's own host tag, just as for [`raw`].
 ///
 /// Determinism is the callback author's responsibility: use `cx.build.time` and
 /// captured immutable data instead of reading a wall clock or mutable globals.

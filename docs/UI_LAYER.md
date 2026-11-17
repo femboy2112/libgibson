@@ -415,6 +415,16 @@ Raw elements are leaves of the semantic tree: compose additional semantic
 children alongside them in a container, or build a complete ordinary Node
 subtree before passing it to `raw`.
 
+`raw` and `presented` import visual nodes, not a compiled interaction domain.
+Every imported `Node::tag` is cleared throughout the returned subtree, including
+hand-authored tags. These numeric indices belong to the originating
+`Compiled::targets`; they cannot identify actions in another compilation.
+This fixes accidental routing to unrelated outer controls (or an out-of-range
+index panic). Bind actions on the semantic wrapper instead: its fresh host tag
+is assigned after import. A wrapper action covers its painted rectangle; it does
+not restore individual inner controls. Painting, layout and the caller's original
+node are unchanged by this tag sanitization.
+
 `.post_process([SurfaceFx::...])` appends ordinary local post-processing after
 the semantic motion chain. Effects remain ordered and need not commute. There
 is no direct raw-ANSI escape in the UI layer; terminal ownership stays in Context.
@@ -477,10 +487,16 @@ before mutating runtime presentation state or invoking presentation callbacks.
 Raw nodes do not invent interaction metadata: bind actions or custom events on
 their semantic wrapper when keyboard routing is needed.
 
-Scene integration works in both directions: embed `raw(scene.to_node(...))`,
-or place a compiled `frame.node` inside an ordinary `SceneEntity`. Retain the
-runtime/interaction sidecar when you need typed keyboard actions. Scene visual
-transforms do not create mouse hit testing or a spatial event-routing contract.
+Scene integration works in both directions, with distinct interaction boundaries.
+`raw(scene.to_node(...))` imports visual content and clears its hit tags; bind any
+host action on that raw wrapper. To transform an already compiled interactive
+tree, place its `frame.node` inside a `SceneEntity`, then put the Scene's resulting
+node back in that **same** `Compiled` while retaining its target, interaction and
+key sidecars and runtime. Run layout on the final node before `hit_map`. This
+preserves the original tag domain through ordinary Scene offsets and clipping.
+It does not join independently compiled target tables. Pixel-moving effects
+still have the pre-effect targeting limitation disclosed by `ResolvedTarget::fx`;
+physical inline pointer coordinates require a known terminal origin.
 
 ## Large collections: virtualization and list selection
 
