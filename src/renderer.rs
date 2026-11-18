@@ -210,6 +210,7 @@ pub struct Renderer {
     /// frame that lands.
     pending_reanchor: Option<ReanchorReport>,
     inline_resize_policy: InlineResizePolicy,
+    inline_resize_bottom_reservation: bool,
 }
 
 impl Renderer {
@@ -243,6 +244,7 @@ impl Renderer {
             owed_reanchor: false,
             pending_reanchor: None,
             inline_resize_policy: InlineResizePolicy::PreserveAbove,
+            inline_resize_bottom_reservation: false,
         }
     }
 
@@ -278,6 +280,19 @@ impl Renderer {
     /// The current [`InlineResizePolicy`].
     pub fn inline_resize_policy(&self) -> InlineResizePolicy {
         self.inline_resize_policy
+    }
+
+    /// Opt in to one extra physical allocation row on a normal full-height inline reanchor.
+    /// Disabled by default; changes only the next eligible reanchor allocation. The logical
+    /// surface height stays unchanged. Startup, short frames, fullscreen and uncertain-write
+    /// recovery retain their existing bytes. Earlier live images can remain in scrollback.
+    pub fn set_inline_resize_bottom_reservation(&mut self, enabled: bool) {
+        self.inline_resize_bottom_reservation = enabled;
+    }
+
+    /// Whether eligible inline resize allocations reserve the extra physical row.
+    pub fn inline_resize_bottom_reservation(&self) -> bool {
+        self.inline_resize_bottom_reservation
     }
 
     /// Whether this renderer reclaims an inline region's rows across a resize (#403).
@@ -627,13 +642,24 @@ impl Renderer {
                         }
                         tx.push(b"\r\x1b[J");
                     }
-                    // First frame of this live region: allocate (H - 1) rows of
-                    // terminal space, then rewind to the region top.
-                    if surface_height > 1 {
-                        for _ in 0..(surface_height - 1) {
+                    // Reuse the spare-row allocation from local 78b72b2, but
+                    // keep it independently opt-in rather than changing Reclaim
+                    // defaults. A maximal normal reanchor scrolls the returned
+                    // row into history; it never erases above the tracked region.
+                    let allocation_rows = if self.inline_resize_bottom_reservation
+                        && reanchor
+                        && !recover
+                        && surface_height == max_inline_rows
+                    {
+                        surface_height
+                    } else {
+                        surface_height.saturating_sub(1)
+                    };
+                    if allocation_rows > 0 {
+                        for _ in 0..allocation_rows {
                             tx.push(b"\r\n");
                         }
-                        write!(tx.buffer, "\x1b[{}A\r", surface_height - 1).ok();
+                        write!(tx.buffer, "\x1b[{}A\r", allocation_rows).ok();
                     } else {
                         tx.push(b"\r");
                     }

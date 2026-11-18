@@ -193,6 +193,21 @@ impl Context {
         self.renderer.inline_resize_policy()
     }
 
+    /// Opt in to an extra physical bottom reservation on normal full-height inline resizes.
+    /// The logical budget remains `rows - 1` (at least one row). On eligible reanchors this
+    /// scrolls a returned row above the new working frame into history without deleting it.
+    /// It does not make scrollback pristine. Defaults to false, preserving existing bytes;
+    /// startup, short frames, fullscreen and uncertain-write recovery are unaffected.
+    /// Rust only: the C ABI is unchanged. Takes effect on the next eligible reanchor.
+    pub fn set_inline_resize_bottom_reservation(&mut self, enabled: bool) {
+        self.renderer.set_inline_resize_bottom_reservation(enabled);
+    }
+
+    /// Whether eligible inline resize allocations reserve the extra physical row.
+    pub fn inline_resize_bottom_reservation(&self) -> bool {
+        self.renderer.inline_resize_bottom_reservation()
+    }
+
     /// Enables recording of per-frame dirty-cell coordinates (for damage-map
     /// debug overlays). Off by default because it allocates per frame.
     pub fn set_capture_damage(&mut self, on: bool) {
