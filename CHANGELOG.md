@@ -15,6 +15,15 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Added (Rust-only, opt-in)
+- `Context::set_inline_resize_bottom_reservation(bool)` reserves the spare physical
+  terminal row on normal full-height inline reanchors without reducing the logical
+  viewport. Defaults remain byte-compatible; startup, short frames, fullscreen and
+  uncertain-write recovery retain existing behavior. This reuses the allocation
+  mechanism from pre-existing local `78b72b2` Reclaim/regrow work; the new scope is an
+  independent opt-in for either resize policy, including PreserveAbove. Committed
+  history is scrolled rather than erased; old live images may remain in scrollback.
+
 ### Changed (experimental, breaking for literal constructors)
 - Experimental `Compiled::geometry_paths` joins explicit semantic keys to the
   same frame's lowered Node geometry. Literal `Compiled { .. }` constructors must
