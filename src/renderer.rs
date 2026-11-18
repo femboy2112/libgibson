@@ -210,6 +210,7 @@ pub struct Renderer {
     /// frame that lands.
     pending_reanchor: Option<ReanchorReport>,
     inline_resize_policy: InlineResizePolicy,
+    inline_resize_bottom_reservation: bool,
 }
 
 impl Renderer {
@@ -243,6 +244,7 @@ impl Renderer {
             owed_reanchor: false,
             pending_reanchor: None,
             inline_resize_policy: InlineResizePolicy::PreserveAbove,
+            inline_resize_bottom_reservation: false,
         }
     }
 
@@ -278,6 +280,19 @@ impl Renderer {
     /// The current [`InlineResizePolicy`].
     pub fn inline_resize_policy(&self) -> InlineResizePolicy {
         self.inline_resize_policy
+    }
+
+    /// Opt in to one extra physical allocation row on a normal full-height inline reanchor.
+    /// Disabled by default; changes only the next eligible reanchor allocation. The logical
+    /// surface height stays unchanged. Startup, short frames, fullscreen and uncertain-write
+    /// recovery retain their existing bytes. Earlier live images can remain in scrollback.
+    pub fn set_inline_resize_bottom_reservation(&mut self, enabled: bool) {
+        self.inline_resize_bottom_reservation = enabled;
+    }
+
+    /// Whether eligible inline resize allocations reserve the extra physical row.
+    pub fn inline_resize_bottom_reservation(&self) -> bool {
+        self.inline_resize_bottom_reservation
     }
 
     /// Whether this renderer reclaims an inline region's rows across a resize (#403).
