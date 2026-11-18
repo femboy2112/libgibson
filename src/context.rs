@@ -208,6 +208,13 @@ impl Context {
         self.renderer.inline_resize_bottom_reservation()
     }
 
+    /// Enable chunked history insertion for a stable inline viewport with spare
+    /// rows and known Insert Line support. Large inserts can preserve the frame
+    /// without repainting it. Off by default.
+    pub fn set_inline_history_chunking(&mut self, enabled: bool) {
+        self.renderer.set_inline_history_chunking(enabled);
+    }
+
     /// Enables recording of per-frame dirty-cell coordinates (for damage-map
     /// debug overlays). Off by default because it allocates per frame.
     pub fn set_capture_damage(&mut self, on: bool) {

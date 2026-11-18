@@ -271,6 +271,87 @@ fn insert_line_fast_path_multiple_rows_and_cursor_restore() {
     assert_eq!(h.cursor().1, cursor_before.1);
 }
 
+#[test]
+fn chunked_inline_insertion_preserves_sparse_viewport_cursor_and_history() {
+    let mut h = Harness::new(40, 6);
+    h.parser = vt100::Parser::new(6.try_into().unwrap(), 40.try_into().unwrap(), 32);
+    h.renderer.set_inline_history_chunking(true);
+    h.commit("PROTECTED-HISTORY");
+    let frame = |footer: &str| {
+        Node::col()
+            .child(Node::text("LIVE-TOP", Style::default()))
+            .child(Node::text_input("abc", 2, None, Style::default()))
+            .child(Node::text("", Style::default()).height(1.0))
+            .child(Node::text("LIVE-LOW", Style::default()))
+            .child(Node::text(footer, Style::default()))
+    };
+    h.render(&mut frame("LIVE-END"));
+    assert_eq!(h.renderer.live_region_height, 5);
+    let before = h.screen_rows();
+    let cursor = h.cursor();
+    assert_eq!(before[0], "PROTECTED-HISTORY");
+    assert!(!h.hide_cursor());
+
+    let history = "HIST-1\nHIST-2\nHIST-3\nHIST-4\nHIST-5\nHIST-6\nHIST-7\nHIST-8";
+    let mut out = Vec::new();
+    let (_, strategy) = h
+        .renderer
+        .insert_text_before_live(history, &mut h.session, &mut out)
+        .unwrap();
+    assert_eq!(strategy, InsertStrategy::InsertLineFastPath);
+    let wire = String::from_utf8(out).unwrap();
+    assert_eq!(wire.matches("\x1b[1L").count(), 8);
+    assert!(!wire.contains("\x1b[J"));
+    assert!(!wire.contains("LIVE-"));
+    h.parser.process(wire.as_bytes());
+    let after = h.screen_rows();
+    assert_eq!(after[0], "HIST-8");
+    assert_eq!(after[1..], before[1..]);
+    assert_eq!(h.cursor(), cursor);
+
+    let mut scroll = Vec::new();
+    for offset in (1..=h.parser.screen().scrollback_len()).rev() {
+        h.parser.screen_mut().set_scrollback(offset);
+        scroll.push(h.screen_rows().remove(0));
+    }
+    assert_eq!(
+        scroll,
+        [
+            "PROTECTED-HISTORY",
+            "HIST-1",
+            "HIST-2",
+            "HIST-3",
+            "HIST-4",
+            "HIST-5",
+            "HIST-6",
+            "HIST-7"
+        ]
+    );
+    h.parser.screen_mut().set_scrollback(0);
+    let (dirty, _, full) = h.render(&mut frame("LIVE-EN!"));
+    assert_eq!(dirty, 1);
+    assert!(!full);
+    assert_eq!(h.screen_rows()[5], "LIVE-EN!");
+    assert_eq!(h.cursor(), cursor);
+}
+
+#[test]
+fn chunked_inline_insertion_requires_current_geometry_and_known_capability() {
+    for stale_geometry in [true, false] {
+        let mut h = Harness::new(40, 6);
+        h.renderer.set_inline_history_chunking(true);
+        h.render(&mut live_root());
+        if stale_geometry {
+            h.session.set_terminal_size(40, 7);
+        } else {
+            h.session
+                .set_capabilities(gibson::TerminalCapabilities::mono());
+        }
+        let (_, strategy) = h.insert(&["1", "2", "3", "4", "5"]);
+        assert_eq!(strategy, InsertStrategy::RepaintFallback);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // RepaintFallback
 // ---------------------------------------------------------------------------
