@@ -85,8 +85,17 @@ pub(crate) const KEY_RELEASE_FLAGS: u8 = 15;
 fn request_key_releases(out: &mut impl Write) -> io::Result<()> {
     #[cfg(unix)]
     crate::tty_source::expect_keyboard_reply();
-    write!(out, "\x1b[>{KEY_RELEASE_FLAGS}u\x1b[?u\x1b[c")?;
-    out.flush()
+    let sent = write!(out, "\x1b[>{KEY_RELEASE_FLAGS}u\x1b[?u\x1b[c").and_then(|()| out.flush());
+    // The request was recorded before the write, so an answer read at once is expected. A failed
+    // write takes it back: no answer is coming, and a request left outstanding would hold the
+    // screen-switch window (#312) open until the next restore.
+    #[cfg(unix)]
+    {
+        if sent.is_err() {
+            crate::tty_source::retract_keyboard_reply();
+        }
+    }
+    sent
 }
 
 /// Pops the entry [`request_key_releases`] pushed. The kitty stacks are per screen (main and

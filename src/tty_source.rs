@@ -469,14 +469,29 @@ impl TtySource {
             let event = match internal {
                 InternalEvent::Event(CtEvent::Key(k)) if track => {
                     // Only a legacy text press can have been typed before the flags took effect
-                    // (#312); the query record is read only for that, at this point of the stream.
-                    let window = k.kind == KeyEventKind::Press
-                        && matches!(k.code, CtKeyCode::Char(_))
-                        && lock_queries().in_switch_window();
-                    CtEvent::Key(self.pressed.name(KeyId::Code(k.code), k, epoch, window))
+                    // (#312); the query record is read only for that, at this point of the
+                    // stream. `current` is the window generation now: a tag of any other
+                    // generation has expired.
+                    let (open, current) = lock_queries().window();
+                    let tag = open.filter(|_| {
+                        k.kind == KeyEventKind::Press && matches!(k.code, CtKeyCode::Char(_))
+                    });
+                    CtEvent::Key(
+                        self.pressed
+                            .name(KeyId::Code(k.code), k, epoch, tag, current),
+                    )
                 }
                 InternalEvent::KittyKey(k, base) if track => {
-                    CtEvent::Key(self.pressed.name(KeyId::Base(base), k, epoch, false))
+                    let (_, current) = lock_queries().window();
+                    CtEvent::Key(
+                        self.pressed
+                            .name(KeyId::Base(base), k, epoch, None, current),
+                    )
+                }
+                // A focus loss ends every window tag (#312): the keys may have gone up unseen.
+                InternalEvent::Event(CtEvent::FocusLost) if track => {
+                    self.pressed.demote_all();
+                    CtEvent::FocusLost
                 }
                 InternalEvent::Event(event) => event,
                 InternalEvent::KittyKey(k, _) => CtEvent::Key(k),
@@ -726,10 +741,12 @@ enum KeyId {
 const KITTY_PRIVATE_USE_KEYS: std::ops::RangeInclusive<u32> = 57344..=63743;
 
 /// Each record: the key, its press, a sequence number (recording order), the key-release epoch it
-/// was recorded in, and whether its press was a legacy text key decoded in the screen-switch window
-/// (#312): while a key-release reporting request was outstanding and its flags reply had not been
-/// decoded, so by stream order the byte was typed before the pushed flags took effect.
-type Down = (KeyId, CtKeyEvent, u64, u64, bool);
+/// was recorded in, and the window generation of its press if that was a legacy text key decoded in
+/// the screen-switch window (#312): while a key-release reporting request was outstanding and its
+/// flags reply had not been decoded, so by stream order the byte was typed before the pushed flags
+/// took effect. The tag expires: it is eligible only while its generation is the current one (see
+/// [`KeyboardQueries::window`]) and in the epoch it was recorded in, and focus loss clears it.
+type Down = (KeyId, CtKeyEvent, u64, u64, Option<u64>);
 
 #[derive(Debug, Default)]
 struct PressedKeys(Vec<Down>, u64);
@@ -740,6 +757,13 @@ impl PressedKeys {
 
     fn clear(&mut self) {
         self.0.clear();
+    }
+
+    /// Ends every window tag (a focus loss, #312): the records stay, as plain legacy records.
+    fn demote_all(&mut self) {
+        for r in &mut self.0 {
+            r.4 = None;
+        }
     }
 
     /// The newest record (by sequence) that `want` accepts.
@@ -772,17 +796,32 @@ impl PressedKeys {
     ///
     /// So, as a last resort only, when none of the above matched: a release (never a repeat) of a
     /// text key under its kitty base key pairs with the one record whose press was a legacy text key decoded
-    /// in the switch window (`Down.4`), if exactly one such record exists. Base `1` cannot be mapped
-    /// back to `!` without assuming a keyboard layout, so this is a provenance rule, not a layout
-    /// one: the window record is the only press that kitty could be releasing unnamed. It is NOT
-    /// used with two or more window records (it cannot tell which one the release is), nor for a
-    /// private-use key, nor when anything else matched. The trade-off, accepted over a hold that
-    /// never ends (release coordinator, 2026-11-19): a kitty release of an unrelated key with no
-    /// record at all is taken for that one window record, which is delivered as released early.
-    /// Still unrecovered: a tap pressed and released inside the window sends no release byte, so
-    /// its record stays until a focus loss, the key's next kitty press/release or reporting is
-    /// disabled. The `issue_312_*` tests pin all of this.
-    fn find_down(&self, id: KeyId, code: CtKeyCode, release: bool) -> Option<usize> {
+    /// in the switch window (`Down.4`), if exactly one such record is eligible. A record is eligible
+    /// only in its own window generation (`current`: the generation of the latest window, which
+    /// stays current after its flags reply until the next window opens) and in its own key-release
+    /// epoch (`epoch`); a tag of an earlier window or epoch is neither paired nor counted. Base `1`
+    /// cannot be mapped back to `!` without assuming a keyboard layout, so this is a provenance
+    /// rule, not a layout one: the window record is the only press that kitty could be releasing
+    /// unnamed. It is NOT used with two or more eligible records (it cannot tell which one the
+    /// release is), nor for a private-use key, nor when anything else matched. The trade-off,
+    /// accepted over a hold that never ends (release coordinator, 2026-11-19): a kitty release of
+    /// an unrelated key with no record at all is taken for that one window record, which is
+    /// delivered as released early.
+    ///
+    /// Residual: a tap pressed and released inside the window sends no release byte, so its record
+    /// stays. Within its generation it is a ghost tag that blocks the pairing of the real window
+    /// press (two eligible records: that key stays held, today's behavior) or, if it is the only
+    /// one, takes one unrelated record-less release. It expires when the next window opens, on a
+    /// focus loss or on a key-release epoch change; otherwise the hold lasts until the key's next
+    /// kitty press/release. The `issue_312_*` tests pin all of this.
+    fn find_down(
+        &self,
+        id: KeyId,
+        code: CtKeyCode,
+        release: bool,
+        epoch: u64,
+        current: u64,
+    ) -> Option<usize> {
         let legacy = KeyId::Code(code);
         let exact = self.newest(|r| r.0 == id);
         if matches!(id, KeyId::Base(b) if KITTY_PRIVATE_USE_KEYS.contains(&b)) {
@@ -812,14 +851,17 @@ impl PressedKeys {
         }
         // Last resort (#312), reached only when nothing above matched. The release of a text key
         // under its kitty base key, with exactly one record of a legacy text press from the
-        // switch window: that press is the one kitty is releasing (a `!` typed before the push,
-        // released as `1`). Two or more such records are ambiguous, so none is paired.
+        // switch window of the current generation and epoch: that press is the one kitty is
+        // releasing (a `!` typed before the push, released as `1`). Two or more such records
+        // are ambiguous, so none is paired.
         // A release only: an unmatched repeat would move the window record to an unrelated
         // held key's identity and misname every later repeat and its release.
         if !release || !matches!(id, KeyId::Base(_)) || !matches!(code, CtKeyCode::Char(_)) {
             return None;
         }
-        let in_window = |r: &Down| r.4 && matches!(r.0, KeyId::Code(CtKeyCode::Char(_)));
+        let in_window = |r: &Down| {
+            r.4 == Some(current) && r.3 == epoch && matches!(r.0, KeyId::Code(CtKeyCode::Char(_)))
+        };
         let mut window = (0..self.0.len()).filter(|&n| in_window(&self.0[n]));
         match (window.next(), window.next()) {
             (Some(only), None) => Some(only),
@@ -842,16 +884,25 @@ impl PressedKeys {
     /// non-text key never matches another key's record: keypad Left (kitty 57417) and the arrow
     /// Left decode to the same code.
     ///
-    /// `window`: the press was a legacy text key decoded in the screen-switch window (#312); it is
-    /// recorded on a press only. A repeat that migrates a legacy record to its own kitty identity
-    /// clears it (the record then has an exact identity and needs no last-resort pairing), and a
-    /// repeat with no record is never window-tagged.
-    fn name(&mut self, id: KeyId, k: CtKeyEvent, epoch: u64, window: bool) -> CtKeyEvent {
+    /// `window`: the window generation if the press was a legacy text key decoded in the
+    /// screen-switch window (#312); it is recorded on a press only. `current`: the window
+    /// generation now, which decides which tags are still eligible (see
+    /// [`find_down`](Self::find_down)). A repeat that migrates a legacy record to its own kitty
+    /// identity clears its tag (the record then has an exact identity and needs no last-resort
+    /// pairing), and a repeat with no record is never window-tagged.
+    fn name(
+        &mut self,
+        id: KeyId,
+        k: CtKeyEvent,
+        epoch: u64,
+        window: Option<u64>,
+        current: u64,
+    ) -> CtKeyEvent {
         self.1 += 1;
         let seq = self.1;
         let found = match k.kind {
             KeyEventKind::Press => self.0.iter().position(|r| r.0 == id),
-            _ => self.find_down(id, k.code, k.kind == KeyEventKind::Release),
+            _ => self.find_down(id, k.code, k.kind == KeyEventKind::Release, epoch, current),
         };
         match (k.kind, found) {
             (KeyEventKind::Press, Some(i)) => {
@@ -864,7 +915,9 @@ impl PressedKeys {
                         self.0.remove(oldest);
                     }
                 }
-                self.0.push((id, k, seq, epoch, window));
+                // A repeat with no record is never window-tagged (callers pass no tag for one).
+                let tag = window.filter(|_| k.kind == KeyEventKind::Press);
+                self.0.push((id, k, seq, epoch, tag));
                 k
             }
             (KeyEventKind::Repeat, Some(i)) => {
@@ -874,7 +927,7 @@ impl PressedKeys {
                     let mut r = self.0.remove(i);
                     self.0.retain(|o| o.0 != id);
                     r.0 = id;
-                    r.4 = false;
+                    r.4 = None;
                     self.0.push(r);
                 }
                 CtKeyEvent::new_with_kind_and_state(p.code, p.modifiers, k.kind, k.state)
@@ -908,6 +961,10 @@ struct KeyboardQueries {
     answered: bool,
     /// The last answer reported, so a repeated flags reply adds nothing.
     last: Option<KeyReleaseReporting>,
+    /// Counts the screen-switch windows opened (#312): incremented each time
+    /// [`in_switch_window`](Self::in_switch_window) turns true. Never reset (a window tag of an
+    /// earlier count must stay expired across [`forget_keyboard_replies`]).
+    window_gen: u64,
 }
 
 impl KeyboardQueries {
@@ -939,16 +996,45 @@ impl KeyboardQueries {
         self.outstanding > 0 && !self.answered
     }
 
+    /// `(tag, current)`: the generation a legacy text press decoded now is tagged with (`None`
+    /// outside a window), and the current generation, which stays current after the window's
+    /// flags reply until the next window opens.
+    fn window(&self) -> (Option<u64>, u64) {
+        (
+            self.in_switch_window().then_some(self.window_gen),
+            self.window_gen,
+        )
+    }
+
+    /// Starts a new window generation if a change just opened the window (`was`: it was open).
+    fn note_window(&mut self, was: bool) {
+        if !was && self.in_switch_window() {
+            self.window_gen += 1;
+        }
+    }
+
     fn device_attributes_reply(&mut self) -> Option<KeyReleaseReporting> {
         if self.outstanding == 0 {
             return None;
         }
+        let was = self.in_switch_window();
         self.outstanding -= 1;
-        if std::mem::take(&mut self.answered) {
+        let answered = std::mem::take(&mut self.answered);
+        // The next request, if any, now has its window (its flags reply is still to come).
+        self.note_window(was);
+        if answered {
             None
         } else {
             self.last = Some(KeyReleaseReporting::Unsupported);
             Some(KeyReleaseReporting::Unsupported)
+        }
+    }
+
+    /// Takes back the newest request: its write failed (#312 review).
+    fn retract(&mut self) {
+        self.outstanding = self.outstanding.saturating_sub(1);
+        if self.outstanding == 0 {
+            self.answered = false;
         }
     }
 }
@@ -957,6 +1043,7 @@ static KEYBOARD_QUERIES: Mutex<KeyboardQueries> = Mutex::new(KeyboardQueries {
     outstanding: 0,
     answered: false,
     last: None,
+    window_gen: 0,
 });
 
 fn lock_queries() -> std::sync::MutexGuard<'static, KeyboardQueries> {
@@ -968,7 +1055,17 @@ fn lock_queries() -> std::sync::MutexGuard<'static, KeyboardQueries> {
 /// Records that a key-release reporting request was written; its answers arrive as
 /// [`SourceEvent::KeyReleaseReporting`].
 pub(crate) fn expect_keyboard_reply() {
-    lock_queries().outstanding += 1;
+    let mut q = lock_queries();
+    let was = q.in_switch_window();
+    q.outstanding += 1;
+    q.note_window(was);
+}
+
+/// Takes back the request [`expect_keyboard_reply`] recorded, because writing it failed: no answer
+/// is coming, and an outstanding request would hold the screen-switch window open (#312). An
+/// answer that does arrive anyway is handled as one to somebody else's query.
+pub(crate) fn retract_keyboard_reply() {
+    lock_queries().retract();
 }
 
 /// Tests: the number of requests whose device attributes reply has not arrived.
@@ -979,7 +1076,13 @@ pub(crate) fn outstanding_keyboard_requests() -> u32 {
 
 /// Forgets outstanding requests: the session that wrote them restored the terminal.
 pub(crate) fn forget_keyboard_replies() {
-    *lock_queries() = KeyboardQueries::default();
+    let mut q = lock_queries();
+    // The window count is kept: tags of an earlier window stay expired.
+    let window_gen = q.window_gen;
+    *q = KeyboardQueries {
+        window_gen,
+        ..KeyboardQueries::default()
+    };
 }
 
 /// Polls the controlling terminal. See the module documentation. `stdin_is_terminal` is the
@@ -1976,7 +2079,8 @@ mod tests {
                 KeyId::Base(cp),
                 KeyEvent::new(K::Char(c), M::NONE),
                 0,
-                false,
+                None,
+                0,
             );
         }
         assert_eq!(p.0.len(), PressedKeys::CAP);
@@ -1985,14 +2089,16 @@ mod tests {
             KeyId::Base(999),
             KeyEvent::new_with_kind(K::Char('x'), M::NONE, Kind::Release),
             0,
-            false,
+            None,
+            0,
         );
         assert_eq!(newest.code, K::Char(char::from_u32(0x4e00 + 999).unwrap()));
         let oldest = p.name(
             KeyId::Base(0),
             KeyEvent::new_with_kind(K::Char('x'), M::NONE, Kind::Release),
             0,
-            false,
+            None,
+            0,
         );
         assert_eq!(oldest.code, K::Char('x'));
     }
