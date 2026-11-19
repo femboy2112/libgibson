@@ -214,6 +214,18 @@ ordinary Taffy constraints and toasts align to its bottom right. A screen with
 an overlay uses the environment height unless an explicit `.height(...)` sets
 its local extent.
 
+In inline mode this matters. The live region is as tall as the frame's content
+(capped at one row less than the terminal), and it grows by scrolling when the
+content gets taller. An auto-height `screen()` therefore jumps to the full inline
+height the first time an overlay is mounted, which pushes rows into scrollback.
+To open and close popups with no reflow and no scrollback jolt, give the inline
+screen a constant `.height(...)`. Popups then center and clip inside that box, and
+the live region keeps its height. Modal content clips at 90% of the host height and
+does not scroll, so size the host for the longest popup, page the content, or
+show a "too small" popup instead. Fullscreen mode always uses the whole terminal
+and is unaffected. Removing an overlay restores the covered cells exactly, because
+every frame is diffed against the previous one.
+
 Place transient notifications on a local, noninteractive host when the screen's
 bottom edge contains command controls. The showcase mounts its toast over the
 mission panel's secondary details, leaving the editor and Send action visible.
