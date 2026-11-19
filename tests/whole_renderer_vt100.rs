@@ -337,18 +337,24 @@ fn chunked_inline_insertion_preserves_sparse_viewport_cursor_and_history() {
 
 #[test]
 fn chunked_inline_insertion_requires_current_geometry_and_known_capability() {
-    for stale_geometry in [true, false] {
-        let mut h = Harness::new(40, 6);
-        h.renderer.set_inline_history_chunking(true);
-        h.render(&mut live_root());
-        if stale_geometry {
-            h.session.set_terminal_size(40, 7);
-        } else {
-            h.session
-                .set_capabilities(gibson::TerminalCapabilities::mono());
+    for (cols, rows, supported) in [(40, 7, true), (42, 6, true), (40, 6, false)] {
+        for lines in [&["1"][..], &["1", "2", "3", "4", "5"][..]] {
+            let mut h = Harness::new(40, 6);
+            h.renderer.set_inline_history_chunking(true);
+            h.render(&mut live_root());
+            h.session.set_terminal_size(cols, rows);
+            if !supported {
+                h.session
+                    .set_capabilities(gibson::TerminalCapabilities::mono());
+            }
+            let (_, strategy) = h.insert(lines);
+            assert_eq!(
+                strategy,
+                InsertStrategy::RepaintFallback,
+                "{cols}x{rows}, CSI L supported: {supported}, batch: {}",
+                lines.len()
+            );
         }
-        let (_, strategy) = h.insert(&["1", "2", "3", "4", "5"]);
-        assert_eq!(strategy, InsertStrategy::RepaintFallback);
     }
 }
 
