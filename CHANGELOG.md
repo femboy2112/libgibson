@@ -23,6 +23,14 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   neutral prefixes (`/cargo/...`, `/rustup`, `/libgibson`), and `scripts/release/bundle.sh`
   fails if any staged file still contains a home-directory path. Library code is unchanged.
 
+### Documentation
+- **Popups in inline mode need a fixed-height screen.** A `screen()` with an overlay and no
+  explicit `.height(...)` takes the environment height, so in inline mode the first popup grows
+  the live region to nearly the full terminal and scrolls rows into scrollback. The rustdoc on
+  `Element::overlay` and `docs/UI_LAYER.md` now give the recipe: a constant `.height(...)` on the
+  inline screen, so overlays open and close with no reflow. Modal content clips at 90% of the host
+  and does not scroll. No behavior change.
+
 ## [0.8.0] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 0"
 
 A minor release: the experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }` constructors (`Compiled<A>` is not `#[non_exhaustive]`), and the experimental Standard/Blades typed `on_press` behavior changes. It also adds `TerminalSession::try_terminal_size`, fixes #312 and ports the layout engine to taffy 0.15.
