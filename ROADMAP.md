@@ -74,7 +74,7 @@ Each 0.8.0 item, with the evidence that closes it or the recorded deferral that 
 - **LS-4 nice-to-haves (0.9 candidates, enumerated by the LS-4 consumer, 2026-11-19):** `ReclaimLiveRows` default evidence; a rows-at-risk-on-shrink field; a `finish_inline` helper; a wrap/measure helper and a keyed-visibility recipe on `geometry_paths`; a `Context` cursor accessor (F2 caret); an optional ambiguous-width policy.
 - **#294** is documented and steered to fullscreen (a terminal-side limit), not an upstream fix.
 - **#413 and #414** are documented by #424 and remain open for the LS-4 author review.
-- **#410** (flaky-suspect PTY test): @@T410@@
+- **#410** (flaky-suspect PTY test): deferred to 0.8.x; triage pending (the first window, 2026-11-19, was harness-invalid: every run failed while pre-building the example, before the #410 assertion, so it gave zero observations). A demo-PTY test flake, not library behavior; the re-run result goes on the issue.
 
 #### v0.7.3 completion status (authoritative, 2026-11-16)
 
