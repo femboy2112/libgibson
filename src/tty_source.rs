@@ -2558,6 +2558,116 @@ mod tests {
         assert!(!holds.is_held((K::Char('!'), M::NONE)));
     }
 
+    /// The terminal events of a decoded trace: the key-release reporting answers are dropped.
+    fn issue_312_terminal_events(events: Vec<SourceEvent>) -> Vec<CtEvent> {
+        events
+            .into_iter()
+            .filter_map(|e| match e {
+                SourceEvent::Terminal(e) => Some(e),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Decodes `bytes` with a key-release reporting request outstanding and unanswered when the
+    /// first byte is read (the pop/re-push window of a screen switch), as `switch_screen_on`
+    /// leaves the record, and returns the terminal events.
+    fn issue_312_decode_in_window(bytes: &'static [u8]) -> Vec<CtEvent> {
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        expect_keyboard_reply();
+        let got = decode_all(bytes, true);
+        forget_keyboard_replies();
+        issue_312_terminal_events(got)
+    }
+
+    #[test]
+    fn issue_312_window_tagged_shifted_symbol_release_pairs_with_its_press() {
+        // The legacy `!` is decoded while the request is outstanding and unanswered, so it was
+        // typed before the push took effect (the window). Its release arrives as kitty's base key
+        // `1`, and `!` is the only window-tagged text record: the release is its release.
+        let got = issue_312_decode_in_window(b"!\x1b[?15u\x1b[?62;c\x1b[57441;1:3u\x1b[49;1:3u");
+        assert_eq!(got.first(), Some(&kind(K::Char('!'), M::NONE, Kind::Press)));
+        assert_eq!(
+            got.last(),
+            Some(&kind(K::Char('!'), M::NONE, Kind::Release))
+        );
+        assert_eq!(still_held(&got), vec![]);
+    }
+
+    #[test]
+    fn issue_312_two_window_records_are_ambiguous_and_not_paired() {
+        // CONTROL (passes before and after the fix). Two window-tagged shifted symbols: a release
+        // of base key `1` cannot be told to belong to `!` rather than `@`, so it is not paired
+        // and keeps today's behaviour: delivered as `1`, both holds stay.
+        let got = issue_312_decode_in_window(b"!@\x1b[?15u\x1b[?62;c\x1b[57441;1:3u\x1b[49;1:3u");
+        assert_eq!(
+            got.last(),
+            Some(&kind(K::Char('1'), M::NONE, Kind::Release))
+        );
+        let held = still_held(&got);
+        assert_eq!(held.len(), 2, "{held:?}");
+        assert!(held.contains(&(K::Char('!'), M::NONE)));
+        assert!(held.contains(&(K::Char('@'), M::NONE)));
+    }
+
+    #[test]
+    fn issue_312_documented_misattribution_unrelated_release_ends_window_hold() {
+        // ACCEPTED TRADE-OFF (release coordinator, 2026-11-19). The pairing is a last resort and
+        // cannot see which key the release belongs to: a kitty release of a key with no record
+        // at all (`q`, never pressed in this trace) is taken for the one window-tagged `!`, which
+        // is delivered as released. An early release of `!` is accepted over a hold that never
+        // ends. Pinned so the behaviour is deliberate.
+        let got = issue_312_decode_in_window(b"!\x1b[?15u\x1b[?62;c\x1b[113;1:3u");
+        assert_eq!(
+            got.last(),
+            Some(&kind(K::Char('!'), M::NONE, Kind::Release))
+        );
+        assert_eq!(still_held(&got), vec![]);
+    }
+
+    #[test]
+    fn issue_312_an_exact_record_beats_a_window_tagged_one() {
+        // CONTROL (passes before and after the fix). A kitty press of `1` is an exact record of
+        // base key 49, so its release is its own; the window-tagged `!` is not consulted and
+        // stays held.
+        let got = issue_312_decode_in_window(b"!\x1b[?15u\x1b[?62;c\x1b[49;1u\x1b[49;1:3u");
+        assert_eq!(
+            got,
+            vec![
+                kind(K::Char('!'), M::NONE, Kind::Press),
+                kind(K::Char('1'), M::NONE, Kind::Press),
+                kind(K::Char('1'), M::NONE, Kind::Release),
+            ]
+        );
+        assert_eq!(still_held(&got), vec![(K::Char('!'), M::NONE)]);
+    }
+
+    #[test]
+    fn issue_312_without_key_naming_the_window_trace_is_untouched() {
+        // CONTROL (passes before and after the fix). With key naming off no press is recorded
+        // and the window is not computed: every key event is delivered as decoded, the release
+        // of `1` as `1`.
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        expect_keyboard_reply();
+        let got = decode_all(b"!\x1b[?15u\x1b[?62;c\x1b[57441;1:3u\x1b[49;1:3u", false);
+        forget_keyboard_replies();
+        assert_eq!(
+            got,
+            vec![
+                SourceEvent::Terminal(kind(K::Char('!'), M::NONE, Kind::Press)),
+                SourceEvent::KeyReleaseReporting(KeyReleaseReporting::Active),
+                SourceEvent::Terminal(kind(
+                    K::Modifier(ModifierKeyCode::LeftShift),
+                    M::SHIFT,
+                    Kind::Release
+                )),
+                SourceEvent::Terminal(kind(K::Char('1'), M::NONE, Kind::Release)),
+            ]
+        );
+    }
+
     #[test]
     fn kitty_272_active_needs_every_flag_pushed() {
         // LibGibson pushes 15. Without 8, Enter/Tab/Backspace/Esc release as their legacy byte (a
