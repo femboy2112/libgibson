@@ -159,6 +159,12 @@ impl<A> Element<A> {
         self
     }
     /// Mount a floating layer without changing the layout of the base content.
+    ///
+    /// A [`screen`] with an overlay and no explicit `.height(...)` takes the
+    /// environment height. In inline mode that grows the live region to nearly
+    /// the full terminal the first time a popup opens. Give an inline screen a
+    /// constant `.height(...)` so popups open and close with no reflow (see
+    /// `docs/UI_LAYER.md`).
     pub fn overlay(mut self, overlay: Self) -> Self {
         self.overlays.push(overlay);
         self
