@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-19): v0.8.0 "clear SIGFPE 0"
+## Current release (updated 2026-11-19): v0.8.0 "clear SIGFPE 0"; v0.8.1 "clear SIGFPE 1" (name PROPOSED) prepared
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -48,6 +48,30 @@ fallible `TerminalSession::try_terminal_size` (the LS-4 0.8.0 gate) and fixes #3
 unchanged (v1, 67 symbols). **Consumer gate:** MINERVA's consumer suite on the exact candidate
 `3e6d1ce` (the same tree as the merge) passed. Its tests were identical to the 0.7.3 baseline,
 with no API breaks for its consumer.
+
+**v0.8.1 "clear SIGFPE 1" (name PROPOSED; Leah picks) is prepared in source** (state 1), to be
+tagged on `main` on the release coordinator's go after the substituted consumer gate on the exact
+candidate. It is a patch: no library behavior change; the only `src/` change is rustdoc on
+`Element::overlay`. The native SDK binaries no longer embed build-host paths (#429), and the
+inline popup recipe is documented (#427) and pinned by a regression test (#431). The C ABI is
+unchanged (v1, 67 symbols). **Consumer gate:** substituted (see the status table below).
+
+#### v0.8.1 completion status (authoritative, 2026-11-19)
+
+Each 0.8.1 item, with the evidence that closes it or the recorded deferral that excludes it:
+
+| Item | Status | Evidence |
+|---|---|---|
+| #429 SDK host-path remap + bundle.sh gate | **Done** | Merged as `67e7ac6` (head `79af8f2`, CI 9/9 including Release preflight, which built the SDK on a hosted runner whose home is under `/home/` and passed the gate). The v0.8.0 assets were rebuilt with the same flags; 0 host-path hits. |
+| #427 inline popup height docs | **Done** (docs) | Merged as `399de8a` (head `e2d123a`). |
+| #431 inline popup reflow regression test | **Done** | Merged as `12e044b` (head `e06a5b4`). RED `64b76e9` failed on "opening the popup changed the live region height" (left 19, right 3); GREEN restores only the pin. |
+| v0.8.0 release record | **Done** (docs) | #430 merged as `fdf3e84`. |
+| Consumer gate | **SUBSTITUTED** (release coordinator ruling, 2026-11-19) | No MINERVA suite for a docs/test/asset-strings-only patch. The substitute, re-checked at the exact release candidate: (1) `git diff v0.8.0 <rc> -- src include bindings abi` contains only `///` doc lines (plus the Python package version); (2) hosted CI 9/9 including Release preflight; (3) the bundle.sh host-path gate passes. Rationale: compiled behavior is identical to v0.8.0, so a consumer suite would re-measure v0.8.0. |
+
+**Not in v0.8.1:**
+- **#410** is still deferred (triage r2 0/200 locally); it stays open.
+- **Re-uploading clean v0.7.x SDK assets** is an open owner decision and not part of this release.
+- Everything in the "Not in v0.8.0" list below carries over.
 
 #### v0.8.0 completion status (authoritative, 2026-11-19)
 

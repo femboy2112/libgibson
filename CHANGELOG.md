@@ -15,8 +15,16 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 1" (name PROPOSED; Leah picks)
+
+A patch release with no library behavior change. The only `src/` change is rustdoc on `Element::overlay`.
+- **What changed:** the native SDK binaries no longer embed build-host paths (#429). The inline popup recipe is documented (#427) and pinned by a regression test (#431).
+- **Unchanged:** `include/`, `bindings/` (except the Python package version) and `abi/`. `GIBSON_ABI_VERSION` stays 1 (67 symbols). MSRV stays 1.85.
+- **Platforms and distribution:** Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload. The Go module tag `bindings/go/v0.8.1` names the same commit as `v0.8.1`.
+
 ### Release process
-- **The native SDK no longer embeds build-host paths.** rustc records dependency source paths
+- **The native SDK no longer embeds build-host paths
+  ([#429](https://github.com/femboy2112/libgibson/pull/429)).** rustc records dependency source paths
   in panic locations, so the shipped `libgibson.so.1` and `libgibson.a` carried the build
   machine's `$CARGO_HOME/registry/src/...` paths (v0.7.x SDK archives included).
   `scripts/release/stage-sdk.sh` now remaps `$CARGO_HOME`, `$RUSTUP_HOME` and the checkout to
@@ -24,12 +32,20 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   fails if any staged file still contains a home-directory path. Library code is unchanged.
 
 ### Documentation
-- **Popups in inline mode need a fixed-height screen.** A `screen()` with an overlay and no
+- **Popups in inline mode need a fixed-height screen
+  ([#427](https://github.com/femboy2112/libgibson/pull/427)).** A `screen()` with an overlay and no
   explicit `.height(...)` takes the environment height, so in inline mode the first popup grows
   the live region to nearly the full terminal and scrolls rows into scrollback. The rustdoc on
   `Element::overlay` and `docs/UI_LAYER.md` now give the recipe: a constant `.height(...)` on the
   inline screen, so overlays open and close with no reflow. Modal content clips at 90% of the host
   and does not scroll. No behavior change.
+
+### Tests
+- **`tests/inline_overlay_height.rs` ([#431](https://github.com/femboy2112/libgibson/pull/431)).**
+  It pins that opening and closing a modal over an inline `screen().height(n)` leaves the live
+  region height and the scrollback unchanged and restores the cells exactly. It also characterizes
+  the auto-height footgun. Written RED first, on an un-pinned screen: it failed with "opening the
+  popup changed the live region height" (19 vs 3).
 
 ## [0.8.0] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 0"
 
