@@ -204,12 +204,18 @@ pub enum Event {
     /// when the terminal names it differently on the way up (shift let go first turns a released
     /// `W` into `w`), so a release matches its press by equality. A key that was already down
     /// when reporting began has no recorded press: its release is named as its first autorepeat
-    /// since then was delivered, or, with none, as the terminal reports it. Not covered: a
-    /// shifted symbol or a letter whose lowercase does not match its base key as a single Unicode
-    /// character, pressed just before the flags take effect (at enable, or as a screen switch
-    /// pushes them again) and let go without an autorepeat, is released as the terminal reports it
-    /// (for example `!` as `1`), so that release does not match its press
-    /// ([#312](https://github.com/femboy2112/libgibson/issues/312)). An autorepeat of a held key is
+    /// since then was delivered, or, with none, as the terminal reports it. A shifted symbol or a
+    /// letter whose lowercase does not match its base key as a single Unicode character, pressed
+    /// just before the flags take effect (at enable, or as a screen switch pushes them again) and
+    /// let go without an autorepeat, is released by the terminal under its base key (for example
+    /// `!` as `1`). When such a press was decoded while the request for the flags was still
+    /// unanswered, and it is the only one, a release that matches nothing else is named as that
+    /// press ([#312](https://github.com/femboy2112/libgibson/issues/312)). With two or more such
+    /// presses nothing is paired, and the release is delivered as the terminal reports it. A
+    /// release of an unrelated key that was never recorded can be taken for that one press, which
+    /// is then reported released early; that is accepted over a hold that never ends. Not
+    /// covered: such a key tapped and let go inside the window sends no release at all, and one
+    /// pressed outside it is delivered as the terminal reports it. An autorepeat of a held key is
     /// an [`Event::Key`], as on any terminal.
     KeyRelease(KeyEvent),
     /// The terminal's answer to a key-release reporting request, in input order: every event

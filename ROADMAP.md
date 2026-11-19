@@ -97,7 +97,7 @@ Each 0.7.3 item, with the evidence that closes it or the recorded deferral that 
 - **taffy 0.15 (#402, supersedes #197)** is not in 0.7.3 (release coordinator decision). It waits for its own consumer ACK.
 - **rtrb 0.4 (#195)** stays held: the audio/PCM path is frozen.
 - **`ui::App` on-demand loop (#396)** stays deferred.
-- **Carried, unchanged:** #312 (the v0.8.0 fix target), #15 (waits for upstream crossterm #1128), #292 (v0.9).
+- **Carried:** #312 (fix: window-tagged last-resort pairing, see CHANGELOG), #15 (waits for upstream crossterm #1128), #292 (v0.9).
 
 #### v0.7.2 completion status (authoritative, 2026-11-14)
 
@@ -118,7 +118,7 @@ Each 0.7.2 item, with the evidence that closes it or the recorded deferral that 
 - **Protected-region API and named RGBA layer stack** are dropped. The consumer needs neither (MINERVA E-AV gap list; release coordinator decision ASC-6).
 - **RGBA `set`, `pixels_mut`, `from_pixels`, `from_rgb` and `downscale_area`** stay EXPERIMENTAL because no consumer uses them (decision 0005).
 - **Carried from v0.7, unchanged:**
-  - #312 is the named v0.8.0 fix target.
+  - #312: fix: window-tagged last-resort pairing (see CHANGELOG); it was the named v0.8.0 fix target.
   - #15 waits for upstream crossterm #1128. It is re-checked at the next minor; this is a patch release.
   - #292 is deferred to v0.9.
 
@@ -267,7 +267,8 @@ Each v0.7 item, with the evidence that closes it or the recorded deferral that e
   section puts non-Linux qualification in v0.9, and 0.7 is declared Linux x86_64 only.
 - **#312**, a shifted key in the screen-switch window, is **deferred to v0.8.0 as a named fix
   target** (owner delegation, release coordinator decision of 2026-11-13). If 0.8.0 ships without
-  the fix, it needs a fresh explicit deferral.
+  the fix, it needs a fresh explicit deferral. Fix: window-tagged last-resort pairing (see
+  CHANGELOG, [Unreleased]).
 - **#15**, crossterm's own reader (upstream #1128), is **deferred until upstream fixes it**
   (owner delegation, release coordinator decision of 2026-11-13). It stays a documented,
   owner-accepted limitation. The upstream status is re-checked at every minor release, starting
@@ -276,7 +277,7 @@ Each v0.7 item, with the evidence that closes it or the recorded deferral that e
   (V0_7_QUALIFICATION G3). A standalone `Renderer` on an arbitrary writer is EXPLICITLY EXCLUDED
   in the lease contract.
 
-**v0.8.0 named fix targets:** #312 (see above).
+**v0.8.0 named fix targets:** #312 (fix: window-tagged last-resort pairing, see CHANGELOG).
 
 **v0.8 and later are not in 0.7.x.** That covers:
 - independent five-language clients with failure codes and lifecycle at parity;

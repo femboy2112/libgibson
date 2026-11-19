@@ -468,10 +468,15 @@ impl TtySource {
         for internal in self.parser.by_ref() {
             let event = match internal {
                 InternalEvent::Event(CtEvent::Key(k)) if track => {
-                    CtEvent::Key(self.pressed.name(KeyId::Code(k.code), k, epoch))
+                    // Only a legacy text press can have been typed before the flags took effect
+                    // (#312); the query record is read only for that, at this point of the stream.
+                    let window = k.kind == KeyEventKind::Press
+                        && matches!(k.code, CtKeyCode::Char(_))
+                        && lock_queries().in_switch_window();
+                    CtEvent::Key(self.pressed.name(KeyId::Code(k.code), k, epoch, window))
                 }
                 InternalEvent::KittyKey(k, base) if track => {
-                    CtEvent::Key(self.pressed.name(KeyId::Base(base), k, epoch))
+                    CtEvent::Key(self.pressed.name(KeyId::Base(base), k, epoch, false))
                 }
                 InternalEvent::Event(event) => event,
                 InternalEvent::KittyKey(k, _) => CtEvent::Key(k),
@@ -720,10 +725,14 @@ enum KeyId {
 /// keypad keys (57399-57454), media keys and modifier keys. Codes above it are ordinary characters.
 const KITTY_PRIVATE_USE_KEYS: std::ops::RangeInclusive<u32> = 57344..=63743;
 
-/// Each record: the key, its press, a sequence number (recording order) and the key-release epoch
-/// it was recorded in.
+/// Each record: the key, its press, a sequence number (recording order), the key-release epoch it
+/// was recorded in, and whether its press was a legacy text key decoded in the screen-switch window
+/// (#312): while a key-release reporting request was outstanding and its flags reply had not been
+/// decoded, so by stream order the byte was typed before the pushed flags took effect.
+type Down = (KeyId, CtKeyEvent, u64, u64, bool);
+
 #[derive(Debug, Default)]
-struct PressedKeys(Vec<(KeyId, CtKeyEvent, u64, u64)>, u64);
+struct PressedKeys(Vec<Down>, u64);
 
 impl PressedKeys {
     /// More keys than any keyboard holds at once; the oldest is forgotten beyond it.
@@ -734,7 +743,7 @@ impl PressedKeys {
     }
 
     /// The newest record (by sequence) that `want` accepts.
-    fn newest(&self, want: impl Fn(&(KeyId, CtKeyEvent, u64, u64)) -> bool) -> Option<usize> {
+    fn newest(&self, want: impl Fn(&Down) -> bool) -> Option<usize> {
         self.0
             .iter()
             .enumerate()
@@ -755,18 +764,24 @@ impl PressedKeys {
     /// top-row `1`, so a legacy record of that code belongs to a different physical key (#275
     /// review 4).
     ///
-    /// A legacy-recorded shifted *symbol* has no match here (#312): a `!` typed while the terminal
-    /// is briefly in legacy mode — the pop/re-push window of a screen switch — is released by kitty
-    /// under its base key `1`, and shift does not lowercase a symbol, so `!` does not fold to `1`.
-    /// The release is delivered as `1`, so a held-key model keeps `!` held until a focus loss, the
-    /// key's next kitty press/release (which moves the record), or reporting is disabled. It is
-    /// deliberately NOT renamed: base `1` cannot be mapped back to `!` without assuming a keyboard
-    /// layout, and pairing the unmatched release with the newest orphan would mis-identify an
-    /// unrelated key's release. A legacy `W` pairs when the terminal reports `w` as its base;
-    /// Unicode lowercase may expand to multiple characters, so it cannot match a single base key
-    /// in every layout.
-    /// None of those recovery events is guaranteed: the hold can persist indefinitely while
-    /// reporting stays active. The `issue_312_*` tests pin both the failure and conditional recovery.
+    /// A legacy-recorded shifted *symbol* matches none of those (#312): a `!` typed while the
+    /// terminal is briefly in legacy mode — the pop/re-push window of a screen switch — is released
+    /// by kitty under its base key `1`, and shift does not lowercase a symbol, so `!` does not fold
+    /// to `1`. A legacy `W` pairs when the terminal reports `w` as its base; Unicode lowercase may
+    /// expand to multiple characters, so it cannot match a single base key in every layout.
+    ///
+    /// So, as a last resort only, when none of the above matched: a release or repeat of a text key
+    /// under its kitty base key pairs with the one record whose press was a legacy text key decoded
+    /// in the switch window (`Down.4`), if exactly one such record exists. Base `1` cannot be mapped
+    /// back to `!` without assuming a keyboard layout, so this is a provenance rule, not a layout
+    /// one: the window record is the only press that kitty could be releasing unnamed. It is NOT
+    /// used with two or more window records (it cannot tell which one the release is), nor for a
+    /// private-use key, nor when anything else matched. The trade-off, accepted over a hold that
+    /// never ends (release coordinator, 2026-11-19): a kitty release of an unrelated key with no
+    /// record at all is taken for that one window record, which is delivered as released early.
+    /// Still unrecovered: a tap pressed and released inside the window sends no release byte, so
+    /// its record stays until a focus loss, the key's next kitty press/release or reporting is
+    /// disabled. The `issue_312_*` tests pin all of this.
     fn find_down(&self, id: KeyId, code: CtKeyCode) -> Option<usize> {
         let legacy = KeyId::Code(code);
         let exact = self.newest(|r| r.0 == id);
@@ -777,7 +792,7 @@ impl PressedKeys {
             KeyId::Base(b) => char::from_u32(b),
             KeyId::Code(_) => None,
         };
-        let folds_to_base = |r: &(KeyId, CtKeyEvent, u64, u64)| match (r.0, base) {
+        let folds_to_base = |r: &Down| match (r.0, base) {
             (KeyId::Code(CtKeyCode::Char(c)), Some(b)) => c.to_lowercase().eq([b]),
             _ => false,
         };
@@ -788,10 +803,26 @@ impl PressedKeys {
             let epoch = self.0[e].3;
             self.newest(|r| r.0 == legacy && r.3 > epoch)
         });
-        [exact, text, superseding]
+        let found = [exact, text, superseding]
             .into_iter()
             .flatten()
-            .max_by_key(|&n| self.0[n].2)
+            .max_by_key(|&n| self.0[n].2);
+        if found.is_some() {
+            return found;
+        }
+        // Last resort (#312), reached only when nothing above matched. The release of a text key
+        // under its kitty base key, with exactly one record of a legacy text press from the
+        // switch window: that press is the one kitty is releasing (a `!` typed before the push,
+        // released as `1`). Two or more such records are ambiguous, so none is paired.
+        if !matches!(id, KeyId::Base(_)) || !matches!(code, CtKeyCode::Char(_)) {
+            return None;
+        }
+        let in_window = |r: &Down| r.4 && matches!(r.0, KeyId::Code(CtKeyCode::Char(_)));
+        let mut window = (0..self.0.len()).filter(|&n| in_window(&self.0[n]));
+        match (window.next(), window.next()) {
+            (Some(only), None) => Some(only),
+            _ => None,
+        }
     }
 
     /// `k` as the event to deliver: a press is recorded (replacing an earlier record of the same
@@ -808,7 +839,12 @@ impl PressedKeys {
     /// behind by a key that went up while reporting was off loses to the key's newer press. A
     /// non-text key never matches another key's record: keypad Left (kitty 57417) and the arrow
     /// Left decode to the same code.
-    fn name(&mut self, id: KeyId, k: CtKeyEvent, epoch: u64) -> CtKeyEvent {
+    ///
+    /// `window`: the press was a legacy text key decoded in the screen-switch window (#312); it is
+    /// recorded on a press only. A repeat that migrates a legacy record to its own kitty identity
+    /// clears it (the record then has an exact identity and needs no last-resort pairing), and a
+    /// repeat with no record is never window-tagged.
+    fn name(&mut self, id: KeyId, k: CtKeyEvent, epoch: u64, window: bool) -> CtKeyEvent {
         self.1 += 1;
         let seq = self.1;
         let found = match k.kind {
@@ -817,7 +853,7 @@ impl PressedKeys {
         };
         match (k.kind, found) {
             (KeyEventKind::Press, Some(i)) => {
-                self.0[i] = (id, k, seq, epoch);
+                self.0[i] = (id, k, seq, epoch, window);
                 k
             }
             (KeyEventKind::Press | KeyEventKind::Repeat, None) => {
@@ -826,7 +862,7 @@ impl PressedKeys {
                         self.0.remove(oldest);
                     }
                 }
-                self.0.push((id, k, seq, epoch));
+                self.0.push((id, k, seq, epoch, window));
                 k
             }
             (KeyEventKind::Repeat, Some(i)) => {
@@ -836,12 +872,13 @@ impl PressedKeys {
                     let mut r = self.0.remove(i);
                     self.0.retain(|o| o.0 != id);
                     r.0 = id;
+                    r.4 = false;
                     self.0.push(r);
                 }
                 CtKeyEvent::new_with_kind_and_state(p.code, p.modifiers, k.kind, k.state)
             }
             (KeyEventKind::Release, Some(i)) => {
-                let (_, p, _, _) = self.0.remove(i);
+                let (_, p, ..) = self.0.remove(i);
                 CtKeyEvent::new_with_kind_and_state(p.code, p.modifiers, k.kind, k.state)
             }
             (KeyEventKind::Release, None) => k,
@@ -892,6 +929,12 @@ impl KeyboardQueries {
         }
         self.last = Some(r);
         Some(r)
+    }
+
+    /// Whether bytes decoded now were typed before the flags of the oldest outstanding request took
+    /// effect: it is written but its flags reply has not been decoded (#312).
+    fn in_switch_window(&self) -> bool {
+        self.outstanding > 0 && !self.answered
     }
 
     fn device_attributes_reply(&mut self) -> Option<KeyReleaseReporting> {
@@ -1921,7 +1964,12 @@ mod tests {
         let mut p = PressedKeys::default();
         for cp in 0..1000u32 {
             let c = char::from_u32(0x4e00 + cp).unwrap();
-            p.name(KeyId::Base(cp), KeyEvent::new(K::Char(c), M::NONE), 0);
+            p.name(
+                KeyId::Base(cp),
+                KeyEvent::new(K::Char(c), M::NONE),
+                0,
+                false,
+            );
         }
         assert_eq!(p.0.len(), PressedKeys::CAP);
         // The newest is still named; the oldest was forgotten and is released as reported.
@@ -1929,12 +1977,14 @@ mod tests {
             KeyId::Base(999),
             KeyEvent::new_with_kind(K::Char('x'), M::NONE, Kind::Release),
             0,
+            false,
         );
         assert_eq!(newest.code, K::Char(char::from_u32(0x4e00 + 999).unwrap()));
         let oldest = p.name(
             KeyId::Base(0),
             KeyEvent::new_with_kind(K::Char('x'), M::NONE, Kind::Release),
             0,
+            false,
         );
         assert_eq!(oldest.code, K::Char('x'));
     }
@@ -2408,6 +2458,9 @@ mod tests {
 
     #[test]
     fn issue_312_origin_is_not_recoverable_from_the_delivered_observations() {
+        // No request is outstanding: outside the provable window (see `QUERIES_LOCK`).
+        let _serial = queries_lock();
+        forget_keyboard_replies();
         // Legacy US-style shift+1 was released; in the other trace a genuinely exact `!`
         // remains down while the unrelated base key `1` was released. A layout may have `!`
         // as its unshifted key, so this exact key can have base identity 33, independent of 49.
@@ -2450,8 +2503,13 @@ mod tests {
 
     #[test]
     fn issue_312_a_shifted_symbol_from_the_legacy_switch_window_releases_under_its_base_key() {
-        // DOCUMENTED LIMITATION (#312). A shifted symbol pressed while the terminal is briefly in
-        // legacy mode — the pop/re-push window of a screen switch — arrives as the bare byte `!`,
+        // No request is outstanding: outside the provable window (see `QUERIES_LOCK`).
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        // DOCUMENTED LIMITATION (#312), outside the provable window: no key-release request is
+        // outstanding, so the press cannot be shown to precede the push (the paired case is
+        // `issue_312_window_tagged_shifted_symbol_release_pairs_with_its_press`). A shifted symbol
+        // pressed while the terminal is briefly in legacy mode arrives as the bare byte `!`,
         // which carries no physical-key identity. With no intervening kitty autorepeat to move the
         // record to the kitty identity (contrast the test above), kitty reports its release under
         // the base key `1`. Shift does not lowercase a symbol, so `!` does not fold to `1`, nothing
@@ -2470,8 +2528,11 @@ mod tests {
 
     #[test]
     fn issue_312_unicode_lowercase_expansion_does_not_match_a_single_base_key() {
-        // A decoder model of a Turkish-layout `İ` press in legacy mode followed by an `i` release
-        // in the Kitty protocol. This is not a real terminal or keyboard-layout test. Unicode's
+        // No request is outstanding: outside the provable window (see `QUERIES_LOCK`).
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        // A decoder model of a Turkish-layout `İ` press in legacy mode (outside the provable
+        // window: no request outstanding) followed by an `i` release in the Kitty protocol. This is not a real terminal or keyboard-layout test. Unicode's
         // default lowercase for U+0130 has two code points, `i` + COMBINING DOT ABOVE, so the
         // source's single-base-key fallback cannot match it to `i`. No repeat or recovery follows.
         let got = terminal(decode_all("İ\x1b[105;1:3u".as_bytes(), true));
@@ -2488,8 +2549,11 @@ mod tests {
 
     #[test]
     fn issue_312_no_further_events_leave_the_legacy_hold_stuck() {
-        // Model a legacy shifted symbol from the screen-switch epoch using the parser and hold
-        // tracker directly; this does not exercise a terminal or an actual screen transition.
+        // No request is outstanding: outside the provable window (see `QUERIES_LOCK`).
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        // Model a legacy shifted symbol from outside the provable window (no request outstanding)
+        // using the parser and hold tracker directly; this does not exercise a terminal or an actual screen transition.
         // Reporting is active for the hold tracker and the modeled release uses the base key. There
         // is no later repeat, focus loss, mode disable or unrelated key. A genuine Kitty press/release
         // is the control: it must not remain held.

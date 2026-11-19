@@ -986,7 +986,8 @@ impl TerminalSession {
     /// [`HoldTracker::set_releases_reported(false)`](crate::hold::HoldTracker::set_releases_reported)
     /// itself. A release names its key as the press did for the 32 most recent keys still down,
     /// except a shifted symbol pressed just before the flags take effect and let go without an
-    /// autorepeat (`!` is released as `1`;
+    /// autorepeat, which is named as its press only when it is the single such press decoded
+    /// before the flags reply (otherwise `!` is released as `1`;
     /// [#312](https://github.com/femboy2112/libgibson/issues/312)).
     /// Idempotent; a no-op off Unix and on a non-TTY or headless session. On a session that has
     /// been restored (it no longer holds the terminal), enabling returns `NotConnected` and

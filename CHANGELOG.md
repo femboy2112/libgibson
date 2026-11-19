@@ -15,6 +15,19 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Fixed
+- **A shifted symbol pressed in the screen-switch window is released under its own name
+  ([#312](https://github.com/femboy2112/libgibson/issues/312)).** A press decoded while a
+  key-release reporting request was written but its flags reply had not been decoded (by stream
+  order, typed before the pushed flags took effect) is tagged as a window press. When kitty then
+  releases a text key under its base key and nothing else matches (a `!` released as `1`), a
+  release pairs with the window press if exactly one exists, and is delivered as that press. With two
+  or more window presses nothing is paired (today's behavior). An unrelated, never-recorded key's
+  release can be taken for the single window press, which is then delivered as released early: an
+  accepted trade-off. Key naming off is unchanged. Rust-only, no public API or C ABI change.
+  A key tapped and released inside the window still sends no release byte; see the known limitation
+  below.
+
 ### Added (Rust-only, opt-in)
 - `Context::set_inline_resize_bottom_reservation(bool)` reserves the spare physical
   terminal row on normal full-height inline reanchors without reducing the logical
@@ -573,6 +586,18 @@ tag. `GIBSON_ABI_VERSION` stays 1 (67 symbols); MSRV stays 1.85. Everything belo
   ([`docs/V08_PARITY_SLICE.md`](docs/V08_PARITY_SLICE.md) F6)
 
 ### Known limitation — a shifted key in the screen-switch window ([#312](https://github.com/femboy2112/libgibson/issues/312))
+- **Reversed in part by the release coordinator's ruling of 2026-11-19 (GOD): an indefinite hold is a
+  worse failure than an early release.** The rationale below is kept as history. Now, a legacy press
+  decoded in the window (a key-release request outstanding, its flags reply not yet decoded) is
+  tagged, and as a last resort, when exact, text-key and superseding matches all fail, a kitty
+  release of a text key under its base key is paired with the one tagged press (`!` released as `1`
+  is delivered as `!`). With 2+ tagged presses nothing is paired (ambiguous). The pinned misattribution:
+  a release of an unrelated key that has no record ends the single tagged hold early
+  (`issue_312_documented_misattribution_unrelated_release_ends_window_hold`). **Remaining known
+  limitation:** a key tapped and released *inside* the window sends no release byte at all (the
+  terminal was still in legacy mode), so there is nothing to pair and its hold lasts until a focus
+  loss, the key's next kitty press/release, or reporting is disabled. A press outside the provable
+  window (no request outstanding) is unchanged.
 - **A shifted *symbol* (e.g. `!`) pressed during the brief legacy-mode window of a screen switch is
   delivered correctly as a press, but kitty reports its release under the base key (`1`); shift does
   not lowercase a symbol, so the release cannot be matched to the press layout-agnostically and is
