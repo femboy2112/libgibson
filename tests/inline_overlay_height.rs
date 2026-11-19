@@ -108,9 +108,7 @@ fn assert_popup_is_reflow_free(height: Option<u16>) {
 
 #[test]
 fn popup_over_a_pinned_inline_screen_does_not_reflow_and_restores_exactly() {
-    // RED: deliberately un-pinned, to prove the test discriminates.
-    let _ = PINNED_H;
-    assert_popup_is_reflow_free(None);
+    assert_popup_is_reflow_free(Some(PINNED_H));
 }
 
 /// Characterization of the documented footgun (compile.rs: a `screen()` with an overlay and no
