@@ -3,6 +3,23 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
+### PHOSPHOR — perception-aware terminal fidelity (research; not built)
+
+**New design/handoff, 2026-11-19:** [PHOSPHOR RFC](docs/PHOSPHOR_RFC.md) and
+[agent execution handoff](docs/PHOSPHOR_AGENT_HANDOFF.md). This is an experimental
+proposal to retain high-resolution source detail through Stage, use font-calibrated
+**static** glyph/color fitting, and measure human-visible identity/contour fidelity
+before optional CRT-style effects or strictly gated temporal refinement. It builds
+on the implemented [temporal display research](docs/TEMPORAL_DISPLAY_PROCESSOR.md)
+and the **unimplemented** [Kitty images design](docs/KITTY_IMAGES_DESIGN.md);
+it does not duplicate those systems or alter any 0.7.x release contract.
+
+No implementation, physical perceptual measurements, runtime default change, ABI
+change, merged consumer integration or release is claimed by these documents.
+Small independent research branches and exact evidence gates precede promotion.
+
+
+
 ## Current release (updated 2026-11-16): v0.7.3 "clear SIGBUS 3"
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
