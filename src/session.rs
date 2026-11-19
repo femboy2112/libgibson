@@ -1297,11 +1297,63 @@ impl TerminalSession {
             (80, 24)
         }
     }
+
+    /// RED stub: keeps today's fail-open behavior until the fix commit.
+    pub fn try_terminal_size(&self) -> io::Result<(u16, u16)> {
+        // RED stub
+        Ok(self.terminal_size())
+    }
 }
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {
         let _ = self.restore();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod try_terminal_size_tests {
+    //! `try_terminal_size` must surface a failed size read instead of the 80x24 fallback.
+    //! Sessions here come from `headless` (no lease, `owns_lease == false`, so `restore`/`Drop`
+    //! return early and never touch the real terminal) with private fields adjusted. No
+    //! process-global state is read or written.
+    use super::*;
+
+    /// A non-headless session whose captured output is `/dev/null`, so `TIOCGWINSZ` fails.
+    fn session_with_failing_endpoint() -> TerminalSession {
+        let file = std::fs::File::open("/dev/null").expect("open /dev/null");
+        let mut s = TerminalSession::headless(80, 24);
+        s.headless = false;
+        s.is_tty = true;
+        s.output_endpoint = Some(Arc::new(SessionEndpoint { file }));
+        s
+    }
+
+    #[test]
+    fn a_failed_endpoint_size_read_is_an_error() {
+        assert!(session_with_failing_endpoint().try_terminal_size().is_err());
+    }
+
+    #[test]
+    fn terminal_size_keeps_the_80x24_fallback_on_the_same_failure() {
+        assert_eq!(session_with_failing_endpoint().terminal_size(), (80, 24));
+    }
+
+    #[test]
+    fn a_non_terminal_session_is_an_error_not_80x24() {
+        let mut s = TerminalSession::headless(80, 24);
+        s.headless = false;
+        s.is_tty = false;
+        s.output_endpoint = None;
+        assert!(s.try_terminal_size().is_err());
+    }
+
+    #[test]
+    fn headless_size_is_returned_as_is() {
+        let mut s = TerminalSession::headless(100, 40);
+        assert_eq!(s.try_terminal_size().unwrap(), (100, 40));
+        s.set_terminal_size(33, 7);
+        assert_eq!(s.try_terminal_size().unwrap(), (33, 7));
     }
 }
 
