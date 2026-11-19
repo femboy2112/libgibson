@@ -16,6 +16,15 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 ## [Unreleased]
 
 ### Fixed
+- **A key-release reporting request whose write or flush failed is no longer left outstanding.**
+  The request was recorded as awaiting its terminal answer before it was written, and a write or
+  flush error on the initial enable or on the re-push after a screen switch returned without taking
+  it back, so the source kept waiting for an answer that was not coming (and, with the #312 fix,
+  would have held the screen-switch window open, tagging every later legacy press). It is now
+  retracted on any write or flush error; an answer that arrives anyway is handled as a stray reply.
+  Found in review of the #312 fix; the test globals reset had been hiding it
+  (`repush_failure_does_not_leak_an_outstanding_keyboard_request`,
+  `a_failed_request_flush_does_not_leak_an_outstanding_keyboard_request`).
 - **A shifted symbol pressed in the screen-switch window is released under its own name
   ([#312](https://github.com/femboy2112/libgibson/issues/312)).** A press decoded while a
   key-release reporting request was written but its flags reply had not been decoded (by stream
@@ -28,8 +37,7 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   The tag expires: it is eligible only in its own window generation (each new window opens a new
   one) and in the key-release epoch it was recorded in, and focus loss clears it, so a stale tag
   from an earlier window, epoch or focus no longer pairs with, or blocks the pairing of, a later
-  release. A key-release request whose write failed is no longer left outstanding (it held the
-  window open until the next restore). A key tapped and released inside the window still sends no
+  release. A key tapped and released inside the window still sends no
   release byte; see the known limitation below.
 
 ### Added (Rust-only, opt-in)
