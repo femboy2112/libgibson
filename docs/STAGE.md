@@ -243,6 +243,8 @@ do not clear physical resize/pointer, private-art appearance, performance or the
 independent fresh-author gate. Semantic panes reserve their new room immediately;
 only graphical crop rectangles animate.
 
+### Screen padding versus the producer allocation
+
 Budget producer-root padding explicitly. This fixture mounts the producer with
 `map_actions(presented.element, Host::Inner).padding(0)`, leaving height automatic.
 Blades already budgets its raster body and footer against its local environment.
@@ -251,3 +253,7 @@ global UiEnvironment: the named baseline test records a 16-row body becoming a
 20-row Screen under the spacious 24-row host, clipping the footer. The paired
 zero-padding mount fits the declared allocation. This is host composition using
 existing builders; a wrapper height alone does not remove inner Screen padding.
+The pinned evidence is the test
+`blades_mount_records_inherited_padding_overflow_and_explicit_zero_padding`.
+An author mounting a producer built for a local area smaller than the host
+should clear its root padding as above, or budget for the host skin's padding.
