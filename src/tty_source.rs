@@ -2967,6 +2967,97 @@ mod tests {
     }
 
     #[test]
+    fn issue_312_overlapped_requests_are_one_window_generation() {
+        // FAILS on b9308e21. Two requests are written before any reply (overlapped), so the `!`
+        // typed before the first flags reply is tagged with the window's generation. The first
+        // device attributes reply then reopens the window for request 2, and on b9308e21 that
+        // bumped the generation, so the `!` tag was expired when kitty's base-`1` release came and
+        // nothing paired: `!` stayed held. Overlapping requests are ONE generation.
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        expect_keyboard_reply();
+        expect_keyboard_reply();
+        let got = issue_312_terminal_events(decode_all(
+            b"!\x1b[?15u\x1b[?62;c\x1b[?15u\x1b[?62;c\x1b[57441;1:3u\x1b[49;1:3u",
+            true,
+        ));
+        forget_keyboard_replies();
+        assert_eq!(
+            got.last(),
+            Some(&kind(K::Char('!'), M::NONE, Kind::Release)),
+            "{got:?}"
+        );
+        assert_eq!(still_held(&got), vec![]);
+    }
+
+    #[test]
+    fn issue_312_a_non_overlapped_second_window_still_expires_the_tag() {
+        // CONTROL (passes before and after the fix). Keeps the sponge bound: a `!` tagged in one
+        // window is not paired by a release in a later, non-overlapped window (the first request
+        // is fully answered, outstanding is back at 0, the second starts a new generation). This
+        // is the documented residual: a `!` held across a later non-overlapped switch expires and
+        // stays held (today's stuck behavior).
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            expect_keyboard_reply();
+            write_all(&master, b"!");
+            write_all(&master, ISSUE_312_REPLIES);
+            let mut out = issue_312_drain(s);
+            expect_keyboard_reply();
+            write_all(&master, ISSUE_312_REPLIES);
+            write_all(&master, b"\x1b[57441;1:3u\x1b[49;1:3u");
+            out.extend(issue_312_drain(s));
+            drop(master);
+            out
+        });
+        forget_keyboard_replies();
+        assert_eq!(
+            got.last(),
+            Some(&kind(K::Char('1'), M::NONE, Kind::Release)),
+            "{got:?}"
+        );
+        assert_eq!(still_held(&got), vec![(K::Char('!'), M::NONE)]);
+    }
+
+    #[test]
+    fn issue_312_window_generation_survives_forget_keyboard_replies() {
+        // CONTROL on correct code; kills the mutation "forget_keyboard_replies resets window_gen
+        // to 0". `!` is tagged in the window opened after the first forget (generation g). A
+        // second forget and a new window follow. Correct code: the new window is g+1, the tag is
+        // expired, and the base-`1` release is `1`'s (`!` stays held). Mutant: the second forget
+        // resets the count, the new request starts generation 1 again, equal to the tag's
+        // (the first forget reset it too), so the release wrongly pairs and is delivered as `!`.
+        // One TtySource decodes everything, so the `!` record persists across the forget.
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            expect_keyboard_reply();
+            write_all(&master, b"!");
+            write_all(&master, ISSUE_312_REPLIES);
+            let mut out = issue_312_drain(s);
+            forget_keyboard_replies();
+            expect_keyboard_reply();
+            write_all(&master, ISSUE_312_REPLIES);
+            write_all(&master, b"\x1b[57441;1:3u\x1b[49;1:3u");
+            out.extend(issue_312_drain(s));
+            drop(master);
+            out
+        });
+        forget_keyboard_replies();
+        assert_eq!(
+            got.last(),
+            Some(&kind(K::Char('1'), M::NONE, Kind::Release)),
+            "{got:?}"
+        );
+        assert_eq!(still_held(&got), vec![(K::Char('!'), M::NONE)]);
+    }
+
+    #[test]
     fn issue_312_a_focus_loss_demotes_the_window_tag() {
         // FAILS on the pre-repair head. A `!` typed in the window, then the terminal reports
         // focus loss (`CSI O`), then kitty's base-`1` release. Focus loss ends every window tag,
