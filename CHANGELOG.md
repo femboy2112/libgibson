@@ -20,8 +20,8 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   ([#312](https://github.com/femboy2112/libgibson/issues/312)).** A press decoded while a
   key-release reporting request was written but its flags reply had not been decoded (by stream
   order, typed before the pushed flags took effect) is tagged as a window press. When kitty then
-  releases a text key under its base key and nothing else matches (a `!` released as `1`), a
-  release pairs with the window press if exactly one exists, and is delivered as that press. With two
+  releases a text key under its base key and nothing else matches (a `!` released as `1`), the
+  release (never a repeat) pairs with the window press if exactly one exists, and is delivered as that press. With two
   or more window presses nothing is paired (today's behavior). An unrelated, never-recorded key's
   release can be taken for the single window press, which is then delivered as released early: an
   accepted trade-off. Key naming off is unchanged. Rust-only, no public API or C ABI change.
@@ -591,7 +591,7 @@ tag. `GIBSON_ABI_VERSION` stays 1 (67 symbols); MSRV stays 1.85. Everything belo
   decoded in the window (a key-release request outstanding, its flags reply not yet decoded) is
   tagged, and as a last resort, when exact, text-key and superseding matches all fail, a kitty
   release of a text key under its base key is paired with the one tagged press (`!` released as `1`
-  is delivered as `!`). With 2+ tagged presses nothing is paired (ambiguous). The pinned misattribution:
+  is delivered as `!`). A repeat is never paired this way. With 2+ tagged presses nothing is paired (ambiguous). The pinned misattribution:
   a release of an unrelated key that has no record ends the single tagged hold early
   (`issue_312_documented_misattribution_unrelated_release_ends_window_hold`). **Remaining known
   limitation:** a key tapped and released *inside* the window sends no release byte at all (the

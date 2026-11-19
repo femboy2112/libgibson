@@ -31,7 +31,8 @@ evidence or a recorded deferral). Not scheduled.
 | #418 | `68e5302` | Offer chunked inline history insertion without repainting the viewport; fixes #417 (opt-in, Rust-only) |
 
 **Named fix target:** #312 (a shifted symbol in the screen-switch window is released as the base
-key). A fix attempt is planned for 0.8.0.
+key). Fix: window-tagged last-resort pairing of a release (see CHANGELOG `[Unreleased]`); a tap
+pressed and released inside the window remains a recorded known limitation.
 
 **Decision point:** `InlineResizePolicy::ReclaimLiveRows` as the default, only if kitty and VTE are
 verified to keep the cursor line on a shrink within the 0.8.0 window. Otherwise an explicit recorded
@@ -97,7 +98,7 @@ Each 0.7.3 item, with the evidence that closes it or the recorded deferral that 
 - **taffy 0.15 (#402, supersedes #197)** is not in 0.7.3 (release coordinator decision). It waits for its own consumer ACK.
 - **rtrb 0.4 (#195)** stays held: the audio/PCM path is frozen.
 - **`ui::App` on-demand loop (#396)** stays deferred.
-- **Carried:** #312 (fix: window-tagged last-resort pairing, see CHANGELOG), #15 (waits for upstream crossterm #1128), #292 (v0.9).
+- **Carried, unchanged:** #312 (the v0.8.0 fix target), #15 (waits for upstream crossterm #1128), #292 (v0.9).
 
 #### v0.7.2 completion status (authoritative, 2026-11-14)
 
@@ -118,7 +119,7 @@ Each 0.7.2 item, with the evidence that closes it or the recorded deferral that 
 - **Protected-region API and named RGBA layer stack** are dropped. The consumer needs neither (MINERVA E-AV gap list; release coordinator decision ASC-6).
 - **RGBA `set`, `pixels_mut`, `from_pixels`, `from_rgb` and `downscale_area`** stay EXPERIMENTAL because no consumer uses them (decision 0005).
 - **Carried from v0.7, unchanged:**
-  - #312: fix: window-tagged last-resort pairing (see CHANGELOG); it was the named v0.8.0 fix target.
+  - #312 is the named v0.8.0 fix target.
   - #15 waits for upstream crossterm #1128. It is re-checked at the next minor; this is a patch release.
   - #292 is deferred to v0.9.
 
