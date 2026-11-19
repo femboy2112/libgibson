@@ -798,7 +798,7 @@ impl PressedKeys {
     /// text key under its kitty base key pairs with the one record whose press was a legacy text key decoded
     /// in the switch window (`Down.4`), if exactly one such record is eligible. A record is eligible
     /// only in its own window generation (`current`: the generation of the latest window, which
-    /// stays current after its flags reply until the next window opens) and in its own key-release
+    /// stays current after its flags reply until the next non-overlapped window opens) and in its own key-release
     /// epoch (`epoch`); a tag of an earlier window or epoch is neither paired nor counted. Base `1`
     /// cannot be mapped back to `!` without assuming a keyboard layout, so this is a provenance
     /// rule, not a layout one: the window record is the only press that kitty could be releasing
@@ -811,7 +811,7 @@ impl PressedKeys {
     /// Residual: a tap pressed and released inside the window sends no release byte, so its record
     /// stays. Within its generation it is a ghost tag that blocks the pairing of the real window
     /// press (two eligible records: that key stays held, today's behavior) or, if it is the only
-    /// one, takes one unrelated record-less release. It expires when the next window opens, on a
+    /// one, takes one unrelated record-less release. It expires when the next non-overlapped window opens, on a
     /// focus loss or on a key-release epoch change; otherwise the hold lasts until the key's next
     /// kitty press/release. The `issue_312_*` tests pin all of this.
     fn find_down(
@@ -961,9 +961,10 @@ struct KeyboardQueries {
     answered: bool,
     /// The last answer reported, so a repeated flags reply adds nothing.
     last: Option<KeyReleaseReporting>,
-    /// Counts the screen-switch windows opened (#312): incremented each time
-    /// [`in_switch_window`](Self::in_switch_window) turns true. Never reset (a window tag of an
-    /// earlier count must stay expired across [`forget_keyboard_replies`]).
+    /// Counts the screen-switch window generations (#312): incremented when a request is written
+    /// with none outstanding. Requests written while one is still outstanding overlap and share
+    /// its generation. Never reset (a window tag of an earlier count must stay expired across
+    /// [`forget_keyboard_replies`]).
     window_gen: u64,
 }
 
@@ -998,7 +999,7 @@ impl KeyboardQueries {
 
     /// `(tag, current)`: the generation a legacy text press decoded now is tagged with (`None`
     /// outside a window), and the current generation, which stays current after the window's
-    /// flags reply until the next window opens.
+    /// flags reply until the next non-overlapped window opens.
     fn window(&self) -> (Option<u64>, u64) {
         (
             self.in_switch_window().then_some(self.window_gen),
@@ -1006,22 +1007,14 @@ impl KeyboardQueries {
         )
     }
 
-    /// Starts a new window generation if a change just opened the window (`was`: it was open).
-    fn note_window(&mut self, was: bool) {
-        if !was && self.in_switch_window() {
-            self.window_gen += 1;
-        }
-    }
-
     fn device_attributes_reply(&mut self) -> Option<KeyReleaseReporting> {
         if self.outstanding == 0 {
             return None;
         }
-        let was = self.in_switch_window();
         self.outstanding -= 1;
+        // The next request, if any, now has its window (its flags reply is still to come); it
+        // overlapped this one, so it is the same generation.
         let answered = std::mem::take(&mut self.answered);
-        // The next request, if any, now has its window (its flags reply is still to come).
-        self.note_window(was);
         if answered {
             None
         } else {
@@ -1056,9 +1049,12 @@ fn lock_queries() -> std::sync::MutexGuard<'static, KeyboardQueries> {
 /// [`SourceEvent::KeyReleaseReporting`].
 pub(crate) fn expect_keyboard_reply() {
     let mut q = lock_queries();
-    let was = q.in_switch_window();
+    // `answered` is false whenever nothing is outstanding, so 0 -> 1 is exactly the window
+    // opening; a request written while another is outstanding overlaps it (same generation).
     q.outstanding += 1;
-    q.note_window(was);
+    if q.outstanding == 1 {
+        q.window_gen += 1;
+    }
 }
 
 /// Takes back the request [`expect_keyboard_reply`] recorded, because writing it failed: no answer
