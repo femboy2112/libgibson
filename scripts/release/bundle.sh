@@ -23,6 +23,14 @@ trap 'rm -rf "$STAGE"' EXIT
 
 scripts/release/stage-sdk.sh --prefix "$STAGE/$NAME" --force >&2
 
+# Hard gate: no host path may ship. stage-sdk.sh remaps them at build time; this proves it.
+leaks=$(grep -rlaE "/home/|/media/|/Users/|${HOME:-/nonexistent-home}/" "$STAGE/$NAME" || true)
+if [[ -n "$leaks" ]]; then
+    echo "bundle: host paths found in staged files:" >&2
+    echo "$leaks" | sed "s#^$STAGE/##" >&2
+    exit 1
+fi
+
 mkdir -p "$OUTDIR"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2020-01-01' \
     -C "$STAGE" -cf "$OUTDIR/$NAME.tar" "$NAME"

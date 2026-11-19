@@ -3,56 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Next release: v0.8.0 (planned, not released)
-
-**Status:** planned and unscheduled. v0.7.3 remains the latest release; nothing below is released.
-
-**Why a minor.** The experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }`
-constructors, and CHANGELOG `[Unreleased]` records that this needs a 0.y bump under the release
-contract. The experimental Standard/Blades typed `on_press` behavior change (buttons now carry their
-payload and emit actions) rides in the same release.
-
-**When.** Cut after the Living Stage LS-4 upstream needs (consumer ProjectGHOST) land, so the
-consumer repins once. It needs the roadmap-completion release audit (every scoped item mapped to
-evidence or a recorded deferral). Not scheduled.
-
-#### Unreleased on main since v0.7.3 (`64225d4`)
-
-| PR | Merge | Change |
-|---|---|---|
-| #402 | `8171176` | deps: port the layout engine to taffy 0.15.1 (supersedes #197); geometry byte-identical on the 370-layout dump; merged after the ProjectGHOST integrated-candidate consumer ACK (normalized FLOW captures matched) |
-| #407 | `7cbeed5` | fix(ui): isolate hit tags at raw and presented import boundaries (behavior change, experimental) |
-| #408 | `72a6c90` | feat(stage): map semantic subtree actions into one host runtime (EXPERIMENTAL, Rust-only) |
-| #409 | `44dce34` | feat(stage): resolve keyed raster planes after semantic layout (EXPERIMENTAL) |
-| #411 | `c064d81` | fix(experience): bind typed buttons and document scoped host routing (EXPERIMENTAL behavior change) |
-| #412 | `3cd23fd` | feat(stage): add explicit-time graphical presentation and frame snapshots (EXPERIMENTAL) |
-| #415 | `ff53c7f` | test(stage): compose all three seams in a public host fixture (tests only) |
-| #416 | `7287b61` | renderer: opt-in bottom reservation for full-height inline reanchors (opt-in, Rust-only) |
-| #418 | `68e5302` | Offer chunked inline history insertion without repainting the viewport; fixes #417 (opt-in, Rust-only) |
-| #421 | `d39e895` | fix(input): pair a window-tagged shifted symbol with its base-key release; fixes #312 (Rust-only; residuals recorded in CHANGELOG) |
-| #422 | `a1fc00e` | deps: libc 0.2.191 with regenerated THIRD-PARTY-NOTICES.md (supersedes #168) |
-
-**Named fix target: DONE.** #312 (a shifted symbol in the screen-switch window is released as the
-base key) is fixed by #421 (`d39e895`) and closed. A tap pressed and released inside the window
-remains a recorded known limitation (CHANGELOG `[Unreleased]`).
-
-**Recorded deferral (2026-11-19):** `InlineResizePolicy::ReclaimLiveRows` stays opt-in in 0.8.0; the
-default remains `PreserveAbove`. Promoting it needs a real-screen kitty + VTE shrink check (cursor
-line kept), which is a later owner-observed item.
-
-**Re-check at cut:** #15 is closed (fixed on the owned path by #282); upstream crossterm #1128 was
-still open on 2026-11-19. Re-check its state at the cut.
-
-**Deferred to >= v0.9 (explicit):**
-- the v0.8 cross-language functionality section;
-- math typesetting v0.8 feasibility (#334);
-- #292 stays v0.9;
-- #195 (rtrb 0.4) stays held, because the audio path is frozen;
-- #396 (`ui::App` on-demand loop) stays deferred.
-
-**Open LS-4 friction issues feeding docs/API:** #413, #414. Flaky-suspect: #410.
-
-## Current release (updated 2026-11-19): v0.7.3 "clear SIGBUS 3"
+## Current release (updated 2026-11-19): v0.7.3 "clear SIGBUS 3"; v0.8.0 "clear SIGFPE 0" prepared
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -86,6 +37,44 @@ is below and in #400.
 It adds the opt-in
 `InlineResizePolicy::ReclaimLiveRows` for the inline resize defect #403. The default is
 byte-identical to v0.7.2.
+
+**v0.8.0 "clear SIGFPE 0" is prepared in source** (state 1), to be
+tagged on `main` on the release coordinator's go after the consumer gate on the exact candidate.
+It is a minor: the experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }`
+constructors, and the experimental Standard/Blades typed `on_press` behavior changes. It adds the
+fallible `TerminalSession::try_terminal_size` (the LS-4 0.8.0 gate) and fixes #312. The C ABI is
+unchanged (v1, 67 symbols). **Consumer gate:** MINERVA's run on this release candidate.
+
+#### v0.8.0 completion status (authoritative, 2026-11-19)
+
+Each 0.8.0 item, with the evidence that closes it or the recorded deferral that excludes it:
+
+| Item | Status | Evidence |
+|---|---|---|
+| #402 deps: port the layout engine to taffy 0.15.1 (supersedes #197) | **Done** | Merged as `8171176`. Geometry byte-identical on the 370-layout dump. Consumer ACK on #402 citing the integrated candidate `07b01bc` (tree `83f7246`); the `PreserveAbove` golden sha256 `22168a18…5220e` is unchanged. |
+| #407 fix(ui): isolate hit tags at raw and presented import boundaries | **Done** (behavior change, experimental) | Merged as `7cbeed5`. |
+| #408 feat(stage): map semantic subtree actions into one host runtime | **Done** (EXPERIMENTAL, Rust-only) | Merged as `72a6c90`. |
+| #409 feat(stage): resolve keyed raster planes after semantic layout | **Done** (EXPERIMENTAL) | Merged as `44dce34`. |
+| #411 fix(experience): bind typed buttons and document scoped host routing | **Done** (EXPERIMENTAL behavior change) | Merged as `c064d81`. |
+| #412 feat(stage): add explicit-time graphical presentation and frame snapshots | **Done** (EXPERIMENTAL) | Merged as `3cd23fd`. |
+| #415 test(stage): compose all three seams in a public host fixture | **Done** (tests only) | Merged as `ff53c7f`. |
+| #416 renderer: opt-in bottom reservation for full-height inline reanchors | **Done** (opt-in, Rust-only) | Merged as `7287b61`. |
+| #418 inline history insertion in chunks without repainting the viewport (fixes #417) | **Done** (opt-in, Rust-only) | Merged as `68e5302`. |
+| #420 roadmap: the v0.8.0 plan | **Done** (docs) | Merged as `c3a9eac`. |
+| #421 fix(input): pair a window-tagged shifted symbol with its base-key release (fixes #312) | **Done** (Rust-only; residuals recorded in CHANGELOG) | Merged as `d39e895`. RED-first local gate; 3 coordinator review rounds. |
+| #422 deps: libc 0.2.191 with regenerated THIRD-PARTY-NOTICES.md (supersedes #168) | **Done** | Merged as `a1fc00e`. Notices byte-identical. |
+| #423 roadmap: v0.8.0 progress | **Done** (docs) | Merged as `fc05a0e`. |
+| #424 docs: LS-4 friction #413 and #414 | **Done** (docs, Refs) | Merged as `4120e2f`. |
+| #425 feat(session): `TerminalSession::try_terminal_size` | **Done** (additive CORE `session`; LS-4 0.8.0 gate) | Merged as `7c7aa15`. Hosted RED run https://github.com/femboy2112/libgibson/actions/runs/44594381149/job/135808620945, then green. |
+
+**Not in v0.8.0, each with where it is recorded:**
+- **`ReclaimLiveRows` as the default** is a recorded deferral (2026-11-19). The default stays `PreserveAbove`; the real kitty and VTE shrink check is a later owner-observed item.
+- **#15** is closed (fixed on the owned path by #282). Upstream crossterm #1128 was still open at the cut (2026-11-19).
+- **Deferred to >= v0.9:** the v0.8 cross-language functionality section; math typesetting (#334); #292; #195 (rtrb 0.4, held as a draft, audio path frozen); #396 (`ui::App` on-demand loop).
+- **LS-4 nice-to-haves (0.9 candidates, enumerated by the LS-4 consumer, 2026-11-19):** `ReclaimLiveRows` default evidence; a rows-at-risk-on-shrink field; a `finish_inline` helper; a wrap/measure helper and a keyed-visibility recipe on `geometry_paths`; a `Context` cursor accessor (F2 caret); an optional ambiguous-width policy.
+- **#294** is documented and steered to fullscreen (a terminal-side limit), not an upstream fix.
+- **#413 and #414** are documented by #424 and remain open for the LS-4 author review.
+- **#410** (flaky-suspect PTY test): deferred to 0.8.x; triage pending (the first window, 2026-11-19, was harness-invalid: every run failed while pre-building the example, before the #410 assertion, so it gave zero observations). A demo-PTY test flake, not library behavior; the re-run result goes on the issue.
 
 #### v0.7.3 completion status (authoritative, 2026-11-16)
 
