@@ -15,6 +15,10 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 0" (name PROPOSED; Leah picks)
+
+A minor release: the experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }` constructors (`Compiled<A>` is not `#[non_exhaustive]`), and the experimental Standard/Blades typed `on_press` behavior changes. `GIBSON_ABI_VERSION` stays 1 (67 symbols, unchanged). MSRV stays 1.85. Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload.
+
 ### Fixed
 - **A key-release reporting request whose write or flush failed is no longer left outstanding.**
   The request was recorded as awaiting its terminal answer before it was written, and a write or
@@ -42,13 +46,24 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   release byte; see the known limitation below.
 
 ### Added (Rust-only, opt-in)
-- `Context::set_inline_resize_bottom_reservation(bool)` reserves the spare physical
+- `Context::set_inline_resize_bottom_reservation(bool)` ([#416](https://github.com/femboy2112/libgibson/pull/416)) reserves the spare physical
   terminal row on normal full-height inline reanchors without reducing the logical
   viewport. Defaults remain byte-compatible; startup, short frames, fullscreen and
   uncertain-write recovery retain existing behavior. This reuses the allocation
   mechanism from pre-existing local `78b72b2` Reclaim/regrow work; the new scope is an
   independent opt-in for either resize policy, including PreserveAbove. Committed
   history is scrolled rather than erased; old live images may remain in scrollback.
+- `TerminalSession::try_terminal_size() -> io::Result<(u16, u16)>` reads the terminal size
+  without the 80x24 fallback: a failed read, a zero dimension, or a session that is not a
+  terminal is an `Err`. `terminal_size()` substitutes 80x24 on failure, so a consent gate such as
+  "the terminal must be at least 80x24" passes when the size cannot be read; such callers
+  should use `try_terminal_size` and treat `Err` as not satisfied (LS-4 upstream need).
+  `terminal_size()` is unchanged. Rust-only; the C ABI is unchanged.
+- `Context::set_inline_history_chunking(bool)` lets a stable inline viewport insert a
+  history batch that does not fit in one pass using repeated Insert Line chunks inside the
+  existing writer transaction, without repainting the viewport (#417). It requires current
+  inline geometry; unsupported Insert Line, overwidth input, stale geometry and zero spare
+  rows keep the existing fallback. Defaults off; default behavior and the C ABI are unchanged.
 
 ### Changed (experimental, breaking for literal constructors)
 - Experimental `Compiled::geometry_paths` joins explicit semantic keys to the
@@ -64,19 +79,6 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   Experience-first and activation/Tab UI-first, and stop after consumption.
   Hosts own pane routing; LG does not enforce it. Omitted/raster-only chrome
   stays inert.
-
-### Added (Rust-only, opt-in)
-- `TerminalSession::try_terminal_size() -> io::Result<(u16, u16)>` reads the terminal size
-  without the 80x24 fallback: a failed read, a zero dimension, or a session that is not a
-  terminal is an `Err`. `terminal_size()` substitutes 80x24 on failure, so a consent gate such as
-  "the terminal must be at least 80x24" passes when the size cannot be read; such callers
-  should use `try_terminal_size` and treat `Err` as not satisfied (LS-4 upstream need).
-  `terminal_size()` is unchanged. Rust-only; the C ABI is unchanged.
-- `Context::set_inline_history_chunking(bool)` lets a stable inline viewport insert a
-  history batch that does not fit in one pass using repeated Insert Line chunks inside the
-  existing writer transaction, without repainting the viewport (#417). It requires current
-  inline geometry; unsupported Insert Line, overwidth input, stale geometry and zero spare
-  rows keep the existing fallback. Defaults off; default behavior and the C ABI are unchanged.
 
 ### Added
 - Experimental Stage explicit-time graphical rect transitions, non-renewing

@@ -102,6 +102,15 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
+- **0.8.0** is **prepared in source** (state 1) on `main`, named "clear SIGFPE 0" (name
+  PROPOSED; [decision 0004](decisions/0004-release-naming.md)). It is a minor because the
+  experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }` constructors
+  (`Compiled<A>` is not `#[non_exhaustive]`): the "0.x SemVer semantics" row
+  "changing an experimental API in a way that breaks a patch consumer". The experimental
+  Standard/Blades typed `on_press` behavior change rides in the same release. It is to be tagged `v0.8.0` (with
+  `bindings/go/v0.8.0`) on a `main` commit as a regular GitHub release, only on the release
+  coordinator's per-tag go. The C ABI is unchanged (`GIBSON_ABI_VERSION` 1, 67 symbols); MSRV 1.85
+  and Linux x86_64 are unchanged.
 - **0.7.3** "clear SIGBUS 3" ([decision 0004](decisions/0004-release-naming.md)) is the latest
   such milestone and is **tagged and released on GitHub** (state 2):
   - tag `v0.7.3` → `64225d4` on `main`, with `bindings/go/v0.7.3` on the same commit;
@@ -241,7 +250,7 @@ next `0.y` minor and is recorded in the CHANGELOG:
 - `painter` — `paint`, `PaintContext`
 - `renderer` — `Renderer`, `RenderMode`, `InsertStrategy`, `AnchorState`, and (0.3.0) `FrameReport`
 - `context` — `Context`
-- `session` — `TerminalSession`, `TerminalLease` (process-global terminal-ownership lease)
+- `session` — `TerminalSession`, `TerminalLease` (process-global terminal-ownership lease); `TerminalSession::try_terminal_size` is an additive CORE method (0.8.0)
 - `input` — `Event`, `KeyCode`, `KeyEvent`, `poll_event`
 - `capability` — `TerminalCapabilities`, `Capability`, `ColorDepth`, quantization
 - the **C-ABI-backed subset** (see §5)
@@ -295,6 +304,7 @@ breaking them in a pure patch:
   on a shrink. The default `PreserveAbove`'s bytes are pinned to 0.7.2 by
   `tests/inline_resize_preserve_above_golden.rs`. `FrameReport` itself stays CORE; the field is
   an additive `#[non_exhaustive]` change.
+- `ui::Compiled::geometry_paths` — the field joining explicit semantic keys to the same frame's lowered Node geometry (0.8.0); literal `Compiled { .. }` constructors must supply it
 - `raster::RgbaRaster::{set, pixels_mut, from_pixels, from_rgb}`, `raster::downscale_area` and `ui::image_area` — RGBA editing, alternative constructors and area filtering (0.7.0; the rest of the RGBA subset is CORE from 0.7.2, decision 0005)
 - `rig`, `city` — camera rigs (`Dolly`, `Orbit`, `Transition`, `Ease`) and wireframe-city geometry helpers for `raster3d`; also `raster3d::Camera::basis` / `CameraBasis` (0.7.0)
 - `ui::experience` — semantic experience grammars realizing one `Experience` through
