@@ -29,16 +29,19 @@ evidence or a recorded deferral). Not scheduled.
 | #415 | `ff53c7f` | test(stage): compose all three seams in a public host fixture (tests only) |
 | #416 | `7287b61` | renderer: opt-in bottom reservation for full-height inline reanchors (opt-in, Rust-only) |
 | #418 | `68e5302` | Offer chunked inline history insertion without repainting the viewport; fixes #417 (opt-in, Rust-only) |
+| #421 | `d39e895` | fix(input): pair a window-tagged shifted symbol with its base-key release; fixes #312 (Rust-only; residuals recorded in CHANGELOG) |
+| #422 | `a1fc00e` | deps: libc 0.2.191 with regenerated THIRD-PARTY-NOTICES.md (supersedes #168) |
 
-**Named fix target:** #312 (a shifted symbol in the screen-switch window is released as the base
-key). Fix: window-tagged last-resort pairing of a release (see CHANGELOG `[Unreleased]`); a tap
-pressed and released inside the window remains a recorded known limitation.
+**Named fix target: DONE.** #312 (a shifted symbol in the screen-switch window is released as the
+base key) is fixed by #421 (`d39e895`) and closed. A tap pressed and released inside the window
+remains a recorded known limitation (CHANGELOG `[Unreleased]`).
 
-**Decision point:** `InlineResizePolicy::ReclaimLiveRows` as the default, only if kitty and VTE are
-verified to keep the cursor line on a shrink within the 0.8.0 window. Otherwise an explicit recorded
-deferral, and the default stays `PreserveAbove`.
+**Recorded deferral (2026-11-19):** `InlineResizePolicy::ReclaimLiveRows` stays opt-in in 0.8.0; the
+default remains `PreserveAbove`. Promoting it needs a real-screen kitty + VTE shrink check (cursor
+line kept), which is a later owner-observed item.
 
-**Re-check at cut:** #15 (waits on upstream crossterm #1128).
+**Re-check at cut:** #15 is closed (fixed on the owned path by #282); upstream crossterm #1128 was
+still open on 2026-11-19. Re-check its state at the cut.
 
 **Deferred to >= v0.9 (explicit):**
 - the v0.8 cross-language functionality section;
@@ -279,6 +282,7 @@ Each v0.7 item, with the evidence that closes it or the recorded deferral that e
   in the lease contract.
 
 **v0.8.0 named fix targets:** #312 (fix: window-tagged last-resort pairing, see CHANGELOG).
+*Update 2026-11-19:* fixed by #421 (`d39e895`); #312 is closed.
 
 **v0.8 and later are not in 0.7.x.** That covers:
 - independent five-language clients with failure codes and lifecycle at parity;
