@@ -24,8 +24,8 @@ use std::sync::Arc;
 /// the existing runtime, never renamed. Unkeyed positional paths still depend
 /// on structure. Input routing stays with the host's `UiRuntime` and `Context`.
 ///
-/// Screen padding and density of a mounted producer. A mounted subtree is laid
-/// out inside the host's one [`crate::ui::UiRuntime`], so a nested `screen()`
+/// **Screen padding and density of a mounted producer.** A mounted subtree is
+/// laid out inside the host's one [`crate::ui::UiRuntime`], so a nested `screen()`
 /// resolves its skin padding and density from the host's global
 /// [`UiEnvironment`](crate::ui::UiEnvironment), not from the smaller area the
 /// producer was budgeted for. A producer that fits its local allocation (for

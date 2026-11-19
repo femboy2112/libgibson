@@ -225,7 +225,7 @@ impl<A> Element<A> {
         self.number = Some(number);
         self
     }
-    /// Sets a fixed width in terminal columns.
+    /// Sets the width in terminal columns (the flex basis when the element grows).
     ///
     /// Note: this does not change the element's flex growth. A [`spacer`] grows
     /// by default (`grow(1.0)`), so `spacer().width(n)` is only a preferred
