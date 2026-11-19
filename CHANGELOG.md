@@ -15,6 +15,32 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Fixed
+- **A key-release reporting request whose write or flush failed is no longer left outstanding.**
+  The request was recorded as awaiting its terminal answer before it was written, and a write or
+  flush error on the initial enable or on the re-push after a screen switch returned without taking
+  it back, so the source kept waiting for an answer that was not coming (and, with the #312 fix,
+  would have held the screen-switch window open, tagging every later legacy press). It is now
+  retracted on any write or flush error; an answer that arrives anyway is handled as a stray reply.
+  Found in review of the #312 fix; the test globals reset had been hiding it
+  (`repush_failure_does_not_leak_an_outstanding_keyboard_request`,
+  `a_failed_request_flush_does_not_leak_an_outstanding_keyboard_request`).
+- **A shifted symbol pressed in the screen-switch window is released under its own name
+  ([#312](https://github.com/femboy2112/libgibson/issues/312)).** A press decoded while a
+  key-release reporting request was written but its flags reply had not been decoded (by stream
+  order, typed before the pushed flags took effect) is tagged as a window press. When kitty then
+  releases a text key under its base key and nothing else matches (a `!` released as `1`), the
+  release (never a repeat) pairs with the window press if exactly one exists, and is delivered as that press. With two
+  or more window presses nothing is paired (today's behavior). An unrelated, never-recorded key's
+  release can be taken for the single window press, which is then delivered as released early: an
+  accepted trade-off. Key naming off is unchanged. Rust-only, no public API or C ABI change.
+  The tag expires: it is eligible only in its own window generation (each new non-overlapped
+  window opens a new one; requests written while one is still outstanding share its generation)
+  and in the key-release epoch it was recorded in, and focus loss clears it, so a stale tag
+  from an earlier window, epoch or focus no longer pairs with, or blocks the pairing of, a later
+  release. A key tapped and released inside the window still sends no
+  release byte; see the known limitation below.
+
 ### Added (Rust-only, opt-in)
 - `Context::set_inline_resize_bottom_reservation(bool)` reserves the spare physical
   terminal row on normal full-height inline reanchors without reducing the logical
@@ -573,6 +599,41 @@ tag. `GIBSON_ABI_VERSION` stays 1 (67 symbols); MSRV stays 1.85. Everything belo
   ([`docs/V08_PARITY_SLICE.md`](docs/V08_PARITY_SLICE.md) F6)
 
 ### Known limitation — a shifted key in the screen-switch window ([#312](https://github.com/femboy2112/libgibson/issues/312))
+- **Reversed in part by the release coordinator's ruling of 2026-11-19 (GOD): an indefinite hold is a
+  worse failure than an early release.** The rationale below is kept as history. Now, a legacy press
+  decoded in the window (a key-release request outstanding, its flags reply not yet decoded) is
+  tagged, and as a last resort, when exact, text-key and superseding matches all fail, a kitty
+  release of a text key under its base key is paired with the one tagged press (`!` released as `1`
+  is delivered as `!`). A repeat is never paired this way. With 2+ tagged presses nothing is paired (ambiguous). The pinned misattribution:
+  a release of an unrelated key that has no record ends the single tagged hold early
+  (`issue_312_documented_misattribution_unrelated_release_ends_window_hold`). **Remaining known
+  limitation:** a key tapped and released *inside* the window sends no release byte at all (the
+  terminal was still in legacy mode), so there is nothing to pair and its hold lasts until a focus
+  loss, the key's next kitty press/release, or reporting is disabled. A press outside the provable
+  window (no request outstanding) is unchanged.
+- **Residual inside one window generation, and what bounds it.** Such a tap leaves a *ghost* window
+  tag (also text decoded unbracketed in the window, e.g. from an input method; a bracketed paste
+  is one paste event and records none). Within the same window generation the ghost either blocks
+  the pairing of the real window press (two tags: that press's release is delivered under the base
+  key and its hold stays, today's behavior, not a regression; `issue_312_residual_two_tags_in_one_window_generation_block_the_pairing`)
+  or, as the only tag, is taken for one unrelated record-less release
+  (`issue_312_residual_a_ghost_can_sponge_one_record_less_release_in_its_generation`). A tag
+  expires when the next non-overlapped window opens (requests written while one is still
+  outstanding share its generation), on a focus loss, or when key-release reporting is
+  disabled and re-enabled (a new epoch); until then the residual stands.
+- **Residuals of the generation rule.** A `!` held across a later, non-overlapped screen switch
+  expires and stays held as before the fix (today's stuck behavior, bounded the same way), pinned
+  by `issue_312_a_non_overlapped_second_window_still_expires_the_tag`. A failed request write still
+  starts a new generation (the bump happens before the write; failure path only), expiring earlier
+  tags. Conjectured, not tested: the owner thread bumps the generation when it writes a request
+  while the poll thread may still be decoding bytes typed before it, so across a second switch a
+  press decoded late can land in the newer generation.
+- **The misattributed key's own release never arrives under its own name.** When the unrelated
+  record-less key's release is taken for the window press, it is delivered as that press's
+  release, so the unrelated key (say `q`, down since before reporting began) is never reported
+  released: a consumer that holds it keeps it held until its next kitty press/release, a focus
+  loss or reporting is disabled. The accepted trade-off names this early release of the window
+  press; this is its other side.
 - **A shifted *symbol* (e.g. `!`) pressed during the brief legacy-mode window of a screen switch is
   delivered correctly as a press, but kitty reports its release under the base key (`1`); shift does
   not lowercase a symbol, so the release cannot be matched to the press layout-agnostically and is
