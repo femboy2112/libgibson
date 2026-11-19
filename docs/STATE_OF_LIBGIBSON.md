@@ -12,6 +12,19 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.8.0 "clear SIGFPE 0" released (2026-11-19):**
+- tag `v0.8.0` → `4d58e5a` on `main`, with `bindings/go/v0.8.0` on the same commit;
+- a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.8.0).
+
+It is a minor: the experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }`
+constructors, and the experimental Standard/Blades typed `on_press` behavior changes. It adds the
+Rust-only `TerminalSession::try_terminal_size` (a fallible size read for consent gates, #425),
+fixes #312 (a shifted key in the screen-switch window, #421), and ports layout to taffy 0.15.1 with
+byte-identical geometry. It also adds the opt-in `Context::set_inline_resize_bottom_reservation`
+(#416) and `set_inline_history_chunking` (#417). The C ABI is unchanged (v1, 67 symbols). Library
+code changed in `src/` (session, tty_source, input, renderer, context, layout, stage, ui), from
+#402 to #425.
+
 **v0.7.3 "clear SIGBUS 3" released (2026-11-16):**
 - tag `v0.7.3` → `64225d4` on `main`, with `bindings/go/v0.7.3` on the same commit;
 - a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.7.3).
