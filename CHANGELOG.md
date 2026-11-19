@@ -104,6 +104,18 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 - **Dependencies:** `libc` 0.2.189 → 0.2.191 (Cargo.lock only); `THIRD-PARTY-NOTICES.md` regenerated
   ([#422](https://github.com/femboy2112/libgibson/pull/422), supersedes #168).
 
+### Documentation
+- **Fixed-width spacers.** `spacer()` grows by default and `.width(n)` keeps that growth, so
+  `spacer().width(n)` does not reserve exactly `n` columns; the rustdoc for `spacer` and
+  `Element::width` and `docs/UI_LAYER.md` now give the recipe `spacer().width(n).grow(0.)`
+  ([#413](https://github.com/femboy2112/libgibson/issues/413)). No behavior change.
+- **Mounted Screen padding versus the producer allocation.** A mounted producer's nested Screen
+  resolves padding and density from the host's global `UiEnvironment`, not its smaller local
+  allocation, so it can overflow it. `map_actions` and `docs/STAGE.md` now document the recipe
+  `map_actions(presented.element, Host::Inner).padding(0)` and cite the pinned fixture test
+  `blades_mount_records_inherited_padding_overflow_and_explicit_zero_padding`
+  ([#414](https://github.com/femboy2112/libgibson/issues/414)). No API change.
+
 ## [0.7.3] — 2026-11-16 · GitHub release from `main` · "clear SIGBUS 3"
 
 A patch release with one renderer addition: an opt-in inline resize policy for #403. The default is unchanged.

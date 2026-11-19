@@ -24,6 +24,21 @@ use std::sync::Arc;
 /// the existing runtime, never renamed. Unkeyed positional paths still depend
 /// on structure. Input routing stays with the host's `UiRuntime` and `Context`.
 ///
+/// **Screen padding and density of a mounted producer.** A mounted subtree is
+/// laid out inside the host's one [`crate::ui::UiRuntime`], so a nested `screen()`
+/// resolves its skin padding and density from the host's global
+/// [`UiEnvironment`](crate::ui::UiEnvironment), not from the smaller area the
+/// producer was budgeted for. A producer that fits its local allocation (for
+/// example 16 rows of an 80x24 host) can therefore overflow it, because its root
+/// Screen adds the host skin's padding on top, and a wrapper height alone does
+/// not remove that padding. To budget it, clear the producer-root padding:
+/// `map_actions(presented.element, Host::Inner).padding(0)`; height stays automatic.
+/// The pinned evidence is the integration test
+/// `blades_mount_records_inherited_padding_overflow_and_explicit_zero_padding` in
+/// `tests/stage_integrated_fixture.rs`, which records inherited padding (Screen
+/// height 20, action clipped) against explicit zero padding (height 16, visible).
+/// See `docs/STAGE.md`.
+///
 /// ```
 /// use gibson::stage::map_actions;
 /// use gibson::ui::prelude::*;
