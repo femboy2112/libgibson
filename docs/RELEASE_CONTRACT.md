@@ -102,8 +102,8 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
-- **0.8.0** is **prepared in source** (state 1) on `main`, named "clear SIGFPE 0" (name
-  PROPOSED; [decision 0004](decisions/0004-release-naming.md)). It is a minor because the
+- **0.8.0** is **prepared in source** (state 1) on `main`, named "clear SIGFPE 0"
+  ([decision 0004](decisions/0004-release-naming.md)). It is a minor because the
   experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }` constructors
   (`Compiled<A>` is not `#[non_exhaustive]`): the "0.x SemVer semantics" row
   "changing an experimental API in a way that breaks a patch consumer". The experimental

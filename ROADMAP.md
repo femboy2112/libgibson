@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-19): v0.7.3 "clear SIGBUS 3"; v0.8.0 "clear SIGFPE 0" (name PROPOSED) prepared
+## Current release (updated 2026-11-19): v0.7.3 "clear SIGBUS 3"; v0.8.0 "clear SIGFPE 0" prepared
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -38,7 +38,7 @@ It adds the opt-in
 `InlineResizePolicy::ReclaimLiveRows` for the inline resize defect #403. The default is
 byte-identical to v0.7.2.
 
-**v0.8.0 "clear SIGFPE 0" (name PROPOSED; Leah picks) is prepared in source** (state 1), to be
+**v0.8.0 "clear SIGFPE 0" is prepared in source** (state 1), to be
 tagged on `main` on the release coordinator's go after the consumer gate on the exact candidate.
 It is a minor: the experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }`
 constructors, and the experimental Standard/Blades typed `on_press` behavior changes. It adds the

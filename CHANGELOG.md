@@ -15,7 +15,7 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-## [0.8.0] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 0" (name PROPOSED; Leah picks)
+## [0.8.0] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 0"
 
 A minor release: the experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }` constructors (`Compiled<A>` is not `#[non_exhaustive]`), and the experimental Standard/Blades typed `on_press` behavior changes. It also adds `TerminalSession::try_terminal_size`, fixes #312 and ports the layout engine to taffy 0.15.
 - **Library code changes since 0.7.3:** `src/` (session, tty_source, input, renderer, context, layout, stage, ui) from #402–#425. `include/gibson.h` changes only in a comment (#421); `src/ffi.rs` is unchanged, and `bindings/` changes only in the Python package version. `GIBSON_ABI_VERSION` stays 1 (67 symbols). MSRV stays 1.85.
