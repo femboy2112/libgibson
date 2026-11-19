@@ -211,6 +211,7 @@ pub struct Renderer {
     pending_reanchor: Option<ReanchorReport>,
     inline_resize_policy: InlineResizePolicy,
     inline_resize_bottom_reservation: bool,
+    inline_history_chunking: bool,
 }
 
 impl Renderer {
@@ -245,6 +246,7 @@ impl Renderer {
             pending_reanchor: None,
             inline_resize_policy: InlineResizePolicy::PreserveAbove,
             inline_resize_bottom_reservation: false,
+            inline_history_chunking: false,
         }
     }
 
@@ -293,6 +295,12 @@ impl Renderer {
     /// Whether eligible inline resize allocations reserve the extra physical row.
     pub fn inline_resize_bottom_reservation(&self) -> bool {
         self.inline_resize_bottom_reservation
+    }
+
+    /// Allow large history insertions to reuse the spare rows above a stable
+    /// inline viewport in fitting chunks. Off by default.
+    pub fn set_inline_history_chunking(&mut self, enabled: bool) {
+        self.inline_history_chunking = enabled;
     }
 
     /// Whether this renderer reclaims an inline region's rows across a resize (#403).
@@ -1099,9 +1107,8 @@ impl Renderer {
             return Ok((0, InsertStrategy::InsertLineFastPath));
         }
 
-        let m = lines.len() as u16;
         let (term_cols, term_rows) = session.terminal_size();
-        let combined_height = m.saturating_add(self.live_region_height);
+        let spare_rows = usize::from(term_rows.saturating_sub(self.live_region_height));
 
         // A preformatted (NoWrap, issue #45) line wider than the terminal
         // soft-wraps into extra physical rows that the one-row-per-line `CSI L`
@@ -1116,6 +1123,16 @@ impl Renderer {
         // `CSI L` actually being supported. Unknown capability is NOT treated as
         // supported: we fall back to the always-correct repaint path.
         let anchor_stable = matches!(self.anchor, AnchorState::Stable { .. });
+        let chunking_enabled = self.inline_history_chunking && self.mode == RenderMode::Inline;
+        // Every batch in opt-in mode needs a current physical viewport, even
+        // when it would fit in one insertion. Leave the legacy path unchanged.
+        let current_viewport = self.anchor
+            == (AnchorState::Stable {
+                cols: term_cols,
+                rows: term_rows,
+                live_height: self.live_region_height,
+            })
+            && self.last_cursor_y < self.live_region_height;
         // Issue #403: a resize the region has not been re-established after. The preserved live
         // framebuffer has the old geometry, so it is not replayed: the region is erased (bounded)
         // and the next frame allocates a fresh one below the inserted lines.
@@ -1124,7 +1141,9 @@ impl Renderer {
             && self.live_region_height > 0
             && anchor_stable
             && session.insert_line_supported()
-            && combined_height <= term_rows
+            && spare_rows > 0
+            && (!chunking_enabled || current_viewport)
+            && (lines.len() <= spare_rows || chunking_enabled)
             && !any_line_exceeds_width
             && self.previous_surface.is_some();
 
@@ -1192,34 +1211,34 @@ impl Renderer {
             // live framebuffer is never repainted.
             strategy = InsertStrategy::InsertLineFastPath;
 
-            // Move to region bottom, scroll to make room, then return to top.
-            if self.last_cursor_y < self.live_region_height - 1 {
-                write!(
-                    tx.buffer,
-                    "\x1b[{}B",
-                    self.live_region_height - 1 - self.last_cursor_y
-                )
-                .ok();
-            }
+            for chunk in lines.chunks(spare_rows) {
+                let rows = chunk.len() as u16;
+                // Shift the viewport as needed, using only the spare rows.
+                if self.last_cursor_y < self.live_region_height - 1 {
+                    write!(
+                        tx.buffer,
+                        "\x1b[{}B",
+                        self.live_region_height - 1 - self.last_cursor_y
+                    )
+                    .ok();
+                }
+                for _ in chunk {
+                    tx.push(b"\r\n");
+                }
+                write!(tx.buffer, "\x1b[{}A\r", rows + self.live_region_height - 1).ok();
+                write!(tx.buffer, "\x1b[{}L", rows).ok();
+                for line in chunk {
+                    tx.push(line.as_bytes());
+                    tx.push(b"\r\n");
+                }
 
-            for _ in 0..m {
-                tx.push(b"\r\n");
-            }
-
-            write!(tx.buffer, "\x1b[{}A\r", m + self.live_region_height - 1).ok();
-            write!(tx.buffer, "\x1b[{}L", m).ok();
-
-            for line in lines {
-                tx.push(line.as_bytes());
-                tx.push(b"\r\n");
-            }
-
-            // Restore cursor to its original relative position within the region.
-            if self.last_cursor_y > 0 {
-                write!(tx.buffer, "\x1b[{}B", self.last_cursor_y).ok();
-            }
-            if self.last_cursor_x > 0 {
-                write!(tx.buffer, "\x1b[{}C", self.last_cursor_x).ok();
+                // Restore the relative cursor before the next chunk or final flush.
+                if self.last_cursor_y > 0 {
+                    write!(tx.buffer, "\x1b[{}B", self.last_cursor_y).ok();
+                }
+                if self.last_cursor_x > 0 {
+                    write!(tx.buffer, "\x1b[{}C", self.last_cursor_x).ok();
+                }
             }
         }
 
