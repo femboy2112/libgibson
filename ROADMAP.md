@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-19): v0.7.3 "clear SIGBUS 3"; v0.8.0 "clear SIGFPE 0" prepared
+## Current release (updated 2026-11-19): v0.8.0 "clear SIGFPE 0"
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -38,12 +38,16 @@ It adds the opt-in
 `InlineResizePolicy::ReclaimLiveRows` for the inline resize defect #403. The default is
 byte-identical to v0.7.2.
 
-**v0.8.0 "clear SIGFPE 0" is prepared in source** (state 1), to be
-tagged on `main` on the release coordinator's go after the consumer gate on the exact candidate.
+**v0.8.0 "clear SIGFPE 0" was released on 2026-11-19** (state 2):
+- annotated tag `v0.8.0` → `4d58e5a` on `main`, with `bindings/go/v0.8.0` on the same commit;
+- a regular GitHub [release](https://github.com/femboy2112/libgibson/releases/tag/v0.8.0), not on any registry.
+
 It is a minor: the experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }`
 constructors, and the experimental Standard/Blades typed `on_press` behavior changes. It adds the
 fallible `TerminalSession::try_terminal_size` (the LS-4 0.8.0 gate) and fixes #312. The C ABI is
-unchanged (v1, 67 symbols). **Consumer gate:** MINERVA's run on this release candidate.
+unchanged (v1, 67 symbols). **Consumer gate:** MINERVA's consumer suite on the exact candidate
+`3e6d1ce` (the same tree as the merge) passed. Its tests were identical to the 0.7.3 baseline,
+with no API breaks for its consumer.
 
 #### v0.8.0 completion status (authoritative, 2026-11-19)
 
