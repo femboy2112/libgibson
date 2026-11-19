@@ -25,8 +25,12 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   or more window presses nothing is paired (today's behavior). An unrelated, never-recorded key's
   release can be taken for the single window press, which is then delivered as released early: an
   accepted trade-off. Key naming off is unchanged. Rust-only, no public API or C ABI change.
-  A key tapped and released inside the window still sends no release byte; see the known limitation
-  below.
+  The tag expires: it is eligible only in its own window generation (each new window opens a new
+  one) and in the key-release epoch it was recorded in, and focus loss clears it, so a stale tag
+  from an earlier window, epoch or focus no longer pairs with, or blocks the pairing of, a later
+  release. A key-release request whose write failed is no longer left outstanding (it held the
+  window open until the next restore). A key tapped and released inside the window still sends no
+  release byte; see the known limitation below.
 
 ### Added (Rust-only, opt-in)
 - `Context::set_inline_resize_bottom_reservation(bool)` reserves the spare physical
@@ -598,6 +602,21 @@ tag. `GIBSON_ABI_VERSION` stays 1 (67 symbols); MSRV stays 1.85. Everything belo
   terminal was still in legacy mode), so there is nothing to pair and its hold lasts until a focus
   loss, the key's next kitty press/release, or reporting is disabled. A press outside the provable
   window (no request outstanding) is unchanged.
+- **Residual inside one window generation, and what bounds it.** Such a tap leaves a *ghost* window
+  tag (also text decoded unbracketed in the window, e.g. from an input method; a bracketed paste
+  is one paste event and records none). Within the same window generation the ghost either blocks
+  the pairing of the real window press (two tags: that press's release is delivered under the base
+  key and its hold stays, today's behavior, not a regression; `issue_312_residual_two_tags_in_one_window_generation_block_the_pairing`)
+  or, as the only tag, is taken for one unrelated record-less release
+  (`issue_312_residual_a_ghost_can_sponge_one_record_less_release_in_its_generation`). A tag
+  expires when the next window opens, on a focus loss, or when key-release reporting is
+  disabled and re-enabled (a new epoch); until then the residual stands.
+- **The misattributed key's own release never arrives under its own name.** When the unrelated
+  record-less key's release is taken for the window press, it is delivered as that press's
+  release, so the unrelated key (say `q`, down since before reporting began) is never reported
+  released: a consumer that holds it keeps it held until its next kitty press/release, a focus
+  loss or reporting is disabled. The accepted trade-off names this early release of the window
+  press; this is its other side.
 - **A shifted *symbol* (e.g. `!`) pressed during the brief legacy-mode window of a screen switch is
   delivered correctly as a press, but kitty reports its release under the base key (`1`); shift does
   not lowercase a symbol, so the release cannot be matched to the press layout-agnostically and is

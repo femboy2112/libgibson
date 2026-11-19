@@ -213,10 +213,14 @@ pub enum Event {
     /// press ([#312](https://github.com/femboy2112/libgibson/issues/312)). With two or more such
     /// presses nothing is paired, and the release is delivered as the terminal reports it. A
     /// release of an unrelated key that was never recorded can be taken for that one press, which
-    /// is then reported released early; that is accepted over a hold that never ends. Not
-    /// covered: such a key tapped and let go inside the window sends no release at all, and one
-    /// pressed outside it is delivered as the terminal reports it. An autorepeat of a held key is
-    /// an [`Event::Key`], as on any terminal.
+    /// is then reported released early, and that unrelated key's own release is never reported
+    /// under its own name; that is accepted over a hold that never ends. Not covered: such a key
+    /// tapped and let go inside the window sends no release at all, and one pressed outside it is
+    /// delivered as the terminal reports it. A tap's leftover mark counts, within its window, as a
+    /// second press (so the real one is not paired) or as the one press an unrelated release can
+    /// be taken for; it ends when the next window opens, on a focus loss, or when reporting is
+    /// disabled and enabled again. An autorepeat of a held key is an [`Event::Key`], as on any
+    /// terminal.
     KeyRelease(KeyEvent),
     /// The terminal's answer to a key-release reporting request, in input order: every event
     /// after it was produced under that answer.
