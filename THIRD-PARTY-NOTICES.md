@@ -26,7 +26,7 @@ are included here for completeness.
 | document-features v0.2.12 | MIT OR Apache-2.0 | https://github.com/slint-ui/document-features |
 | errno v0.3.14 | MIT OR Apache-2.0 | https://github.com/lambda-fairy/rust-errno |
 | itoa v1.0.18 | MIT OR Apache-2.0 | https://github.com/dtolnay/itoa |
-| libc v0.2.189 | MIT OR Apache-2.0 | https://github.com/rust-lang/libc |
+| libc v0.2.191 | MIT OR Apache-2.0 | https://github.com/rust-lang/libc |
 | linux-raw-sys v0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/sunfishcode/linux-raw-sys |
 | litrs v1.0.0 | MIT OR Apache-2.0 | https://github.com/LukasKalbertodt/litrs |
 | lock_api v0.4.14 | MIT OR Apache-2.0 | https://github.com/Amanieu/parking_lot |
