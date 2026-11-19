@@ -1283,7 +1283,9 @@ impl TerminalSession {
         }
     }
 
-    /// Returns current terminal dimensions (columns, rows).
+    /// Returns current terminal dimensions (columns, rows), substituting 80x24 when the size
+    /// cannot be read. For a decision that must not pass on a failed read, see
+    /// [`try_terminal_size`](Self::try_terminal_size).
     pub fn terminal_size(&self) -> (u16, u16) {
         if self.headless {
             self.headless_size
@@ -1298,10 +1300,35 @@ impl TerminalSession {
         }
     }
 
-    /// RED stub: keeps today's fail-open behavior until the fix commit.
+    /// Returns the current terminal dimensions (columns, rows), or the error that stopped them
+    /// being read. Unlike [`terminal_size`](Self::terminal_size) it never substitutes 80x24.
+    ///
+    /// - **Headless** ([`headless`](Self::headless)): `Ok` of the geometry the session was
+    ///   created with or last given by `set_terminal_size`, returned as set (not validated).
+    /// - **Acquired output endpoint** (a session that owns the terminal): the size of that
+    ///   output (`TIOCGWINSZ` on Unix). An ioctl failure, or a zero dimension (which a terminal
+    ///   reports while it is going away), is an `Err`.
+    /// - **Other terminal** (`is_tty` without an owned endpoint): the size crossterm reports;
+    ///   its error, or a zero dimension, is an `Err`.
+    /// - **Not a terminal**: `Err` of kind [`io::ErrorKind::Unsupported`]. There is no fallback.
+    ///
+    /// A caller making a consent or safety decision from the size (for example "is the terminal
+    /// at least N x M") MUST use this method and treat `Err` as "not satisfied":
+    /// `terminal_size` substitutes 80x24 on failure, so a gate built on it passes when the read
+    /// fails.
     pub fn try_terminal_size(&self) -> io::Result<(u16, u16)> {
-        // RED stub
-        Ok(self.terminal_size())
+        if self.headless {
+            Ok(self.headless_size)
+        } else if let Some(endpoint) = &self.output_endpoint {
+            endpoint.size()
+        } else if self.is_tty {
+            match crossterm::terminal::size()? {
+                (0, _) | (_, 0) => Err(io::Error::other("terminal reported a zero size")),
+                size => Ok(size),
+            }
+        } else {
+            Err(io::Error::new(io::ErrorKind::Unsupported, "not a terminal"))
+        }
     }
 }
 
