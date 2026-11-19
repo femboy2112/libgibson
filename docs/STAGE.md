@@ -235,7 +235,8 @@ procedural alpha sprite, typed actions and an editor. Its scripted samples cover
 non-renewing producer deadlines, current-pose reversal, responsive rebuilds,
 strict reduced motion, declared omissions and settled ticks with no generation
 or output. The scoped input-routing recipe stays host-owned; Enter is UI-first.
-Fixed-width spacers explicitly clear their default growth with `.grow(0.)`.
+Fixed-width spacers explicitly clear their default growth: `spacer().width(n).grow(0.)`,
+because `.width(n)` alone keeps the spacer's `grow(1.0)`.
 
 These are integration receipts over an RGB substrate and logical geometry. They
 do not clear physical resize/pointer, private-art appearance, performance or the

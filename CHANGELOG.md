@@ -96,6 +96,12 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   - **Geometry:** unchanged from 0.14 with that fix. A before/after dump of 370 layouts is byte-identical. It covers every align × justify combination in rows, columns, stacks and `offset()` layers, including overflow, negative offsets and oversize layers; parents smaller than the viewport and nested containing blocks holding percentage-sized layers; and wrapped-text, chat, `Blades` and Vapor95 screens. The same dump differs in 14 cases on 0.15 without the fix, so it can see this class of change. New test `layout::tests::absolute_layers_resolve_against_their_parent_not_the_viewport` pins the parent-relative case: a parent shorter and narrower than the viewport, sitting below a sibling. It fails without the fix.
   - **Dependencies:** `arrayvec` leaves the shipped dependency tree. `THIRD-PARTY-NOTICES.md` is regenerated. taffy 0.15's MSRV is 1.71, so LibGibson's 1.85 is unaffected.
 
+### Documentation
+- **Fixed-width spacers.** `spacer()` grows by default and `.width(n)` keeps that growth, so
+  `spacer().width(n)` does not reserve exactly `n` columns; the rustdoc for `spacer` and
+  `Element::width` and `docs/UI_LAYER.md` now give the recipe `spacer().width(n).grow(0.)`
+  ([#413](https://github.com/femboy2112/libgibson/issues/413)). No behavior change.
+
 ## [0.7.3] — 2026-11-16 · GitHub release from `main` · "clear SIGBUS 3"
 
 A patch release with one renderer addition: an opt-in inline resize policy for #403. The default is unchanged.

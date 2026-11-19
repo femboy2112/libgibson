@@ -225,6 +225,13 @@ impl<A> Element<A> {
         self.number = Some(number);
         self
     }
+    /// Sets a fixed width in terminal columns.
+    ///
+    /// Note: this does not change the element's flex growth. A [`spacer`] grows
+    /// by default (`grow(1.0)`), so `spacer().width(n)` is only a preferred
+    /// basis and may receive a different width when free space is distributed.
+    /// For a fixed-width spacer, also clear its growth:
+    /// `spacer().width(n).grow(0.)`.
     pub fn width(mut self, width: u16) -> Self {
         self.layout.width = Some(width);
         self
@@ -310,6 +317,13 @@ pub fn column<A>() -> Element<A> {
 pub fn stack<A>() -> Element<A> {
     Element::new(ElementKind::Stack)
 }
+/// A flexible gap that absorbs free space along its parent's main axis.
+///
+/// A spacer starts with `grow(1.0)`, and [`Element::width`] / [`Element::height`]
+/// leave that growth in place, so `spacer().width(n)` does not reserve exactly
+/// `n` columns when free space is distributed. Fixed-width spacer: clear the
+/// growth explicitly with `spacer().width(n).grow(0.)`. This is documented
+/// behavior; `spacer()` growth is unchanged.
 pub fn spacer<A>() -> Element<A> {
     Element::new(ElementKind::Spacer).grow(1.0)
 }

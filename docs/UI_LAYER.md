@@ -138,6 +138,10 @@ interaction metadata for children that would never become visible.
 | Floating presentation | `modal`, `toast`, `.overlay(...)` |
 | Substrate | `raw(Node)`, `presented(callback)`, `surface(Arc<Surface>)`, `raster(Surface)` |
 
+`spacer()` grows by default (`grow(1.0)`), and `.width(n)` keeps that growth, so
+`spacer().width(n)` does not reserve exactly `n` columns once free space is
+distributed. For a fixed-width gap write `spacer().width(n).grow(0.)`.
+
 `stack()` follows ordinary `Node::stack` sizing: give it an explicit size or a
 bounded parent. For a floating layer over intrinsically sized content, prefer
 `.overlay(...)`.
