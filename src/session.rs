@@ -1283,7 +1283,9 @@ impl TerminalSession {
         }
     }
 
-    /// Returns current terminal dimensions (columns, rows).
+    /// Returns current terminal dimensions (columns, rows), substituting 80x24 when the size
+    /// cannot be read. For a decision that must not pass on a failed read, see
+    /// [`try_terminal_size`](Self::try_terminal_size).
     pub fn terminal_size(&self) -> (u16, u16) {
         if self.headless {
             self.headless_size
@@ -1297,11 +1299,88 @@ impl TerminalSession {
             (80, 24)
         }
     }
+
+    /// Returns the current terminal dimensions (columns, rows), or the error that stopped them
+    /// being read. Unlike [`terminal_size`](Self::terminal_size) it never substitutes 80x24.
+    ///
+    /// - **Headless** ([`headless`](Self::headless)): `Ok` of the geometry the session was
+    ///   created with or last given by `set_terminal_size`, returned as set (not validated).
+    /// - **Acquired output endpoint** (a session that owns the terminal): the size of that
+    ///   output (`TIOCGWINSZ` on Unix). An ioctl failure, or a zero dimension (which a terminal
+    ///   reports while it is going away), is an `Err`.
+    /// - **Other terminal** (`is_tty` without an owned endpoint): the size crossterm reports;
+    ///   its error, or a zero dimension, is an `Err`.
+    /// - **Not a terminal**: `Err` of kind [`io::ErrorKind::Unsupported`]. There is no fallback.
+    ///
+    /// A caller making a consent or safety decision from the size (for example "is the terminal
+    /// at least N x M") MUST use this method and treat `Err` as "not satisfied":
+    /// `terminal_size` substitutes 80x24 on failure, so a gate built on it passes when the read
+    /// fails.
+    pub fn try_terminal_size(&self) -> io::Result<(u16, u16)> {
+        if self.headless {
+            Ok(self.headless_size)
+        } else if let Some(endpoint) = &self.output_endpoint {
+            endpoint.size()
+        } else if self.is_tty {
+            match crossterm::terminal::size()? {
+                (0, _) | (_, 0) => Err(io::Error::other("terminal reported a zero size")),
+                size => Ok(size),
+            }
+        } else {
+            Err(io::Error::new(io::ErrorKind::Unsupported, "not a terminal"))
+        }
+    }
 }
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {
         let _ = self.restore();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod try_terminal_size_tests {
+    //! `try_terminal_size` must surface a failed size read instead of the 80x24 fallback.
+    //! Sessions here come from `headless` (no lease, `owns_lease == false`, so `restore`/`Drop`
+    //! return early and never touch the real terminal) with private fields adjusted. No
+    //! process-global state is read or written.
+    use super::*;
+
+    /// A non-headless session whose captured output is `/dev/null`, so `TIOCGWINSZ` fails.
+    fn session_with_failing_endpoint() -> TerminalSession {
+        let file = std::fs::File::open("/dev/null").expect("open /dev/null");
+        let mut s = TerminalSession::headless(80, 24);
+        s.headless = false;
+        s.is_tty = true;
+        s.output_endpoint = Some(Arc::new(SessionEndpoint { file }));
+        s
+    }
+
+    #[test]
+    fn a_failed_endpoint_size_read_is_an_error() {
+        assert!(session_with_failing_endpoint().try_terminal_size().is_err());
+    }
+
+    #[test]
+    fn terminal_size_keeps_the_80x24_fallback_on_the_same_failure() {
+        assert_eq!(session_with_failing_endpoint().terminal_size(), (80, 24));
+    }
+
+    #[test]
+    fn a_non_terminal_session_is_an_error_not_80x24() {
+        let mut s = TerminalSession::headless(80, 24);
+        s.headless = false;
+        s.is_tty = false;
+        s.output_endpoint = None;
+        assert!(s.try_terminal_size().is_err());
+    }
+
+    #[test]
+    fn headless_size_is_returned_as_is() {
+        let mut s = TerminalSession::headless(100, 40);
+        assert_eq!(s.try_terminal_size().unwrap(), (100, 40));
+        s.set_terminal_size(33, 7);
+        assert_eq!(s.try_terminal_size().unwrap(), (33, 7));
     }
 }
 
