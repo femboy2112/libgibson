@@ -770,8 +770,8 @@ impl PressedKeys {
     /// to `1`. A legacy `W` pairs when the terminal reports `w` as its base; Unicode lowercase may
     /// expand to multiple characters, so it cannot match a single base key in every layout.
     ///
-    /// So, as a last resort only, when none of the above matched: a release or repeat of a text key
-    /// under its kitty base key pairs with the one record whose press was a legacy text key decoded
+    /// So, as a last resort only, when none of the above matched: a release (never a repeat) of a
+    /// text key under its kitty base key pairs with the one record whose press was a legacy text key decoded
     /// in the switch window (`Down.4`), if exactly one such record exists. Base `1` cannot be mapped
     /// back to `!` without assuming a keyboard layout, so this is a provenance rule, not a layout
     /// one: the window record is the only press that kitty could be releasing unnamed. It is NOT
@@ -782,7 +782,7 @@ impl PressedKeys {
     /// Still unrecovered: a tap pressed and released inside the window sends no release byte, so
     /// its record stays until a focus loss, the key's next kitty press/release or reporting is
     /// disabled. The `issue_312_*` tests pin all of this.
-    fn find_down(&self, id: KeyId, code: CtKeyCode) -> Option<usize> {
+    fn find_down(&self, id: KeyId, code: CtKeyCode, release: bool) -> Option<usize> {
         let legacy = KeyId::Code(code);
         let exact = self.newest(|r| r.0 == id);
         if matches!(id, KeyId::Base(b) if KITTY_PRIVATE_USE_KEYS.contains(&b)) {
@@ -814,7 +814,9 @@ impl PressedKeys {
         // under its kitty base key, with exactly one record of a legacy text press from the
         // switch window: that press is the one kitty is releasing (a `!` typed before the push,
         // released as `1`). Two or more such records are ambiguous, so none is paired.
-        if !matches!(id, KeyId::Base(_)) || !matches!(code, CtKeyCode::Char(_)) {
+        // A release only: an unmatched repeat would move the window record to an unrelated
+        // held key's identity and misname every later repeat and its release.
+        if !release || !matches!(id, KeyId::Base(_)) || !matches!(code, CtKeyCode::Char(_)) {
             return None;
         }
         let in_window = |r: &Down| r.4 && matches!(r.0, KeyId::Code(CtKeyCode::Char(_)));
@@ -849,7 +851,7 @@ impl PressedKeys {
         let seq = self.1;
         let found = match k.kind {
             KeyEventKind::Press => self.0.iter().position(|r| r.0 == id),
-            _ => self.find_down(id, k.code),
+            _ => self.find_down(id, k.code, k.kind == KeyEventKind::Release),
         };
         match (k.kind, found) {
             (KeyEventKind::Press, Some(i)) => {
@@ -2532,7 +2534,8 @@ mod tests {
         let _serial = queries_lock();
         forget_keyboard_replies();
         // A decoder model of a Turkish-layout `İ` press in legacy mode (outside the provable
-        // window: no request outstanding) followed by an `i` release in the Kitty protocol. This is not a real terminal or keyboard-layout test. Unicode's
+        // window: no request outstanding) followed by an `i` release in the Kitty protocol. This
+        // is not a real terminal or keyboard-layout test. Unicode's
         // default lowercase for U+0130 has two code points, `i` + COMBINING DOT ABOVE, so the
         // source's single-base-key fallback cannot match it to `i`. No repeat or recovery follows.
         let got = terminal(decode_all("İ\x1b[105;1:3u".as_bytes(), true));
@@ -2686,6 +2689,27 @@ mod tests {
         assert_eq!(
             got.last(),
             Some(&kind(K::Char('!'), M::NONE, Kind::Release))
+        );
+        assert_eq!(still_held(&got), vec![]);
+    }
+
+    #[test]
+    fn issue_312_an_unmatched_repeat_is_never_paired_with_the_window_record() {
+        // The last resort is for a release only. An unrelated held key with no record (`q`)
+        // autorepeating under kitty is recorded as itself and named `q` every time; the
+        // window-tagged `!` is not moved to it, and its own release still pairs afterwards.
+        let got = issue_312_decode_in_window(
+            b"!\x1b[?15u\x1b[?62;c\x1b[113;1:2u\x1b[113;1:2u\x1b[113;1:3u\x1b[49;1:3u",
+        );
+        assert_eq!(
+            got,
+            vec![
+                kind(K::Char('!'), M::NONE, Kind::Press),
+                kind(K::Char('q'), M::NONE, Kind::Repeat),
+                kind(K::Char('q'), M::NONE, Kind::Repeat),
+                kind(K::Char('q'), M::NONE, Kind::Release),
+                kind(K::Char('!'), M::NONE, Kind::Release),
+            ]
         );
         assert_eq!(still_held(&got), vec![]);
     }
