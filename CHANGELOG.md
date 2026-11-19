@@ -15,6 +15,14 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Release process
+- **The native SDK no longer embeds build-host paths.** rustc records dependency source paths
+  in panic locations, so the shipped `libgibson.so.1` and `libgibson.a` carried the build
+  machine's `$CARGO_HOME/registry/src/...` paths (v0.7.x SDK archives included).
+  `scripts/release/stage-sdk.sh` now remaps `$CARGO_HOME`, `$RUSTUP_HOME` and the checkout to
+  neutral prefixes (`/cargo/...`, `/rustup`, `/libgibson`), and `scripts/release/bundle.sh`
+  fails if any staged file still contains a home-directory path. Library code is unchanged.
+
 ## [0.8.0] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 0"
 
 A minor release: the experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }` constructors (`Compiled<A>` is not `#[non_exhaustive]`), and the experimental Standard/Blades typed `on_press` behavior changes. It also adds `TerminalSession::try_terminal_size`, fixes #312 and ports the layout engine to taffy 0.15.

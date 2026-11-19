@@ -91,6 +91,15 @@ trap 'rm -f -- "$scratch/messages" "$scratch/paths" "$scratch/libgibson.so" "$sc
 if [[ "$NO_BUILD" -eq 0 ]]; then
     # Select what this Cargo invocation actually built, including configured/custom target
     # directories or target triples. A stale repo-local target must never mask those outputs.
+    # Keep host paths out of the shipped binaries. rustc embeds dependency source paths in panic
+    # locations; without this, every dependency path under $CARGO_HOME (and the checkout itself)
+    # lands in libgibson.so/.a. The prefixes do not overlap. Appends to any caller RUSTFLAGS.
+    cargo_home=${CARGO_HOME:-${HOME:?}/.cargo}
+    remap="--remap-path-prefix=$cargo_home/registry/src=/cargo/registry/src"
+    remap+=" --remap-path-prefix=$cargo_home/git/checkouts=/cargo/git"
+    remap+=" --remap-path-prefix=${RUSTUP_HOME:-$HOME/.rustup}=/rustup"
+    remap+=" --remap-path-prefix=$REPO_ROOT=/libgibson"
+    export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }$remap"
     note "building release artifacts (cargo build --release)..."
     messages="$scratch/messages"
     paths="$scratch/paths"
