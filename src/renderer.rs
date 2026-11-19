@@ -1123,14 +1123,15 @@ impl Renderer {
         // `CSI L` actually being supported. Unknown capability is NOT treated as
         // supported: we fall back to the always-correct repaint path.
         let anchor_stable = matches!(self.anchor, AnchorState::Stable { .. });
-        let can_chunk = self.inline_history_chunking
-            && self.mode == RenderMode::Inline
-            && self.anchor
-                == (AnchorState::Stable {
-                    cols: term_cols,
-                    rows: term_rows,
-                    live_height: self.live_region_height,
-                })
+        let chunking_enabled = self.inline_history_chunking && self.mode == RenderMode::Inline;
+        // Every batch in opt-in mode needs a current physical viewport, even
+        // when it would fit in one insertion. Leave the legacy path unchanged.
+        let current_viewport = self.anchor
+            == (AnchorState::Stable {
+                cols: term_cols,
+                rows: term_rows,
+                live_height: self.live_region_height,
+            })
             && self.last_cursor_y < self.live_region_height;
         // Issue #403: a resize the region has not been re-established after. The preserved live
         // framebuffer has the old geometry, so it is not replayed: the region is erased (bounded)
@@ -1141,7 +1142,8 @@ impl Renderer {
             && anchor_stable
             && session.insert_line_supported()
             && spare_rows > 0
-            && (lines.len() <= spare_rows || can_chunk)
+            && (!chunking_enabled || current_viewport)
+            && (lines.len() <= spare_rows || chunking_enabled)
             && !any_line_exceeds_width
             && self.previous_surface.is_some();
 

@@ -358,6 +358,27 @@ fn chunked_inline_insertion_requires_current_geometry_and_known_capability() {
     }
 }
 
+#[test]
+fn opted_in_fitting_inline_history_keeps_stable_legacy_bytes() {
+    let insert = |chunking, rows| {
+        let mut h = Harness::new(40, 6);
+        h.renderer.set_inline_history_chunking(chunking);
+        h.render(&mut live_root());
+        h.session.set_terminal_size(40, rows);
+        let mut wire = Vec::new();
+        let (_, strategy) = h
+            .renderer
+            .insert_text_before_live("history", &mut h.session, &mut wire)
+            .unwrap();
+        (strategy, wire)
+    };
+
+    let legacy = insert(false, 6);
+    assert_eq!(legacy.0, InsertStrategy::InsertLineFastPath);
+    assert_eq!(insert(true, 6), legacy);
+    assert_eq!(insert(false, 7), legacy);
+}
+
 // ---------------------------------------------------------------------------
 // RepaintFallback
 // ---------------------------------------------------------------------------
