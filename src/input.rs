@@ -218,8 +218,8 @@ pub enum Event {
     /// tapped and let go inside the window sends no release at all, and one pressed outside it is
     /// delivered as the terminal reports it. A tap's leftover mark counts, within its window, as a
     /// second press (so the real one is not paired) or as the one press an unrelated release can
-    /// be taken for; it ends when the next non-overlapped window opens, on a focus loss, or when reporting is
-    /// disabled and enabled again. An autorepeat of a held key is an [`Event::Key`], as on any
+    /// be taken for; it ends when the next non-overlapped window opens, on a focus loss, or when
+    /// reporting is disabled and enabled again. An autorepeat of a held key is an [`Event::Key`], as on any
     /// terminal.
     KeyRelease(KeyEvent),
     /// The terminal's answer to a key-release reporting request, in input order: every event

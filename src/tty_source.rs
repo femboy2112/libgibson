@@ -798,8 +798,8 @@ impl PressedKeys {
     /// text key under its kitty base key pairs with the one record whose press was a legacy text key decoded
     /// in the switch window (`Down.4`), if exactly one such record is eligible. A record is eligible
     /// only in its own window generation (`current`: the generation of the latest window, which
-    /// stays current after its flags reply until the next non-overlapped window opens) and in its own key-release
-    /// epoch (`epoch`); a tag of an earlier window or epoch is neither paired nor counted. Base `1`
+    /// stays current after its flags reply until the next non-overlapped window opens) and in its
+    /// own key-release epoch (`epoch`); a tag of an earlier window or epoch is neither paired nor counted. Base `1`
     /// cannot be mapped back to `!` without assuming a keyboard layout, so this is a provenance
     /// rule, not a layout one: the window record is the only press that kitty could be releasing
     /// unnamed. It is NOT used with two or more eligible records (it cannot tell which one the
@@ -811,8 +811,8 @@ impl PressedKeys {
     /// Residual: a tap pressed and released inside the window sends no release byte, so its record
     /// stays. Within its generation it is a ghost tag that blocks the pairing of the real window
     /// press (two eligible records: that key stays held, today's behavior) or, if it is the only
-    /// one, takes one unrelated record-less release. It expires when the next non-overlapped window opens, on a
-    /// focus loss or on a key-release epoch change; otherwise the hold lasts until the key's next
+    /// one, takes one unrelated record-less release. It expires when the next non-overlapped
+    /// window opens, on a focus loss or on a key-release epoch change; otherwise the hold lasts until the key's next
     /// kitty press/release. The `issue_312_*` tests pin all of this.
     fn find_down(
         &self,

@@ -34,8 +34,9 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   or more window presses nothing is paired (today's behavior). An unrelated, never-recorded key's
   release can be taken for the single window press, which is then delivered as released early: an
   accepted trade-off. Key naming off is unchanged. Rust-only, no public API or C ABI change.
-  The tag expires: it is eligible only in its own window generation (each new non-overlapped window opens a
-  new one; requests written while one is still outstanding share its generation) and in the key-release epoch it was recorded in, and focus loss clears it, so a stale tag
+  The tag expires: it is eligible only in its own window generation (each new non-overlapped
+  window opens a new one; requests written while one is still outstanding share its generation)
+  and in the key-release epoch it was recorded in, and focus loss clears it, so a stale tag
   from an earlier window, epoch or focus no longer pairs with, or blocks the pairing of, a later
   release. A key tapped and released inside the window still sends no
   release byte; see the known limitation below.
