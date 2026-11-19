@@ -85,8 +85,17 @@ pub(crate) const KEY_RELEASE_FLAGS: u8 = 15;
 fn request_key_releases(out: &mut impl Write) -> io::Result<()> {
     #[cfg(unix)]
     crate::tty_source::expect_keyboard_reply();
-    write!(out, "\x1b[>{KEY_RELEASE_FLAGS}u\x1b[?u\x1b[c")?;
-    out.flush()
+    let sent = write!(out, "\x1b[>{KEY_RELEASE_FLAGS}u\x1b[?u\x1b[c").and_then(|()| out.flush());
+    // The request was recorded before the write, so an answer read at once is expected. A failed
+    // write takes it back: no answer is coming, and a request left outstanding would hold the
+    // screen-switch window (#312) open until the next restore.
+    #[cfg(unix)]
+    {
+        if sent.is_err() {
+            crate::tty_source::retract_keyboard_reply();
+        }
+    }
+    sent
 }
 
 /// Pops the entry [`request_key_releases`] pushed. The kitty stacks are per screen (main and
@@ -986,7 +995,8 @@ impl TerminalSession {
     /// [`HoldTracker::set_releases_reported(false)`](crate::hold::HoldTracker::set_releases_reported)
     /// itself. A release names its key as the press did for the 32 most recent keys still down,
     /// except a shifted symbol pressed just before the flags take effect and let go without an
-    /// autorepeat (`!` is released as `1`;
+    /// autorepeat, which is named as its press only when it is the single such press decoded
+    /// before the flags reply (otherwise `!` is released as `1`;
     /// [#312](https://github.com/femboy2112/libgibson/issues/312)).
     /// Idempotent; a no-op off Unix and on a non-TTY or headless session. On a session that has
     /// been restored (it no longer holds the terminal), enabling returns `NotConnected` and
@@ -1519,6 +1529,64 @@ mod key_release_switch_tests {
             s.key_release_reporting_enabled,
             "reporting stays on defensively, like a failed initial enable"
         );
+        reset_globals();
+    }
+
+    #[test]
+    fn repush_failure_does_not_leak_an_outstanding_keyboard_request() {
+        // #312 review F3: `request_key_releases` records its request before the write. A failed
+        // write must take that record back, or the unanswered request keeps the screen-switch
+        // window open for ever and every later legacy press is tagged. (Fails before the repair:
+        // the count stays 1 after the failed re-push.)
+        let _g = lock();
+        let mut s = reporting_live_session();
+        let mut w = NeedleFail {
+            buf: Vec::new(),
+            needle: b'>',
+            armed: true,
+        };
+        let r = s.switch_screen_on(&mut w, |o| o.write_all(b"SW"), true);
+        assert!(r.is_err());
+        assert_eq!(
+            crate::tty_source::outstanding_keyboard_requests(),
+            0,
+            "a request whose write failed is not outstanding"
+        );
+        reset_globals();
+    }
+
+    #[test]
+    fn a_failed_request_flush_does_not_leak_an_outstanding_keyboard_request() {
+        // #312 review F3, the initial-enable path and a flush failure: the whole request was
+        // accepted by the writer but the flush failed. Fails before the repair (count stays 1).
+        struct FailFlush(Vec<u8>);
+        impl Write for FailFlush {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.0.extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Err(io::Error::other("injected flush failure"))
+            }
+        }
+        let _g = lock();
+        reset_globals();
+        let mut w = FailFlush(Vec::new());
+        assert!(request_key_releases(&mut w).is_err());
+        assert_eq!(w.0, b"\x1b[>15u\x1b[?u\x1b[c");
+        assert_eq!(crate::tty_source::outstanding_keyboard_requests(), 0);
+        reset_globals();
+    }
+
+    #[test]
+    fn a_written_request_stays_outstanding_until_answered() {
+        // CONTROL (passes before and after the repair): a request whose write succeeded is
+        // outstanding, so the screen-switch window opens for it.
+        let _g = lock();
+        reset_globals();
+        let mut buf: Vec<u8> = Vec::new();
+        request_key_releases(&mut buf).unwrap();
+        assert_eq!(crate::tty_source::outstanding_keyboard_requests(), 1);
         reset_globals();
     }
 

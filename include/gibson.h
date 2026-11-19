@@ -285,10 +285,15 @@ gibson_status_t gibson_set_max_fps(gibson_context_t *ctx, uint32_t fps);
 
    A KEY_RELEASE names its key exactly as its press was delivered (key_code, modifiers, key kind)
    for the 32 most recent keys still down. A key already down when reporting began is named as its
-   first autorepeat since then was delivered, or, with none, as the terminal reports it. Known
-   limit: a shifted symbol pressed just before the flags take effect and let go without an
-   autorepeat is released as the terminal reports it ('!' as '1'), so that release does not match
-   its press (https://github.com/femboy2112/libgibson/issues/312). While enabled, the terminal
+   first autorepeat since then was delivered, or, with none, as the terminal reports it. A
+   shifted symbol pressed just before the flags take effect and let go without an autorepeat is
+   released by the terminal under its base key ('!' as '1'); when it is the single such press
+   decoded before the flags reply, an otherwise unmatched release is named as that press, else it
+   is delivered as reported (https://github.com/femboy2112/libgibson/issues/312); an unrelated
+   key's release can be taken for that press, which is then reported released early, and that key's
+   own release is not reported under its own name. A key tapped inside that window sends no
+   release and may block or take one such pairing until the next screen switch, a focus loss, or
+   reporting is disabled and enabled again. While enabled, the terminal
    sends every key as an escape sequence; modifier keys alone are reported but not delivered, and
    text typed through an input method may not arrive: this is for direct key control, not text
    entry. A no-op on a headless context (push the events instead) and off Unix.

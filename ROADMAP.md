@@ -31,7 +31,8 @@ evidence or a recorded deferral). Not scheduled.
 | #418 | `68e5302` | Offer chunked inline history insertion without repainting the viewport; fixes #417 (opt-in, Rust-only) |
 
 **Named fix target:** #312 (a shifted symbol in the screen-switch window is released as the base
-key). A fix attempt is planned for 0.8.0.
+key). Fix: window-tagged last-resort pairing of a release (see CHANGELOG `[Unreleased]`); a tap
+pressed and released inside the window remains a recorded known limitation.
 
 **Decision point:** `InlineResizePolicy::ReclaimLiveRows` as the default, only if kitty and VTE are
 verified to keep the cursor line on a shrink within the 0.8.0 window. Otherwise an explicit recorded
@@ -267,7 +268,8 @@ Each v0.7 item, with the evidence that closes it or the recorded deferral that e
   section puts non-Linux qualification in v0.9, and 0.7 is declared Linux x86_64 only.
 - **#312**, a shifted key in the screen-switch window, is **deferred to v0.8.0 as a named fix
   target** (owner delegation, release coordinator decision of 2026-11-13). If 0.8.0 ships without
-  the fix, it needs a fresh explicit deferral.
+  the fix, it needs a fresh explicit deferral. Fix: window-tagged last-resort pairing (see
+  CHANGELOG, [Unreleased]).
 - **#15**, crossterm's own reader (upstream #1128), is **deferred until upstream fixes it**
   (owner delegation, release coordinator decision of 2026-11-13). It stays a documented,
   owner-accepted limitation. The upstream status is re-checked at every minor release, starting
@@ -276,7 +278,7 @@ Each v0.7 item, with the evidence that closes it or the recorded deferral that e
   (V0_7_QUALIFICATION G3). A standalone `Renderer` on an arbitrary writer is EXPLICITLY EXCLUDED
   in the lease contract.
 
-**v0.8.0 named fix targets:** #312 (see above).
+**v0.8.0 named fix targets:** #312 (fix: window-tagged last-resort pairing, see CHANGELOG).
 
 **v0.8 and later are not in 0.7.x.** That covers:
 - independent five-language clients with failure codes and lifecycle at parity;
