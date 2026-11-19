@@ -37,7 +37,7 @@ impl Scene {
         }
     }
 
-    /// Render one frame and return the renderer's live-region height afterwards.
+    /// Render one frame; return `Renderer::live_region_height` afterwards.
     fn frame(&mut self, tree: &Element<()>) -> u16 {
         let env = UiEnvironment {
             width: COLS,
@@ -50,7 +50,7 @@ impl Scene {
         self.ctx.render_now().unwrap();
         let bytes = self.ctx.take_output();
         self.vt.process(bytes.as_bytes());
-        self.ctx.renderer.last_frame_report().live_region_height
+        self.ctx.renderer.live_region_height
     }
 
     fn scrollback_len(&self) -> usize {
