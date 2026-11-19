@@ -282,6 +282,7 @@ Each v0.7 item, with the evidence that closes it or the recorded deferral that e
   in the lease contract.
 
 **v0.8.0 named fix targets:** #312 (fix: window-tagged last-resort pairing, see CHANGELOG).
+*Update 2026-11-19:* fixed by #421 (`d39e895`); #312 is closed.
 
 **v0.8 and later are not in 0.7.x.** That covers:
 - independent five-language clients with failure codes and lifecycle at parity;
