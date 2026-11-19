@@ -971,6 +971,12 @@ pub(crate) fn expect_keyboard_reply() {
     lock_queries().outstanding += 1;
 }
 
+/// Tests: the number of requests whose device attributes reply has not arrived.
+#[cfg(test)]
+pub(crate) fn outstanding_keyboard_requests() -> u32 {
+    lock_queries().outstanding
+}
+
 /// Forgets outstanding requests: the session that wrote them restored the terminal.
 pub(crate) fn forget_keyboard_replies() {
     *lock_queries() = KeyboardQueries::default();
@@ -2754,6 +2760,276 @@ mod tests {
                 SourceEvent::Terminal(kind(K::Char('1'), M::NONE, Kind::Release)),
             ]
         );
+    }
+
+    // ------------------------------------------------ #312: window tags expire per window
+    //
+    // Review of the window pairing found the tag never expired: a legacy tap inside the window
+    // sends no release, so its tag stayed forever and later paired with, or blocked, unrelated
+    // releases. These tests pin the repair (each tag is eligible only within its own window
+    // generation and key-release epoch, and focus loss demotes). Each says whether it is a
+    // CONTROL (passes before and after the fix) or fails on the pre-repair head.
+
+    /// Polls `s` until nothing more arrives and returns the terminal events (answers dropped).
+    fn issue_312_drain(s: &mut TtySource) -> Vec<CtEvent> {
+        let mut out = Vec::new();
+        while let Ok(Some(e)) = s.poll_source(Duration::from_millis(200)) {
+            if let SourceEvent::Terminal(e) = e {
+                out.push(e);
+            }
+        }
+        out
+    }
+
+    /// `(code, modifiers, kind)` of every key event: the key state (keypad) is not compared.
+    fn issue_312_keys(events: &[CtEvent]) -> Vec<(K, M, Kind)> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                CtEvent::Key(k) => Some((k.code, k.modifiers, k.kind)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The bytes of one complete reply to a key-release request: flags, then device attributes.
+    const ISSUE_312_REPLIES: &[u8] = b"\x1b[?15u\x1b[?62;c";
+
+    #[test]
+    fn issue_312_a_ghost_tag_from_an_earlier_window_neither_pairs_nor_blocks_the_next_window() {
+        // FAILS on the pre-repair head. Window N: a legacy `a` is tapped (no release is ever sent
+        // for it: the terminal was still in legacy mode), so its tag is a ghost. Window N+1: a
+        // `!` is pressed and released as base `1`. The ghost belongs to window N, so it neither
+        // counts toward "exactly one tag" nor can be paired: the release is `!`'s. Before the
+        // repair there were two tags, nothing paired, and `!` stayed held (delivered as `1`).
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            expect_keyboard_reply();
+            write_all(&master, b"a");
+            write_all(&master, ISSUE_312_REPLIES);
+            let mut out = issue_312_drain(s);
+            expect_keyboard_reply();
+            write_all(&master, b"!");
+            write_all(&master, ISSUE_312_REPLIES);
+            write_all(&master, b"\x1b[57441;1:3u\x1b[49;1:3u");
+            out.extend(issue_312_drain(s));
+            drop(master);
+            out
+        });
+        forget_keyboard_replies();
+        assert_eq!(got.first(), Some(&kind(K::Char('a'), M::NONE, Kind::Press)));
+        assert_eq!(
+            got.last(),
+            Some(&kind(K::Char('!'), M::NONE, Kind::Release)),
+            "{got:?}"
+        );
+        assert_eq!(still_held(&got), vec![(K::Char('a'), M::NONE)]);
+    }
+
+    #[test]
+    fn issue_312_a_ghost_tag_does_not_sponge_a_record_less_release_after_a_new_window() {
+        // FAILS on the pre-repair head. Window N: the ghost `a` (a tap, no release). Window N+1
+        // opens and closes with no press in it. A later release of `q`, which was never recorded,
+        // is `q`'s own. Before the repair the ghost was the only tag at any time later, and the
+        // release was delivered as `a` released (the "sponge").
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            expect_keyboard_reply();
+            write_all(&master, b"a");
+            write_all(&master, ISSUE_312_REPLIES);
+            let mut out = issue_312_drain(s);
+            expect_keyboard_reply();
+            write_all(&master, ISSUE_312_REPLIES);
+            write_all(&master, b"\x1b[113;1:3u");
+            out.extend(issue_312_drain(s));
+            drop(master);
+            out
+        });
+        forget_keyboard_replies();
+        assert_eq!(
+            got.last(),
+            Some(&kind(K::Char('q'), M::NONE, Kind::Release)),
+            "{got:?}"
+        );
+        assert_eq!(still_held(&got), vec![(K::Char('a'), M::NONE)]);
+    }
+
+    #[test]
+    fn issue_312_a_focus_loss_demotes_the_window_tag() {
+        // FAILS on the pre-repair head. A `!` typed in the window, then the terminal reports
+        // focus loss (`CSI O`), then kitty's base-`1` release. Focus loss ends every window tag,
+        // so the release is no longer taken for `!`: it is delivered as `1`. (The consumer's own
+        // focus-loss handling ends the `!` hold: `issue_312_focus_loss_conditionally_ends_the_stuck_hold`.)
+        let got =
+            issue_312_decode_in_window(b"!\x1b[?15u\x1b[?62;c\x1b[O\x1b[57441;1:3u\x1b[49;1:3u");
+        assert_eq!(
+            got,
+            vec![
+                kind(K::Char('!'), M::NONE, Kind::Press),
+                CtEvent::FocusLost,
+                kind(
+                    K::Modifier(ModifierKeyCode::LeftShift),
+                    M::SHIFT,
+                    Kind::Release
+                ),
+                kind(K::Char('1'), M::NONE, Kind::Release),
+            ]
+        );
+    }
+
+    #[test]
+    fn issue_312_a_key_release_epoch_change_demotes_the_window_tag() {
+        // FAILS on the pre-repair head. A `!` is tagged in epoch 1; reporting is then disabled
+        // and re-enabled (epoch 2); kitty's base-`1` release arrives in epoch 2. The tag belongs
+        // to the earlier epoch and is not eligible: the release is `1`'s. Before the repair the
+        // last resort ignored the epoch and delivered `!` released.
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            s.test_epoch = Some(1);
+            expect_keyboard_reply();
+            write_all(&master, b"!");
+            write_all(&master, ISSUE_312_REPLIES);
+            let mut out = issue_312_drain(s);
+            s.test_epoch = Some(2);
+            write_all(&master, b"\x1b[49;1:3u");
+            out.extend(issue_312_drain(s));
+            drop(master);
+            out
+        });
+        forget_keyboard_replies();
+        assert_eq!(
+            got,
+            vec![
+                kind(K::Char('!'), M::NONE, Kind::Press),
+                kind(K::Char('1'), M::NONE, Kind::Release),
+            ]
+        );
+    }
+
+    #[test]
+    fn issue_312_an_epoch_one_ghost_does_not_pair_in_epoch_two() {
+        // FAILS on the pre-repair head. Text decoded in the window of epoch 1 (an input-method
+        // character, one tag) is a ghost; in epoch 2 a record-less `q` release must not be taken
+        // for it. Before the repair the last resort ignored the record's epoch.
+        let _serial = queries_lock();
+        forget_keyboard_replies();
+        let (master, slave) = pty();
+        let got = on_worker(slave, None, move |s| {
+            s.track_keys = true;
+            s.test_epoch = Some(1);
+            expect_keyboard_reply();
+            write_all(&master, "é".as_bytes());
+            write_all(&master, ISSUE_312_REPLIES);
+            let mut out = issue_312_drain(s);
+            s.test_epoch = Some(2);
+            write_all(&master, b"\x1b[113;1:3u");
+            out.extend(issue_312_drain(s));
+            drop(master);
+            out
+        });
+        forget_keyboard_replies();
+        assert_eq!(
+            got.last(),
+            Some(&kind(K::Char('q'), M::NONE, Kind::Release)),
+            "{got:?}"
+        );
+    }
+
+    #[test]
+    fn issue_312_non_text_and_private_use_releases_never_pair_with_a_window_tag() {
+        // CONTROL (passes before and after the fix). With a window-tagged `!` the only record,
+        // the releases of Enter (kitty `CSI 13;1:3u`), the arrow Left (`CSI 1;1:3D`) and keypad
+        // `0` (private use 57399) are delivered as decoded: the last resort is for a text key
+        // released under its kitty base key, never for a non-text key or a private-use key.
+        let got = issue_312_decode_in_window(
+            b"!\x1b[?15u\x1b[?62;c\x1b[13;1:3u\x1b[1;1:3D\x1b[57399;1:3u",
+        );
+        assert_eq!(
+            issue_312_keys(&got),
+            vec![
+                (K::Char('!'), M::NONE, Kind::Press),
+                (K::Enter, M::NONE, Kind::Release),
+                (K::Left, M::NONE, Kind::Release),
+                (K::Char('0'), M::NONE, Kind::Release),
+            ]
+        );
+        assert_eq!(still_held(&got), vec![(K::Char('!'), M::NONE)]);
+    }
+
+    #[test]
+    fn issue_312_bracketed_paste_in_the_window_records_no_tag() {
+        // CONTROL (passes before and after the fix). A bracketed paste decodes to one
+        // `Event::Paste`, never to key events, so it records nothing: the later base-`98`
+        // release (`b`, which was never recorded) is delivered as decoded.
+        let got =
+            issue_312_decode_in_window(b"\x1b[200~ab\x1b[201~\x1b[?15u\x1b[?62;c\x1b[98;1:3u");
+        assert_eq!(
+            got,
+            vec![
+                CtEvent::Paste("ab".to_string()),
+                kind(K::Char('b'), M::NONE, Kind::Release),
+            ]
+        );
+    }
+
+    #[test]
+    fn issue_312_unbracketed_text_in_the_window_is_ambiguous_and_not_paired() {
+        // CONTROL (passes before and after the fix). Text that arrives unbracketed is decoded as
+        // one key press per character: `a` and `b` are two window tags, so the release of an
+        // unrelated, never-recorded `q` is ambiguous and is delivered as decoded (the exactly-one
+        // rule). Both stay held until demotion.
+        let got = issue_312_decode_in_window(b"ab\x1b[?15u\x1b[?62;c\x1b[113;1:3u");
+        assert_eq!(
+            got.last(),
+            Some(&kind(K::Char('q'), M::NONE, Kind::Release)),
+            "{got:?}"
+        );
+        assert_eq!(still_held(&got).len(), 2);
+    }
+
+    #[test]
+    fn issue_312_residual_two_tags_in_one_window_generation_block_the_pairing() {
+        // RESIDUAL, pinned (a control: passes before and after the fix). Trace A: a tap `a`
+        // (no release is ever sent) and the real `!`, both in one window generation. The exactly-
+        // one rule sees two tags, so `!`'s base-`1` release is not paired: `!` stays held, as it
+        // does today. This is not a regression; it lasts until the next window, focus loss or a
+        // reporting toggle demotes the tags.
+        let got = issue_312_decode_in_window(b"a!\x1b[?15u\x1b[?62;c\x1b[57441;1:3u\x1b[49;1:3u");
+        assert_eq!(
+            got.last(),
+            Some(&kind(K::Char('1'), M::NONE, Kind::Release)),
+            "{got:?}"
+        );
+        let held = still_held(&got);
+        assert_eq!(held.len(), 2, "{held:?}");
+        assert!(held.contains(&(K::Char('a'), M::NONE)));
+        assert!(held.contains(&(K::Char('!'), M::NONE)));
+    }
+
+    #[test]
+    fn issue_312_residual_a_ghost_can_sponge_one_record_less_release_in_its_generation() {
+        // RESIDUAL, pinned (a control: passes before and after the fix). Within the window
+        // generation, a lone ghost tag `a` (a tap, no release) is the only tag, so the release
+        // of an unrelated, never-recorded `q` is delivered as `a` released. It is one release,
+        // bounded by the next window, focus loss or reporting toggle; the accepted trade-off
+        // (`issue_312_documented_misattribution_unrelated_release_ends_window_hold`) in a
+        // different clothing.
+        let got = issue_312_decode_in_window(b"a\x1b[?15u\x1b[?62;c\x1b[113;1:3u");
+        assert_eq!(
+            got.last(),
+            Some(&kind(K::Char('a'), M::NONE, Kind::Release)),
+            "{got:?}"
+        );
+        assert_eq!(still_held(&got), vec![]);
     }
 
     #[test]

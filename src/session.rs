@@ -1524,6 +1524,64 @@ mod key_release_switch_tests {
     }
 
     #[test]
+    fn repush_failure_does_not_leak_an_outstanding_keyboard_request() {
+        // #312 review F3: `request_key_releases` records its request before the write. A failed
+        // write must take that record back, or the unanswered request keeps the screen-switch
+        // window open for ever and every later legacy press is tagged. (Fails before the repair:
+        // the count stays 1 after the failed re-push.)
+        let _g = lock();
+        let mut s = reporting_live_session();
+        let mut w = NeedleFail {
+            buf: Vec::new(),
+            needle: b'>',
+            armed: true,
+        };
+        let r = s.switch_screen_on(&mut w, |o| o.write_all(b"SW"), true);
+        assert!(r.is_err());
+        assert_eq!(
+            crate::tty_source::outstanding_keyboard_requests(),
+            0,
+            "a request whose write failed is not outstanding"
+        );
+        reset_globals();
+    }
+
+    #[test]
+    fn a_failed_request_flush_does_not_leak_an_outstanding_keyboard_request() {
+        // #312 review F3, the initial-enable path and a flush failure: the whole request was
+        // accepted by the writer but the flush failed. Fails before the repair (count stays 1).
+        struct FailFlush(Vec<u8>);
+        impl Write for FailFlush {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.0.extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Err(io::Error::other("injected flush failure"))
+            }
+        }
+        let _g = lock();
+        reset_globals();
+        let mut w = FailFlush(Vec::new());
+        assert!(request_key_releases(&mut w).is_err());
+        assert_eq!(w.0, b"\x1b[>15u\x1b[?u\x1b[c");
+        assert_eq!(crate::tty_source::outstanding_keyboard_requests(), 0);
+        reset_globals();
+    }
+
+    #[test]
+    fn a_written_request_stays_outstanding_until_answered() {
+        // CONTROL (passes before and after the repair): a request whose write succeeded is
+        // outstanding, so the screen-switch window opens for it.
+        let _g = lock();
+        reset_globals();
+        let mut buf: Vec<u8> = Vec::new();
+        request_key_releases(&mut buf).unwrap();
+        assert_eq!(crate::tty_source::outstanding_keyboard_requests(), 1);
+        reset_globals();
+    }
+
+    #[test]
     fn failed_switch_leaves_raw_mode_on_for_restore() {
         let _g = lock();
         let mut s = reporting_live_session();
