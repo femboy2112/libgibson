@@ -39,6 +39,13 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   Hosts own pane routing; LG does not enforce it. Omitted/raster-only chrome
   stays inert.
 
+### Added (Rust-only, opt-in)
+- `Context::set_inline_history_chunking(bool)` lets a stable inline viewport insert a
+  history batch that does not fit in one pass using repeated Insert Line chunks inside the
+  existing writer transaction, without repainting the viewport (#417). It requires current
+  inline geometry; unsupported Insert Line, overwidth input, stale geometry and zero spare
+  rows keep the existing fallback. Defaults off; default behavior and the C ABI are unchanged.
+
 ### Added
 - Experimental Stage explicit-time graphical rect transitions, non-renewing
   absolute demand joins and resolved frame snapshots. Reduced placement snaps;

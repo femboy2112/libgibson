@@ -3,7 +3,52 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-16): v0.7.3 "clear SIGBUS 3"
+## Next release: v0.8.0 (planned, not released)
+
+**Status:** planned and unscheduled. v0.7.3 remains the latest release; nothing below is released.
+
+**Why a minor.** The experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }`
+constructors, and CHANGELOG `[Unreleased]` records that this needs a 0.y bump under the release
+contract. The experimental Standard/Blades typed `on_press` behavior change (buttons now carry their
+payload and emit actions) rides in the same release.
+
+**When.** Cut after the Living Stage LS-4 upstream needs (consumer ProjectGHOST) land, so the
+consumer repins once. It needs the roadmap-completion release audit (every scoped item mapped to
+evidence or a recorded deferral). Not scheduled.
+
+#### Unreleased on main since v0.7.3 (`64225d4`)
+
+| PR | Merge | Change |
+|---|---|---|
+| #402 | `8171176` | deps: port the layout engine to taffy 0.15.1 (supersedes #197); geometry byte-identical on the 370-layout dump; merged after the ProjectGHOST integrated-candidate consumer ACK (normalized FLOW captures matched) |
+| #407 | `7cbeed5` | fix(ui): isolate hit tags at raw and presented import boundaries (behavior change, experimental) |
+| #408 | `72a6c90` | feat(stage): map semantic subtree actions into one host runtime (EXPERIMENTAL, Rust-only) |
+| #409 | `44dce34` | feat(stage): resolve keyed raster planes after semantic layout (EXPERIMENTAL) |
+| #411 | `c064d81` | fix(experience): bind typed buttons and document scoped host routing (EXPERIMENTAL behavior change) |
+| #412 | `3cd23fd` | feat(stage): add explicit-time graphical presentation and frame snapshots (EXPERIMENTAL) |
+| #415 | `ff53c7f` | test(stage): compose all three seams in a public host fixture (tests only) |
+| #416 | `7287b61` | renderer: opt-in bottom reservation for full-height inline reanchors (opt-in, Rust-only) |
+| #418 | `68e5302` | Offer chunked inline history insertion without repainting the viewport; fixes #417 (opt-in, Rust-only) |
+
+**Named fix target:** #312 (a shifted symbol in the screen-switch window is released as the base
+key). A fix attempt is planned for 0.8.0.
+
+**Decision point:** `InlineResizePolicy::ReclaimLiveRows` as the default, only if kitty and VTE are
+verified to keep the cursor line on a shrink within the 0.8.0 window. Otherwise an explicit recorded
+deferral, and the default stays `PreserveAbove`.
+
+**Re-check at cut:** #15 (waits on upstream crossterm #1128).
+
+**Deferred to >= v0.9 (explicit):**
+- the v0.8 cross-language functionality section;
+- math typesetting v0.8 feasibility (#334);
+- #292 stays v0.9;
+- #195 (rtrb 0.4) stays held, because the audio path is frozen;
+- #396 (`ui::App` on-demand loop) stays deferred.
+
+**Open LS-4 friction issues feeding docs/API:** #413, #414. Flaky-suspect: #410.
+
+## Current release (updated 2026-11-19): v0.7.3 "clear SIGBUS 3"
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -257,7 +302,7 @@ Rust, C and the adapter (#302, #303). *[Superseded: v0.7.0 was released 2026-11-
 - no external agent-style consumer has been re-qualified against this `main`;
 - the release prerequisites (version, changelog, notices, exact-head CI and preflight, installed
   artifact and contents audit, MSRV, frozen audio goldens) have not been run for a v0.7.0 candidate.
-**v0.8 — cross-language functionality:** independent Rust/C/C++/Python/Go clients built against
+**v0.8 — cross-language functionality** *(deferred to >= v0.9; see v0.8.0 plan above)*: independent Rust/C/C++/Python/Go clients built against
 installed artifacts and shared semantic fixtures. *Progress 2026-11-08:* the C++, Python and Go
 wrappers now reach SUPPORTED for events, geometry, cell readback and text in the shared parity
 matrix (#311, #313, #314). Failure codes and lifecycle remain PARTIAL; Rust's native path still
@@ -302,7 +347,7 @@ Tracked by [#334](https://github.com/femboy2112/libgibson/issues/334);
 the executable research plan and separate acceptance oracles are in
 [docs/MATH_TYPESETTING_ROADMAP.md](docs/MATH_TYPESETTING_ROADMAP.md).
 
-- [ ] **v0.8 feasibility:** evaluate an offline typesetter (for example MathJax/Typst SVG,
+- [ ] **v0.8 feasibility** *(deferred to >= v0.9; see v0.8.0 plan above)*: evaluate an offline typesetter (for example MathJax/Typst SVG,
   subject to licensing, sandbox and Rust 1.85 dependency compatibility), independently
   verify formula geometry/baselines, render bounded pixels through the existing
   scene and headless capture, and distinguish cell-only approximation from fidelity.
@@ -849,7 +894,7 @@ This round converted earlier over-strong claims into verified behavior and expli
   - Progress bars with smooth Unicode fraction characters (`▏▎▍▌▋▊▉█`).
   - Tree views with expandable/collapsible nodes.
   - Tab headers and segmented controls.
-- [ ] **Mathematical typesetting (v0.8→v1.0, #334):** genuine font-aware 2D equation layout and display/inline math nodes, with verified image transport and honest lower-fidelity terminal fallback; see [math roadmap](docs/MATH_TYPESETTING_ROADMAP.md). Not yet implemented.
+- [ ] **Mathematical typesetting (v0.8→v1.0, #334; v0.8 feasibility deferred to >= v0.9, see v0.8.0 plan above):** genuine font-aware 2D equation layout and display/inline math nodes, with verified image transport and honest lower-fidelity terminal fallback; see [math roadmap](docs/MATH_TYPESETTING_ROADMAP.md). Not yet implemented.
 - [ ] **Markdown and Syntax Highlighting**: streaming Markdown parser with Syntect or Tree-sitter token colorization.
 
 ---
