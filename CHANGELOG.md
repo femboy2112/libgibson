@@ -66,6 +66,12 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   stays inert.
 
 ### Added (Rust-only, opt-in)
+- `TerminalSession::try_terminal_size() -> io::Result<(u16, u16)>` reads the terminal size
+  without the 80x24 fallback: a failed read, a zero dimension, or a session that is not a
+  terminal is an `Err`. `terminal_size()` substitutes 80x24 on failure, so a consent gate such as
+  "the terminal must be at least 80x24" passes when the size cannot be read; such callers
+  should use `try_terminal_size` and treat `Err` as not satisfied (LS-4 upstream need).
+  `terminal_size()` is unchanged. Rust-only; the C ABI is unchanged.
 - `Context::set_inline_history_chunking(bool)` lets a stable inline viewport insert a
   history batch that does not fit in one pass using repeated Insert Line chunks inside the
   existing writer transaction, without repainting the viewport (#417). It requires current
