@@ -17,7 +17,9 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [0.8.0] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 0" (name PROPOSED; Leah picks)
 
-A minor release: the experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }` constructors (`Compiled<A>` is not `#[non_exhaustive]`), and the experimental Standard/Blades typed `on_press` behavior changes. `GIBSON_ABI_VERSION` stays 1 (67 symbols, unchanged). MSRV stays 1.85. Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload.
+A minor release: the experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }` constructors (`Compiled<A>` is not `#[non_exhaustive]`), and the experimental Standard/Blades typed `on_press` behavior changes. It also adds `TerminalSession::try_terminal_size`, fixes #312 and ports the layout engine to taffy 0.15.
+- **Library code changes since 0.7.3:** `src/` (session, tty_source, input, renderer, context, layout, stage, ui) from #402–#425. `include/gibson.h` changes only in a comment (#421); `src/ffi.rs` is unchanged, and `bindings/` changes only in the Python package version. `GIBSON_ABI_VERSION` stays 1 (67 symbols). MSRV stays 1.85.
+- **Platforms and distribution:** Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload. The Go module tag `bindings/go/v0.8.0` names the same commit as `v0.8.0`.
 
 ### Fixed
 - **A key-release reporting request whose write or flush failed is no longer left outstanding.**
@@ -46,8 +48,8 @@ A minor release: the experimental `Compiled::geometry_paths` field breaks litera
   release byte; see the known limitation below.
 
 ### Added (Rust-only, opt-in)
-- `Context::set_inline_resize_bottom_reservation(bool)` ([#416](https://github.com/femboy2112/libgibson/pull/416)) reserves the spare physical
-  terminal row on normal full-height inline reanchors without reducing the logical
+- `Context::set_inline_resize_bottom_reservation(bool)`
+  ([#416](https://github.com/femboy2112/libgibson/pull/416)) reserves the spare physical terminal row on normal full-height inline reanchors without reducing the logical
   viewport. Defaults remain byte-compatible; startup, short frames, fullscreen and
   uncertain-write recovery retain existing behavior. This reuses the allocation
   mechanism from pre-existing local `78b72b2` Reclaim/regrow work; the new scope is an
