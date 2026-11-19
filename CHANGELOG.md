@@ -34,8 +34,8 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   or more window presses nothing is paired (today's behavior). An unrelated, never-recorded key's
   release can be taken for the single window press, which is then delivered as released early: an
   accepted trade-off. Key naming off is unchanged. Rust-only, no public API or C ABI change.
-  The tag expires: it is eligible only in its own window generation (each new window opens a new
-  one) and in the key-release epoch it was recorded in, and focus loss clears it, so a stale tag
+  The tag expires: it is eligible only in its own window generation (each new non-overlapped window opens a
+  new one; requests written while one is still outstanding share its generation) and in the key-release epoch it was recorded in, and focus loss clears it, so a stale tag
   from an earlier window, epoch or focus no longer pairs with, or blocks the pairing of, a later
   release. A key tapped and released inside the window still sends no
   release byte; see the known limitation below.
@@ -617,8 +617,16 @@ tag. `GIBSON_ABI_VERSION` stays 1 (67 symbols); MSRV stays 1.85. Everything belo
   key and its hold stays, today's behavior, not a regression; `issue_312_residual_two_tags_in_one_window_generation_block_the_pairing`)
   or, as the only tag, is taken for one unrelated record-less release
   (`issue_312_residual_a_ghost_can_sponge_one_record_less_release_in_its_generation`). A tag
-  expires when the next window opens, on a focus loss, or when key-release reporting is
+  expires when the next non-overlapped window opens (requests written while one is still
+  outstanding share its generation), on a focus loss, or when key-release reporting is
   disabled and re-enabled (a new epoch); until then the residual stands.
+- **Residuals of the generation rule.** A `!` held across a later, non-overlapped screen switch
+  expires and stays held as before the fix (today's stuck behavior, bounded the same way), pinned
+  by `issue_312_a_non_overlapped_second_window_still_expires_the_tag`. A failed request write still
+  starts a new generation (the bump happens before the write; failure path only), expiring earlier
+  tags. Conjectured, not tested: the owner thread bumps the generation when it writes a request
+  while the poll thread may still be decoding bytes typed before it, so across a second switch a
+  press decoded late can land in the newer generation.
 - **The misattributed key's own release never arrives under its own name.** When the unrelated
   record-less key's release is taken for the window press, it is delivered as that press's
   release, so the unrelated key (say `q`, down since before reporting began) is never reported
