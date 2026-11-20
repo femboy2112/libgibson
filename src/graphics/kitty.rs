@@ -350,6 +350,12 @@ impl ImageCache {
         (id, Some(out))
     }
 
+    /// Makes the cache forget that `id` is resident, so the next `ensure` of its content uploads
+    /// it again. The frame plan calls it for an upload whose write was never confirmed. The id
+    /// stays in the teardown set: its data may be on the terminal, so teardown still frees it.
+    // RED stub: v0.9.0 design, not implemented
+    pub fn forget(&mut self, _id: u32) {}
+
     /// Bytes that free (`d=I`) every image this cache transmitted, evicted ones included (see
     /// [`kitty_delete_all`]).
     pub fn teardown_bytes(&self) -> Vec<u8> {
