@@ -550,6 +550,128 @@ fn red_cache_oversize_upload_is_refused_but_small_ones_still_go() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// GREEN additions: salt (ruling 3), resident cap and eviction (ruling 4), collisions
+// ---------------------------------------------------------------------------------------------
+
+fn third_pose() -> RgbaRaster {
+    let mut r = avatar(0);
+    r.set(0, 0, [1, 2, 3, 255]);
+    r
+}
+
+fn constant_hash(_: &RgbaRaster) -> u64 {
+    7
+}
+
+#[test]
+#[allow(clippy::field_reassign_with_default)] // CacheLimits is #[non_exhaustive]
+fn green_salt_changes_ids_deterministically() {
+    let a = avatar(0);
+    let (plain, _) = ImageCache::new().ensure(&a);
+    let mut salted = CacheLimits::default();
+    salted.salt = Some(0xC0FFEE);
+    let (s1, _) = ImageCache::with_limits(salted).ensure(&a);
+    let (s2, _) = ImageCache::with_limits(salted).ensure(&a);
+    let mut other = CacheLimits::default();
+    other.salt = Some(0xC0FFEF);
+    let (o, _) = ImageCache::with_limits(other).ensure(&a);
+    assert_eq!(s1, s2, "a salt is deterministic");
+    assert_ne!(s1, plain, "a salt moves the id");
+    assert_ne!(s1, o, "different salts give different ids");
+    for id in [plain, s1, o] {
+        assert!((1..=MAX_IMAGE_ID).contains(&id), "id {id}");
+    }
+    assert_eq!(
+        CacheLimits::default().salt,
+        None,
+        "default is the pure content hash"
+    );
+    let mut none = CacheLimits::default();
+    none.salt = None;
+    assert_eq!(ImageCache::with_limits(none).ensure(&a).0, plain);
+}
+
+#[test]
+fn green_default_resident_cap_is_16() {
+    assert_eq!(CacheLimits::default().max_resident_images, 16);
+}
+
+#[test]
+#[allow(clippy::field_reassign_with_default)] // CacheLimits is #[non_exhaustive]
+fn green_resident_cap_evicts_least_recently_shown_with_lowercase_delete() {
+    let mut limits = CacheLimits::default();
+    limits.max_resident_images = 2;
+    let mut cache = ImageCache::with_limits(limits);
+    let (a, b, c) = (avatar(0), avatar(1), third_pose());
+    let (ia, _) = cache.ensure(&a);
+    let (ib, _) = cache.ensure(&b);
+    let (ia_hit, none) = cache.ensure(&a); // a is now the most recently shown
+    assert_eq!(ia_hit, ia);
+    assert!(none.is_none(), "a hit never evicts and sends nothing");
+
+    let (ic, up_c) = cache.ensure(&c);
+    let mut expected = kitty_delete(ib, false);
+    expected.extend(expected_single_chunk_upload(ic, &c));
+    assert_eq!(
+        up_c.expect("new pixels upload"),
+        expected,
+        "evict b (least recently shown) with d=i, then transmit c"
+    );
+
+    // b was evicted: showing it again uploads again (and evicts a, now the oldest).
+    let (ib2, up_b) = cache.ensure(&b);
+    assert_eq!(ib2, ib, "same pixels, same id");
+    let mut expected = kitty_delete(ia, false);
+    expected.extend(expected_single_chunk_upload(ib2, &b));
+    assert_eq!(up_b.expect("re-upload after eviction"), expected);
+
+    // Teardown frees (uppercase) every id ever transmitted, evicted ones included.
+    let ids: Vec<u32> = [ia, ib, ic]
+        .into_iter()
+        .collect::<BTreeSet<u32>>()
+        .into_iter()
+        .collect();
+    assert_eq!(cache.teardown_bytes(), kitty_delete_all(&ids));
+    assert!(!String::from_utf8_lossy(&cache.teardown_bytes()).contains("d=i"));
+}
+
+#[test]
+#[allow(clippy::field_reassign_with_default)] // CacheLimits is #[non_exhaustive]
+fn green_forced_hash_collision_gets_distinct_ids_and_each_shows_its_own_pixels() {
+    let mut cache = ImageCache::with_hasher_for_tests(CacheLimits::default(), constant_hash);
+    let (a, b) = (avatar(0), avatar(1));
+    let (ia, ua) = cache.ensure(&a);
+    let (ib, ub) = cache.ensure(&b);
+    assert!((1..=MAX_IMAGE_ID).contains(&ia) && (1..=MAX_IMAGE_ID).contains(&ib));
+    assert_ne!(ia, ib, "colliding content must not share an id");
+    assert_eq!(
+        ua.expect("first upload"),
+        expected_single_chunk_upload(ia, &a)
+    );
+    assert_eq!(
+        ub.expect("second upload"),
+        kitty_transmit_rgba(ib, 16, 24, &raw(&b)),
+        "b's transmit carries b's pixels under b's own id"
+    );
+    let (ia2, ua2) = cache.ensure(&a);
+    let (ib2, ub2) = cache.ensure(&b);
+    assert_eq!((ia2, ib2), (ia, ib), "each raster keeps its own id");
+    assert!(ua2.is_none() && ub2.is_none(), "no re-upload");
+    for id in [ia, ib] {
+        let cells = placeholder_cells(id, 1, 1);
+        assert_eq!(cells.get(0, 0).unwrap().style.fg, Some(id_color(id)));
+    }
+    // The probe is deterministic: a fresh cache sees the same ids in the same order.
+    let mut again = ImageCache::with_hasher_for_tests(CacheLimits::default(), constant_hash);
+    assert_eq!((again.ensure(&a).0, again.ensure(&b).0), (ia, ib));
+    // And a salt still applies on top of an injected hasher without breaking distinctness.
+    let mut limits = CacheLimits::default();
+    limits.salt = Some(5);
+    let mut salted = ImageCache::with_hasher_for_tests(limits, constant_hash);
+    assert_ne!(salted.ensure(&a).0, salted.ensure(&b).0);
+}
+
+// ---------------------------------------------------------------------------------------------
 // Occlusion, clipping and restore through the ordinary diff
 // ---------------------------------------------------------------------------------------------
 

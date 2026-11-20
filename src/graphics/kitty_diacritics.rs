@@ -3,7 +3,6 @@
 
 /// Row/column diacritics for kitty Unicode image placeholders: entry `n` encodes
 /// row or column `n`. Regenerated clean-room from the UCD; see the generator.
-#[allow(dead_code)] // RED slice: consumed by `rowcolumn_diacritic` in GREEN
 pub(crate) const ROWCOLUMN_DIACRITICS: [char; 297] = [
     '\u{0305}',
     '\u{030D}',

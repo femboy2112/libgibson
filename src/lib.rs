@@ -62,7 +62,7 @@ pub mod geom;
 pub mod gesture;
 pub mod glitch;
 pub mod glyph;
-/// Experimental pixel-image routes (kitty graphics placeholders). RED stub: v0.9.0 design.
+/// Experimental pixel-image routes (kitty graphics placeholders). v0.9.0 opt-in.
 pub mod graphics;
 /// Layered spatial hit testing and pointer capture (issue #127).
 pub mod hit_test;

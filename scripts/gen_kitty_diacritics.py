@@ -56,7 +56,6 @@ def main() -> int:
         "",
         "/// Row/column diacritics for kitty Unicode image placeholders: entry `n` encodes",
         "/// row or column `n`. Regenerated clean-room from the UCD; see the generator.",
-        "#[allow(dead_code)] // RED slice: consumed by `rowcolumn_diacritic` in GREEN",
         f"pub(crate) const ROWCOLUMN_DIACRITICS: [char; {EXPECTED_LEN}] = [",
     ]
     # One entry per line: this is the layout rustfmt keeps, so the output is fmt-clean.

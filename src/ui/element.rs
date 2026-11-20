@@ -128,6 +128,8 @@ pub struct Element<A> {
     pub(crate) number: Option<u16>,
     pub(crate) layout: Layout,
     pub(crate) effects: Vec<SurfaceFx>,
+    /// Full-resolution source kept by [`pixel_image`]; `None` for every other element.
+    pub(crate) source: Option<Arc<crate::raster::RgbaRaster>>,
 }
 impl<A> Element<A> {
     fn new(kind: ElementKind) -> Self {
@@ -151,6 +153,7 @@ impl<A> Element<A> {
             number: None,
             layout: Layout::default(),
             effects: vec![],
+            source: None,
         }
     }
     pub fn child(mut self, child: Self) -> Self {
@@ -549,18 +552,19 @@ pub fn image_with<A>(
 /// resolution survive lowering. The element carries no pixel route and no image
 /// cache handle: whether a terminal paints it as pixels or as cells is decided
 /// later, by the terminal adapter, on the lowered frame.
-// RED stub: v0.9.0 design, not implemented
-#[allow(unused_variables)]
+///
+/// Today's lowering paints it as an ordinary [`image`]: the source is flattened onto black
+/// and fitted to `max`. The kept source is what a later terminal adapter reads.
 pub fn pixel_image<A>(source: Arc<crate::raster::RgbaRaster>, max: (u16, u16)) -> Element<A> {
-    // Deliberately wrong: flattens onto black like an ordinary fitted image and drops the source.
     let flat = crate::raster::flatten(&source, (0, 0, 0));
-    image(&flat, max, String::new())
+    let mut element = image(&flat, max, String::new());
+    element.source = Some(source);
+    element
 }
 impl<A> Element<A> {
     /// The full-resolution source kept by [`pixel_image`]; `None` for every other element.
-    // RED stub: v0.9.0 design, not implemented
     pub fn image_source(&self) -> Option<&Arc<crate::raster::RgbaRaster>> {
-        None
+        self.source.as_ref()
     }
 }
 pub fn heading<A>(value: impl Into<String>) -> Element<A> {
