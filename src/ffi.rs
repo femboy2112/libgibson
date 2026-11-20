@@ -44,7 +44,10 @@
 use crate::cell::{Color, Line, RichText, Span, Style, TextAlign};
 use crate::context::Context;
 use crate::event_source::InjectedQueue;
-use crate::input::{Event, FocusChange, KeyCode, KeyEvent, KeyModifiers, KeyReleaseReporting};
+use crate::input::{
+    Event, FocusChange, KeyCode, KeyEvent, KeyModifiers, KeyReleaseReporting,
+    MAX_DROPS_PAST_DEADLINE,
+};
 use crate::node::{Node, WrapMode};
 use crate::renderer::RenderMode;
 use crate::scheduler::RenderStats;
@@ -54,7 +57,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Current ABI version. Bump on any breaking layout/semantic change.
 pub const GIBSON_ABI_VERSION: u32 = 1;
@@ -1038,25 +1041,43 @@ unsafe fn poll_event_impl(
         let c = &mut *ctx;
         // A headless context delivers what was pushed (gibson_push_event), never the process
         // terminal (#259); its queue never waits, so the timeout does not delay it.
-        let polled = if c.inner.session.is_headless() {
-            // A delivered resize takes effect inside poll_from, the same implementation the Rust
-            // API uses (#293): the next render lays out at the new geometry.
-            c.inner.poll_from(&mut c.injected, timeout)
-        } else {
-            c.inner.poll_event(timeout)
+        //
+        // A function key is not part of ABI v1 (docs/design/v0.9-function-keys.md, GOD ruling,
+        // ACK RESULT #124): it is consumed, not reported, and the poll keeps going for the rest
+        // of the original deadline, so the C poll behaves as it did when F-keys were dropped
+        // upstream. NONE comes back only when the timeout passes (a headless poll, which never
+        // waits, when the queue has nothing else). Once the deadline has passed on a terminal, at
+        // most `MAX_DROPS_PAST_DEADLINE` further F-keys, each already available, are consumed
+        // before the poll gives up, so a flood of them cannot hold a poll past its timeout.
+        let headless = c.inner.session.is_headless();
+        let deadline = Instant::now().checked_add(timeout);
+        let mut skips_past_deadline = 0u32;
+        let polled = loop {
+            let left = deadline.map_or(timeout, |d| d.saturating_duration_since(Instant::now()));
+            let polled = if headless {
+                // A delivered resize takes effect inside poll_from, the same implementation the
+                // Rust API uses (#293): the next render lays out at the new geometry.
+                c.inner.poll_from(&mut c.injected, left)
+            } else {
+                c.inner.poll_event(left)
+            };
+            let is_f_key = matches!(
+                &polled,
+                Ok(Some(Event::Key(k) | Event::KeyRelease(k))) if matches!(k.code, KeyCode::F(_))
+            );
+            if !is_f_key {
+                break polled;
+            }
+            if !headless && left.is_zero() {
+                skips_past_deadline += 1;
+                if skips_past_deadline >= MAX_DROPS_PAST_DEADLINE {
+                    break Ok(None);
+                }
+            }
         };
         match polled {
             Ok(Some(ev)) => {
                 match ev {
-                    // RED STUB (v0.9 function keys, docs/design/v0.9-function-keys.md). A function
-                    // key is not part of ABI v1 and must be skipped: consumed, not reported, and
-                    // the poll keeps going for the rest of its timeout, so the C poll behaves as
-                    // it did when `decode_key` dropped F-keys (GOD ruling, ACK RESULT #124).
-                    // This stub does NOT keep polling: it ends the poll with GIBSON_EVENT_NONE
-                    // (every field still zeroed from above), which the RED test
-                    // `function_key_tests::red_c_poll_skips_an_f_key_and_delivers_the_next_event`
-                    // pins. The GREEN slice replaces it with the skip-and-continue loop.
-                    Event::Key(k) | Event::KeyRelease(k) if matches!(k.code, KeyCode::F(_)) => {}
                     Event::Key(k) | Event::KeyRelease(k) => {
                         (*out_event).event_type = if matches!(ev, Event::Key(_)) {
                             GIBSON_EVENT_KEY
@@ -1087,8 +1108,8 @@ unsafe fn poll_event_impl(
                             KeyCode::BackTab => GIBSON_KEY_TAB,
                             KeyCode::PageUp => GIBSON_KEY_PAGE_UP,
                             KeyCode::PageDown => GIBSON_KEY_PAGE_DOWN,
-                            // Not reached: the arm above takes every F-key, and the GREEN
-                            // loop skips it before it gets here.
+                            // Not reached: the poll loop above consumes every F-key before
+                            // it gets here (ABI v1 has no function-key constant).
                             KeyCode::F(_) => 0,
                         };
                     }

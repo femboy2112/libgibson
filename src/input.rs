@@ -447,7 +447,7 @@ fn poll_event_crossterm(timeout: Duration) -> io::Result<Option<Event>> {
 /// wait), so a deliverable event queued behind a few dropped ones still comes out of this poll.
 /// The cap bounds the work: a terminal that keeps producing undelivered events (a stream of key
 /// releases, say) cannot hold a poll past its timeout (#285 review).
-const MAX_DROPS_PAST_DEADLINE: u32 = 64;
+pub(crate) const MAX_DROPS_PAST_DEADLINE: u32 = 64;
 
 /// Polls `next` until it yields an event LibGibson delivers, or `timeout` has passed.
 ///
@@ -581,7 +581,7 @@ fn decode_event_as(ev: CtEvent, windows: bool, releases: bool) -> Option<Event> 
 }
 
 /// Our [`KeyEvent`] for a crossterm key, whatever its kind; `None` for a key code LibGibson does
-/// not model (function keys beyond the set below, keypad and media keys, modifier keys).
+/// not model (function keys beyond F12, keypad and media keys, modifier keys).
 fn decode_key(k: &crossterm::event::KeyEvent) -> Option<KeyEvent> {
     let code = match k.code {
         CtKeyCode::Char(c) => KeyCode::Char(c),
@@ -599,6 +599,7 @@ fn decode_key(k: &crossterm::event::KeyEvent) -> Option<KeyEvent> {
         CtKeyCode::Esc => KeyCode::Esc,
         CtKeyCode::Tab => KeyCode::Tab,
         CtKeyCode::BackTab => KeyCode::BackTab,
+        CtKeyCode::F(n @ 1..=12) => KeyCode::F(n),
         _ => return None,
     };
     Some(KeyEvent {
