@@ -24,7 +24,7 @@ fn env() -> UiEnvironment {
         ..UiEnvironment::default()
     }
 }
-fn surface_of<A>(tree: &Element<A>) -> Surface {
+fn surface_of<A: Clone>(tree: &Element<A>) -> Surface {
     let mut runtime = UiRuntime::new(skins::BLACK_ICE);
     let mut node = runtime.frame(tree, env(), ms(0)).unwrap().node;
     compute_layout(&mut node, 80, 24).unwrap();
@@ -44,7 +44,7 @@ fn lines_of(surface: &Surface) -> Vec<String> {
         })
         .collect()
 }
-fn lines<A>(tree: &Element<A>) -> Vec<String> {
+fn lines<A: Clone>(tree: &Element<A>) -> Vec<String> {
     lines_of(&surface_of(tree))
 }
 fn line_with(lines: &[String], needle: &str) -> Option<usize> {
