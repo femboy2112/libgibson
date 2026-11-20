@@ -791,11 +791,11 @@ fn guard_resolve_reset_leaves_unset_transparent_and_resolved_cells_alone() {
         "an unset (None) channel was resolved"
     );
     assert_eq!(
-        s.get(9, 9),
-        before.get(9, 9),
+        s.get(40, 15),
+        before.get(40, 15),
         "a transparent cell was touched"
     );
-    assert!(s.get(9, 9).is_some_and(|c| c.transparent));
+    assert!(s.get(40, 15).is_some_and(|c| c.transparent));
     for y in 0..SPRITE_H {
         for x in 0..SPRITE_W {
             assert_eq!(s.get(SPRITE_X + x, SPRITE_Y + y), Some(&sprite_cell(x, y)));
