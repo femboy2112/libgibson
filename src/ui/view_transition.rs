@@ -59,12 +59,14 @@ impl ViewTransition {
 
     /// Eased progress in `0.0..=1.0` (ease-in-out). Before `started` it is 0; at and after
     /// the effective deadline it is exactly 1. `MotionPreference::None` is 1 immediately.
-    /// `Reduced` runs a Blend-only fade capped at 80 ms and never slides.
+    /// Under `Reduced` a `Fade` is capped at 80 ms, and a `Slide` is a single cut: 1
+    /// immediately, like `None`.
     pub fn progress(&self, now: Duration, pref: MotionPreference) -> f32 {
-        let duration = match pref {
-            MotionPreference::Full => self.duration,
-            MotionPreference::Reduced => self.duration.min(REDUCED_CAP),
-            MotionPreference::None => return 1.0,
+        let duration = match (pref, self.kind) {
+            (MotionPreference::None, _) => return 1.0,
+            (MotionPreference::Reduced, TransitionKind::Slide(_)) => return 1.0,
+            (MotionPreference::Reduced, _) => self.duration.min(REDUCED_CAP),
+            (MotionPreference::Full, _) => self.duration,
         };
         let elapsed = now.saturating_sub(self.started);
         if elapsed >= duration {
@@ -93,9 +95,11 @@ impl ViewTransition {
     /// yields one `Blend` per side toward the same colour with complementary `t`. At and
     /// after settling both chains are empty, so the settled tree is the plain incoming view.
     ///
-    /// Under `MotionPreference::Reduced` every kind is a `Blend`-only fade. A `Fade` keeps its
-    /// colour; a `Slide` carries none, so it fades toward `Color::Reset`, which by the
-    /// `Blend` step rule is a cut at the midpoint of the (at most 80 ms) transition.
+    /// Under `MotionPreference::Reduced` a `Fade` keeps its `Blend` toward its own colour,
+    /// capped at 80 ms. A `Slide` is one cut at `t = 0`: it is settled at once, both chains
+    /// are empty and the pointer is live, so the app shows the incoming view unmodified and
+    /// drops the outgoing one, exactly as after any settled transition. There is no
+    /// intermediate frame, so no dip to the terminal default colour.
     pub fn effects(
         &self,
         now: Duration,
@@ -112,10 +116,10 @@ impl ViewTransition {
                 vec![SurfaceFx::Blend { toward, t: 1.0 - p }],
             )
         };
-        match (self.kind, pref) {
-            (TransitionKind::Fade { toward }, _) => fade(toward),
-            (TransitionKind::Slide(_), MotionPreference::Reduced) => fade(Color::Reset),
-            (TransitionKind::Slide(dir), _) => {
+        match self.kind {
+            TransitionKind::Fade { toward } => fade(toward),
+            // Reduced slides settle at once (see `progress`), so only Full reaches here.
+            TransitionKind::Slide(dir) => {
                 let w = f32::from(width);
                 let sign = match dir {
                     Dir::Left => 1,

@@ -405,9 +405,12 @@ fn red_pointer_is_frozen_mid_transition_and_live_once_settled() {
                 "{kind:?}@{now}: pointer must be live"
             );
         }
-        // Reduced: frozen for at most 80 ms, then live.
-        assert!(
-            !t.accepts_pointer(ms(140), MotionPreference::Reduced),
+        // Reduced: a Fade is frozen for at most 80 ms, then live. A Slide is one cut, live at
+        // once (SPEC UPDATE, GOD #92).
+        let slide = matches!(kind, TransitionKind::Slide(_));
+        assert_eq!(
+            t.accepts_pointer(ms(140), MotionPreference::Reduced),
+            slide,
             "{kind:?} reduced mid"
         );
         assert!(
