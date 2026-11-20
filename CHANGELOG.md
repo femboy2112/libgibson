@@ -15,6 +15,9 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Added
+- **EXPERIMENTAL, v0.9.1 design (RED): a multi-line text area.** Rust only; the C ABI is unchanged. `TextAreaState` (`text`, `cursor_grapheme`, `scroll_row`, `goal_col`), `ui::text_area` with `.rows(n)` and `.on_area_edit(..)`, and one wrap function (`TextAreaState::visual_rows`) shared by cursor movement, scrolling and painting. Enter inserts a newline and the widget never commits: the application provides an explicit Save control and owns Esc/cancel. A paste keeps `\n`, normalizes `\r\n`, and strips every other control character and escape sequence. This entry lands with stubs and failing tests only (`docs/design/v0.9.1-text-area.md`, `tests/text_area.rs`); it is not implemented yet. `TextInputState` is unchanged and stays single-line (#252).
+
 ## [0.8.1] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 1"
 
 A patch release with no library behavior change. The only `src/` change is rustdoc on `Element::overlay`.

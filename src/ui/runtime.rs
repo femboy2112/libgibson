@@ -355,10 +355,12 @@ impl<A: Clone> UiRuntime<A> {
         }
         if let Some(entry) = self.focus().and_then(|key| self.interactions.get(key)) {
             if let Event::Key(key) = event {
-                let activate = key.code == KeyCode::Enter
-                    || (key.code == KeyCode::Char(' ')
-                        && key.modifiers.is_empty()
-                        && entry.input.is_none());
+                // A text area owns Enter and Space as text: it never activates.
+                let activate = entry.area.is_none()
+                    && (key.code == KeyCode::Enter
+                        || (key.code == KeyCode::Char(' ')
+                            && key.modifiers.is_empty()
+                            && entry.input.is_none()));
                 if activate {
                     if let Some(action) = &entry.on_press {
                         outcome.actions.push(action.clone());
@@ -379,6 +381,22 @@ impl<A: Clone> UiRuntime<A> {
                     // The editor owns editing keys even without an on_edit
                     // callback and even when an edge key changes nothing. Do
                     // not route them to a custom handler or background shortcut.
+                    outcome.consumed = true;
+                    return outcome;
+                }
+            }
+            if let Some((state, cols, rows)) = &entry.area {
+                if is_area_edit_event(event) {
+                    if let Some(on_edit) = &entry.on_area_edit {
+                        let mut edited = state.clone();
+                        if edited.handle_event(event, *cols, *rows) {
+                            edited.update_scroll(*cols, *rows);
+                            outcome.actions.push(on_edit(edited));
+                        }
+                    }
+                    // Like an input: the area owns its editing keys even without a
+                    // callback or when an edge key changes nothing. Enter is text,
+                    // never a commit; Esc is not an edit event and stays the app's.
                     outcome.consumed = true;
                     return outcome;
                 }
@@ -445,6 +463,43 @@ fn is_edit_event(event: &Event) -> bool {
             | KeyCode::Down
             | KeyCode::Home
             | KeyCode::End => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// Edit events of a text area (EXPERIMENTAL, v0.9.1): the single-line editing keys
+/// plus Enter (a newline, unless Ctrl/Alt is held, which stay the app's), PageUp and
+/// PageDown. Ctrl+A / Ctrl+E are Home / End of the visual row; Ctrl+U / Ctrl+K are
+/// not supported and stay routable to the application.
+fn is_area_edit_event(event: &Event) -> bool {
+    match event {
+        Event::Paste(_) => true,
+        Event::Key(key) => match key.code {
+            KeyCode::Enter => !key
+                .modifiers
+                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT),
+            KeyCode::Char(c) => {
+                let m = key.modifiers;
+                if m.contains(KeyModifiers::ALT) {
+                    false
+                } else if m.contains(KeyModifiers::CONTROL) {
+                    matches!(c, 'a' | 'e')
+                } else {
+                    true
+                }
+            }
+            KeyCode::Backspace
+            | KeyCode::Delete
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Up
+            | KeyCode::Down
+            | KeyCode::Home
+            | KeyCode::End
+            | KeyCode::PageUp
+            | KeyCode::PageDown => true,
             _ => false,
         },
         _ => false,

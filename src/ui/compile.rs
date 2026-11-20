@@ -1,5 +1,5 @@
 //! Inspectable lowering to existing substrate objects.
-use super::element::{Element, ElementKind, Key};
+use super::element::{area_cols, Element, ElementKind, Key};
 use super::interaction::{Interaction, InteractionMap, ModalScope, UiError};
 use super::motion::MotionRole;
 use super::skin::{Chrome, ControlRole, ControlState, ResolvedSkin, Skin, UiEnvironment};
@@ -161,9 +161,12 @@ fn collect<A: Clone>(
     // The single predicate for "this element can receive a pointer action": an
     // input, or a handler-bearing element. Reused below for both the interaction
     // map and the target set so the two can never disagree about what is a target.
-    let is_interactive = matches!(el.kind, ElementKind::Input { .. })
-        || el.on_press.is_some()
+    let is_interactive = matches!(
+        el.kind,
+        ElementKind::Input { .. } | ElementKind::Area { .. }
+    ) || el.on_press.is_some()
         || el.on_edit.is_some()
+        || el.on_area_edit.is_some()
         || el.on_event.is_some();
     if out
         .keys
@@ -214,6 +217,11 @@ fn collect<A: Clone>(
                 _ => None,
             },
             on_edit: el.on_edit.clone(),
+            area: match &el.kind {
+                ElementKind::Area { state, rows } => Some((state.clone(), area_cols(el), *rows)),
+                _ => None,
+            },
+            on_area_edit: el.on_area_edit.clone(),
             on_event: el.on_event.clone(),
         });
     }
@@ -779,6 +787,11 @@ fn lower_role<A>(
                 input
             }
         }
+        // RED stub: v0.9.1 design, not implemented (one label; the design paints a
+        // canvas of `state.visual_rows(cols)` rows with a cursor cell).
+        ElementKind::Area { state, rows } => Node::text(state.text.clone(), style)
+            .width(area_cols(el) as f32)
+            .height(*rows as f32),
         ElementKind::Progress { label, fraction } => {
             cx.build.skin.progress(label, *fraction, width)
         }
