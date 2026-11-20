@@ -620,7 +620,7 @@ pub(crate) const DEFAULT_AREA_ROWS: u16 = 4;
 pub(crate) fn area_cols<A>(el: &Element<A>) -> u16 {
     el.layout.width.unwrap_or(DEFAULT_AREA_COLS).max(1)
 }
-/// EXPERIMENTAL (v0.9.1 design, RED stub): an application-owned multi-line editor.
+/// EXPERIMENTAL (v0.9.1): an application-owned multi-line editor.
 ///
 /// Enter inserts a newline and never commits; there is no commit signal on the
 /// element or the state. Provide an explicit Save control. Bind

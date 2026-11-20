@@ -13,6 +13,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 mod text_area;
+pub(crate) use text_area::area_cells;
 pub use text_area::{TextAreaState, VisualRow};
 
 bitflags::bitflags! {
