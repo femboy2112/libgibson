@@ -414,18 +414,13 @@ fn red_scoped_keys_lets_two_copies_of_a_view_coexist_and_leaves_the_tab_ring() {
         result.as_ref().err()
     );
     let Ok(compiled) = result else { return };
-    for k in [
-        "out.view",
-        "out.save",
-        "out.cancel",
-        "view",
-        "save",
-        "cancel",
-    ] {
+    for k in ["view", "save", "cancel"] {
         assert!(compiled.keys.contains_key(&named(k)), "missing key {k}");
+        let out = Key::scoped("out", k);
+        assert!(compiled.keys.contains_key(&out), "missing key {out:?}");
     }
     assert!(
-        compiled.keys[&named("out.save")].disabled,
+        compiled.keys[&Key::scoped("out", "save")].disabled,
         "outgoing must be disabled"
     );
     assert!(!compiled.keys[&named("save")].disabled);
@@ -435,15 +430,15 @@ fn red_scoped_keys_lets_two_copies_of_a_view_coexist_and_leaves_the_tab_ring() {
         "focus must start on the incoming view"
     );
     assert!(
-        !rt.set_focus(&named("out.save")),
+        !rt.set_focus(&Key::scoped("out", "save")),
         "outgoing control took focus"
     );
     for _ in 0..6 {
         rt.handle_event(&tab());
-        let focused = rt.focus().map(ToString::to_string).unwrap_or_default();
+        let focused = rt.focus().cloned();
         assert!(
-            !focused.starts_with("out."),
-            "Tab reached the outgoing view: {focused}"
+            !matches!(&focused, Some(Key::Scoped { scope, .. }) if scope == "out"),
+            "Tab reached the outgoing view: {focused:?}"
         );
     }
 }
@@ -470,7 +465,7 @@ fn red_scoped_keys_prefixes_every_explicit_key_including_overlays_and_only_those
     let expected: BTreeSet<Key> = plain
         .iter()
         .map(|k| match k {
-            Key::Named(s) => Key::Named(format!("v.{s}")),
+            key @ Key::Named(_) => Key::scoped("v", key.clone()),
             other => other.clone(),
         })
         .collect();

@@ -15,6 +15,15 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Changed
+
+- **`ui::Key` gains a `Scoped { scope, key }` variant** (EXPERIMENTAL `ui` tier) and the
+  constructor `Key::scoped`. `Element::scoped_keys(prefix)` uses it, so a scoped key is
+  structural rather than joined text: scope `a` + key `b` never equals a user key `a.b`. An
+  earlier v0.9 draft spelled scoped keys as `Key::Named("{prefix}.{key}")`. Code that looked a
+  scoped control up by that string should use `Key::scoped(prefix, key)`. Exhaustive `match`es
+  on `Key` need an arm for the new variant. (#434)
+
 ## [0.8.1] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 1"
 
 A patch release with no library behavior change. The only `src/` change is rustdoc on `Element::overlay`.
