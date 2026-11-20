@@ -99,6 +99,7 @@ fn map_tree<A: 'static, B: 'static>(element: Element<A>, map: Arc<dyn Fn(A) -> B
         number: element.number,
         layout: element.layout,
         effects: element.effects,
+        source: element.source,
     }
 }
 
