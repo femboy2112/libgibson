@@ -11,6 +11,8 @@
 
 use crate::cell::Color;
 
+pub mod probe;
+
 /// Tri-state capability value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Capability {
