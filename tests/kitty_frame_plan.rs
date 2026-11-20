@@ -634,3 +634,70 @@ fn red_cache_would_evict_only_for_new_uploadable_content_at_the_cap() {
         "a refused image (over the cap) never evicts"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// GREEN judgement calls, pinned (GOD, ACK RESULT #124)
+// ---------------------------------------------------------------------------------------------
+
+/// `place` with no open frame opens one: the box is planned and its bytes come out of the next
+/// `end_frame`, exactly as if `begin_frame` had been called first.
+#[test]
+fn green_place_without_begin_frame_opens_a_frame() {
+    let a = avatar(0);
+    let id = ids_for(CacheLimits::default(), &[&a])[0];
+    let mut expected = upload(id, &a);
+    expected.extend(place_virtual(id, 4, 3));
+
+    let mut cache = ImageCache::new();
+    let mut plan = KittyFramePlan::new();
+    let (got, _) = expect_pixels(plan.place(&mut cache, &a, 4, 3));
+    assert_eq!(got, id);
+    assert_eq!(plan.end_frame(), expected);
+    plan.commit();
+    // After a commit the plan is idle again: a bare `place` opens the next frame, which has
+    // nothing to send for an unchanged box.
+    expect_pixels(plan.place(&mut cache, &a, 4, 3));
+    assert!(plan.end_frame().is_empty(), "steady state");
+}
+
+/// A second `end_frame` for the same frame returns nothing: the bytes were handed over once.
+#[test]
+fn green_a_second_end_frame_returns_nothing() {
+    let a = avatar(0);
+    let mut cache = ImageCache::new();
+    let mut plan = KittyFramePlan::new();
+    let (_, bytes) = one_box_frame(&mut plan, &mut cache, &a, 4, 3);
+    assert!(!bytes.is_empty());
+    assert!(plan.end_frame().is_empty(), "second end_frame");
+    // The first hand-over can still be committed: the next frame is steady.
+    plan.commit();
+    let (_, steady) = one_box_frame(&mut plan, &mut cache, &a, 4, 3);
+    assert!(
+        steady.is_empty(),
+        "committed after the empty second end_frame"
+    );
+}
+
+/// `commit` on a frame that is open (not yet ended) is a no-op: no bytes were handed over, so
+/// nothing becomes resident, and that frame's `end_frame` still returns its bytes.
+#[test]
+fn green_commit_before_end_frame_is_a_no_op() {
+    let a = avatar(0);
+    let id = ids_for(CacheLimits::default(), &[&a])[0];
+    let mut expected = upload(id, &a);
+    expected.extend(place_virtual(id, 4, 3));
+
+    let mut cache = ImageCache::new();
+    let mut plan = KittyFramePlan::new();
+    plan.begin_frame();
+    expect_pixels(plan.place(&mut cache, &a, 4, 3));
+    plan.commit(); // too early: ignored
+    assert_eq!(
+        plan.end_frame(),
+        expected,
+        "the open frame's bytes survive the early commit"
+    );
+    // Not committed after end_frame: the next frame re-uploads.
+    let (_, again) = one_box_frame(&mut plan, &mut cache, &a, 4, 3);
+    assert_eq!(again, expected, "the early commit made nothing resident");
+}
