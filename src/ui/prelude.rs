@@ -7,3 +7,4 @@ pub use super::runtime::*;
 pub use super::skin::{skins, DepthPalette, Skin, UiEnvironment};
 pub use super::style::{Density, Elevation, Emphasis, Tone};
 pub use super::view_transition::{Dir, TransitionKind, ViewTransition};
+pub use crate::glyph::CellEncoder;

@@ -345,7 +345,7 @@ fn srgb8_to_linear_table() -> &'static [f32; 256] {
     })
 }
 
-fn rgb8_to_linear(rgb: [u8; 3]) -> [f32; 3] {
+pub(crate) fn rgb8_to_linear(rgb: [u8; 3]) -> [f32; 3] {
     let table = srgb8_to_linear_table();
     [
         table[rgb[0] as usize],
@@ -354,7 +354,7 @@ fn rgb8_to_linear(rgb: [u8; 3]) -> [f32; 3] {
     ]
 }
 
-fn linear_to_rgb8(rgb: [f32; 3]) -> [u8; 3] {
+pub(crate) fn linear_to_rgb8(rgb: [f32; 3]) -> [u8; 3] {
     rgb.map(|value| {
         let value = value.clamp(0.0, 1.0);
         let srgb = if value <= 0.003_130_8 {
@@ -370,9 +370,90 @@ fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
-fn rgb_distance_squared(a: [f32; 3], b: [f32; 3]) -> f32 {
+pub(crate) fn rgb_distance_squared(a: [f32; 3], b: [f32; 3]) -> f32 {
     let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
     dot3(d, d)
+}
+
+/// The winner of [`fit_two_colour`].
+pub(crate) struct TwoColourFit {
+    /// Position of the winning mask in the iteration order of the candidates.
+    pub index: usize,
+    /// The winning partition: bit `i` set means sample `i` takes the foreground.
+    pub mask: u16,
+    /// Linear-light centroid of the samples with their bit set.
+    pub fg: [f32; 3],
+    /// Linear-light centroid of the samples with their bit clear.
+    pub bg: [f32; 3],
+    /// Direct-distance linear-light SSE of the partition (unquantized centroids).
+    #[allow(dead_code)]
+    pub sse: f32,
+}
+
+/// Exact best two-colour partition of `N` linear-light samples over `masks`.
+///
+/// This is the loop body of [`project_rgb_subcells`] generalized over the sample
+/// count and the candidate masks, for the v0.9 cell encoders (`CellEncoder`): the
+/// same f32 accumulation order, the same direct-distance SSE, and the same
+/// tie-break (the first strictly smaller SSE wins, so equal fits keep the earlier
+/// candidate). With `N = 8` and masks `(2..256).step_by(2)` it selects exactly
+/// the mask and centroids `project_rgb_subcells` selects (pinned by a unit test).
+/// Every mask must leave both groups non-empty. `None` iff `masks` is empty.
+pub(crate) fn fit_two_colour<const N: usize>(
+    linear: &[[f32; 3]; N],
+    masks: impl IntoIterator<Item = u16>,
+) -> Option<TwoColourFit> {
+    let mut best: Option<TwoColourFit> = None;
+    let mut best_sse = f32::INFINITY;
+    for (index, mask) in masks.into_iter().enumerate() {
+        let (fg, bg) = partition_centroids_n(linear, mask);
+        let mut sse = 0.0f32;
+        for (i, pixel) in linear.iter().enumerate() {
+            let centroid = if mask & (1u16 << i) != 0 { fg } else { bg };
+            sse += rgb_distance_squared(*pixel, centroid);
+        }
+        if sse < best_sse {
+            best_sse = sse;
+            best = Some(TwoColourFit {
+                index,
+                mask,
+                fg,
+                bg,
+                sse,
+            });
+        }
+    }
+    best
+}
+
+/// [`partition_centroids`] over `N` samples and a `u16` mask; the arithmetic and
+/// its order are the same.
+fn partition_centroids_n<const N: usize>(
+    target: &[[f32; 3]; N],
+    mask: u16,
+) -> ([f32; 3], [f32; 3]) {
+    let mut fg = [0.0f32; 3];
+    let mut bg = [0.0f32; 3];
+    let mut fg_n = 0.0f32;
+    let mut bg_n = 0.0f32;
+    for (i, pixel) in target.iter().enumerate() {
+        if mask & (1u16 << i) != 0 {
+            for channel in 0..3 {
+                fg[channel] += pixel[channel];
+            }
+            fg_n += 1.0;
+        } else {
+            for channel in 0..3 {
+                bg[channel] += pixel[channel];
+            }
+            bg_n += 1.0;
+        }
+    }
+    for channel in 0..3 {
+        fg[channel] /= fg_n;
+        bg[channel] /= bg_n;
+    }
+    (fg, bg)
 }
 
 /// Maps a logical Braille subpixel `(dx in 0..2, dy in 0..4)` to its index in the
@@ -2286,6 +2367,52 @@ mod tests {
             assert!(
                 (got - want).abs() <= 1e-5 * (1.0 + want),
                 "127-rep fit {got} != full 254-scan fit {want} for {t:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn fit_two_colour_n8_selects_what_project_rgb_subcells_selects() {
+        // The generic helper at N = 8 over the even masks 2..=254 must agree with the
+        // shipped projector: same mask (0 where the projector reports a uniform
+        // cell), same centroids to the bit.
+        let mut state = 0x0DDB_1A5E_5BAD_5EEDu64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 24) as u8
+        };
+        for round in 0..2000 {
+            let mut t = [[0u8; 3]; 8];
+            for px in t.iter_mut() {
+                for c in px.iter_mut() {
+                    // Every fourth tile draws from a few levels so ties and uniform
+                    // tiles occur.
+                    *c = if round % 4 == 0 {
+                        (next() % 3) * 100
+                    } else {
+                        next()
+                    };
+                }
+            }
+            let linear = t.map(rgb8_to_linear);
+            let fit = fit_two_colour(&linear, (2u16..256).step_by(2)).unwrap();
+            let projected = project_rgb_subcells(t);
+            if projected.static_mask != 0 {
+                assert_eq!(u16::from(projected.static_mask), fit.mask, "{t:?}");
+            }
+            let fg = linear_to_rgb8(fit.fg);
+            let bg = linear_to_rgb8(fit.bg);
+            assert_eq!(
+                projected.style.fg,
+                Some(Color::Rgb(fg[0], fg[1], fg[2])),
+                "{t:?}"
+            );
+            assert_eq!(
+                projected.style.bg,
+                Some(Color::Rgb(bg[0], bg[1], bg[2])),
+                "{t:?}"
             );
         }
     }

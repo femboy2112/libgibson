@@ -53,6 +53,9 @@ pub(crate) enum ElementKind {
         fitted: super::image::Fitted,
         max: (u16, u16),
         alt: String,
+        /// How `fitted` was sampled and is realized. `HalfBlock` is [`image`] /
+        /// [`image_area`]: one sample per cell column, two per cell row.
+        encoder: crate::glyph::CellEncoder,
     },
     Heading(String),
     Code(String),
@@ -471,6 +474,7 @@ pub fn image<A>(
         fitted: super::image::Fitted::from_raster(raster, max.0, max.1.saturating_mul(2)),
         max,
         alt: alt.into(),
+        encoder: crate::glyph::CellEncoder::HalfBlock,
     })
 }
 /// [`image`] with an exact area (box) filter instead of nearest-pixel
@@ -487,6 +491,65 @@ pub fn image_area<A>(
         fitted: super::image::Fitted::from_raster_area(raster, max.0, max.1.saturating_mul(2)),
         max,
         alt: alt.into(),
+        encoder: crate::glyph::CellEncoder::HalfBlock,
+    })
+}
+/// Options for [`image_with`]. The default is the half-block encoder, so
+/// `image_with(.., ImageOptions::default())` draws what [`image`] draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub struct ImageOptions {
+    /// How the picture is realized as cells. The box, its reserved height and
+    /// the alt-text rule do not depend on it.
+    pub encoder: crate::glyph::CellEncoder,
+}
+
+impl ImageOptions {
+    /// The default options: half-block, as [`image`].
+    pub const fn new() -> Self {
+        Self {
+            encoder: crate::glyph::CellEncoder::HalfBlock,
+        }
+    }
+
+    /// These options with `encoder`.
+    pub fn with_encoder(mut self, encoder: crate::glyph::CellEncoder) -> Self {
+        self.encoder = encoder;
+        self
+    }
+}
+
+/// [`image`] with an opt-in cell encoder (v0.9.0 design:
+/// `docs/design/v0.9-cell-encoders.md`). The box, the reserved height and the
+/// alt-text fallback are those of [`image`] for every encoder.
+///
+/// [`CellEncoder::HalfBlock`](crate::glyph::CellEncoder::HalfBlock) (the default
+/// option) is exactly [`image`]. Any other encoder changes only the sampling
+/// density: the footprint in cells is the half-block one, and it is sampled at the
+/// encoder's grid (`sample_grid`) with the exact area filter of [`image_area`], so
+/// one-pixel detail does not alias. Like `image` it stores only the fitted
+/// samples. Colour depth is applied after encoding, at paint time. The encoder is
+/// not gated here: degrade it first with [`crate::allowed_encoder`].
+pub fn image_with<A>(
+    raster: &crate::raster::RgbRaster,
+    max: (u16, u16),
+    alt: impl Into<String>,
+    options: ImageOptions,
+) -> Element<A> {
+    let encoder = options.encoder;
+    if encoder == crate::glyph::CellEncoder::HalfBlock {
+        return image(raster, max, alt);
+    }
+    Element::new(ElementKind::Image {
+        fitted: super::image::Fitted::from_raster_grid(
+            raster,
+            max.0,
+            max.1.saturating_mul(2),
+            encoder.sample_grid(),
+        ),
+        max,
+        alt: alt.into(),
+        encoder,
     })
 }
 pub fn heading<A>(value: impl Into<String>) -> Element<A> {

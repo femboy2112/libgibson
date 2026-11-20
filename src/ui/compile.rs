@@ -659,9 +659,20 @@ fn lower_role<A>(
             );
             rich_label_node(&line, style)
         }
-        ElementKind::Image { fitted, max, alt } => {
+        ElementKind::Image {
+            fitted,
+            max,
+            alt,
+            encoder,
+        } => {
             let width = el.layout.width.unwrap_or(max.0).min(max.0).min(available);
-            cx.build.skin.image(fitted, max.1, alt, width)
+            if *encoder == crate::glyph::CellEncoder::HalfBlock {
+                cx.build.skin.image(fitted, max.1, alt, width)
+            } else {
+                cx.build
+                    .skin
+                    .image_encoded(fitted, *encoder, max.1, alt, width)
+            }
         }
         ElementKind::Heading(s) => Node::text(
             s,

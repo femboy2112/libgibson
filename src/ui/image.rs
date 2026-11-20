@@ -96,6 +96,89 @@ impl Fitted {
         }
     }
 
+    /// Samples `raster` for a cell encoder with the sample grid `grid` (columns, rows
+    /// per cell). The footprint is the half-block one, [`fit_dims`] of the source into
+    /// `box_w × box_h` square-pixel units, hence the same cell columns and rows; it is
+    /// then sampled at `grid` inside it with the exact area filter of
+    /// [`Self::from_raster_area`] (a source smaller than the footprint is replicated).
+    /// An odd footprint height is rounded up to whole cells. The result is
+    /// `cols * grid.0` by `rows * grid.1` samples, clamped to the raster bound.
+    pub fn from_raster_grid(raster: &RgbRaster, box_w: u16, box_h: u16, grid: (u16, u16)) -> Self {
+        let (fw, fh) = fit_dims(raster.width(), raster.height(), box_w, box_h);
+        if fw == 0 || fh == 0 {
+            return Self::default();
+        }
+        let w = fw
+            .saturating_mul(grid.0)
+            .min(crate::raster::MAX_RASTER_DIMENSION);
+        let h = fh
+            .div_ceil(2)
+            .saturating_mul(grid.1)
+            .min(crate::raster::MAX_RASTER_DIMENSION);
+        let src = raster.pixels();
+        let out = crate::raster::downscale_area_by(
+            raster.width(),
+            raster.height(),
+            |i| {
+                let (r, g, b) = src[i];
+                [r, g, b, 255]
+            },
+            w,
+            h,
+        );
+        Self {
+            width: out.width(),
+            height: out.height(),
+            pixels: out.pixels().iter().map(|&[r, g, b, _]| (r, g, b)).collect(),
+        }
+    }
+
+    /// Nearest-sample resize to exactly `w × h` (empty when either is zero).
+    fn resized(&self, w: u16, h: u16) -> Self {
+        if self.width == 0 || self.height == 0 || w == 0 || h == 0 {
+            return Self::default();
+        }
+        if (w, h) == (self.width, self.height) {
+            return self.clone();
+        }
+        let mut pixels = Vec::with_capacity(usize::from(w) * usize::from(h));
+        for y in 0..h {
+            let sy =
+                ((2 * u64::from(y) + 1) * u64::from(self.height) / (2 * u64::from(h))) as usize;
+            for x in 0..w {
+                let sx =
+                    ((2 * u64::from(x) + 1) * u64::from(self.width) / (2 * u64::from(w))) as usize;
+                let sy = sy.min(usize::from(self.height) - 1);
+                let sx = sx.min(usize::from(self.width) - 1);
+                pixels.push(self.pixels[sy * usize::from(self.width) + sx]);
+            }
+        }
+        Self {
+            width: w,
+            height: h,
+            pixels,
+        }
+    }
+
+    /// Fits samples taken by [`Self::from_raster_grid`] into a smaller box of
+    /// `box_w` cell columns by `box_rows` cell rows. The cell footprint is re-fitted
+    /// with the half-block rule (aspect preserved, never enlarged) and the samples
+    /// are resized to it nearest-pixel, as [`Self::refit`] does for half-block.
+    pub fn refit_grid(&self, grid: (u16, u16), box_w: u16, box_rows: u16) -> Self {
+        let (sx, sy) = (grid.0.max(1), grid.1.max(1));
+        let (cols, rows) = (self.width.div_ceil(sx), self.height.div_ceil(sy));
+        if cols <= box_w && rows <= box_rows {
+            return self.clone();
+        }
+        let (nw, nh) = fit_dims(
+            cols,
+            rows.saturating_mul(2),
+            box_w,
+            box_rows.saturating_mul(2),
+        );
+        self.resized(nw.saturating_mul(sx), nh.div_ceil(2).saturating_mul(sy))
+    }
+
     /// Fits these pixels into a (possibly smaller) box. Never enlarges.
     pub fn refit(&self, box_w: u16, box_h: u16) -> Self {
         if self.width <= box_w && self.height <= box_h {
