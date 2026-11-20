@@ -22,6 +22,7 @@ pub mod prelude;
 pub mod runtime;
 pub mod skin;
 pub mod style;
+pub mod view_transition;
 pub use compile::{
     compile, compile_presented, BuildCx, Compiled, ElementState, PresentationCx, TargetSpec,
 };
@@ -32,3 +33,4 @@ pub use motion::{MotionPreference, MotionRole};
 pub use runtime::*;
 pub use skin::{skins, DepthPalette, ResolvedSkin, Skin, UiEnvironment};
 pub use style::{Density, Elevation, Emphasis, Tone};
+pub use view_transition::{Dir, TransitionKind, ViewTransition};

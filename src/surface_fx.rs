@@ -221,6 +221,19 @@ impl SurfaceFx {
     }
 }
 
+/// Replace every `Color::Reset` fg/bg on a painted cell with a concrete colour, so a later
+/// [`SurfaceFx::Blend`] lerps smoothly instead of stepping at `t = 0.5`. Run it once on the
+/// view's surface before the first `Blend`, with the skin's real foreground and background.
+///
+/// Only `Some(Color::Reset)` channels change: transparent cells and unset (`None`) channels
+/// are left alone (an unset channel inherits the layer beneath, which is not the terminal
+/// default), as are glyphs and attributes. See the step rule in
+/// `docs/design/v0.9-view-transitions.md`.
+#[allow(unused_variables)]
+pub fn resolve_reset(surface: &mut Surface, fg: crate::Color, bg: crate::Color) {
+    // RED stub: v0.9.0 design, not implemented
+}
+
 fn scoped(surface: &mut Surface, mask: &FxMask, effect: &SurfaceFx) {
     let width = surface.width;
     let height = surface.height;

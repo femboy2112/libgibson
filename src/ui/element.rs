@@ -299,6 +299,16 @@ impl<A> Element<A> {
         self.effects.extend(effects);
         self
     }
+    /// Prefix every explicit key in this subtree (children and overlays) with
+    /// `"{prefix}."`, so a second copy of the same view can coexist in one tree without
+    /// `UiError::DuplicateKey`. Unkeyed elements keep their position-derived keys, which are
+    /// already unique. Used for the outgoing view of a transition; see
+    /// `docs/design/v0.9-view-transitions.md`.
+    #[allow(unused_variables)]
+    pub fn scoped_keys(self, prefix: &str) -> Self {
+        // RED stub: v0.9.0 design, not implemented
+        self
+    }
 }
 
 /// Optional semantic extension route. Ordinary functions returning `Element<A>`
