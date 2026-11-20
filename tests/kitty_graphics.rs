@@ -82,8 +82,10 @@ fn apcs(bytes: &[u8]) -> Vec<(String, String)> {
     out
 }
 
-/// The first 24 entries of the protocol's `rowcolumn-diacritics.txt` (fetched from the kitty
-/// documentation site; entry 0 is U+0305, entry 1 is U+030D).
+/// The first 24 row/column diacritics: UCD 6.0.0 characters with category Mn, combining class
+/// 230, bidi NSM and no decomposition, minus the 19 exclusions the protocol documentation lists
+/// (see `scripts/gen_kitty_diacritics.py`). Entries 0 and 1 (U+0305, U+030D) match the
+/// documentation's own examples.
 const DIACRITICS: [char; 24] = [
     '\u{0305}', '\u{030D}', '\u{030E}', '\u{0310}', '\u{0312}', '\u{033D}', '\u{033E}', '\u{033F}',
     '\u{0346}', '\u{034A}', '\u{034B}', '\u{034C}', '\u{0350}', '\u{0351}', '\u{0352}', '\u{0357}',

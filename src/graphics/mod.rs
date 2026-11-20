@@ -6,3 +6,4 @@
 //! the renderer, and nothing is emitted unless an application opts in.
 
 pub mod kitty;
+mod kitty_diacritics;

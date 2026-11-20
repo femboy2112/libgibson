@@ -10,7 +10,7 @@
 //! assertions, not on missing symbols. See `docs/design/v0.9-kitty-graphics-route.md`.
 //!
 //! Integration seams (own stub types; no dependency on unmerged work):
-//! * `CellEncoder` (branch `feat/v0.9-cell-encoder`) is the fallback: [`PixelRoute::Fallback`]
+//! * `CellEncoder` (merged in #436) is the fallback: [`PixelRoute::Fallback`]
 //!   means "draw the same box with the cell encoder the application chose".
 //! * The parallel probe slice's tri-state `kitty_graphics` verdict maps onto
 //!   [`crate::capability::Capability`] (`Supported` / `Unsupported` / `Unknown`), which is what
