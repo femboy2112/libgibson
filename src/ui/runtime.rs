@@ -325,6 +325,11 @@ impl<A: Clone> UiRuntime<A> {
 
     /// Routes focus traversal, activation, app-owned input editing and dismissal.
     /// A modal consumes all keyboard/paste events, including unbound keys.
+    ///
+    /// Global hotkeys under a modal: while a modal is active, every `Key` and `Paste` event
+    /// is consumed (`EventOutcome::consumed`), including Alt chords such as Alt+M. An app
+    /// that needs a global hotkey to work under a modal must route it itself, before
+    /// calling `handle_event`. A `set_global_keys` API is deferred.
     pub fn handle_event(&mut self, event: &Event) -> EventOutcome<A> {
         let mut outcome = EventOutcome::default();
         let modal_active = self.interactions.active_modal().is_some();
