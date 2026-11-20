@@ -1,8 +1,9 @@
-//! RED slice for the v0.9.0 opt-in cell encoders (`docs/design/v0.9-cell-encoders.md`).
+//! Tests for the v0.9.0 opt-in cell encoders (`docs/design/v0.9-cell-encoders.md`).
 //!
-//! `red_*` tests fail on assertions today by design: the encoders, the glyph tables and the
-//! capability gate are stubs. `guard_*` tests pass today and must keep passing: they pin the
-//! half-block default, the `ui::image` fallbacks and the zero-byte idle frame.
+//! `red_*` tests were written first and failed against stubs (the encoders, the glyph tables and
+//! the capability gate); the implementation makes them pass. `guard_*` tests passed against the
+//! stubs and must keep passing: they pin the half-block default, the `ui::image` fallbacks, the
+//! zero-byte idle frame and the bit-exact v0.8 two-colour projector.
 //!
 //! Every sprite is a formula; no image or art of any kind is read. Oracles are written here,
 //! independently of the crate: the sextant rule, the octant table, the glyph decoder, the
@@ -870,5 +871,245 @@ fn red_auto_degrades_to_halfblock_where_sextant_is_not_allowed() {
             CellEncoder::HalfBlock,
             "{vars:?}"
         );
+    }
+}
+
+// ------------------------------------------------------------------ projector reference
+
+// A verbatim private copy of the v0.8.1 `temporal::project_rgb_subcells` (tag v0.8.1, commit
+// c3c700c) and its helpers, renamed `reference_*`. The v0.9 encoders share the two-colour
+// partition search with that function; this pins that its output did not move by a single bit.
+
+struct ReferenceProjection {
+    fg: Color,
+    bg: Color,
+    duty: [f32; 8],
+    static_mask: u8,
+    static_rmse: f32,
+    line_rmse: f32,
+    emitted_static_rmse: f32,
+}
+
+fn reference_project_rgb_subcells(target: [[u8; 3]; 8]) -> ReferenceProjection {
+    let linear = target.map(reference_rgb8_to_linear);
+    let mut best_mask = 0u8;
+    let mut best_fg = [0.0f32; 3];
+    let mut best_bg = [0.0f32; 3];
+    let mut best_sse = f32::INFINITY;
+
+    for mask in (2u8..=254u8).step_by(2) {
+        let (fg, bg) = reference_partition_centroids(&linear, mask);
+        let mut sse = 0.0f32;
+        for (i, pixel) in linear.iter().enumerate() {
+            let centroid = if mask & (1u8 << i) != 0 { fg } else { bg };
+            sse += reference_rgb_distance_squared(*pixel, centroid);
+        }
+        if sse < best_sse {
+            best_sse = sse;
+            best_mask = mask;
+            best_fg = fg;
+            best_bg = bg;
+        }
+    }
+
+    let delta = [
+        best_fg[0] - best_bg[0],
+        best_fg[1] - best_bg[1],
+        best_fg[2] - best_bg[2],
+    ];
+    let denom = reference_dot3(delta, delta);
+
+    let mut duty = [0.0f32; 8];
+    let mut line_sse = 0.0f32;
+    if denom > 1.0e-12 {
+        for (i, pixel) in linear.iter().enumerate() {
+            let relative = [
+                pixel[0] - best_bg[0],
+                pixel[1] - best_bg[1],
+                pixel[2] - best_bg[2],
+            ];
+            let alpha = (reference_dot3(relative, delta) / denom).clamp(0.0, 1.0);
+            duty[i] = alpha;
+            let reconstructed = [
+                best_bg[0] + delta[0] * alpha,
+                best_bg[1] + delta[1] * alpha,
+                best_bg[2] + delta[2] * alpha,
+            ];
+            line_sse += reference_rgb_distance_squared(*pixel, reconstructed);
+        }
+    } else {
+        best_mask = 0;
+        line_sse = best_sse;
+    }
+
+    let emitted_fg8 = reference_linear_to_rgb8(best_fg);
+    let emitted_bg8 = reference_linear_to_rgb8(best_bg);
+    let emitted_fg = reference_rgb8_to_linear(emitted_fg8);
+    let emitted_bg = reference_rgb8_to_linear(emitted_bg8);
+    let mut emitted_sse = 0.0f32;
+    for (i, pixel) in linear.iter().enumerate() {
+        let centroid = if best_mask & (1u8 << i) != 0 {
+            emitted_fg
+        } else {
+            emitted_bg
+        };
+        emitted_sse += reference_rgb_distance_squared(*pixel, centroid);
+    }
+
+    ReferenceProjection {
+        fg: Color::Rgb(emitted_fg8[0], emitted_fg8[1], emitted_fg8[2]),
+        bg: Color::Rgb(emitted_bg8[0], emitted_bg8[1], emitted_bg8[2]),
+        duty,
+        static_mask: best_mask,
+        static_rmse: (best_sse / 24.0).sqrt(),
+        line_rmse: (line_sse / 24.0).sqrt(),
+        emitted_static_rmse: (emitted_sse / 24.0).sqrt(),
+    }
+}
+
+fn reference_partition_centroids(target: &[[f32; 3]; 8], mask: u8) -> ([f32; 3], [f32; 3]) {
+    let mut fg = [0.0f32; 3];
+    let mut bg = [0.0f32; 3];
+    let mut fg_n = 0.0f32;
+    let mut bg_n = 0.0f32;
+    for (i, pixel) in target.iter().enumerate() {
+        if mask & (1u8 << i) != 0 {
+            for channel in 0..3 {
+                fg[channel] += pixel[channel];
+            }
+            fg_n += 1.0;
+        } else {
+            for channel in 0..3 {
+                bg[channel] += pixel[channel];
+            }
+            bg_n += 1.0;
+        }
+    }
+    for channel in 0..3 {
+        fg[channel] /= fg_n;
+        bg[channel] /= bg_n;
+    }
+    (fg, bg)
+}
+
+fn reference_srgb8_to_linear_table() -> &'static [f32; 256] {
+    static TABLE: std::sync::OnceLock<[f32; 256]> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut table = [0.0f32; 256];
+        for (i, entry) in table.iter_mut().enumerate() {
+            let value = i as f32 / 255.0;
+            *entry = if value <= 0.04045 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            };
+        }
+        table
+    })
+}
+
+fn reference_rgb8_to_linear(rgb: [u8; 3]) -> [f32; 3] {
+    let table = reference_srgb8_to_linear_table();
+    [
+        table[rgb[0] as usize],
+        table[rgb[1] as usize],
+        table[rgb[2] as usize],
+    ]
+}
+
+fn reference_linear_to_rgb8(rgb: [f32; 3]) -> [u8; 3] {
+    rgb.map(|value| {
+        let value = value.clamp(0.0, 1.0);
+        let srgb = if value <= 0.003_130_8 {
+            value * 12.92
+        } else {
+            1.055 * value.powf(1.0 / 2.4) - 0.055
+        };
+        (srgb.clamp(0.0, 1.0) * 255.0).round() as u8
+    })
+}
+
+fn reference_dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn reference_rgb_distance_squared(a: [f32; 3], b: [f32; 3]) -> f32 {
+    let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    reference_dot3(d, d)
+}
+
+/// Compares every public field of `TemporalCellProjection` (`style.fg`, `style.bg`, `duty`,
+/// `static_mask`, `static_rmse`, `line_rmse`, `emitted_static_rmse`; the struct is
+/// `#[non_exhaustive]`, which only forbids constructing it here) to the reference, f32 by bits.
+fn assert_projection_bit_identical(tile: [[u8; 3]; 8]) {
+    let want = reference_project_rgb_subcells(tile);
+    let got = gibson::temporal::project_rgb_subcells(tile);
+    assert_eq!(got.static_mask, want.static_mask, "static_mask {tile:?}");
+    assert_eq!(got.style.fg, Some(want.fg), "fg {tile:?}");
+    assert_eq!(got.style.bg, Some(want.bg), "bg {tile:?}");
+    for (i, (g, w)) in got.duty.iter().zip(want.duty.iter()).enumerate() {
+        assert_eq!(g.to_bits(), w.to_bits(), "duty[{i}] {tile:?}");
+    }
+    assert_eq!(
+        got.static_rmse.to_bits(),
+        want.static_rmse.to_bits(),
+        "static_rmse {tile:?}"
+    );
+    assert_eq!(
+        got.line_rmse.to_bits(),
+        want.line_rmse.to_bits(),
+        "line_rmse {tile:?}"
+    );
+    assert_eq!(
+        got.emitted_static_rmse.to_bits(),
+        want.emitted_static_rmse.to_bits(),
+        "emitted_static_rmse {tile:?}"
+    );
+}
+
+#[test]
+fn guard_project_rgb_subcells_is_bit_identical_to_the_v0_8_reference() {
+    // 50_000 tiles from a seeded xorshift: three quarters of full-range noise, one quarter drawn
+    // from three levels so that ties and degenerate partitions occur.
+    let mut state = 0x9E37_79B9_7F4A_7C15u64;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 24) as u8
+    };
+    for round in 0..50_000u32 {
+        let mut tile = [[0u8; 3]; 8];
+        for px in tile.iter_mut() {
+            for c in px.iter_mut() {
+                *c = if round % 4 == 0 {
+                    (next() % 3) * 100
+                } else {
+                    next()
+                };
+            }
+        }
+        assert_projection_bit_identical(tile);
+    }
+
+    // Edge cases: uniform tiles, and a two-colour tile for every one of the 256 masks.
+    for v in [0u8, 1, 127, 128, 254, 255] {
+        assert_projection_bit_identical([[v, v, v]; 8]);
+    }
+    assert_projection_bit_identical([[10, 200, 30]; 8]);
+    for (a, b) in [
+        ([0u8, 0, 0], [255u8, 255, 255]),
+        ([200, 30, 30], [20, 40, 210]),
+        ([250, 250, 250], [249, 250, 250]),
+    ] {
+        for mask in 0u16..=255 {
+            let mut tile = [a; 8];
+            for (i, px) in tile.iter_mut().enumerate() {
+                if (mask >> i) & 1 == 1 {
+                    *px = b;
+                }
+            }
+            assert_projection_bit_identical(tile);
+        }
     }
 }
