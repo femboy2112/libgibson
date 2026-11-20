@@ -78,7 +78,7 @@ fn oracle_cells(id: u32, cols: u16, rows: u16) -> Surface {
 }
 
 /// A synthetic 16x24 "avatar": a head disc over a trapezoid body, all formula-generated.
-/// `variant == 1` is a second pose (a mouth bar), so the two poses differ in pixels. 16x24x4 =
+/// `variant >= 1` are further poses (a mouth bar on a different row), so poses differ in pixels. 16x24x4 =
 /// 1536 bytes, whose base64 (2048 characters) is one chunk.
 fn avatar(variant: u8) -> RgbaRaster {
     let (w, h) = (16u16, 24u16);
@@ -95,9 +95,10 @@ fn avatar(variant: u8) -> RgbaRaster {
             }
         }
     }
-    if variant == 1 {
+    if variant >= 1 {
+        // Poses 1, 2, 3: a mouth bar on row 6, 8, 10.
         for x in 6..10 {
-            r.set(x, 6, [120, 20, 30, 255]);
+            r.set(x, 4 + 2 * i32::from(variant), [120, 20, 30, 255]);
         }
     }
     r
@@ -474,4 +475,162 @@ fn red_refused_image_falls_back_and_is_reported() {
     );
     assert!(plan.end_frame().is_empty());
     assert_eq!(plan.fallbacks(), &[BoxFallback::Refused]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// The residency bound: at most one unconfirmed eviction delete (design section 18, rule 10)
+// ---------------------------------------------------------------------------------------------
+
+/// Cap 2, A and B shown and committed, then a frame that evicts A for C and is never committed.
+/// Returns the plan, the cache, the four poses and their ids (probe order A, B, C, D).
+fn outstanding_eviction() -> (KittyFramePlan, ImageCache, [RgbaRaster; 4], [u32; 4]) {
+    let poses = [avatar(0), avatar(1), avatar(2), avatar(3)];
+    let ids_vec = ids_for(cap(2), &[&poses[0], &poses[1], &poses[2], &poses[3]]);
+    let ids = [ids_vec[0], ids_vec[1], ids_vec[2], ids_vec[3]];
+    let mut cache = ImageCache::with_limits(cap(2));
+    let mut plan = KittyFramePlan::new();
+    plan.begin_frame();
+    expect_pixels(plan.place(&mut cache, &poses[0], 4, 3));
+    expect_pixels(plan.place(&mut cache, &poses[1], 4, 3));
+    assert!(!plan.end_frame().is_empty());
+    plan.commit();
+
+    let (placed, bytes) = one_box_frame(&mut plan, &mut cache, &poses[2], 4, 3);
+    let mut expected = delete_keep(ids[0]);
+    expected.extend(upload(ids[2], &poses[2]));
+    expected.extend(place_virtual(ids[2], 4, 3));
+    assert_eq!(bytes, expected, "evict A for C");
+    expect_pixels(placed);
+    // The write failed: no commit. The eviction delete of A is now outstanding.
+    (plan, cache, poses, ids)
+}
+
+/// While one eviction delete is outstanding, a box that needs another eviction is refused,
+/// reported and queues no upload. The dropped delete itself is owed and is re-sent.
+#[test]
+fn red_a_box_needing_a_second_eviction_while_one_is_outstanding_is_refused() {
+    let (mut plan, mut cache, poses, ids) = outstanding_eviction();
+    plan.begin_frame();
+    assert_eq!(
+        plan.place(&mut cache, &poses[3], 4, 3),
+        BoxPlacement::Fallback(BoxFallback::Refused),
+        "D would evict again: residency must stay within cap + 1"
+    );
+    let bytes = plan.end_frame();
+    assert_eq!(plan.fallbacks(), &[BoxFallback::Refused]);
+    assert_eq!(
+        bytes,
+        delete_keep(ids[0]),
+        "no upload for D; only the owed delete of A goes out again, got {:?}",
+        String::from_utf8_lossy(&bytes)
+    );
+}
+
+/// Once the frame that re-sent the owed delete is committed, normal eviction resumes.
+#[test]
+fn red_normal_eviction_resumes_once_the_owed_delete_is_confirmed() {
+    let (mut plan, mut cache, poses, ids) = outstanding_eviction();
+    plan.begin_frame();
+    assert_eq!(
+        plan.place(&mut cache, &poses[3], 4, 3),
+        BoxPlacement::Fallback(BoxFallback::Refused)
+    );
+    assert_eq!(plan.end_frame(), delete_keep(ids[0]));
+    plan.commit();
+
+    // B is now the least recently shown of {B, C}.
+    let (placed, bytes) = one_box_frame(&mut plan, &mut cache, &poses[3], 4, 3);
+    let mut expected = delete_keep(ids[1]);
+    expected.extend(upload(ids[3], &poses[3]));
+    expected.extend(place_virtual(ids[3], 4, 3));
+    assert_eq!(bytes, expected, "evict B for D");
+    expect_pixels(placed);
+    assert!(plan.fallbacks().is_empty());
+}
+
+/// The bound also holds inside one frame: the first eviction is allowed, a second box that
+/// needs one is refused.
+#[test]
+fn red_second_eviction_in_one_frame_is_refused() {
+    let (a, b, c) = (avatar(0), avatar(1), avatar(2));
+    let ids = ids_for(cap(1), &[&a, &b]);
+    let mut cache = ImageCache::with_limits(cap(1));
+    let mut plan = KittyFramePlan::new();
+    one_box_frame(&mut plan, &mut cache, &a, 4, 3);
+    plan.commit();
+
+    plan.begin_frame();
+    expect_pixels(plan.place(&mut cache, &b, 4, 3));
+    assert_eq!(
+        plan.place(&mut cache, &c, 4, 3),
+        BoxPlacement::Fallback(BoxFallback::Refused)
+    );
+    let bytes = plan.end_frame();
+    assert_eq!(plan.fallbacks(), &[BoxFallback::Refused]);
+    let mut expected = delete_keep(ids[0]);
+    expected.extend(upload(ids[1], &b));
+    expected.extend(place_virtual(ids[1], 4, 3));
+    assert_eq!(bytes, expected, "evict a, upload b, place b; nothing for c");
+}
+
+/// `reset` is the teardown / recovery path: the caller has deleted everything and cleared its
+/// cache, so the owed delete is dropped and nothing is assumed resident or placed.
+#[test]
+fn red_reset_drops_the_owed_delete_and_all_records() {
+    let (mut plan, _old_cache, poses, _) = outstanding_eviction();
+    plan.reset();
+    let id = ids_for(cap(2), &[&poses[3]])[0];
+    let mut fresh = ImageCache::with_limits(cap(2));
+    let (placed, bytes) = one_box_frame(&mut plan, &mut fresh, &poses[3], 4, 3);
+    let mut expected = upload(id, &poses[3]);
+    expected.extend(place_virtual(id, 4, 3));
+    assert_eq!(bytes, expected, "no owed delete survives a reset");
+    expect_pixels(placed);
+}
+
+#[test]
+fn guard_reset_on_a_fresh_plan_is_harmless() {
+    let mut plan = KittyFramePlan::new();
+    plan.reset();
+    plan.begin_frame();
+    assert!(plan.end_frame().is_empty());
+    assert!(plan.fallbacks().is_empty());
+}
+
+/// `would_evict` is false below the cap and for resident content; the stub's constant `false`
+/// satisfies this guard, and GREEN must keep it.
+#[test]
+fn guard_would_evict_is_false_below_the_cap_and_for_resident_content() {
+    let (a, b) = (avatar(0), avatar(1));
+    let mut cache = ImageCache::with_limits(cap(2));
+    assert!(!cache.would_evict(&a), "empty cache");
+    cache.ensure(&a);
+    assert!(!cache.would_evict(&a), "resident content");
+    assert!(!cache.would_evict(&b), "below the cap");
+    cache.ensure(&b);
+    assert!(!cache.would_evict(&a), "resident content at the cap");
+}
+
+#[test]
+#[allow(clippy::field_reassign_with_default)] // CacheLimits is #[non_exhaustive]
+fn red_cache_would_evict_only_for_new_uploadable_content_at_the_cap() {
+    let (a, b) = (avatar(0), avatar(1));
+    let mut cache = ImageCache::with_limits(cap(1));
+    cache.ensure(&a);
+    assert!(cache.would_evict(&b), "new content at the cap");
+    assert!(!cache.would_evict(&a), "resident content never evicts");
+    assert!(cache.would_evict(&b), "asking changes nothing");
+
+    let mut limits = cap(1);
+    limits.max_upload_bytes = 16;
+    let mut small = ImageCache::with_limits(limits);
+    let tiny = RgbaRaster::new(1, 1);
+    assert!(
+        small.ensure(&tiny).1.is_some(),
+        "4 bytes fit the upload cap"
+    );
+    assert!(
+        !small.would_evict(&a),
+        "a refused image (over the cap) never evicts"
+    );
 }

@@ -16,7 +16,9 @@ use crate::surface::Surface;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BoxFallback {
-    /// `ImageCache::ensure` refused the image (empty, or over `max_upload_bytes`).
+    /// The image is refused: `ImageCache::ensure` refused it (empty, or over `max_upload_bytes`),
+    /// or showing it would need a second eviction while one eviction delete is still unconfirmed
+    /// (design section 18, rule 10: residency never exceeds the cap plus one).
     Refused,
     /// The same image id already has a box of a different size in this frame (design section 7:
     /// one box size per id).
@@ -40,8 +42,8 @@ pub enum BoxPlacement {
     Fallback(BoxFallback),
 }
 
-/// Per-frame graphics plan, owned by the terminal adapter (design section 16, ruling 5). Not
-/// part of `Renderer` or `Context`.
+/// **EXPERIMENTAL** per-frame graphics plan, owned by the terminal adapter (design section 16,
+/// ruling 5). Not part of `Renderer` or `Context`.
 ///
 /// Per frame: [`begin_frame`](Self::begin_frame), one [`place`](Self::place) per image box,
 /// [`end_frame`](Self::end_frame) (the bytes to write before the frame's cell bytes, in the same
@@ -64,6 +66,8 @@ impl KittyFramePlan {
 
     /// Plans one image box of `cols x rows` cells for `raster`. The caller has already passed
     /// `pixel_route`; this decides residency, queues the graphics bytes and returns the cells.
+    /// A box that would need an eviction while an earlier eviction delete is unconfirmed (in this
+    /// frame or an abandoned one) returns `Fallback(Refused)`, is reported and queues nothing.
     // RED stub: v0.9.0 design, not implemented
     pub fn place(
         &mut self,
@@ -88,6 +92,12 @@ impl KittyFramePlan {
     /// successfully: only then are its uploads resident and its placements recorded.
     // RED stub: v0.9.0 design, not implemented
     pub fn commit(&mut self) {}
+
+    /// Forgets all residency and placement records and any unconfirmed eviction delete. For
+    /// teardown and torn-write recovery, after the caller has written the delete-all bytes and
+    /// cleared its `ImageCache`.
+    // RED stub: v0.9.0 design, not implemented
+    pub fn reset(&mut self) {}
 
     /// The fallbacks `place` reported since the last [`begin_frame`](Self::begin_frame), in order.
     // RED stub: v0.9.0 design, not implemented
