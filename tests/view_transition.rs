@@ -485,6 +485,55 @@ fn red_scoped_keys_prefixes_every_explicit_key_including_overlays_and_only_those
     );
 }
 
+/// Scoping must never alias a user key: scope `a` + key `b` and a sibling user key `a.b` are two
+/// different controls. GREEN either encodes scoped keys unambiguously (the frame compiles with two
+/// distinct keys) or rejects the reserved separator with its own error; a `DuplicateKey` between
+/// them (naive `"{prefix}.{key}"` joining) or a silently unscoped key both fail.
+#[test]
+fn red_scoped_keys_never_alias_a_user_key_containing_the_separator() {
+    let tree: Element<()> = column()
+        .child(
+            column()
+                .child(button("Scoped").key("b").on_press(()))
+                .scoped_keys("a"),
+        )
+        .child(button("User").key("a.b").on_press(()));
+    let mut rt: UiRuntime<()> = UiRuntime::new(skins::BLACK_ICE);
+    match rt.frame(&tree, env(), ms(0)) {
+        Ok(c) => {
+            let explicit: Vec<&Key> = c
+                .keys
+                .keys()
+                .filter(|k| !matches!(k, Key::Path(_)))
+                .collect();
+            assert!(
+                !explicit.contains(&&Key::named("b")),
+                "the scoped control kept its bare key `b`: scoping was not applied: {explicit:?}"
+            );
+            assert!(
+                explicit.contains(&&Key::named("a.b")),
+                "the user's own key `a.b` must survive unchanged: {explicit:?}"
+            );
+            assert_eq!(
+                explicit.len(),
+                2,
+                "two explicit keys, one per control: {explicit:?}"
+            );
+        }
+        Err(UiError::DuplicateKey(k)) => {
+            panic!("scope `a` + key `b` aliased the user key `a.b`: DuplicateKey({k:?})")
+        }
+        Err(other) => {
+            // Rejecting the reserved separator is an accepted GREEN, but it must say so.
+            let msg = other.to_string();
+            assert!(
+                msg.contains("separator") || msg.contains("reserved"),
+                "rejection must name the reserved separator, got: {msg}"
+            );
+        }
+    }
+}
+
 /// Hand-namespaced keys compile today: the disabled outgoing view is inert and leaves the Tab
 /// ring. This is the half of the contract that needs no new API.
 #[test]
