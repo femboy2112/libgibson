@@ -29,6 +29,14 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
   F5 as "a key code LibGibson does not model" now expect `F(5)`, and the guard for an unmodelled
   key moved to Insert (`src/input.rs` `key_kind_tests`, `tests/key_release_kind_pty.rs`).
 
+- **EXPERIMENTAL (v0.9): `ui::toast_lane`.** `toast_lane(toasts)` is a
+  noninteractive overlay host that stacks toasts from the top-right of the element it is mounted
+  on, newest first, each in its own box so they never overlap or cover anything outside the host. If
+  the toasts do not all fit, a one-row "+N more" counts the hidden ones (or, when only the newest
+  fits, a " +N" on its top row); toasts are never dropped silently. The lane is inert (no pointer
+  or focus target) and adds no motion; ordinary `toast()` is unchanged. Design:
+  `docs/design/v0.9-toast-lane.md`.
+
 ### Changed
 
 - **`ui::Key` is now `#[non_exhaustive]` and gains a `Scoped { scope, key }` variant**
