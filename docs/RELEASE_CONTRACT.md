@@ -327,6 +327,7 @@ breaking them in a pure patch:
 - `ui::experience` — semantic experience grammars realizing one `Experience` through
   several presentation grammars (Rust only; see [EXPERIENCE_GRAMMARS.md](EXPERIENCE_GRAMMARS.md))
   (0.7.0); `BladesStyle`, `Blades::with_style` and `Blades::with_skin` (0.7.0)
+- `graphics` — experimental pixel-image routes; currently the kitty graphics Unicode-placeholder route (`graphics::kitty`, plus the terminal adapter's per-frame plan `graphics::frame`; v0.9 design slices, not wired into the renderer)
 - `temporal` — experimental temporal cell realization (`TemporalDisplayProcessor`,
   `TemporalBrailleField`, the exact RGB subcell projector, `PresentationProfile`,
   `TemporalSafetyPolicy`, `ResetPolicy`). Rust-only, introduced in the 0.3.0
