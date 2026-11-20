@@ -15,11 +15,12 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-### Added (RED)
+### Added
 - **`measure_wrapped(text, width) -> u16`: rows a text takes when word-wrapped, as `ui::text()`
-  paints it.** RED slice: a stub returning 0, plus `tests/measure_wrapped.rs` (pinned caption,
-  paragraph, hard-break and wide-glyph cases, a painted-rows oracle, and equality with
-  `wrap_text`). `wrap_text` behaviour is pinned unchanged. Design:
+  paints it.** Returns the row count of `wrap_text(text, WrapMode::WordWrap, width)`, saturating
+  at `u16::MAX`. Tests in `tests/measure_wrapped.rs` (pinned caption, paragraph, hard-break and
+  wide-glyph cases, a painted-rows oracle, and equality with `wrap_text`). `wrap_text`
+  behaviour is unchanged. Design:
   `docs/design/v0.9-measure-wrapped.md`.
 
 ### Changed

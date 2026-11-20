@@ -121,9 +121,8 @@ pub fn wrap_text(text: &str, wrap: WrapMode, max_width: u16) -> Vec<String> {
 ///
 /// Recipe: captions and any text that may exceed one row use `ui::text()`, never `label()`
 /// (a label is one clipped row); size boxes with `measure_wrapped`.
-pub fn measure_wrapped(_text: &str, _width: u16) -> u16 {
-    // RED stub: deliberately wrong.
-    0
+pub fn measure_wrapped(text: &str, width: u16) -> u16 {
+    u16::try_from(wrap_text(text, WrapMode::WordWrap, width).len()).unwrap_or(u16::MAX)
 }
 
 /// Wraps rich text into lines according to the specified wrap mode and maximum width,
