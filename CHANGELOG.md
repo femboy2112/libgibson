@@ -18,6 +18,19 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 ### Added
 - **EXPERIMENTAL, v0.9.1 (GREEN): a multi-line text area.** Rust only; the C ABI is unchanged. `TextAreaState` (`text`, `cursor_grapheme`, `scroll_row`, `goal_col`), `ui::text_area` with `.rows(n)` and `.on_area_edit(..)`, and one wrap function (`TextAreaState::visual_rows`) shared by cursor movement, scrolling and painting. Enter inserts a newline and the widget never commits: the application provides an explicit Save control and owns Esc/cancel. A paste keeps `\n` and `\t` byte-exact (a TAB is one grapheme, 4 cells wide), normalizes `\r\n`, and strips every other control character and escape sequence. The implementation is in (`docs/design/v0.9.1-text-area.md`, `tests/text_area.rs`); the type stays EXPERIMENTAL. `TextInputState` is unchanged and stays single-line (#252). **Source break (EXPERIMENTAL `ui`):** `ui::Interaction` gains two public fields, `area` and `on_area_edit`, so code that builds an `Interaction` with a struct literal must add them.
 
+### Changed
+
+- **`ui::Key` is now `#[non_exhaustive]` and gains a `Scoped { scope, key }` variant**
+  (EXPERIMENTAL `ui` tier) and the constructor `Key::scoped`. `Element::scoped_keys(prefix)`
+  uses it, so a scoped key is structural rather than joined text: scope `a` + key `b` never
+  equals a user key `a.b`. An earlier v0.9 draft spelled scoped keys as
+  `Key::Named("{prefix}.{key}")`; code that looked a scoped control up by that string should
+  use `Key::scoped(prefix, key)`. A `match` on `Key` outside the crate now needs a wildcard
+  arm, once, so later variants are not breaking. (#434)
+- **`SurfaceFx::Offset` and `SurfaceFx::Blend`** are implemented, with
+  `surface_fx::resolve_reset` and `ui::ViewTransition` (EXPERIMENTAL). See
+  `docs/design/v0.9-view-transitions.md`. (#434)
+
 ## [0.8.1] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 1"
 
 A patch release with no library behavior change. The only `src/` change is rustdoc on `Element::overlay`.

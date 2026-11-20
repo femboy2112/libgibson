@@ -7,15 +7,31 @@ use std::fmt;
 use std::sync::Arc;
 
 /// Explicit keys survive reordering. Unkeyed elements receive positional paths.
-/// Named and positional identities have separate namespaces.
+/// Named, positional and scoped identities have separate namespaces.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum Key {
     Named(String),
     Path(Vec<usize>),
+    /// An explicit key placed under a scope by [`Element::scoped_keys`]. The scope is a
+    /// structural part of the identity, not text joined onto the key, so scope `a` + key
+    /// `b` never equals the user key `a.b`. Scopes nest: scoping an already scoped subtree
+    /// wraps the existing key again.
+    Scoped {
+        scope: String,
+        key: Box<Key>,
+    },
 }
 impl Key {
     pub fn named(value: impl ToString) -> Self {
         Self::Named(value.to_string())
+    }
+    /// `key` placed under `scope`, as [`Element::scoped_keys`] produces it.
+    pub fn scoped(scope: impl ToString, key: impl Into<Key>) -> Self {
+        Self::Scoped {
+            scope: scope.to_string(),
+            key: Box::new(key.into()),
+        }
     }
 }
 impl From<&str> for Key {
@@ -33,6 +49,8 @@ impl fmt::Display for Key {
         match self {
             Self::Named(s) => write!(f, "{s}"),
             Self::Path(p) => write!(f, "path:{p:?}"),
+            // Display is for people; identity is structural (see `Key::Scoped`).
+            Self::Scoped { scope, key } => write!(f, "{scope}::{key}"),
         }
     }
 }
@@ -325,6 +343,25 @@ impl<A> Element<A> {
     pub fn post_process(mut self, effects: impl IntoIterator<Item = SurfaceFx>) -> Self {
         self.effects.extend(effects);
         self
+    }
+    /// Place every explicit key in this subtree (this element, children and overlays) under
+    /// the scope `prefix`: key `k` becomes [`Key::Scoped`] `{ scope: prefix, key: k }`
+    /// (see [`Key::scoped`]), so a second copy of the same view can coexist in one tree
+    /// without `UiError::DuplicateKey`. The scope is structural, so it can never alias a user
+    /// key that happens to contain a separator. Unkeyed elements keep their position-derived
+    /// keys, which are already unique. Used for the outgoing view of a transition; see
+    /// `docs/design/v0.9-view-transitions.md`.
+    pub fn scoped_keys(mut self, prefix: &str) -> Self {
+        self.scope_keys_in_place(prefix);
+        self
+    }
+    fn scope_keys_in_place(&mut self, prefix: &str) {
+        if let Some(key) = self.key.take() {
+            self.key = Some(Key::scoped(prefix, key));
+        }
+        for child in self.children.iter_mut().chain(self.overlays.iter_mut()) {
+            child.scope_keys_in_place(prefix);
+        }
     }
 }
 
