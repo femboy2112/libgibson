@@ -647,9 +647,9 @@ pub fn toast<A>(value: impl Into<String>) -> Element<A> {
 /// the element it is mounted on. Mount it with [`Element::overlay`] on the element whose
 /// rectangle the toasts must stay inside, so anything outside that host is never covered.
 ///
-/// Pass the newest toast first. Each toast gets its own box of its own height (3 rows by
-/// default, or its `.height(...)`), so toasts never overlap. When the host holds fewer boxes
-/// than there are toasts, the newest ones are drawn and the last box becomes a "+N more" row.
+/// Pass the newest toast first. Each toast is drawn at its own height (3 rows by default, or
+/// its `.height(...)`), so toasts never overlap. When they do not all fit, the newest ones are
+/// drawn and a one-row "+N more" counts the rest; toasts are never dropped silently.
 /// See `docs/design/v0.9-toast-lane.md`. An ordinary [`toast`] is unchanged.
 ///
 /// ```

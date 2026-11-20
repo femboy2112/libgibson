@@ -2,9 +2,13 @@
 //!
 //! `toast_lane(toasts)` is a noninteractive overlay host mounted with `.overlay(...)` on the
 //! element whose rectangle the toasts must stay inside. Toasts stack from the top-right of that
-//! host, newest first, each in its own box of the toast's height, so they never overlap and
-//! never cover anything outside the host. When the host holds fewer boxes than there are toasts,
-//! the last box becomes a "+N more" row; toasts are never dropped silently.
+//! host, newest first, each at its own height, so they never overlap and never cover anything
+//! outside the host. Fill rule (design note section 3): if every toast fits, draw them all.
+//! Otherwise reserve one row for a counter, walk newest first and stop at the first toast that
+//! does not fit in the remaining height minus one, then draw a one-row "+N more" (N = hidden
+//! toasts). If the newest toast fits but the newest plus the counter row does not, draw the
+//! newest alone with a right-aligned " +N" on its top row. A host shorter than the newest toast
+//! draws nothing. Toasts are never dropped silently.
 //!
 //! The `red_` tests fail by assertion against the stub (a plain 100% column of the toasts, which
 //! stacks them in the host's full height, so the first toast lands bottom-right and the rest fall
@@ -150,12 +154,22 @@ fn text_row(now: &Surface, name: &str, body: BodyRect) -> u16 {
 
 /// Asserts `name` is drawn inside box `slot` (0 = topmost) and flush with the host's right edge.
 fn assert_in_slot(base: &Surface, now: &Surface, name: &str, slot: u16, body: BodyRect) {
-    let y = text_row(now, name, body);
     let top = body.y0 + slot * TOAST_H;
+    assert_in_rows(base, now, name, top..top + TOAST_H, body);
+}
+
+/// Asserts `name` is drawn on a row in `rows` and flush with the host's right edge.
+fn assert_in_rows(
+    base: &Surface,
+    now: &Surface,
+    name: &str,
+    rows: std::ops::Range<u16>,
+    body: BodyRect,
+) {
+    let y = text_row(now, name, body);
     assert!(
-        y >= top && y < top + TOAST_H,
-        "{name} should sit in box {slot} (rows {top}..{}), drawn at row {y}",
-        top + TOAST_H
+        rows.contains(&y),
+        "{name} should sit in rows {rows:?}, drawn at row {y}"
     );
     assert!(
         base.get(body.x1 - 1, y) != now.get(body.x1 - 1, y),
@@ -265,8 +279,9 @@ fn red_toasts_occupy_disjoint_boxes_stacked_from_the_top_right() {
 
 #[test]
 fn red_overflow_collapses_the_oldest_into_a_plus_n_more_row() {
-    // Host of 9 rows: capacity k = 3. Six toasts: the k-1 = 2 newest are drawn, and the last
-    // box becomes "+4 more" (N = 6 - 2). Nothing is dropped silently.
+    // Host of 9 rows, six 3-row toasts. Reserve one row for the counter: N-1 fits in 8, N-2 fits
+    // in 5, N-3 does not fit in 2, so stop. Two toasts are drawn and the one-row counter reads
+    // "+4 more" (N = 6 - 2 hidden), directly under them. Nothing is dropped silently.
     let names = ["N-1", "N-2", "N-3", "N-4", "N-5", "N-6"];
     let base = render(app(9, inert()), 80);
     let now = render(app(9, lane_of(&names)), 80);
@@ -281,32 +296,77 @@ fn red_overflow_collapses_the_oldest_into_a_plus_n_more_row() {
         );
     }
     assert_in_slot(&base, &now, "+4 more", 2, body);
+    // The counter is exactly one row high, directly below the second toast.
+    let counter = body.y0 + 2 * TOAST_H;
+    assert_in_rows(&base, &now, "+4 more", counter..counter + 1, body);
+    assert_rows_unchanged(&base, &now, body, counter + 1..body.y1);
     assert_outside_unchanged(&base, &now, body, "overflowing lane");
 }
 
 #[test]
-fn red_capacity_one_shows_only_the_more_row() {
-    // Provisional choice (open question in the design note): with k == 1 the single box is the
-    // "+N more" row with N = total, so no toast text is shown.
-    let names = ["TOAST-1", "TOAST-2", "TOAST-3"];
-    let base = render(app(4, inert()), 80);
-    let now = render(app(4, lane_of(&names)), 80);
+fn red_capacity_one_shows_the_newest_with_an_inline_count() {
+    // A 3-row host, three 3-row toasts. The newest fits (3 <= 3) but the newest plus a counter
+    // row (3 + 1) does not, so the newest toast is drawn and a right-aligned " +2" (two hidden)
+    // goes on the host's top row. A lone "+N more" that hides all content is never drawn.
+    let names = ["N-1", "N-2", "N-3"];
+    let base = render(app(3, inert()), 80);
+    let now = render(app(3, lane_of(&names)), 80);
     let body = body_rect(&base);
-    assert_eq!(body.y1 - body.y0, 4, "body height");
-    assert_in_slot(&base, &now, "+3 more", 0, body);
-    for name in names {
+    assert_eq!(body.y1 - body.y0, 3, "body height");
+    assert_in_slot(&base, &now, "N-1", 0, body);
+    for name in &names[1..] {
         assert!(
             rows_with(&now, name).is_empty(),
-            "{name} must be collapsed into the more row"
+            "{name} must be hidden behind the inline count"
         );
     }
-    assert_rows_unchanged(&base, &now, body, body.y0 + TOAST_H..body.y1);
+    assert!(
+        rows_with(&now, "more").is_empty(),
+        "capacity one must not draw a lone counter row"
+    );
+    assert_eq!(rows_with(&now, "+2"), vec![body.y0], "inline count row");
+    let lines = now.to_visible_lines();
+    let top_line = &lines[body.y0 as usize];
+    assert!(
+        top_line.trim_end().ends_with("+2"),
+        "the inline count must be right-aligned on the top row, found {top_line:?}"
+    );
+    assert!(
+        base.get(body.x1 - 1, body.y0) != now.get(body.x1 - 1, body.y0),
+        "the inline count must reach the host's right edge"
+    );
     assert_outside_unchanged(&base, &now, body, "capacity-one lane");
 }
 
 #[test]
+fn red_mixed_heights_fill_by_actual_height_with_a_one_row_counter() {
+    // An 8-row host; toasts of height 2, 4 and 3, newest first. Total 9 > 8, so reserve the
+    // counter row: M-1 (2) fits in 8 - 1 = 7, leaving 6; M-2 (4) fits in 6 - 1 = 5, leaving 2;
+    // M-3 (3) does not fit in 2 - 1 = 1, so stop. Rows: M-1 = 0..2, M-2 = 2..6, then a one-row
+    // "+1 more" at row 6 (one hidden toast), and row 7 is untouched.
+    let toasts = [
+        toast("M-1").height(2),
+        toast("M-2").height(4),
+        toast("M-3").height(3),
+    ];
+    let base = render(app(8, inert()), 80);
+    let now = render(app(8, toast_lane(toasts)), 80);
+    let body = body_rect(&base);
+    assert_eq!(body.y1 - body.y0, 8, "body height");
+    assert_in_rows(&base, &now, "M-1", body.y0..body.y0 + 2, body);
+    assert_in_rows(&base, &now, "M-2", body.y0 + 2..body.y0 + 6, body);
+    assert!(
+        rows_with(&now, "M-3").is_empty(),
+        "M-3 must be counted, not drawn"
+    );
+    assert_in_rows(&base, &now, "+1 more", body.y0 + 6..body.y0 + 7, body);
+    assert_rows_unchanged(&base, &now, body, body.y0 + 7..body.y1);
+    assert_outside_unchanged(&base, &now, body, "mixed-height lane");
+}
+
+#[test]
 fn red_host_shorter_than_one_toast_draws_nothing() {
-    // Two rows cannot hold a three-row toast: the frame is identical to the no-toast frame.
+    // Two rows cannot hold the newest (three-row) toast: the frame equals the no-toast frame.
     let base = render(app(2, inert()), 80);
     let now = render(app(2, lane_of(&["TOAST-A", "TOAST-B", "TOAST-C"])), 80);
     let diff = changed(&base, &now, None);
