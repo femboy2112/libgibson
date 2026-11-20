@@ -147,6 +147,8 @@ pub struct Element<A> {
     pub(crate) number: Option<u16>,
     pub(crate) layout: Layout,
     pub(crate) effects: Vec<SurfaceFx>,
+    /// Full-resolution source kept by [`pixel_image`]; `None` for every other element.
+    pub(crate) source: Option<Arc<crate::raster::RgbaRaster>>,
 }
 impl<A> Element<A> {
     fn new(kind: ElementKind) -> Self {
@@ -170,6 +172,7 @@ impl<A> Element<A> {
             number: None,
             layout: Layout::default(),
             effects: vec![],
+            source: None,
         }
     }
     pub fn child(mut self, child: Self) -> Self {
@@ -579,6 +582,28 @@ pub fn image_with<A>(
         alt: alt.into(),
         encoder,
     })
+}
+/// A static picture that keeps its full-resolution straight-alpha source.
+///
+/// Unlike [`image`], the element holds the caller's `Arc<RgbaRaster>` itself
+/// (the same shape as `stage::RasterPlane.source`), so alpha and the source
+/// resolution survive lowering. The element carries no pixel route and no image
+/// cache handle: whether a terminal paints it as pixels or as cells is decided
+/// later, by the terminal adapter, on the lowered frame.
+///
+/// Today's lowering paints it as an ordinary [`image`]: the source is flattened onto black
+/// and fitted to `max`. The kept source is what a later terminal adapter reads.
+pub fn pixel_image<A>(source: Arc<crate::raster::RgbaRaster>, max: (u16, u16)) -> Element<A> {
+    let flat = crate::raster::flatten(&source, (0, 0, 0));
+    let mut element = image(&flat, max, String::new());
+    element.source = Some(source);
+    element
+}
+impl<A> Element<A> {
+    /// The full-resolution source kept by [`pixel_image`]; `None` for every other element.
+    pub fn image_source(&self) -> Option<&Arc<crate::raster::RgbaRaster>> {
+        self.source.as_ref()
+    }
 }
 pub fn heading<A>(value: impl Into<String>) -> Element<A> {
     Element::new(ElementKind::Heading(value.into()))
