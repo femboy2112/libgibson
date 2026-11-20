@@ -359,8 +359,9 @@ impl ImageCache {
     /// Residency only: the id stays in the teardown set, because its data may already be on the
     /// terminal, so [`teardown_bytes`](Self::teardown_bytes) is unchanged. An unknown id is a
     /// no-op.
-    // RED stub: v0.9.0 design, not implemented
-    pub fn forget(&mut self, _id: u32) {}
+    pub fn forget(&mut self, id: u32) {
+        self.entries.remove(&id);
+    }
 
     /// **EXPERIMENTAL** (v0.9 kitty frame plan; not covered by the stability promise).
     ///
@@ -368,9 +369,22 @@ impl ImageCache {
     /// resident, it is uploadable (non-empty and within `max_upload_bytes`), and the cache is at
     /// its `max_resident_images` cap. Pure: it changes no state, not even the recency tick. The
     /// frame plan asks before `ensure` so it can refuse a second unconfirmed eviction.
-    // RED stub: v0.9.0 design, not implemented
-    pub fn would_evict(&self, _raster: &RgbaRaster) -> bool {
-        false
+    pub fn would_evict(&self, raster: &RgbaRaster) -> bool {
+        let bytes = usize::from(raster.width())
+            .saturating_mul(usize::from(raster.height()))
+            .saturating_mul(4);
+        if bytes == 0 || bytes > self.limits.max_upload_bytes {
+            return false;
+        }
+        let hash = self.keyed_hash(raster);
+        if self
+            .entries
+            .values()
+            .any(|e| e.hash == hash && e.raster == *raster)
+        {
+            return false;
+        }
+        self.entries.len() >= self.limits.max_resident_images.max(1)
     }
 
     /// Bytes that free (`d=I`) every image this cache transmitted, evicted ones included (see
