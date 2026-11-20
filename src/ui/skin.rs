@@ -826,24 +826,7 @@ impl ResolvedSkin {
             || rows < 6
             || pixels.width == 0
         {
-            if rows == 0 {
-                return frame;
-            }
-            let alt: String = alt
-                .split(['\r', '\n'])
-                .next()
-                .unwrap_or("")
-                .chars()
-                .filter(|c| !c.is_control())
-                .collect();
-            let line = Line::from_spans(vec![Span::styled(
-                alt,
-                self.style(Tone::Neutral, Emphasis::Muted),
-            )]);
-            return frame.child(
-                Node::rich_text_wrapped(RichText::from_lines(vec![line]), crate::WrapMode::NoWrap)
-                    .height(1.0),
-            );
+            return self.image_alt(frame, rows, alt);
         }
         let depth = self.environment.color_depth;
         let w = usize::from(pixels.width);
@@ -870,6 +853,80 @@ impl ResolvedSkin {
         frame.child(
             Node::rich_text_wrapped(RichText::from_lines(lines), crate::WrapMode::NoWrap)
                 .height(f32::from(pixels.height.div_ceil(2))),
+        )
+    }
+
+    /// The alt-text fallback of [`Self::image`]: one muted row (the first line of
+    /// `alt`, control characters dropped) in the reserved `frame`, nothing when
+    /// `rows == 0`.
+    fn image_alt(&self, frame: Node, rows: u16, alt: &str) -> Node {
+        if rows == 0 {
+            return frame;
+        }
+        let alt: String = alt
+            .split(['\r', '\n'])
+            .next()
+            .unwrap_or("")
+            .chars()
+            .filter(|c| !c.is_control())
+            .collect();
+        let line = Line::from_spans(vec![Span::styled(
+            alt,
+            self.style(Tone::Neutral, Emphasis::Muted),
+        )]);
+        frame.child(
+            Node::rich_text_wrapped(RichText::from_lines(vec![line]), crate::WrapMode::NoWrap)
+                .height(1.0),
+        )
+    }
+
+    /// [`Self::image`] for a cell `encoder` other than half-block: `fitted` holds
+    /// the encoder's own sample grid (see `Fitted::from_raster_grid`), re-fitted to
+    /// this box if it is narrower than at construction, then encoded with
+    /// `RgbRaster::to_surface_with` and quantized to the colour depth. The box, its
+    /// reserved height and the alt-text rule are exactly those of [`Self::image`].
+    pub(crate) fn image_encoded(
+        &self,
+        fitted: &super::image::Fitted,
+        encoder: crate::glyph::CellEncoder,
+        rows: u16,
+        alt: &str,
+        width: u16,
+    ) -> Node {
+        let width = width.min(self.environment.width);
+        let frame = Node::col().width(f32::from(width)).height(f32::from(rows));
+        let samples = fitted.refit_grid(encoder.sample_grid(), width, rows);
+        if self.environment.color_depth == ColorDepth::Mono
+            || width < 20
+            || rows < 6
+            || samples.width == 0
+        {
+            return self.image_alt(frame, rows, alt);
+        }
+        let mut raster = crate::raster::RgbRaster::new(samples.width, samples.height);
+        for (dst, src) in raster.pixels_mut().iter_mut().zip(&samples.pixels) {
+            *dst = *src;
+        }
+        let surface = raster.to_surface_with(encoder);
+        let depth = self.environment.color_depth;
+        let lines: Vec<Line> = (0..surface.height)
+            .map(|y| {
+                Line::from_spans(
+                    (0..surface.width)
+                        .filter_map(|x| surface.get(x, y))
+                        .map(|cell| {
+                            Span::styled(
+                                cell.glyph.grapheme.as_str(),
+                                quantize_style(cell.style, depth),
+                            )
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+        frame.child(
+            Node::rich_text_wrapped(RichText::from_lines(lines), crate::WrapMode::NoWrap)
+                .height(f32::from(surface.height)),
         )
     }
 

@@ -10,7 +10,9 @@ pub type Rgb = (u8, u8, u8);
 /// Normal terminal rasters are orders of magnitude smaller than this ceiling.
 pub const MAX_RASTER_DIMENSION: u16 = 2048;
 
+mod cell_encode;
 mod rgba;
+pub use crate::glyph::CellEncoder;
 pub(crate) use rgba::downscale_area_by;
 pub use rgba::{composite_over, downscale_area, flatten, Rgba, RgbaRaster};
 
@@ -200,6 +202,27 @@ impl RgbRaster {
             }
         }
         surface
+    }
+    /// Realizes this raster with `encoder`. The raster is read as the encoder's
+    /// own sample grid ([`CellEncoder::sample_grid`]): a cell consumes that many
+    /// samples and the surface is `ceil(width / cols)` by `ceil(height / rows)`
+    /// cells; nothing is resampled. [`CellEncoder::HalfBlock`] is exactly
+    /// [`Self::to_surface`].
+    ///
+    /// The other encoders pick, per cell, the exact best two-colour partition of
+    /// the cell's samples in linear light (the search of
+    /// [`project_rgb_subcells`](crate::temporal::project_rgb_subcells)) and emit
+    /// the glyph for that partition with the 8-bit sRGB centroids as foreground
+    /// (the set samples) and background. A uniform cell is a space on that
+    /// background. A partial last cell reads its missing samples as black, as
+    /// `to_surface` does for an unmatched bottom pixel. [`CellEncoder::Braille`] is
+    /// the existing Braille projector; [`CellEncoder::Auto`] reads a 2 x 6 tile
+    /// per cell and takes the least-error half-block, quadrant or sextant.
+    ///
+    /// There is no colour-depth parameter, for the same reason as `to_surface`:
+    /// emitted colours are 24-bit and quantization stays the renderer's job.
+    pub fn to_surface_with(&self, encoder: CellEncoder) -> Surface {
+        cell_encode::encode(self, encoder)
     }
     /// Same cell bounds as half-block output, but luminance becomes ordered
     /// Braille dot density. Each RGB sample covers 2×2 candidate dots. No RGB
