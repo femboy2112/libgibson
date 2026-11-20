@@ -62,7 +62,7 @@ bitflags = "2.4"
 libc = "0.2"
 # Optional — only compiled under the `audio-cpal` feature (see [features] above).
 cpal = { version = "=0.18.2", optional = true }
-rtrb = { version = "0.3", optional = true }
+rtrb = { version = "0.4", optional = true }
 
 # The library-owned Unix terminal input source (src/tty_source.rs, issue #269) takes
 # SIGWINCH through signal-hook's self-pipe, as crossterm's own sources do. signal-hook is
