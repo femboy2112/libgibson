@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-19): v0.8.0 "clear SIGFPE 0"; v0.8.1 "clear SIGFPE 1" (name PROPOSED) prepared
+## Current release (updated 2026-11-19): v0.8.0 "clear SIGFPE 0"; v0.8.1 "clear SIGFPE 1" prepared
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -49,7 +49,7 @@ unchanged (v1, 67 symbols). **Consumer gate:** MINERVA's consumer suite on the e
 `3e6d1ce` (the same tree as the merge) passed. Its tests were identical to the 0.7.3 baseline,
 with no API breaks for its consumer.
 
-**v0.8.1 "clear SIGFPE 1" (name PROPOSED; Leah picks) is prepared in source** (state 1), to be
+**v0.8.1 "clear SIGFPE 1" is prepared in source** (state 1), to be
 tagged on `main` on the release coordinator's go after the substituted consumer gate on the exact
 candidate. It is a patch: no library behavior change; the only `src/` change is rustdoc on
 `Element::overlay`. The native SDK binaries no longer embed build-host paths (#429), and the

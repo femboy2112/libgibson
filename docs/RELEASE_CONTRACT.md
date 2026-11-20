@@ -102,8 +102,8 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
-- **0.8.1** is **prepared in source** (state 1) on `main`, named "clear SIGFPE 1" (name
-  PROPOSED; [decision 0004](decisions/0004-release-naming.md)). It is a patch: no API or behavior
+- **0.8.1** is **prepared in source** (state 1) on `main`, named "clear SIGFPE 1"
+  ([decision 0004](decisions/0004-release-naming.md)). It is a patch: no API or behavior
   change. It is release-process and docs/test only: the native SDK build remaps build-host paths
   (#429), and the inline popup recipe is documented (#427) and pinned by a regression test (#431).
   It is to be tagged `v0.8.1` (with `bindings/go/v0.8.1`) on a `main` commit as a regular GitHub

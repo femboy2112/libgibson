@@ -15,7 +15,7 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-## [0.8.1] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 1" (name PROPOSED; Leah picks)
+## [0.8.1] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 1"
 
 A patch release with no library behavior change. The only `src/` change is rustdoc on `Element::overlay`.
 - **What changed:** the native SDK binaries no longer embed build-host paths (#429). The inline popup recipe is documented (#427) and pinned by a regression test (#431).
