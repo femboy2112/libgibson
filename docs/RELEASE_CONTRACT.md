@@ -102,6 +102,16 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
+- **0.8.1** is **prepared in source** (state 1) on `main`, named "clear SIGFPE 1"
+  ([decision 0004](decisions/0004-release-naming.md)). It is a patch: no API or behavior
+  change. It is release-process and docs/test only: the native SDK build remaps build-host paths
+  (#429), and the inline popup recipe is documented (#427) and pinned by a regression test (#431).
+  It is to be tagged `v0.8.1` (with `bindings/go/v0.8.1`) on a `main` commit as a regular GitHub
+  release, only on the release coordinator's per-tag go. The C ABI is unchanged
+  (`GIBSON_ABI_VERSION` 1, 67 symbols); MSRV 1.85 and Linux x86_64 are unchanged.
+  **Owner decision (2026-11-19):** the published v0.7.x native SDK assets, which embed the
+  build host's dependency source paths, stay as published. They are not rebuilt or replaced;
+  v0.8.0 is the first release whose assets were built with the remap.
 - **0.8.0** "clear SIGFPE 0" ([decision 0004](decisions/0004-release-naming.md)) is the latest
   such milestone and is **tagged and released on GitHub** (state 2):
   - tag `v0.8.0` → `4d58e5a` on `main`, with `bindings/go/v0.8.0` on the same commit;
