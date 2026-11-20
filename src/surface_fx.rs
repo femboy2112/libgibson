@@ -248,10 +248,8 @@ fn offset(surface: &mut Surface, dx: i32, dy: i32) {
         return;
     }
     let (w, h) = (i64::from(surface.width), i64::from(surface.height));
-    let source = std::mem::replace(
-        &mut surface.cells,
-        vec![Cell::transparent(); surface.cells.len()],
-    );
+    let len = surface.cells.len();
+    let source = std::mem::replace(&mut surface.cells, vec![Cell::transparent(); len]);
     for (i, cell) in source.iter().enumerate() {
         if cell.transparent || cell.is_continuation {
             continue;

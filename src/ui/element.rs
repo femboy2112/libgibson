@@ -17,7 +17,10 @@ pub enum Key {
     /// structural part of the identity, not text joined onto the key, so scope `a` + key
     /// `b` never equals the user key `a.b`. Scopes nest: scoping an already scoped subtree
     /// wraps the existing key again.
-    Scoped { scope: String, key: Box<Key> },
+    Scoped {
+        scope: String,
+        key: Box<Key>,
+    },
 }
 impl Key {
     pub fn named(value: impl ToString) -> Self {

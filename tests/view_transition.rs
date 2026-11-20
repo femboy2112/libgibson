@@ -238,10 +238,16 @@ fn red_reduced_slide_is_one_cut_with_no_reset_frame() {
             }
             let mut shown = incoming.clone();
             SurfaceFx::apply_chain(&in_fx, &mut shown);
-            assert_eq!(shown, incoming, "{dir:?}@{now}: incoming view not shown unmodified");
+            assert_eq!(
+                shown, incoming,
+                "{dir:?}@{now}: incoming view not shown unmodified"
+            );
         }
         assert!(t.is_settled(ms(100), red), "{dir:?}: cut at t = 0");
-        assert!(t.accepts_pointer(ms(100), red), "{dir:?}: pointer settles at once");
+        assert!(
+            t.accepts_pointer(ms(100), red),
+            "{dir:?}: pointer settles at once"
+        );
     }
 }
 
