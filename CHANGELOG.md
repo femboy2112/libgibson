@@ -15,17 +15,15 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-### Added (RED)
-- **`KeyCode::F(u8)`: function-key decoding, RED, not implemented.** A consumer wants F1 to open
-  in-app help, and today every function key is dropped before it reaches `Event`. This slice adds
-  the `F(u8)` variant (`KeyCode` is `#[non_exhaustive]`, so the addition is non-breaking) as a
-  stub and the tests that pin the intended behavior; **nothing decodes F-keys yet**, and the RED
-  tests fail by assertion until the GREEN slice lands. Intended: F1 through F12, with Shift, Ctrl
+### Added
+- **`KeyCode::F(u8)`: function keys F1–F12.** A consumer wants F1 to open in-app help; until now
+  every function key was dropped before it reached `Event`. `KeyCode` gains `F(u8)` (`KeyCode` is
+  `#[non_exhaustive]`, so the addition is non-breaking). Decoded: F1 through F12, with Shift, Ctrl
   and Alt, from crossterm's `KeyCode::F` and from the owned Unix source (SS3 `ESC O P`..`S`,
   `CSI 11~`..`CSI 24~`, and the `CSI 1;<mod>P`..`S` and `CSI <n>;<mod>~` forms). The C ABI is
   unchanged and skips F-keys (header: "F-keys are not exposed in ABI 1; they are skipped"): the C
   poll consumes one and keeps polling for the rest of its timeout, so C behavior stays as it is
-  today (GOD ruling, ACK RESULT #124; the skip loop lands in GREEN, the RED commit has a stub). Design:
+  today. F13+ is still dropped (open, #447). Design:
   [`docs/design/v0.9-function-keys.md`](docs/design/v0.9-function-keys.md).
 - **SPEC UPDATE (GOD #148): F-keys are modelled; was None.** The crossterm-level tests that used
   F5 as "a key code LibGibson does not model" now expect `F(5)`, and the guard for an unmodelled

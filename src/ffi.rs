@@ -2272,7 +2272,8 @@ mod function_key_tests {
     //! in `tests/key_release_kind_pty.rs`
     //! (`c_poll_skips_a_function_key_and_keeps_polling_to_its_deadline`).
     //!
-    //! RED: `red_*` fails by assertion against the stub, which ends the poll at the F-key.
+    //! `red_*` (named in the RED slice) pin the skip-and-continue loop; they failed against the
+    //! RED stub, which ended the poll at the F-key.
     //! GUARD: `guard_*` passes today and must stay green.
     use super::*;
     use std::time::Instant;
