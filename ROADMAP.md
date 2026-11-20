@@ -81,7 +81,7 @@ Each 0.9.0 item, with the evidence that closes it or the recorded deferral that 
 | #438 feat(graphics): kitty graphics placeholder route (`graphics::kitty`, `ui::pixel_image`; EXPERIMENTAL, bytes and cells only, not wired into the renderer) | **Done** (opt-in, Rust-only) | Merged as `f6c525b`. RED `7026610`, GREEN `e51c611`. Also RED `82a07ca` for the source-preserving pixel image element. |
 | #442 feat(graphics): kitty frame plan (`graphics::frame::KittyFramePlan`; EXPERIMENTAL, not wired in) | **Done** (opt-in, Rust-only) | Merged as `5370628` (into the #438 branch, landed on `main` with `f6c525b`). RED `4722a89`, GREEN `756be89`. |
 | #443 feat(ui): `toast_lane` (EXPERIMENTAL) | **Done** | Merged as `9202e88`. RED `913df4c`, GREEN `ad0abee`. |
-| #446 feat(input): `KeyCode::F` function keys F1 to F12 | **Done** | Merged as `27a958f`. RED `8a25d62`, GREEN `118ed88`. SPEC UPDATE `44d154e` (GOD #188: F3 with modifiers only via `CSI 13;<mod>~`). The C header gained only a comment; ABI stays 67 symbols. |
+| #446 feat(input): `KeyCode::F` function keys F1 to F12 (Rust default behavior change: F1–F12 now delivered, were dropped; C ABI still skips them) | **Done** | Merged as `27a958f`. RED `8a25d62`, GREEN `118ed88`. SPEC UPDATE `44d154e` (GOD #188: F3 with modifiers only via `CSI 13;<mod>~`). The C header gained only a comment; ABI stays 67 symbols. |
 | #448 feat(layout): `measure_wrapped` | **Done** | Merged as `8a657fa`. RED `45675ef`, GREEN `7cc3ed7`. |
 | Release gates (exact-head CI incl. Release preflight; consumer gate) | **PENDING** (placeholder: filled at the cut with the observed run ids and shas only) | |
 | Consumer gate | **PENDING** | |

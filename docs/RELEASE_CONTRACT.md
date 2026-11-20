@@ -104,7 +104,7 @@ surface is versioned as a minor to signal its scope — not because anything bro
 
 - **0.9.0** is **prepared in source** (state 1) on `main`, named "clear SIGKILL 0"
   ([decision 0004](decisions/0004-release-naming.md): minor 9 = SIGKILL, patch 0; the name is
-  confirmed by the release coordinator, GOD #126). No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experimental `ui::Key` is now #[non_exhaustive] (adds Key::Scoped). It is opt-in and Rust-only, with no change to any default. Its slices
+  confirmed by the release coordinator, GOD #126). No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experimental `ui::Key` is now #[non_exhaustive] (adds Key::Scoped). Its new surfaces are opt-in and Rust-only; the one default change is that Rust applications now receive F1 to F12 as `Event::Key` (#446), which were dropped before (the C ABI still skips them). Its slices
   are the `CellEncoder` family (`RgbRaster::to_surface_with`, `ui::image_with`, `allowed_encoder`,
   #436); the pure `capability::probe` decision layer (#437), which writes nothing to a terminal;
   `SurfaceFx::Offset`/`Blend`, `ui::ViewTransition` and `ui::Key::Scoped` (#434); the experimental

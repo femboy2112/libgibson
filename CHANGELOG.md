@@ -17,7 +17,7 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [0.9.0] — 2026-11-22 · GitHub release from `main` · "clear SIGKILL 0"
 
-No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experimental `ui::Key` is now #[non_exhaustive] (adds Key::Scoped). The release adds new opt-in Rust-only surfaces: cell-glyph encoders, a terminal capability decision layer, the kitty graphics placeholder route (bytes and cells only, not wired into the renderer), view transitions, a toast lane and `measure_wrapped`, plus function-key decoding. Every default is unchanged, and the half-block output stays byte-identical.
+No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experimental `ui::Key` is now #[non_exhaustive] (adds Key::Scoped). The release adds new opt-in Rust-only surfaces: cell-glyph encoders, a terminal capability decision layer, the kitty graphics placeholder route (bytes and cells only, not wired into the renderer), view transitions, a toast lane and `measure_wrapped`. One default changes for Rust applications: F1 to F12 now arrive as `Event::Key` with `KeyCode::F(n)` (#446), where they were dropped before; the C ABI still skips them. Every other default is unchanged, and the half-block output stays byte-identical.
 - **What changed:** opt-in cell encoders (#436); a pure terminal capability probe decision layer (#437); `SurfaceFx::Offset`/`Blend`, `ui::ViewTransition` and a structural `ui::Key::Scoped` (#434); the experimental kitty graphics placeholder route (#438) with its per-frame plan (#442); `ui::toast_lane` (#443); `KeyCode::F` function keys F1 to F12 (#446); `measure_wrapped` (#448); CI `--no-fail-fast` (#440).
 - **Unchanged:** `bindings/` (except the Python package version) and `abi/`; `include/gibson.h` gained comments only (#446). `GIBSON_ABI_VERSION` stays 1 (67 symbols). MSRV stays 1.85.
 - **Platforms and distribution:** Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload. The Go module tag `bindings/go/v0.9.0` names the same commit as `v0.9.0`.
@@ -92,11 +92,18 @@ No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experi
   fit, a one-row "+N more" counts the hidden ones (or, when only the newest fits, a " +N" on its
   top row); toasts are never dropped silently. The lane is inert (no pointer or focus target) and
   adds no motion; ordinary `toast()` is unchanged. Design: `docs/design/v0.9-toast-lane.md`.
-- **`KeyCode::F(u8)`: function keys F1 to F12 ([#446](https://github.com/femboy2112/libgibson/pull/446)).** A consumer wants F1 to open in-app
+- **`measure_wrapped(text, width) -> u16`: rows a text takes when word-wrapped, as `ui::text()`
+  paints it ([#448](https://github.com/femboy2112/libgibson/pull/448)).** Returns the row count of `wrap_text(text, WrapMode::WordWrap, width)`,
+  saturating at `u16::MAX`. Tests in `tests/measure_wrapped.rs` (pinned caption, paragraph,
+  hard-break and wide-glyph cases, a painted-rows oracle, and equality with `wrap_text`).
+  `wrap_text` behaviour is unchanged. Design: `docs/design/v0.9-measure-wrapped.md`.
+
+### Changed
+- **`KeyCode::F(u8)`: function keys F1 to F12 are now delivered (Rust; default behavior change) ([#446](https://github.com/femboy2112/libgibson/pull/446)).** A consumer wants F1 to open in-app
   help; until now every function key was dropped before it reached `Event`. `KeyCode` gains
   `F(u8)` (`KeyCode` is `#[non_exhaustive]`, so the addition is non-breaking). Decoded: F1 through
   F12, with Shift, Ctrl and Alt, from crossterm's `KeyCode::F` and from the owned Unix source (SS3
-  `ESC O P`..`S`, `CSI 11~`..`CSI 24~`, and the `CSI 1;<mod>P`..`S` and `CSI <n>;<mod>~` forms).
+  `ESC O P`..`S`, `CSI 11~`..`CSI 24~`, and the `CSI 1;<mod>P`, `Q`, `S` and `CSI <n>;<mod>~` forms).
   The C ABI is unchanged and skips F-keys (the header gained only a comment: "F-keys are not
   exposed in ABI 1; they are skipped"): the C poll consumes one and keeps polling for the rest of
   its timeout, so C behavior stays as it is today; the symbol count stays 67. F13+ is still
@@ -108,13 +115,6 @@ No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experi
   - **SPEC UPDATE (GOD #148): F-keys are modelled; was None.** The crossterm-level tests that used
     F5 as "a key code LibGibson does not model" now expect `F(5)`, and the guard for an unmodelled
     key moved to Insert (`src/input.rs` `key_kind_tests`, `tests/key_release_kind_pty.rs`).
-- **`measure_wrapped(text, width) -> u16`: rows a text takes when word-wrapped, as `ui::text()`
-  paints it ([#448](https://github.com/femboy2112/libgibson/pull/448)).** Returns the row count of `wrap_text(text, WrapMode::WordWrap, width)`,
-  saturating at `u16::MAX`. Tests in `tests/measure_wrapped.rs` (pinned caption, paragraph,
-  hard-break and wide-glyph cases, a painted-rows oracle, and equality with `wrap_text`).
-  `wrap_text` behaviour is unchanged. Design: `docs/design/v0.9-measure-wrapped.md`.
-
-### Changed
 - **`ui::Key` is now `#[non_exhaustive]` and gains a `Scoped { scope, key }` variant**
   (EXPERIMENTAL `ui` tier) and the constructor `Key::scoped` ([#434](https://github.com/femboy2112/libgibson/pull/434)). `Element::scoped_keys(prefix)`
   uses it, so a scoped key is structural rather than joined text: scope `a` + key `b` never
