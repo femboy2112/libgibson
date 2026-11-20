@@ -106,6 +106,7 @@ pub(crate) enum ElementKind {
     },
     Modal(String),
     Toast(String),
+    ToastLane,
     Viewport(i32, i32),
     Raw(Node),
     Presented(Arc<dyn Fn(&PresentationCx) -> Node>),
@@ -704,6 +705,27 @@ pub fn modal<A>(title: impl Into<String>) -> Element<A> {
 }
 pub fn toast<A>(value: impl Into<String>) -> Element<A> {
     Element::new(ElementKind::Toast(value.into())).tone(Tone::Success)
+}
+/// EXPERIMENTAL (v0.9 design): a noninteractive lane that stacks toasts from the top-right of
+/// the element it is mounted on. Mount it with [`Element::overlay`] on the element whose
+/// rectangle the toasts must stay inside, so anything outside that host is never covered.
+///
+/// Pass the newest toast first. Each toast is drawn at its own height (3 rows by default, or
+/// its `.height(...)`), so toasts never overlap. When they do not all fit, the newest ones are
+/// drawn and a one-row "+N more" counts the rest; toasts are never dropped silently. The lane
+/// is inert: it paints its toasts but adds no pointer or focus target of its own, and a toast
+/// inside it is not a pointer target either. The application owns expiry.
+/// See `docs/design/v0.9-toast-lane.md`. An ordinary [`toast`] is unchanged.
+///
+/// ```
+/// use gibson::ui::prelude::*;
+///
+/// let lane: Element<()> = toast_lane([toast("saved"), toast("synced")]);
+/// let host: Element<()> = column().overlay(lane);
+/// # let _ = host;
+/// ```
+pub fn toast_lane<A>(toasts: impl IntoIterator<Item = Element<A>>) -> Element<A> {
+    Element::new(ElementKind::ToastLane).children(toasts)
 }
 pub fn viewport<A>(x: i32, y: i32) -> Element<A> {
     Element::new(ElementKind::Viewport(x, y))
