@@ -3576,6 +3576,26 @@ mod tests {
         }
 
         #[test]
+        fn guard_csi_1_mod_r_is_a_cursor_position_reply_never_f3() {
+            // Negative control (GOD #188): `CSI 1;3R` is byte-identical to a cursor position
+            // reply (row 1, column 3). It must decode as one and be dropped, never become F3:
+            // making it F3 would turn real replies into phantom keypresses. xterm's modified F3
+            // is therefore a known undelivered form (crossterm upstream does the same); F3 with
+            // modifiers is decoded only via `CSI 13;<mod>~`.
+            for bytes in [&b"\x1b[1;3R"[..], b"\x1b[1;2R", b"\x1b[1;5R", b"\x1b[1;8R"] {
+                let ctx = String::from_utf8_lossy(bytes).escape_debug().to_string();
+                assert!(
+                    matches!(
+                        crate::tty_source::parse::parse_event(bytes, false),
+                        Ok(Some(InternalEvent::CursorPosition(..)))
+                    ),
+                    "{ctx}: must parse as a cursor position reply"
+                );
+                assert_eq!(public_events(bytes, false), Vec::<PubEvent>::new(), "{ctx}");
+            }
+        }
+
+        #[test]
         fn red_xterm_modifier_forms_carry_one_plus_bitmask() {
             // xterm modifier parameter = 1 + bitmask: shift 1, alt 2, ctrl 4.
             let cases: [(&[u8], u8, PubMods); 6] = [
@@ -3583,7 +3603,9 @@ mod tests {
                 (b"\x1b[1;5S", 4, PubMods::CONTROL),
                 (b"\x1b[15;3~", 5, PubMods::ALT),
                 (b"\x1b[1;6Q", 2, PubMods::SHIFT | PubMods::CONTROL),
-                (b"\x1b[1;3R", 3, PubMods::ALT),
+                // Alt+F3 in its CSI-tilde form: `CSI 1;3R` is the cursor position reply
+                // (row 1, column 3), decoded as such and dropped (SPEC UPDATE, GOD #188).
+                (b"\x1b[13;3~", 3, PubMods::ALT),
                 (
                     b"\x1b[24;8~",
                     12,
