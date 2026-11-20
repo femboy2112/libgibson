@@ -350,6 +350,43 @@ impl ImageCache {
         (id, Some(out))
     }
 
+    /// **EXPERIMENTAL** (v0.9 kitty frame plan; not covered by the stability promise).
+    ///
+    /// Makes the cache forget that `id` is resident, so the next [`ensure`](Self::ensure) of its
+    /// content uploads it again (no eviction delete is produced: nothing is evicted). The frame
+    /// plan calls it for an upload whose write was never confirmed ("resident" means written).
+    ///
+    /// Residency only: the id stays in the teardown set, because its data may already be on the
+    /// terminal, so [`teardown_bytes`](Self::teardown_bytes) is unchanged. An unknown id is a
+    /// no-op.
+    pub fn forget(&mut self, id: u32) {
+        self.entries.remove(&id);
+    }
+
+    /// **EXPERIMENTAL** (v0.9 kitty frame plan; not covered by the stability promise).
+    ///
+    /// Whether [`ensure`](Self::ensure) of `raster` would evict an image: the content is not
+    /// resident, it is uploadable (non-empty and within `max_upload_bytes`), and the cache is at
+    /// its `max_resident_images` cap. Pure: it changes no state, not even the recency tick. The
+    /// frame plan asks before `ensure` so it can refuse a second unconfirmed eviction.
+    pub fn would_evict(&self, raster: &RgbaRaster) -> bool {
+        let bytes = usize::from(raster.width())
+            .saturating_mul(usize::from(raster.height()))
+            .saturating_mul(4);
+        if bytes == 0 || bytes > self.limits.max_upload_bytes {
+            return false;
+        }
+        let hash = self.keyed_hash(raster);
+        if self
+            .entries
+            .values()
+            .any(|e| e.hash == hash && e.raster == *raster)
+        {
+            return false;
+        }
+        self.entries.len() >= self.limits.max_resident_images.max(1)
+    }
+
     /// Bytes that free (`d=I`) every image this cache transmitted, evicted ones included (see
     /// [`kitty_delete_all`]).
     pub fn teardown_bytes(&self) -> Vec<u8> {
