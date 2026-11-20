@@ -68,7 +68,10 @@ impl FxMask {
 }
 
 /// A fully realized operation: no clocks, story state, or hidden randomness.
+///
+/// Non-exhaustive since 0.9.0: match it with a wildcard arm.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum SurfaceFx {
     /// Apply an ordinary effect only to selected complete glyphs. The input
     /// outside the mask is hidden from the effect and left exactly unchanged.
@@ -115,6 +118,21 @@ pub enum SurfaceFx {
     Scanline {
         position: f32,
         style: Style,
+    },
+    /// Shift the whole entity-local surface by `(dx, dy)` cells. Cells moved
+    /// outside are clipped; vacated cells become transparent. A wide glyph that
+    /// would straddle the clip edge is dropped whole. (v0.9.0 design, see
+    /// `docs/design/v0.9-view-transitions.md`; RED stub, currently a no-op.)
+    Offset {
+        dx: i32,
+        dy: i32,
+    },
+    /// Move the fg and bg of every painted cell toward `toward` by `t`
+    /// (0 identity, 1 exactly `toward`; NaN is zero, clamped). Glyphs and
+    /// attributes are unchanged. (v0.9.0 design; RED stub, currently a no-op.)
+    Blend {
+        toward: crate::Color,
+        t: f32,
     },
 }
 
@@ -181,6 +199,8 @@ impl SurfaceFx {
             Self::Dissolve { seed, fraction } => {
                 masked(surface, seed, fraction, None);
             }
+            // RED stub: v0.9.0 design, not implemented
+            Self::Offset { .. } | Self::Blend { .. } => {}
         }
     }
 
