@@ -287,6 +287,283 @@ pub fn transcode_surface_glyphs(surface: &mut Surface, mode: SubcellGlyphMode) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// v0.9.0 opt-in cell encoders. Design: docs/design/v0.9-cell-encoders.md.
+//
+// `CellEncoder::HalfBlock` is the default and stays byte-identical to
+// `RgbRaster::to_surface`; every other encoder is opt-in.
+// ---------------------------------------------------------------------------
+
+/// How an [`RgbRaster`](crate::raster::RgbRaster) is realized as terminal cells.
+///
+/// Every encoder emits ordinary one-column glyphs with at most two colours per
+/// cell (foreground and background), so a denser encoder raises *edge and
+/// luminance* detail, not chroma. [`CellEncoder::HalfBlock`] is the default and
+/// is the exact, byte-identical `RgbRaster::to_surface` output.
+///
+/// `#[non_exhaustive]`: further families may be added in a `0.y.z` release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum CellEncoder {
+    /// `▀` with foreground = top sample and background = bottom sample (1×2).
+    #[default]
+    HalfBlock,
+    /// Quadrant blocks `U+2596..=U+259F` plus ` ▀▄▌▐█` (2×2).
+    Quadrant,
+    /// Sextants `U+1FB00..=U+1FB3B` plus ` ▌▐█` (2×3).
+    Sextant,
+    /// Octants `U+1CD00..=U+1CDE5` plus existing block characters (2×4).
+    /// Needs a terminal that draws them natively; see [`allowed_encoder`].
+    Octant,
+    /// Braille `U+2800 + bits`, fitted by the two-colour projector (2×4).
+    Braille,
+    /// Per cell, the family with the least linear-light error among
+    /// half-block, quadrant and sextant (2×6 shared sample tile).
+    Auto,
+}
+
+impl CellEncoder {
+    /// Samples per cell as `(columns, rows)`: the grid a raster must be
+    /// supplied at so one cell reads exactly that many samples.
+    pub const fn sample_grid(self) -> (u16, u16) {
+        match self {
+            CellEncoder::HalfBlock => (1, 2),
+            CellEncoder::Quadrant => (2, 2),
+            CellEncoder::Sextant => (2, 3),
+            CellEncoder::Octant | CellEncoder::Braille => (2, 4),
+            CellEncoder::Auto => (2, 6),
+        }
+    }
+}
+
+/// The sextant character for a 2×3 `pattern` (bit 0 = top-left, bit 1 =
+/// top-right, bit 2 = middle-left, bit 3 = middle-right, bit 4 = bottom-left,
+/// bit 5 = bottom-right). Bits above bit 5 are ignored.
+///
+/// Pattern 0 is `' '`, 21 is `▌`, 42 is `▐`, 63 is `█`; every other pattern
+/// `p` is `U+1FB00 + p - 1 - (p > 21) - (p > 42)`.
+pub fn sextant_char(pattern: u8) -> char {
+    match pattern & 0x3F {
+        0 => ' ',
+        21 => '▌',
+        42 => '▐',
+        63 => '█',
+        p => {
+            let skipped = u32::from(p > 21) + u32::from(p > 42);
+            // 1..=62 minus {21, 42} lands in U+1FB00..=U+1FB3B, all assigned.
+            char::from_u32(0x1FB00 + u32::from(p) - 1 - skipped).unwrap_or(' ')
+        }
+    }
+}
+
+/// The 26 octant patterns (bit `2 * row + column`, row 0 on top) whose shape
+/// already has a character outside `U+1CD00..=U+1CDE5`.
+const fn legacy_octant_shape(pattern: u8) -> Option<char> {
+    Some(match pattern {
+        0x00 => ' ',
+        0xFF => '█',
+        0x0F => '▀',
+        0xF0 => '▄',
+        0x55 => '▌',
+        0xAA => '▐',
+        0x05 => '▘',
+        0x0A => '▝',
+        0x50 => '▖',
+        0xA0 => '▗',
+        0xA5 => '▚',
+        0x5A => '▞',
+        0xF5 => '▙',
+        0x5F => '▛',
+        0xAF => '▜',
+        0xFA => '▟',
+        0x03 => '\u{1FB82}', // upper one quarter block
+        0x3F => '\u{1FB85}', // upper three quarters block
+        0xC0 => '\u{2582}',  // lower one quarter block
+        0xFC => '\u{2586}',  // lower three quarters block
+        0x01 => '\u{1CEA8}', // left half upper one quarter block
+        0x02 => '\u{1CEAB}', // right half upper one quarter block
+        0x40 => '\u{1CEA3}', // left half lower one quarter block
+        0x80 => '\u{1CEA0}', // right half lower one quarter block
+        0x14 => '\u{1FBE6}', // middle left one quarter block
+        0x28 => '\u{1FBE7}', // middle right one quarter block
+        _ => return None,
+    })
+}
+
+/// The 256-entry octant table, built at compile time: the 230 patterns without
+/// another character take `U+1CD00 + rank` in ascending pattern order.
+const OCTANT_TABLE: [char; 256] = build_octant_table();
+
+const fn build_octant_table() -> [char; 256] {
+    let mut table = [' '; 256];
+    let mut next = 0x1CD00u32;
+    let mut pattern = 0usize;
+    while pattern < 256 {
+        table[pattern] = match legacy_octant_shape(pattern as u8) {
+            Some(shape) => shape,
+            None => {
+                // A bad codepoint is a compile-time error here, not a silent blank.
+                let Some(octant) = char::from_u32(next) else {
+                    panic!("octant codepoint out of range")
+                };
+                next += 1;
+                octant
+            }
+        };
+        pattern += 1;
+    }
+    table
+}
+
+/// The octant character for a 2×4 `pattern` (bit `2 * row + column`, row 0 on
+/// top, column 0 on the left). Total over all 256 patterns and a bijection.
+///
+/// Patterns with a Unicode 16 octant (230 of them, `U+1CD00..=U+1CDE5`, in
+/// ascending pattern order) map there; the other 26 map to the existing block
+/// character with the same shape (space, `█`, halves, quadrants and so on).
+pub fn octant_char(pattern: u8) -> char {
+    OCTANT_TABLE[usize::from(pattern)]
+}
+
+/// What a terminal can be trusted to draw: the glyph families above half-block.
+#[derive(Clone, Copy)]
+struct EncoderCaps {
+    quadrant: bool,
+    braille: bool,
+    sextant: bool,
+    octant: bool,
+}
+
+impl EncoderCaps {
+    /// Half-block only (the CP437 block set).
+    const NONE: Self = Self {
+        quadrant: false,
+        braille: false,
+        sextant: false,
+        octant: false,
+    };
+    /// Quadrant and Braille, never sextant or octant.
+    const BASIC: Self = Self {
+        quadrant: true,
+        braille: true,
+        sextant: false,
+        octant: false,
+    };
+    /// Up to sextant.
+    const SEXTANT: Self = Self {
+        quadrant: true,
+        braille: true,
+        sextant: true,
+        octant: false,
+    };
+    const ALL: Self = Self {
+        quadrant: true,
+        braille: true,
+        sextant: true,
+        octant: true,
+    };
+}
+
+/// An explicit `--glyphs=` / `LIBGIBSON_GLYPHS` value as a ceiling, or `None`
+/// for `auto` and for values this gate does not recognise (they never upgrade).
+fn explicit_caps(value: &str) -> Option<EncoderCaps> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "octant" | "octants" => Some(EncoderCaps::ALL),
+        "sextant" | "sextants" => Some(EncoderCaps::SEXTANT),
+        "quadrant" | "quadrants" => Some(EncoderCaps {
+            quadrant: true,
+            ..EncoderCaps::NONE
+        }),
+        "braille" | "braille2x4" => Some(EncoderCaps {
+            braille: true,
+            ..EncoderCaps::NONE
+        }),
+        "halfblock" | "half-block" | "half" | "block" | "blocks" | "shade" | "ascii" | "text" => {
+            Some(EncoderCaps::NONE)
+        }
+        _ => None,
+    }
+}
+
+/// The passive-environment ceiling. Unknown terminals get [`EncoderCaps::BASIC`].
+fn environment_caps(get_env: &impl Fn(&str) -> Option<String>) -> EncoderCaps {
+    let term = get_env("TERM").unwrap_or_default().to_ascii_lowercase();
+    if term.is_empty() || term == "dumb" || term == "linux" {
+        return EncoderCaps::NONE;
+    }
+    if let Some(vte) = get_env("VTE_VERSION").and_then(|v| v.trim().parse::<u32>().ok()) {
+        return if vte >= 7700 {
+            EncoderCaps::ALL
+        } else if vte >= 7600 {
+            EncoderCaps::SEXTANT
+        } else {
+            EncoderCaps::BASIC
+        };
+    }
+    let program = get_env("TERM_PROGRAM").unwrap_or_default();
+    if term.contains("kitty") || term.contains("ghostty") || program.eq_ignore_ascii_case("ghostty")
+    {
+        return EncoderCaps::ALL;
+    }
+    let modern_term = term == "alacritty"
+        || term.starts_with("alacritty-")
+        || term == "foot"
+        || term.starts_with("foot-");
+    if modern_term
+        || program.eq_ignore_ascii_case("wezterm")
+        || program.eq_ignore_ascii_case("iterm.app")
+        || get_env("WT_SESSION").is_some_and(|v| !v.is_empty())
+    {
+        return EncoderCaps::SEXTANT;
+    }
+    EncoderCaps::BASIC
+}
+
+/// The most capable encoder the terminal can be trusted with, at most
+/// `requested`; passive and pure.
+///
+/// `cli` is a `--glyphs=` value and `get_env` reads `LIBGIBSON_GLYPHS`, `TERM`,
+/// `TERM_PROGRAM`, `VTE_VERSION` and `WT_SESSION`, as [`detect_glyph_mode`]
+/// does. An unknown terminal never upgrades. [`CellEncoder::Auto`] searches half-block,
+/// quadrant and sextant glyphs, so it is returned unchanged only where sextants are
+/// allowed and degrades to half-block elsewhere.
+///
+/// Ladder: `Octant -> Sextant -> HalfBlock`; `Quadrant` and `Braille` degrade
+/// straight to `HalfBlock`. The ceiling comes from the first recognised explicit
+/// value (`cli`, then `LIBGIBSON_GLYPHS`, a grant or a cap), else from the
+/// environment (`TERM` `linux`/`dumb`/empty: half-block only; `VTE_VERSION` at
+/// least 7700: everything, at least 7600: up to sextant, below: quadrant and
+/// Braille; kitty or ghostty: everything; WezTerm, iTerm2, Alacritty, foot or
+/// Windows Terminal: up to sextant; any other terminal: quadrant and Braille).
+pub fn allowed_encoder(
+    requested: CellEncoder,
+    cli: Option<&str>,
+    get_env: impl Fn(&str) -> Option<String>,
+) -> CellEncoder {
+    let caps = cli
+        .and_then(explicit_caps)
+        .or_else(|| {
+            get_env("LIBGIBSON_GLYPHS")
+                .as_deref()
+                .and_then(explicit_caps)
+        })
+        .unwrap_or_else(|| environment_caps(&get_env));
+    match requested {
+        CellEncoder::HalfBlock => CellEncoder::HalfBlock,
+        CellEncoder::Quadrant if caps.quadrant => CellEncoder::Quadrant,
+        CellEncoder::Braille if caps.braille => CellEncoder::Braille,
+        CellEncoder::Sextant if caps.sextant => CellEncoder::Sextant,
+        CellEncoder::Octant if caps.octant => CellEncoder::Octant,
+        CellEncoder::Octant if caps.sextant => CellEncoder::Sextant,
+        CellEncoder::Auto if caps.sextant => CellEncoder::Auto,
+        CellEncoder::Quadrant
+        | CellEncoder::Braille
+        | CellEncoder::Sextant
+        | CellEncoder::Octant
+        | CellEncoder::Auto => CellEncoder::HalfBlock,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
