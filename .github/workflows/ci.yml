@@ -101,7 +101,9 @@ jobs:
         run: cargo build --examples
 
       - name: Test
-        run: cargo test
+        # --no-fail-fast: run every test binary even after one fails, so an early RED binary
+        # (alphabetical order) never masks the results of a later one. The step still fails.
+        run: cargo test --no-fail-fast
 
       - name: FX Lab generator tests
         run: cargo test --example fx_lab
