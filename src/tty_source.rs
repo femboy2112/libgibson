@@ -3463,4 +3463,279 @@ mod tests {
             ]
         );
     }
+
+    // ------------------------------------------------------------ v0.9: function keys
+
+    /// Function-key bytes to the public `Event`, the whole way the owned source takes them.
+    ///
+    /// RED: the tests that expect an F-key fail by assertion against the stub. The parser in
+    /// `parse.rs` already recognises every function-key form below and hands crossterm's
+    /// `KeyCode::F(n)` on; `input::decode_key` is where the key is dropped. GUARD: the tests
+    /// that pin what must not change pass today and stay green.
+    mod function_keys {
+        use super::decode_all;
+        use crate::input::{
+            decode_source_event_as, Event as PubEvent, KeyCode as PubKey, KeyEvent as PubKeyEvent,
+            KeyModifiers as PubMods, SourceEvent, TextInputState,
+        };
+        use crate::tty_source::parse::{InternalEvent, Parser};
+        use crate::tty_source::queries_lock;
+        use crossterm::event::Event as CtEvent;
+
+        /// The bytes VTE 0.76 sends for F1: SS3 `P`, `ESC O P`, with no modifiers.
+        const VTE_076_F1: &[u8] = b"\x1bOP";
+
+        /// Every public event `bytes` decodes to: through the owned parser and then the same
+        /// `decode_source_event_as` that a polled source item goes through (Unix rules,
+        /// `releases` as the session set key-release delivery).
+        fn public_events(bytes: &[u8], releases: bool) -> Vec<PubEvent> {
+            let mut parser = Parser::default();
+            parser.advance(bytes, false);
+            parser
+                .filter_map(|internal| match internal {
+                    InternalEvent::Event(ev) => Some(ev),
+                    InternalEvent::KittyKey(k, _) => Some(CtEvent::Key(k)),
+                    _ => None,
+                })
+                .filter_map(|ev| decode_source_event_as(SourceEvent::Terminal(ev), false, releases))
+                .collect()
+        }
+
+        fn press(code: PubKey, mods: PubMods) -> PubEvent {
+            PubEvent::Key(PubKeyEvent::new(code, mods))
+        }
+
+        fn f(n: u8, mods: PubMods) -> Vec<PubEvent> {
+            vec![press(PubKey::F(n), mods)]
+        }
+
+        // ------------------------------------------------------------------------------ RED
+
+        #[test]
+        fn red_vte_076_f1_is_f1_with_no_modifiers() {
+            assert_eq!(public_events(VTE_076_F1, false), f(1, PubMods::empty()));
+        }
+
+        #[test]
+        fn red_vte_076_f1_through_the_pty_source_is_f1() {
+            // The same bytes as the fixture, read off a real pseudo-terminal by the owned source.
+            let _serial = queries_lock();
+            let got: Vec<PubEvent> = decode_all(VTE_076_F1, false)
+                .into_iter()
+                .filter_map(|e| decode_source_event_as(e, false, false))
+                .collect();
+            assert_eq!(got, f(1, PubMods::empty()));
+        }
+
+        #[test]
+        fn red_ss3_p_q_r_s_are_f1_to_f4() {
+            for (i, last) in b"PQRS".iter().enumerate() {
+                let bytes = [0x1b, b'O', *last];
+                assert_eq!(
+                    public_events(&bytes, false),
+                    f(i as u8 + 1, PubMods::empty()),
+                    "ESC O {}",
+                    *last as char
+                );
+            }
+        }
+
+        #[test]
+        fn red_csi_numbered_tilde_forms_are_f1_to_f12_with_gaps_at_16_and_22() {
+            let table: [(u8, u8); 12] = [
+                (11, 1),
+                (12, 2),
+                (13, 3),
+                (14, 4),
+                (15, 5),
+                (17, 6),
+                (18, 7),
+                (19, 8),
+                (20, 9),
+                (21, 10),
+                (23, 11),
+                (24, 12),
+            ];
+            for (code, n) in table {
+                let bytes = format!("\x1b[{code}~");
+                assert_eq!(
+                    public_events(bytes.as_bytes(), false),
+                    f(n, PubMods::empty()),
+                    "CSI {code}~ is F{n}"
+                );
+            }
+        }
+
+        #[test]
+        fn red_csi_bare_p_q_s_are_f1_f2_f4() {
+            // The unmodified forms a kitty-protocol terminal may send (`CSI 1 P` with the 1
+            // omitted); F3 has no such form because `CSI R` is the cursor position reply.
+            assert_eq!(public_events(b"\x1b[P", false), f(1, PubMods::empty()));
+            assert_eq!(public_events(b"\x1b[Q", false), f(2, PubMods::empty()));
+            assert_eq!(public_events(b"\x1b[S", false), f(4, PubMods::empty()));
+        }
+
+        #[test]
+        fn guard_csi_1_mod_r_is_a_cursor_position_reply_never_f3() {
+            // Negative control (GOD #188): `CSI 1;3R` is byte-identical to a cursor position
+            // reply (row 1, column 3). It must decode as one and be dropped, never become F3:
+            // making it F3 would turn real replies into phantom keypresses. xterm's modified F3
+            // is therefore a known undelivered form (crossterm upstream does the same); F3 with
+            // modifiers is decoded only via `CSI 13;<mod>~`.
+            for bytes in [&b"\x1b[1;3R"[..], b"\x1b[1;2R", b"\x1b[1;5R", b"\x1b[1;8R"] {
+                let ctx = String::from_utf8_lossy(bytes).escape_debug().to_string();
+                assert!(
+                    matches!(
+                        crate::tty_source::parse::parse_event(bytes, false),
+                        Ok(Some(InternalEvent::CursorPosition(..)))
+                    ),
+                    "{ctx}: must parse as a cursor position reply"
+                );
+                assert_eq!(public_events(bytes, false), Vec::<PubEvent>::new(), "{ctx}");
+            }
+        }
+
+        #[test]
+        fn red_xterm_modifier_forms_carry_one_plus_bitmask() {
+            // xterm modifier parameter = 1 + bitmask: shift 1, alt 2, ctrl 4.
+            let cases: [(&[u8], u8, PubMods); 6] = [
+                (b"\x1b[1;2P", 1, PubMods::SHIFT),
+                (b"\x1b[1;5S", 4, PubMods::CONTROL),
+                (b"\x1b[15;3~", 5, PubMods::ALT),
+                (b"\x1b[1;6Q", 2, PubMods::SHIFT | PubMods::CONTROL),
+                // Alt+F3 in its CSI-tilde form: `CSI 1;3R` is the cursor position reply
+                // (row 1, column 3), decoded as such and dropped (SPEC UPDATE, GOD #188).
+                (b"\x1b[13;3~", 3, PubMods::ALT),
+                (
+                    b"\x1b[24;8~",
+                    12,
+                    PubMods::SHIFT | PubMods::ALT | PubMods::CONTROL,
+                ),
+            ];
+            for (bytes, n, mods) in cases {
+                assert_eq!(
+                    public_events(bytes, false),
+                    f(n, mods),
+                    "{}",
+                    String::from_utf8_lossy(bytes).escape_debug()
+                );
+            }
+        }
+
+        #[test]
+        fn red_kitty_f_key_repeat_is_a_press_and_release_is_a_key_release() {
+            // Kitty keyboard-protocol reports for the legacy-encoded function keys carry the
+            // event type after the modifier (`:2` repeat, `:3` release). A repeat is delivered
+            // as a press; a release only while key-release reporting is on (#275).
+            assert_eq!(
+                public_events(b"\x1b[1;2:2P", false),
+                f(1, PubMods::SHIFT),
+                "repeat of Shift+F1"
+            );
+            assert_eq!(
+                public_events(b"\x1b[15;1:3~", true),
+                vec![PubEvent::KeyRelease(PubKeyEvent::new(
+                    PubKey::F(5),
+                    PubMods::empty()
+                ))],
+                "release of F5, reporting on"
+            );
+            assert_eq!(
+                public_events(b"\x1b[1;5:3S", true),
+                vec![PubEvent::KeyRelease(PubKeyEvent::new(
+                    PubKey::F(4),
+                    PubMods::CONTROL
+                ))],
+                "release of Ctrl+F4, reporting on"
+            );
+        }
+
+        // ---------------------------------------------------------------------------- GUARD
+
+        #[test]
+        fn guard_unknown_or_unsupported_sequences_produce_no_key_event() {
+            // `CSI 16~` and `CSI 22~` are the gaps in the xterm numbering, not F-keys.
+            let none: [&[u8]; 6] = [
+                b"\x1b[99~",
+                b"\x1bOZ",
+                b"\x1b[16~",
+                b"\x1b[22~",
+                b"\x1b[1;5Z",
+                b"\x1bO",
+            ];
+            for bytes in none {
+                assert_eq!(
+                    public_events(bytes, false),
+                    Vec::<PubEvent>::new(),
+                    "{}",
+                    String::from_utf8_lossy(bytes).escape_debug()
+                );
+            }
+        }
+
+        #[test]
+        fn guard_a_kitty_f_key_release_is_not_delivered_while_reporting_is_off() {
+            assert_eq!(
+                public_events(b"\x1b[15;1:3~", false),
+                Vec::<PubEvent>::new()
+            );
+            assert_eq!(public_events(b"\x1b[1;1:3P", false), Vec::<PubEvent>::new());
+        }
+
+        #[test]
+        fn guard_function_key_bytes_insert_no_text_into_a_text_input() {
+            // Whatever an F-key sequence decodes to (today nothing, later an F-key event that the
+            // editor does not take), none of its bytes may land in the text: no 'O', 'P', '[',
+            // '~', '1', ';' or digits.
+            let sequences: [&[u8]; 8] = [
+                VTE_076_F1,
+                b"\x1bOS",
+                b"\x1b[15~",
+                b"\x1b[24~",
+                b"\x1b[1;5S",
+                b"\x1b[15;3~",
+                b"\x1b[99~",
+                b"\x1bOZ",
+            ];
+            for bytes in sequences {
+                for mut input in [TextInputState::new(), TextInputState::with_text("ab")] {
+                    let before = input.text.clone();
+                    for ev in public_events(bytes, false) {
+                        input.handle_event(&ev);
+                    }
+                    assert_eq!(
+                        input.text,
+                        before,
+                        "{} edited the text",
+                        String::from_utf8_lossy(bytes).escape_debug()
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn guard_arrow_home_end_and_modified_forms_decode_as_before() {
+            let none = PubMods::empty();
+            let cases: [(&[u8], PubKey, PubMods); 10] = [
+                (b"\x1b[A", PubKey::Up, none),
+                (b"\x1bOA", PubKey::Up, none),
+                (b"\x1b[B", PubKey::Down, none),
+                (b"\x1b[H", PubKey::Home, none),
+                (b"\x1bOH", PubKey::Home, none),
+                (b"\x1b[F", PubKey::End, none),
+                (b"\x1b[1;5C", PubKey::Right, PubMods::CONTROL),
+                (b"\x1b[1;2D", PubKey::Left, PubMods::SHIFT),
+                (b"\x1b[3~", PubKey::Delete, none),
+                (b"\x1b[5~", PubKey::PageUp, none),
+            ];
+            for (bytes, code, mods) in cases {
+                assert_eq!(
+                    public_events(bytes, false),
+                    vec![press(code, mods)],
+                    "{}",
+                    String::from_utf8_lossy(bytes).escape_debug()
+                );
+            }
+        }
+    }
 }

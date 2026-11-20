@@ -152,6 +152,7 @@ typedef enum {
 #define GIBSON_KEY_TAB       0x100B
 #define GIBSON_KEY_PAGE_UP   0x100C
 #define GIBSON_KEY_PAGE_DOWN 0x100D
+/* F-keys are not exposed in ABI 1; they are skipped. */
 
 /* Key kinds (gibson_poll_event_kind / gibson_push_event_kind; ABI v1, additive). GIBSON_KEY_*
    occupy 0x1001-0x100D, which are also Unicode scalar values (U+1001-U+100D, Myanmar letters);
@@ -333,7 +334,10 @@ gibson_status_t gibson_clear_live_region(gibson_context_t *ctx);
    waiting; GIBSON_EVENT_NONE when the queue is empty. A delivered RESIZE also sets the headless
    terminal size and schedules a render, as a real resize does: a FULLSCREEN frame is then
    cols x rows; an INLINE frame is cols wide and, as on a terminal, as tall as its content, at
-   least 1 and at most max(rows - 1, 1) rows. Every field of out_event is written, so a polled event can be pushed back as is. */
+   least 1 and at most max(rows - 1, 1) rows. Every field of out_event is written, so a polled event can be pushed back as is.
+   F-keys are not exposed in ABI 1; they are skipped: a function key is consumed and not reported, and the
+   poll carries on for the rest of its timeout (GIBSON_EVENT_NONE comes back only when the timeout expires,
+   or at once when a headless queue is empty). */
 gibson_status_t gibson_poll_event(gibson_context_t *ctx, uint32_t timeout_ms, gibson_event_t *out_event);
 
 /* Like gibson_poll_event, and also writes *out_key_kind (non-NULL): GIBSON_KEY_KIND_CHAR or

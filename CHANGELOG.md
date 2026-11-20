@@ -16,6 +16,23 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 ## [Unreleased]
 
 ### Added
+- **`KeyCode::F(u8)`: function keys F1–F12.** A consumer wants F1 to open in-app help; until now
+  every function key was dropped before it reached `Event`. `KeyCode` gains `F(u8)` (`KeyCode` is
+  `#[non_exhaustive]`, so the addition is non-breaking). Decoded: F1 through F12, with Shift, Ctrl
+  and Alt, from crossterm's `KeyCode::F` and from the owned Unix source (SS3 `ESC O P`..`S`,
+  `CSI 11~`..`CSI 24~`, and the `CSI 1;<mod>P`..`S` and `CSI <n>;<mod>~` forms). The C ABI is
+  unchanged and skips F-keys (header: "F-keys are not exposed in ABI 1; they are skipped"): the C
+  poll consumes one and keeps polling for the rest of its timeout, so C behavior stays as it is
+  today. F13+ is still dropped (open, #447). Design:
+  [`docs/design/v0.9-function-keys.md`](docs/design/v0.9-function-keys.md).
+- **SPEC UPDATE (GOD #188): F3 with modifiers is decoded only via `CSI 13;<mod>~`.** The RED slice
+  pinned an ambiguous form: xterm's `CSI 1;<mod>R` is byte-identical to a cursor position reply,
+  so it is decoded as that reply and dropped, never as F3 (as in crossterm upstream). A guard test
+  pins this so it is not "fixed" into phantom keypresses.
+- **SPEC UPDATE (GOD #148): F-keys are modelled; was None.** The crossterm-level tests that used
+  F5 as "a key code LibGibson does not model" now expect `F(5)`, and the guard for an unmodelled
+  key moved to Insert (`src/input.rs` `key_kind_tests`, `tests/key_release_kind_pty.rs`).
+
 - **`measure_wrapped(text, width) -> u16`: rows a text takes when word-wrapped, as `ui::text()`
   paints it.** Returns the row count of `wrap_text(text, WrapMode::WordWrap, width)`, saturating
   at `u16::MAX`. Tests in `tests/measure_wrapped.rs` (pinned caption, paragraph, hard-break and
