@@ -1,8 +1,6 @@
 //! A pure description of one view-to-view transition (experimental, Rust-only).
 //!
-//! RED stub: v0.9.0 design, not implemented. Every method below compiles and is
-//! deliberately wrong; `tests/view_transition.rs` defines the contract and fails until
-//! it is implemented. Design: `docs/design/v0.9-view-transitions.md`.
+//! Contract: `tests/view_transition.rs`. Design: `docs/design/v0.9-view-transitions.md`.
 //!
 //! A [`ViewTransition`] owns no clock, no tree and no hidden state. The application keeps
 //! the outgoing and incoming views, samples the transition with its own `now`, and feeds
@@ -47,6 +45,9 @@ pub struct ViewTransition {
     pub kind: TransitionKind,
 }
 
+/// `MotionPreference::Reduced` caps a transition at this length, as `MotionTokens::resolve` does.
+const REDUCED_CAP: Duration = Duration::from_millis(80);
+
 impl ViewTransition {
     pub fn new(started: Duration, duration: Duration, kind: TransitionKind) -> Self {
         Self {
@@ -59,26 +60,31 @@ impl ViewTransition {
     /// Eased progress in `0.0..=1.0` (ease-in-out). Before `started` it is 0; at and after
     /// the effective deadline it is exactly 1. `MotionPreference::None` is 1 immediately.
     /// `Reduced` runs a Blend-only fade capped at 80 ms and never slides.
-    #[allow(unused_variables)]
     pub fn progress(&self, now: Duration, pref: MotionPreference) -> f32 {
-        // RED stub: v0.9.0 design, not implemented
-        0.0
+        let duration = match pref {
+            MotionPreference::Full => self.duration,
+            MotionPreference::Reduced => self.duration.min(REDUCED_CAP),
+            MotionPreference::None => return 1.0,
+        };
+        let elapsed = now.saturating_sub(self.started);
+        if elapsed >= duration {
+            return 1.0;
+        }
+        let x = elapsed.as_secs_f64() / duration.as_secs_f64();
+        // Smoothstep: zero slope at both ends, monotone, exactly 0 at x = 0.
+        (x * x * (3.0 - 2.0 * x)).clamp(0.0, 1.0) as f32
     }
 
     /// True once `progress` is 1: the app may drop the outgoing view and clear the fx.
-    #[allow(unused_variables)]
     pub fn is_settled(&self, now: Duration, pref: MotionPreference) -> bool {
-        // RED stub: v0.9.0 design, not implemented
-        false
+        self.progress(now, pref) >= 1.0
     }
 
     /// Whether pointer input should be delivered now. The decision is to freeze the
     /// pointer while the transition is not settled (hit targets lag the moving pixels);
     /// keys stay live.
-    #[allow(unused_variables)]
     pub fn accepts_pointer(&self, now: Duration, pref: MotionPreference) -> bool {
-        // RED stub: v0.9.0 design, not implemented
-        true
+        self.is_settled(now, pref)
     }
 
     /// `(outgoing, incoming)` effect chains for a body `width` cells wide.
@@ -86,14 +92,42 @@ impl ViewTransition {
     /// A slide yields one `Offset` per side with `dy == 0` and `dx` of opposite signs; a fade
     /// yields one `Blend` per side toward the same colour with complementary `t`. At and
     /// after settling both chains are empty, so the settled tree is the plain incoming view.
-    #[allow(unused_variables)]
+    ///
+    /// Under `MotionPreference::Reduced` every kind is a `Blend`-only fade. A `Fade` keeps its
+    /// colour; a `Slide` carries none, so it fades toward `Color::Reset`, which by the
+    /// `Blend` step rule is a cut at the midpoint of the (at most 80 ms) transition.
     pub fn effects(
         &self,
         now: Duration,
         pref: MotionPreference,
         width: u16,
     ) -> (Vec<SurfaceFx>, Vec<SurfaceFx>) {
-        // RED stub: v0.9.0 design, not implemented
-        (Vec::new(), Vec::new())
+        let p = self.progress(now, pref);
+        if p >= 1.0 {
+            return (Vec::new(), Vec::new());
+        }
+        let fade = |toward: Color| {
+            (
+                vec![SurfaceFx::Blend { toward, t: p }],
+                vec![SurfaceFx::Blend { toward, t: 1.0 - p }],
+            )
+        };
+        match (self.kind, pref) {
+            (TransitionKind::Fade { toward }, _) => fade(toward),
+            (TransitionKind::Slide(_), MotionPreference::Reduced) => fade(Color::Reset),
+            (TransitionKind::Slide(dir), _) => {
+                let w = f32::from(width);
+                let sign = match dir {
+                    Dir::Left => 1,
+                    Dir::Right => -1,
+                };
+                let out = -sign * (p * w).round() as i32;
+                let inc = sign * ((1.0 - p) * w).round() as i32;
+                (
+                    vec![SurfaceFx::Offset { dx: out, dy: 0 }],
+                    vec![SurfaceFx::Offset { dx: inc, dy: 0 }],
+                )
+            }
+        }
     }
 }

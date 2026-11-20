@@ -9,6 +9,7 @@ use std::sync::Arc;
 /// Explicit keys survive reordering. Unkeyed elements receive positional paths.
 /// Named, positional and scoped identities have separate namespaces.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum Key {
     Named(String),
     Path(Vec<usize>),
