@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-19): v0.8.0 "clear SIGFPE 0"; v0.8.1 "clear SIGFPE 1" prepared
+## Current release (updated 2026-11-20): v0.8.1 "clear SIGFPE 1"
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -49,12 +49,18 @@ unchanged (v1, 67 symbols). **Consumer gate:** MINERVA's consumer suite on the e
 `3e6d1ce` (the same tree as the merge) passed. Its tests were identical to the 0.7.3 baseline,
 with no API breaks for its consumer.
 
-**v0.8.1 "clear SIGFPE 1" is prepared in source** (state 1), to be
-tagged on `main` on the release coordinator's go after the substituted consumer gate on the exact
-candidate. It is a patch: no library behavior change; the only `src/` change is rustdoc on
+**v0.8.1 "clear SIGFPE 1" was released on 2026-11-20** (state 2):
+- annotated tag `v0.8.1` → `08f2f71` on `main`, with `bindings/go/v0.8.1` on the same commit;
+- a regular GitHub [release](https://github.com/femboy2112/libgibson/releases/tag/v0.8.1), not on any registry.
+
+It is a patch: no library behavior change; the only `src/` change is rustdoc on
 `Element::overlay`. The native SDK binaries no longer embed build-host paths (#429), and the
 inline popup recipe is documented (#427) and pinned by a regression test (#431). The C ABI is
-unchanged (v1, 67 symbols). **Consumer gate:** substituted (see the status table below).
+unchanged (v1, 67 symbols). **Consumer gate:** the substituted gate (see the status table below)
+held. `git diff v0.8.0 v0.8.1 -- src include bindings abi` has only rustdoc `///` lines plus the
+Python package version, hosted CI was 9/9, and the bundle gate passed. The release has 4 assets,
+built from the tag with rustc 1.98.1 using the tagged #429 path remap. After download, all 4 are
+byte-identical to the build, and the private-path scan found 0 hits.
 
 #### v0.8.1 completion status (authoritative, 2026-11-19)
 
