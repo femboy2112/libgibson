@@ -161,12 +161,11 @@ fn red_motion_none_is_settled_immediately_with_no_effects() {
     }
 }
 
+/// SPEC UPDATE (GOD #92): this test now covers `Fade` only. A Reduced `Slide` is a single cut
+/// with no Blend; see `red_reduced_slide_is_one_cut_with_no_reset_frame`.
 #[test]
 fn red_reduced_never_slides_and_caps_at_80ms() {
-    for kind in [
-        TransitionKind::Slide(Dir::Left),
-        TransitionKind::Fade { toward: FADE_TO },
-    ] {
+    for kind in [TransitionKind::Fade { toward: FADE_TO }] {
         let t = tr(kind); // 400 ms at full motion
         let red = MotionPreference::Reduced;
         assert!(
@@ -194,8 +193,56 @@ fn red_reduced_never_slides_and_caps_at_80ms() {
         );
     }
     // A duration already under the cap is not stretched.
-    let short = ViewTransition::new(ms(0), ms(50), TransitionKind::Slide(Dir::Right));
+    let short = ViewTransition::new(ms(0), ms(50), TransitionKind::Fade { toward: FADE_TO });
     assert!(short.is_settled(ms(50), MotionPreference::Reduced));
+}
+
+fn shows_reset(c: &Cell) -> bool {
+    c.style.fg == Some(Color::Reset) || c.style.bg == Some(Color::Reset)
+}
+
+/// GOD #92 (ruling A on Q#91): under Reduced a `Slide` is ONE cut at t = 0. The incoming view
+/// shows unmodified, the outgoing one is dropped (the transition is settled at once, so both
+/// chains are empty and the pointer is live). No frame may show a `Reset` colour that neither
+/// the outgoing nor the incoming cell has: a dip to the terminal default is a flash.
+#[test]
+fn red_reduced_slide_is_one_cut_with_no_reset_frame() {
+    let red = MotionPreference::Reduced;
+    let outgoing = view_surface(H);
+    let mut incoming = Surface::new_transparent(W, H);
+    paint_sprite(&mut incoming, SPRITE_X + 20, SPRITE_Y + 2);
+    for dir in [Dir::Left, Dir::Right] {
+        let t = tr(TransitionKind::Slide(dir));
+        for now in [100u64, 120, 140, 160, 179, 180] {
+            let (out_fx, in_fx) = t.effects(ms(now), red, W);
+            let to_reset: Vec<(Color, f32)> = blends(&out_fx)
+                .into_iter()
+                .chain(blends(&in_fx))
+                .filter(|b| b.0 == Color::Reset)
+                .collect();
+            assert!(
+                to_reset.is_empty(),
+                "{dir:?}@{now}: Reduced slide blends toward Reset: {to_reset:?}"
+            );
+            for (side, chain, view) in [("out", &out_fx, &outgoing), ("in", &in_fx, &incoming)] {
+                let mut got = view.clone();
+                SurfaceFx::apply_chain(chain, &mut got);
+                for (i, c) in got.cells.iter().enumerate() {
+                    assert!(
+                        !shows_reset(c)
+                            || shows_reset(&outgoing.cells[i])
+                            || shows_reset(&incoming.cells[i]),
+                        "{dir:?}@{now} {side}: cell {i} shows a Reset neither view has"
+                    );
+                }
+            }
+            let mut shown = incoming.clone();
+            SurfaceFx::apply_chain(&in_fx, &mut shown);
+            assert_eq!(shown, incoming, "{dir:?}@{now}: incoming view not shown unmodified");
+        }
+        assert!(t.is_settled(ms(100), red), "{dir:?}: cut at t = 0");
+        assert!(t.accepts_pointer(ms(100), red), "{dir:?}: pointer settles at once");
+    }
 }
 
 // ---------------------------------------------------------------- ViewTransition: effects
