@@ -786,3 +786,103 @@ fn guard_esc_and_ctrl_alt_enter_stay_with_the_application() {
         assert!(outcome.actions.is_empty());
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Wide-grapheme cells (GOD #168): a direct check of the continuation cell, not via painted text
+// ---------------------------------------------------------------------------------------------
+
+/// Every painted wide lead at column `k` is followed by a continuation cell at `k + 1` inside the
+/// surface, and no continuation cell appears without a wide lead before it. `painted_row` skips
+/// continuation cells and trims the row end, so it cannot see a blank written in their place.
+fn assert_wide_cells(surface: &Surface, ctx: &str) {
+    for y in 0..surface.height {
+        let mut x = 0;
+        while x < surface.width {
+            let cell = surface.get(x, y).unwrap();
+            assert!(
+                !cell.is_continuation,
+                "{ctx}: orphan continuation cell at ({x},{y})"
+            );
+            if cell.glyph.display_width == 2 {
+                assert!(
+                    x + 1 < surface.width,
+                    "{ctx}: wide lead {:?} at ({x},{y}) has no room for its continuation",
+                    cell.glyph.grapheme
+                );
+                assert!(
+                    surface.get(x + 1, y).unwrap().is_continuation,
+                    "{ctx}: cell ({},{y}) after wide lead {:?} is not a continuation",
+                    x + 1,
+                    cell.glyph.grapheme
+                );
+                x += 2;
+            } else {
+                x += 1;
+            }
+        }
+    }
+}
+
+/// Columns of the wide leads painted on row `y`.
+fn wide_leads(surface: &Surface, y: u16) -> Vec<u16> {
+    (0..surface.width)
+        .filter(|&x| {
+            let c = surface.get(x, y).unwrap();
+            !c.is_continuation && c.glyph.display_width == 2
+        })
+        .collect()
+}
+
+#[test]
+fn wide_lead_is_followed_by_a_continuation_cell() {
+    for focused in [false, true] {
+        for width in [5u16, 6, 7, 9, 12, 40] {
+            for (text, cursor) in [
+                ("漢字ab日本語", 0),
+                ("a漢b字c", 2),
+                ("日本語日本語日本語", 4),
+            ] {
+                let state = state_at(text, cursor);
+                let s = paint_area(&state, width, 8, focused);
+                let ctx = format!("{text:?} width {width} focused {focused}");
+                assert_wide_cells(&s, &ctx);
+                let painted: usize = (0..s.height).map(|y| wide_leads(&s, y).len()).sum();
+                let expected = text.graphemes(true).filter(|g| gw(g) == 2).count();
+                assert_eq!(painted, expected, "{ctx}: wide graphemes painted");
+            }
+        }
+    }
+}
+
+#[test]
+fn wide_grapheme_in_the_last_usable_column_fits_or_wraps_whole() {
+    // Width 5 wraps at 4 cells (column 4 is the cursor's). "ab漢" is 4 cells: 漢 takes columns
+    // 2 and 3, the last usable pair, and nothing touches column 4.
+    assert_eq!(rows_of("ab漢", 5), vec![(0, 3, 4)]);
+    let s = paint_area(&state_at("ab漢", 0), 5, 3, false);
+    assert_wide_cells(&s, "ab漢 @5");
+    assert_eq!(wide_leads(&s, 0), vec![2]);
+    assert!(s.get(3, 0).unwrap().is_continuation);
+    let col4 = s.get(4, 0).unwrap();
+    assert!(!col4.is_continuation && col4.glyph.display_width < 2);
+
+    // "abc漢" would need 5 cells: 漢 wraps whole to row 1 and no half of it is left on row 0.
+    assert_eq!(rows_of("abc漢", 5), vec![(0, 3, 3), (3, 4, 2)]);
+    let s = paint_area(&state_at("abc漢", 0), 5, 3, false);
+    assert_wide_cells(&s, "abc漢 @5");
+    assert_eq!(wide_leads(&s, 0), Vec::<u16>::new());
+    assert!(!s.get(3, 0).unwrap().is_continuation);
+    assert_eq!(wide_leads(&s, 1), vec![0]);
+    assert!(s.get(1, 1).unwrap().is_continuation);
+}
+
+#[test]
+#[should_panic(expected = "is not a continuation")]
+fn mutant_blank_in_place_of_a_continuation_is_caught() {
+    // The oracle above must fail on a painter that writes a plain blank where the continuation
+    // belongs. `get_mut` bypasses the surface's own wide-glyph repair, as a buggy painter would.
+    let mut s = paint_area(&state_at("ab漢", 0), 5, 3, false);
+    assert!(s.get(3, 0).unwrap().is_continuation, "precondition");
+    *s.get_mut(3, 0).unwrap() = gibson::Cell::new(gibson::Glyph::space(), gibson::Style::default());
+    assert_wide_cells(&s, "mutant");
+}
