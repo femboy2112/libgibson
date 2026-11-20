@@ -6,3 +6,4 @@ pub use super::motion::{MotionPreference, MotionRole};
 pub use super::runtime::*;
 pub use super::skin::{skins, DepthPalette, Skin, UiEnvironment};
 pub use super::style::{Density, Elevation, Emphasis, Tone};
+pub use crate::glyph::CellEncoder;

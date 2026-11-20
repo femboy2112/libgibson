@@ -287,6 +287,98 @@ pub fn transcode_surface_glyphs(surface: &mut Surface, mode: SubcellGlyphMode) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// v0.9.0 opt-in cell encoders. Design: docs/design/v0.9-cell-encoders.md.
+//
+// Everything below is a RED slice: the types and signatures are final-shaped, the
+// behaviour is not implemented, and `tests/cell_encoders.rs` fails against it by
+// design. `CellEncoder::HalfBlock` is already correct and stays the default.
+// ---------------------------------------------------------------------------
+
+/// How an [`RgbRaster`](crate::raster::RgbRaster) is realized as terminal cells.
+///
+/// Every encoder emits ordinary one-column glyphs with at most two colours per
+/// cell (foreground and background), so a denser encoder raises *edge and
+/// luminance* detail, not chroma. [`CellEncoder::HalfBlock`] is the default and
+/// is the exact, byte-identical `RgbRaster::to_surface` output.
+///
+/// `#[non_exhaustive]`: further families may be added in a `0.y.z` release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum CellEncoder {
+    /// `▀` with foreground = top sample and background = bottom sample (1×2).
+    #[default]
+    HalfBlock,
+    /// Quadrant blocks `U+2596..=U+259F` plus ` ▀▄▌▐█` (2×2).
+    Quadrant,
+    /// Sextants `U+1FB00..=U+1FB3B` plus ` ▌▐█` (2×3).
+    Sextant,
+    /// Octants `U+1CD00..=U+1CDE5` plus existing block characters (2×4).
+    /// Needs a terminal that draws them natively; see [`allowed_encoder`].
+    Octant,
+    /// Braille `U+2800 + bits`, fitted by the two-colour projector (2×4).
+    Braille,
+    /// Per cell, the family with the least linear-light error among
+    /// half-block, quadrant and sextant (2×6 shared sample tile).
+    Auto,
+}
+
+impl CellEncoder {
+    /// Samples per cell as `(columns, rows)`: the grid a raster must be
+    /// supplied at so one cell reads exactly that many samples.
+    pub const fn sample_grid(self) -> (u16, u16) {
+        match self {
+            CellEncoder::HalfBlock => (1, 2),
+            CellEncoder::Quadrant => (2, 2),
+            CellEncoder::Sextant => (2, 3),
+            CellEncoder::Octant | CellEncoder::Braille => (2, 4),
+            CellEncoder::Auto => (2, 6),
+        }
+    }
+}
+
+/// The sextant character for a 2×3 `pattern` (bit 0 = top-left, bit 1 =
+/// top-right, bit 2 = middle-left, bit 3 = middle-right, bit 4 = bottom-left,
+/// bit 5 = bottom-right). Bits above bit 5 are ignored.
+///
+/// Pattern 0 is `' '`, 21 is `▌`, 42 is `▐`, 63 is `█`; every other pattern
+/// `p` is `U+1FB00 + p - 1 - (p > 21) - (p > 42)`.
+pub fn sextant_char(pattern: u8) -> char {
+    // RED stub: v0.9.0 design, not implemented
+    let _ = pattern;
+    ' '
+}
+
+/// The octant character for a 2×4 `pattern` (bit `2 * row + column`, row 0 on
+/// top, column 0 on the left). Total over all 256 patterns and a bijection.
+///
+/// Patterns with a Unicode 16 octant (230 of them, `U+1CD00..=U+1CDE5`, in
+/// ascending pattern order) map there; the other 26 map to the existing block
+/// character with the same shape (space, `█`, halves, quadrants and so on).
+pub fn octant_char(pattern: u8) -> char {
+    // RED stub: v0.9.0 design, not implemented
+    let _ = pattern;
+    ' '
+}
+
+/// The most capable encoder the terminal can be trusted with, at most
+/// `requested`; passive and pure.
+///
+/// `cli` is a `--glyphs=` value and `get_env` reads `LIBGIBSON_GLYPHS`, `TERM`,
+/// `TERM_PROGRAM`, `VTE_VERSION` and `WT_SESSION`, as [`detect_glyph_mode`]
+/// does. An unknown terminal never upgrades. [`CellEncoder::Auto`] searches half-block,
+/// quadrant and sextant glyphs, so it is returned unchanged only where sextants are
+/// allowed and degrades to half-block elsewhere.
+pub fn allowed_encoder(
+    requested: CellEncoder,
+    cli: Option<&str>,
+    get_env: impl Fn(&str) -> Option<String>,
+) -> CellEncoder {
+    // RED stub: v0.9.0 design, not implemented
+    let _ = (cli, &get_env);
+    requested
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

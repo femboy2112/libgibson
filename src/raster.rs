@@ -11,6 +11,7 @@ pub type Rgb = (u8, u8, u8);
 pub const MAX_RASTER_DIMENSION: u16 = 2048;
 
 mod rgba;
+pub use crate::glyph::CellEncoder;
 pub(crate) use rgba::downscale_area_by;
 pub use rgba::{composite_over, downscale_area, flatten, Rgba, RgbaRaster};
 
@@ -200,6 +201,18 @@ impl RgbRaster {
             }
         }
         surface
+    }
+    /// Realizes this raster with `encoder`. The raster is read as the encoder's
+    /// own sample grid ([`CellEncoder::sample_grid`]): a cell consumes that many
+    /// samples and the surface is `ceil(width / cols)` by `ceil(height / rows)`
+    /// cells. [`CellEncoder::HalfBlock`] is exactly [`Self::to_surface`].
+    ///
+    /// There is no colour-depth parameter, for the same reason as `to_surface`:
+    /// emitted colours are 24-bit and quantization stays the renderer's job.
+    pub fn to_surface_with(&self, encoder: CellEncoder) -> Surface {
+        // RED stub: v0.9.0 design, not implemented
+        let _ = encoder;
+        self.to_surface()
     }
     /// Same cell bounds as half-block output, but luminance becomes ordered
     /// Braille dot density. Each RGB sample covers 2×2 candidate dots. No RGB

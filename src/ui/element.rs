@@ -479,6 +479,44 @@ pub fn image_area<A>(
         alt: alt.into(),
     })
 }
+/// Options for [`image_with`]. The default is the half-block encoder, so
+/// `image_with(.., ImageOptions::default())` draws what [`image`] draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub struct ImageOptions {
+    /// How the picture is realized as cells. The box, its reserved height and
+    /// the alt-text rule do not depend on it.
+    pub encoder: crate::glyph::CellEncoder,
+}
+
+impl ImageOptions {
+    /// The default options: half-block, as [`image`].
+    pub const fn new() -> Self {
+        Self {
+            encoder: crate::glyph::CellEncoder::HalfBlock,
+        }
+    }
+
+    /// These options with `encoder`.
+    pub fn with_encoder(mut self, encoder: crate::glyph::CellEncoder) -> Self {
+        self.encoder = encoder;
+        self
+    }
+}
+
+/// [`image`] with an opt-in cell encoder (v0.9.0 design:
+/// `docs/design/v0.9-cell-encoders.md`). The box, the reserved height and the
+/// alt-text fallback are those of [`image`] for every encoder.
+pub fn image_with<A>(
+    raster: &crate::raster::RgbRaster,
+    max: (u16, u16),
+    alt: impl Into<String>,
+    options: ImageOptions,
+) -> Element<A> {
+    // RED stub: v0.9.0 design, not implemented
+    let _ = options;
+    image(raster, max, alt)
+}
 pub fn heading<A>(value: impl Into<String>) -> Element<A> {
     Element::new(ElementKind::Heading(value.into()))
 }
