@@ -1,12 +1,17 @@
 //! Inspectable lowering to existing substrate objects.
-use super::element::{Element, ElementKind, Key};
+use super::element::{area_cols, Element, ElementKind, Key};
 use super::interaction::{Interaction, InteractionMap, ModalScope, UiError};
 use super::motion::MotionRole;
 use super::skin::{Chrome, ControlRole, ControlState, ResolvedSkin, Skin, UiEnvironment};
 use super::style::{Density, Elevation, Emphasis, Tone};
-use crate::{AlignItems, Dimension, JustifyContent, Node, SurfaceFx, WrapMode};
+use crate::input::area_cells;
+use crate::{
+    AlignItems, Cell, Dimension, Glyph, JustifyContent, Node, Rect, Style, Surface, SurfaceFx,
+    TextAreaState, WrapMode,
+};
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Environment for constructing a semantic tree. All clocks are explicit.
 ///
@@ -162,9 +167,12 @@ fn collect<A: Clone>(
     // The single predicate for "this element can receive a pointer action": an
     // input, or a handler-bearing element. Reused below for both the interaction
     // map and the target set so the two can never disagree about what is a target.
-    let is_interactive = matches!(el.kind, ElementKind::Input { .. })
-        || el.on_press.is_some()
+    let is_interactive = matches!(
+        el.kind,
+        ElementKind::Input { .. } | ElementKind::Area { .. }
+    ) || el.on_press.is_some()
         || el.on_edit.is_some()
+        || el.on_area_edit.is_some()
         || el.on_event.is_some();
     if out
         .keys
@@ -215,6 +223,11 @@ fn collect<A: Clone>(
                 _ => None,
             },
             on_edit: el.on_edit.clone(),
+            area: match &el.kind {
+                ElementKind::Area { state, rows } => Some((state.clone(), area_cols(el), *rows)),
+                _ => None,
+            },
+            on_area_edit: el.on_area_edit.clone(),
             on_event: el.on_event.clone(),
         });
     }
@@ -797,6 +810,15 @@ fn lower_role<A>(
                 input
             }
         }
+        // The painter shares `visual_rows(cols)` with editing, so wrap, cursor and paint
+        // cannot disagree. `cols` is the element's `.width(n)`, never the parent's.
+        ElementKind::Area { state, rows } => {
+            let (state, cols, rows) = (state.clone(), area_cols(el), *rows);
+            let cursor = focused.then_some(cx.build.skin.selection);
+            Node::canvas(move |rect| paint_text_area(&state, cols, rows, style, cursor, rect))
+                .width(cols as f32)
+                .height(rows as f32)
+        }
         ElementKind::Progress { label, fraction } => {
             cx.build.skin.progress(label, *fraction, width)
         }
@@ -1187,6 +1209,56 @@ fn rich_label_node(line: &crate::cell::Line, style: crate::Style) -> Node {
         true
     });
     Node::rich_text_wrapped(crate::cell::RichText::from(line), WrapMode::NoWrap).height(1.0)
+}
+
+/// Paints the visible rows of a text area into a transparent surface the size of
+/// `rect`: graphemes at their running column (a TAB as four blank cells), and, when
+/// `cursor` is set, the software cursor as `style.overlay(cursor)` over the glyph at
+/// the cursor or, at the end of a row, over a space. Only `state.visual_rows(cols)`
+/// decides where anything goes.
+fn paint_text_area(
+    state: &TextAreaState,
+    cols: u16,
+    rows: u16,
+    style: Style,
+    cursor: Option<Style>,
+    rect: Rect,
+) -> Surface {
+    let mut surface = Surface::new_transparent(rect.width, rect.height);
+    let gs: Vec<&str> = state.text.graphemes(true).collect();
+    let cursor_g = state.cursor_grapheme.min(gs.len());
+    let (cursor_row, cursor_col) = state.cursor_rc(cols);
+    let visible = state
+        .visual_rows(cols)
+        .into_iter()
+        .enumerate()
+        .skip(state.scroll_row)
+        .take(usize::from(rows));
+    for (y, (row_index, vr)) in visible.enumerate() {
+        let Ok(y) = u16::try_from(y) else { break };
+        let mut col = 0usize;
+        for (idx, g) in gs.iter().enumerate().take(vr.end).skip(vr.start) {
+            let cell_style = match cursor {
+                Some(c) if idx == cursor_g => style.overlay(c),
+                _ => style,
+            };
+            area_cells(g, |text, w| {
+                if let Ok(x) = u16::try_from(col) {
+                    surface.set_cell(x, y, Cell::new(Glyph::new(text), cell_style));
+                }
+                col += w;
+            });
+        }
+        // The insertion point after a row's last grapheme has no glyph to decorate.
+        if let Some(c) = cursor {
+            if row_index == cursor_row && cursor_g >= vr.end {
+                if let Ok(x) = u16::try_from(cursor_col) {
+                    surface.set_cell(x, y, Cell::space(style.overlay(c)));
+                }
+            }
+        }
+    }
+    surface
 }
 
 #[cfg(test)]

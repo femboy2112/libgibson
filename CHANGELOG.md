@@ -16,6 +16,8 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 ## [Unreleased]
 
 ### Added
+- **EXPERIMENTAL, v0.9.1 (GREEN): a multi-line text area.** Rust only; the C ABI is unchanged. `TextAreaState` (`text`, `cursor_grapheme`, `scroll_row`, `goal_col`), `ui::text_area` with `.rows(n)` and `.on_area_edit(..)`, and one wrap function (`TextAreaState::visual_rows`) shared by cursor movement, scrolling and painting. Enter inserts a newline and the widget never commits: the application provides an explicit Save control and owns Esc/cancel. A paste keeps `\n` and `\t` byte-exact (a TAB is one grapheme, 4 cells wide), normalizes `\r\n`, and strips every other control character and escape sequence. The implementation is in (`docs/design/v0.9.1-text-area.md`, `tests/text_area.rs`); the type stays EXPERIMENTAL. `TextInputState` is unchanged and stays single-line (#252). **Source break (EXPERIMENTAL `ui`):** `ui::Interaction` gains two public fields, `area` and `on_area_edit`, so code that builds an `Interaction` with a struct literal must add them.
+
 - **EXPERIMENTAL (v0.9): `ui::toast_lane`.** `toast_lane(toasts)` is a
   noninteractive overlay host that stacks toasts from the top-right of the element it is mounted
   on, newest first, each in its own box so they never overlap or cover anything outside the host. If
