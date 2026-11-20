@@ -16,6 +16,13 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 ## [Unreleased]
 
 ### Added
+- **`measure_wrapped(text, width) -> u16`: rows a text takes when word-wrapped, as `ui::text()`
+  paints it.** Returns the row count of `wrap_text(text, WrapMode::WordWrap, width)`, saturating
+  at `u16::MAX`. Tests in `tests/measure_wrapped.rs` (pinned caption, paragraph, hard-break and
+  wide-glyph cases, a painted-rows oracle, and equality with `wrap_text`). `wrap_text`
+  behaviour is unchanged. Design:
+  `docs/design/v0.9-measure-wrapped.md`.
+
 - **EXPERIMENTAL (v0.9): `ui::toast_lane`.** `toast_lane(toasts)` is a
   noninteractive overlay host that stacks toasts from the top-right of the element it is mounted
   on, newest first, each in its own box so they never overlap or cover anything outside the host. If
