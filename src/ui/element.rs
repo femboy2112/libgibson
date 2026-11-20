@@ -233,6 +233,19 @@ impl<A> Element<A> {
         self.tone = tone;
         self
     }
+    /// Attach a validation message shown on a [`Tone::Danger`] line under the
+    /// control. `None` renders nothing and takes no rows. The element stays
+    /// focusable either way.
+    ///
+    /// The parameter is `Option<String>` (not `Option<impl Into<String>>`) so a
+    /// bare `.error(None)` infers without annotation.
+    ///
+    /// RED stub: v0.9.0 design, not implemented. Today this returns `self`.
+    // RED stub: v0.9.0 design, not implemented
+    pub fn error(self, message: Option<String>) -> Self {
+        let _ = message;
+        self
+    }
     pub fn emphasis(mut self, emphasis: Emphasis) -> Self {
         self.emphasis = emphasis;
         self
@@ -608,6 +621,26 @@ pub fn button<A>(label: impl Into<String>) -> Element<A> {
 }
 pub fn choice<A>(label: impl Into<String>, selected: bool) -> Element<A> {
     Element::new(ElementKind::Choice(label.into())).selected(selected)
+}
+/// A labelled on/off setting.
+///
+/// RED stub: v0.9.0 design, not implemented. Today this is exactly [`choice`].
+/// Intended: renders `[x] label` / `[ ] label`, is focusable, and Space/Enter
+/// fire `on_press`. State stays application-owned, like [`choice`].
+// RED stub: v0.9.0 design, not implemented
+pub fn toggle<A>(label: impl Into<String>, on: bool) -> Element<A> {
+    choice(label, on)
+}
+/// One settings row: `label` on the left, `control` on the right, with the label
+/// column width aligned across sibling rows.
+///
+/// RED stub: v0.9.0 design, not implemented. Today this returns `control`
+/// unchanged and drops `label`. The control keeps its own key, handlers and
+/// focus behaviour.
+// RED stub: v0.9.0 design, not implemented
+pub fn form_row<A>(label: impl Into<String>, control: Element<A>) -> Element<A> {
+    let _label: String = label.into();
+    control
 }
 /// An application-owned single-line editor. Inputs participate in focus and own
 /// editing keys/paste even without callbacks. Without `on_edit` they consume
