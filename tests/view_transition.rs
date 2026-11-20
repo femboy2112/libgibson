@@ -165,7 +165,8 @@ fn red_motion_none_is_settled_immediately_with_no_effects() {
 /// with no Blend; see `red_reduced_slide_is_one_cut_with_no_reset_frame`.
 #[test]
 fn red_reduced_never_slides_and_caps_at_80ms() {
-    for kind in [TransitionKind::Fade { toward: FADE_TO }] {
+    {
+        let kind = TransitionKind::Fade { toward: FADE_TO };
         let t = tr(kind); // 400 ms at full motion
         let red = MotionPreference::Reduced;
         assert!(
