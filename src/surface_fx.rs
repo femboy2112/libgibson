@@ -5,7 +5,7 @@
 //! never terminal operations. Transparent holes stay holes, style-only cells
 //! remain style-only, and a wide grapheme is indivisible. There is no alpha.
 
-use crate::{Cell, Glyph, Rect, Rng, Style, Surface};
+use crate::{Cell, Color, Glyph, Rect, Rng, Style, Surface};
 
 /// An entity-local cell selection, independent of color or terminal capability.
 ///
@@ -68,7 +68,10 @@ impl FxMask {
 }
 
 /// A fully realized operation: no clocks, story state, or hidden randomness.
+///
+/// Non-exhaustive since 0.9.0: match it with a wildcard arm.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum SurfaceFx {
     /// Apply an ordinary effect only to selected complete glyphs. The input
     /// outside the mask is hidden from the effect and left exactly unchanged.
@@ -115,6 +118,23 @@ pub enum SurfaceFx {
     Scanline {
         position: f32,
         style: Style,
+    },
+    /// Shift the whole entity-local surface by `(dx, dy)` cells. Cells moved
+    /// outside are clipped; vacated cells become transparent. A wide glyph that
+    /// would straddle the clip edge is dropped whole. `(0, 0)` is exact identity.
+    /// See `docs/design/v0.9-view-transitions.md`.
+    Offset {
+        dx: i32,
+        dy: i32,
+    },
+    /// Move the fg and bg of every painted cell toward `toward` by `t`
+    /// (0 identity, 1 exactly `toward`; NaN is zero, clamped). Glyphs and
+    /// attributes are unchanged. A channel that is unset or `Reset`, or a `Reset`
+    /// target, has no RGB value: it steps (kept below `t = 0.5`, `toward` from it).
+    /// See [`resolve_reset`] and `docs/design/v0.9-view-transitions.md`.
+    Blend {
+        toward: Color,
+        t: f32,
     },
 }
 
@@ -181,6 +201,8 @@ impl SurfaceFx {
             Self::Dissolve { seed, fraction } => {
                 masked(surface, seed, fraction, None);
             }
+            Self::Offset { dx, dy } => offset(surface, dx, dy),
+            Self::Blend { toward, t } => blend(surface, toward, t),
         }
     }
 
@@ -198,6 +220,81 @@ impl SurfaceFx {
         for effect in chain {
             effect.apply(surface);
         }
+    }
+}
+
+/// Replace every `Color::Reset` fg/bg on a painted cell with a concrete colour, so a later
+/// [`SurfaceFx::Blend`] lerps smoothly instead of stepping at `t = 0.5`. Run it once on the
+/// view's surface before the first `Blend`, with the skin's real foreground and background.
+///
+/// Only `Some(Color::Reset)` channels change: transparent cells and unset (`None`) channels
+/// are left alone (an unset channel inherits the layer beneath, which is not the terminal
+/// default), as are glyphs and attributes. See the step rule in
+/// `docs/design/v0.9-view-transitions.md`.
+pub fn resolve_reset(surface: &mut Surface, fg: Color, bg: Color) {
+    for cell in surface.cells.iter_mut().filter(|c| !c.transparent) {
+        if cell.style.fg == Some(Color::Reset) {
+            cell.style.fg = Some(fg);
+        }
+        if cell.style.bg == Some(Color::Reset) {
+            cell.style.bg = Some(bg);
+        }
+    }
+}
+
+/// `SurfaceFx::Offset`: move every painted cell by `(dx, dy)`, clipping whole glyphs.
+fn offset(surface: &mut Surface, dx: i32, dy: i32) {
+    if dx == 0 && dy == 0 {
+        return;
+    }
+    let (w, h) = (i64::from(surface.width), i64::from(surface.height));
+    let len = surface.cells.len();
+    let source = std::mem::replace(&mut surface.cells, vec![Cell::transparent(); len]);
+    for (i, cell) in source.iter().enumerate() {
+        if cell.transparent || cell.is_continuation {
+            continue;
+        }
+        let (x, y) = (i as i64 % w, i as i64 / w);
+        let span = if cell.style_only {
+            1
+        } else {
+            i64::from(cell.glyph.display_width.max(1))
+        };
+        let (tx, ty) = (x + i64::from(dx), y + i64::from(dy));
+        if tx < 0 || ty < 0 || ty >= h || tx + span > w {
+            continue;
+        }
+        let dest = (ty * w + tx) as usize;
+        surface.cells[dest] = cell.clone();
+        if span == 2 && x + 1 < w {
+            surface.cells[dest + 1] = source[i + 1].clone();
+        }
+    }
+}
+
+/// `SurfaceFx::Blend`: move fg and bg of every painted cell toward `toward`.
+fn blend(surface: &mut Surface, toward: Color, t: f32) {
+    let t = unit(t);
+    if t == 0.0 {
+        return;
+    }
+    for cell in surface.cells.iter_mut().filter(|c| !c.transparent) {
+        cell.style.fg = blend_channel(cell.style.fg, toward, t);
+        cell.style.bg = blend_channel(cell.style.bg, toward, t);
+    }
+}
+
+/// One colour channel. Both endpoints resolvable: exact lerp (`t = 1` lands on `toward`).
+/// Otherwise (unset or `Reset` channel, or a `Reset` target) a step at `t = 0.5`, so no gray
+/// is ever invented for "terminal default".
+fn blend_channel(c: Option<Color>, toward: Color, t: f32) -> Option<Color> {
+    if t >= 1.0 {
+        return Some(toward);
+    }
+    match c {
+        Some(c) if c != Color::Reset && toward != Color::Reset => c.lerp_resolved(toward, t),
+        _ if t >= 0.5 => Some(toward),
+        _ => c,
     }
 }
 

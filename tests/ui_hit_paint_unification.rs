@@ -128,6 +128,7 @@ fn hit_key(t: Option<&ResolvedTarget>) -> Option<String> {
     t.map(|t| match &t.key {
         Key::Named(s) => s.clone(),
         Key::Path(p) => format!("path:{p:?}"),
+        other => other.to_string(),
     })
 }
 
@@ -361,6 +362,7 @@ fn m5_a_modal_overlay_blocks_clicks_to_the_base_beneath_it() {
         let name = match &t.key {
             Key::Named(s) => s.clone(),
             Key::Path(p) => format!("path:{p:?}"),
+            other => other.to_string(),
         };
         if name == "MOD" || t.rect.is_empty() {
             continue; // MOD lives inside the modal; skip it and empty rects
