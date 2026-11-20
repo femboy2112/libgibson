@@ -15,6 +15,15 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Added
+- **EXPERIMENTAL (v0.9 design, RED slice): `ui::toast_lane`.** `toast_lane(toasts)` is a
+  noninteractive overlay host that stacks toasts from the top-right of the element it is mounted
+  on, newest first, each in its own box so they never overlap or cover anything outside the host. If
+  the host holds fewer boxes than toasts, the last box becomes a "+N more" row; toasts are never
+  dropped silently. Today `toast_lane` is a deliberately wrong stub and `tests/toast_lane.rs` fails
+  by assertion until the GREEN slice lands; ordinary `toast()` is unchanged. Design:
+  `docs/design/v0.9-toast-lane.md`.
+
 ## [0.8.1] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 1"
 
 A patch release with no library behavior change. The only `src/` change is rustdoc on `Element::overlay`.

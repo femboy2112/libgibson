@@ -643,6 +643,29 @@ pub fn modal<A>(title: impl Into<String>) -> Element<A> {
 pub fn toast<A>(value: impl Into<String>) -> Element<A> {
     Element::new(ElementKind::Toast(value.into())).tone(Tone::Success)
 }
+/// EXPERIMENTAL (v0.9 design): a noninteractive lane that stacks toasts from the top-right of
+/// the element it is mounted on. Mount it with [`Element::overlay`] on the element whose
+/// rectangle the toasts must stay inside, so anything outside that host is never covered.
+///
+/// Pass the newest toast first. Each toast gets its own box of its own height (3 rows by
+/// default, or its `.height(...)`), so toasts never overlap. When the host holds fewer boxes
+/// than there are toasts, the newest ones are drawn and the last box becomes a "+N more" row.
+/// See `docs/design/v0.9-toast-lane.md`. An ordinary [`toast`] is unchanged.
+///
+/// ```
+/// use gibson::ui::prelude::*;
+///
+/// let lane: Element<()> = toast_lane([toast("saved"), toast("synced")]);
+/// let host: Element<()> = column().overlay(lane);
+/// # let _ = host;
+/// ```
+pub fn toast_lane<A>(toasts: impl IntoIterator<Item = Element<A>>) -> Element<A> {
+    // RED stub: v0.9.0 design, not implemented
+    column()
+        .percent_width(100.0)
+        .percent_height(100.0)
+        .children(toasts)
+}
 pub fn viewport<A>(x: i32, y: i32) -> Element<A> {
     Element::new(ElementKind::Viewport(x, y))
 }
