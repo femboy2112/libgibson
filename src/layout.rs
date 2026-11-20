@@ -123,7 +123,7 @@ pub fn wrap_text(text: &str, wrap: WrapMode, max_width: u16) -> Vec<String> {
 /// (a label is one clipped row); size boxes with `measure_wrapped`.
 pub fn measure_wrapped(_text: &str, _width: u16) -> u16 {
     // RED stub: deliberately wrong.
-    1
+    0
 }
 
 /// Wraps rich text into lines according to the specified wrap mode and maximum width,
