@@ -70,7 +70,8 @@ Each 0.8.1 item, with the evidence that closes it or the recorded deferral that 
 
 **Not in v0.8.1:**
 - **#410** is still deferred (triage r2 0/200 locally); it stays open.
-- **Re-uploading clean v0.7.x SDK assets** is an open owner decision and not part of this release.
+- **Re-uploading clean v0.7.x SDK assets:** not done, by owner decision (2026-11-19). The published
+  v0.7.x assets stay untouched; v0.8.0 is the first release built with the path remap.
 - Everything in the "Not in v0.8.0" list below carries over.
 
 #### v0.8.0 completion status (authoritative, 2026-11-19)
