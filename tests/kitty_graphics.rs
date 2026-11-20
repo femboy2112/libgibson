@@ -350,6 +350,7 @@ fn red_rowcolumn_diacritic_table_head_and_end() {
 }
 
 #[test]
+#[allow(clippy::needless_range_loop)] // r and c are also the cell coordinates
 fn red_placeholder_cell_carries_row_and_column_diacritics_and_id_in_fg() {
     let id = 42u32;
     let s = placeholder_cells(id, 3, 2);
