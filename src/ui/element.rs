@@ -479,6 +479,27 @@ pub fn image_area<A>(
         alt: alt.into(),
     })
 }
+/// A static picture that keeps its full-resolution straight-alpha source.
+///
+/// Unlike [`image`], the element holds the caller's `Arc<RgbaRaster>` itself
+/// (the same shape as `stage::RasterPlane.source`), so alpha and the source
+/// resolution survive lowering. The element carries no pixel route and no image
+/// cache handle: whether a terminal paints it as pixels or as cells is decided
+/// later, by the terminal adapter, on the lowered frame.
+// RED stub: v0.9.0 design, not implemented
+#[allow(unused_variables)]
+pub fn pixel_image<A>(source: Arc<crate::raster::RgbaRaster>, max: (u16, u16)) -> Element<A> {
+    // Deliberately wrong: flattens onto black like an ordinary fitted image and drops the source.
+    let flat = crate::raster::flatten(&source, (0, 0, 0));
+    image(&flat, max, String::new())
+}
+impl<A> Element<A> {
+    /// The full-resolution source kept by [`pixel_image`]; `None` for every other element.
+    // RED stub: v0.9.0 design, not implemented
+    pub fn image_source(&self) -> Option<&Arc<crate::raster::RgbaRaster>> {
+        None
+    }
+}
 pub fn heading<A>(value: impl Into<String>) -> Element<A> {
     Element::new(ElementKind::Heading(value.into()))
 }
