@@ -88,6 +88,7 @@ pub(crate) enum ElementKind {
     },
     Modal(String),
     Toast(String),
+    ToastLane,
     Viewport(i32, i32),
     Raw(Node),
     Presented(Arc<dyn Fn(&PresentationCx) -> Node>),
@@ -649,7 +650,9 @@ pub fn toast<A>(value: impl Into<String>) -> Element<A> {
 ///
 /// Pass the newest toast first. Each toast is drawn at its own height (3 rows by default, or
 /// its `.height(...)`), so toasts never overlap. When they do not all fit, the newest ones are
-/// drawn and a one-row "+N more" counts the rest; toasts are never dropped silently.
+/// drawn and a one-row "+N more" counts the rest; toasts are never dropped silently. The lane
+/// is inert: it paints its toasts but adds no pointer or focus target of its own, and a toast
+/// inside it is not a pointer target either. The application owns expiry.
 /// See `docs/design/v0.9-toast-lane.md`. An ordinary [`toast`] is unchanged.
 ///
 /// ```
@@ -660,11 +663,7 @@ pub fn toast<A>(value: impl Into<String>) -> Element<A> {
 /// # let _ = host;
 /// ```
 pub fn toast_lane<A>(toasts: impl IntoIterator<Item = Element<A>>) -> Element<A> {
-    // RED stub: v0.9.0 design, not implemented
-    column()
-        .percent_width(100.0)
-        .percent_height(100.0)
-        .children(toasts)
+    Element::new(ElementKind::ToastLane).children(toasts)
 }
 pub fn viewport<A>(x: i32, y: i32) -> Element<A> {
     Element::new(ElementKind::Viewport(x, y))
