@@ -1048,6 +1048,10 @@ unsafe fn poll_event_impl(
         match polled {
             Ok(Some(ev)) => {
                 match ev {
+                    // A function key is not part of ABI v1 (v0.9 design note,
+                    // docs/design/v0.9-function-keys.md): it reports as no event, like Tick and
+                    // mouse below, with every field still at its zeroed value above.
+                    Event::Key(k) | Event::KeyRelease(k) if matches!(k.code, KeyCode::F(_)) => {}
                     Event::Key(k) | Event::KeyRelease(k) => {
                         (*out_event).event_type = if matches!(ev, Event::Key(_)) {
                             GIBSON_EVENT_KEY
@@ -1078,6 +1082,8 @@ unsafe fn poll_event_impl(
                             KeyCode::BackTab => GIBSON_KEY_TAB,
                             KeyCode::PageUp => GIBSON_KEY_PAGE_UP,
                             KeyCode::PageDown => GIBSON_KEY_PAGE_DOWN,
+                            // Not reached: the arm above takes every F-key.
+                            KeyCode::F(_) => 0,
                         };
                     }
                     Event::Paste(s) => {

@@ -15,6 +15,20 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Added (RED)
+- **`KeyCode::F(u8)`: function-key decoding, RED, not implemented.** A consumer wants F1 to open
+  in-app help, and today every function key is dropped before it reaches `Event`. This slice adds
+  the `F(u8)` variant (`KeyCode` is `#[non_exhaustive]`, so the addition is non-breaking) as a
+  stub and the tests that pin the intended behavior; **nothing decodes F-keys yet**, and the RED
+  tests fail by assertion until the GREEN slice lands. Intended: F1 through F12, with Shift, Ctrl
+  and Alt, from crossterm's `KeyCode::F` and from the owned Unix source (SS3 `ESC O P`..`S`,
+  `CSI 11~`..`CSI 24~`, and the `CSI 1;<mod>P`..`S` and `CSI <n>;<mod>~` forms). The C ABI is
+  unchanged: an F-key polls as `GIBSON_EVENT_NONE`. Design:
+  [`docs/design/v0.9-function-keys.md`](docs/design/v0.9-function-keys.md).
+- **SPEC UPDATE (GOD #148): F-keys are modelled; was None.** The crossterm-level tests that used
+  F5 as "a key code LibGibson does not model" now expect `F(5)`, and the guard for an unmodelled
+  key moved to Insert (`src/input.rs` `key_kind_tests`, `tests/key_release_kind_pty.rs`).
+
 ## [0.8.1] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 1"
 
 A patch release with no library behavior change. The only `src/` change is rustdoc on `Element::overlay`.

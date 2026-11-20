@@ -60,6 +60,13 @@ pub enum KeyCode {
     Esc,
     Tab,
     BackTab,
+    /// A function key, by its number: `F(1)` is F1. A function-key number, not a byte or a
+    /// code point.
+    ///
+    /// v0.9 decodes F1 through F12, with or without Shift, Ctrl and Alt. **RED stub: nothing
+    /// decodes it yet**, so a terminal's function keys are still dropped like any unmodelled
+    /// key (see `docs/design/v0.9-function-keys.md`). The C ABI does not carry it.
+    F(u8),
 }
 
 /// A structured keyboard event.
@@ -528,7 +535,11 @@ fn decode_source_event(item: SourceItem) -> Option<Event> {
 /// release and an answer are decided at delivery: one decoded while reporting was on but handed
 /// out after it was turned off is dropped, so a late answer cannot switch a hold model back on
 /// (#275 review). The notice that reporting ended is always delivered.
-fn decode_source_event_as(ev: SourceEvent, windows: bool, releases: bool) -> Option<Event> {
+pub(crate) fn decode_source_event_as(
+    ev: SourceEvent,
+    windows: bool,
+    releases: bool,
+) -> Option<Event> {
     match ev {
         SourceEvent::Terminal(ev) => decode_event_as(ev, windows, releases),
         SourceEvent::KeyReleaseReporting(r) => releases.then_some(Event::KeyReleaseReporting(r)),
@@ -1745,12 +1756,25 @@ mod key_kind_tests {
         ))
     }
 
-    /// An event no platform delivers: F5, a key code LibGibson does not model.
+    /// An event no platform delivers: Insert, a key code LibGibson does not model.
+    ///
+    /// SPEC UPDATE (GOD #148): F-keys are modelled; was None. This helper used F5 before F-keys
+    /// were modelled. It keeps its job (an event that is dropped on every platform) with a key
+    /// that is genuinely unmodelled, so the drop-and-keep-polling tests below still guard it.
     fn undelivered() -> CtEvent {
         CtEvent::Key(CtKeyEvent::new_with_kind(
-            CtKeyCode::F(5),
+            CtKeyCode::Insert,
             CtKeyModifiers::NONE,
             KeyEventKind::Press,
+        ))
+    }
+
+    /// A crossterm F-key event of the given kind.
+    fn ct_f(n: u8, kind: KeyEventKind) -> CtEvent {
+        CtEvent::Key(CtKeyEvent::new_with_kind(
+            CtKeyCode::F(n),
+            CtKeyModifiers::NONE,
+            kind,
         ))
     }
 
@@ -1766,6 +1790,14 @@ mod key_kind_tests {
         assert_eq!(decode_event(ct_key('a', KeyEventKind::Press)), key('a'));
         assert_eq!(decode_event(ct_key('a', KeyEventKind::Repeat)), key('a'));
         assert_eq!(decode_event(undelivered()), None);
+        // SPEC UPDATE (GOD #148): F-keys are modelled; was None
+        assert_eq!(
+            decode_event(ct_f(5, KeyEventKind::Press)),
+            Some(Event::Key(KeyEvent::new(
+                KeyCode::F(5),
+                KeyModifiers::empty()
+            )))
+        );
         if !cfg!(windows) {
             assert_eq!(decode_event(ct_key('a', KeyEventKind::Release)), None);
             // A released special key is not delivered either.
@@ -1793,12 +1825,25 @@ mod key_kind_tests {
         for kind in [KeyEventKind::Press, KeyEventKind::Repeat] {
             assert_eq!(decode_event_as(ct_key('a', kind), false, true), key('a'));
         }
-        let f5_up = CtEvent::Key(CtKeyEvent::new_with_kind(
-            CtKeyCode::F(5),
+        let insert_up = CtEvent::Key(CtKeyEvent::new_with_kind(
+            CtKeyCode::Insert,
             CtKeyModifiers::NONE,
             KeyEventKind::Release,
         ));
-        assert_eq!(decode_event_as(f5_up, false, true), None);
+        assert_eq!(decode_event_as(insert_up, false, true), None);
+        // SPEC UPDATE (GOD #148): F-keys are modelled; was None
+        // A modelled F-key's release is delivered while reporting is on, and still not otherwise.
+        assert_eq!(
+            decode_event_as(ct_f(5, KeyEventKind::Release), false, true),
+            Some(Event::KeyRelease(KeyEvent::new(
+                KeyCode::F(5),
+                KeyModifiers::empty()
+            )))
+        );
+        assert_eq!(
+            decode_event_as(ct_f(5, KeyEventKind::Release), false, false),
+            None
+        );
         // The answer passes through while reporting is on, and is dropped once it is off (a late
         // answer must not switch a hold model back on).
         let active = || SourceEvent::KeyReleaseReporting(KeyReleaseReporting::Active);
@@ -2019,5 +2064,141 @@ mod answer_generation_tests {
             None
         );
         assert_eq!(state.load(Ordering::SeqCst), after);
+    }
+}
+
+#[cfg(test)]
+mod function_key_tests {
+    //! v0.9 function keys, crossterm path (`decode_key`). RED: the tests that expect an F-key to
+    //! decode fail by assertion against the stub, which still drops it. GUARD: the tests that
+    //! pin what must not change pass today and stay green. The byte-level tests, which reach the
+    //! same `decode_key` through the owned tty source, are in `tty_source::tests::function_keys`.
+    use super::{decode_event, Event, KeyCode, KeyEvent, KeyModifiers, TextInputState};
+    use crossterm::event::{
+        Event as CtEvent, KeyCode as CtKeyCode, KeyEvent as CtKeyEvent, KeyEventKind,
+        KeyModifiers as CtKeyModifiers, MediaKeyCode,
+    };
+
+    fn ct(code: CtKeyCode, mods: CtKeyModifiers) -> CtEvent {
+        CtEvent::Key(CtKeyEvent::new_with_kind(code, mods, KeyEventKind::Press))
+    }
+
+    fn key(code: KeyCode, mods: KeyModifiers) -> Option<Event> {
+        Some(Event::Key(KeyEvent::new(code, mods)))
+    }
+
+    // ---------------------------------------------------------------------------------- RED
+
+    #[test]
+    fn red_crossterm_f5_press_is_f5() {
+        assert_eq!(
+            decode_event(ct(CtKeyCode::F(5), CtKeyModifiers::NONE)),
+            key(KeyCode::F(5), KeyModifiers::empty())
+        );
+    }
+
+    #[test]
+    fn red_crossterm_f1_to_f12_all_decode_to_their_number() {
+        for n in 1..=12u8 {
+            assert_eq!(
+                decode_event(ct(CtKeyCode::F(n), CtKeyModifiers::NONE)),
+                key(KeyCode::F(n), KeyModifiers::empty()),
+                "F{n}"
+            );
+        }
+    }
+
+    #[test]
+    fn red_crossterm_f_key_modifiers_are_carried() {
+        assert_eq!(
+            decode_event(ct(CtKeyCode::F(1), CtKeyModifiers::SHIFT)),
+            key(KeyCode::F(1), KeyModifiers::SHIFT)
+        );
+        assert_eq!(
+            decode_event(ct(CtKeyCode::F(4), CtKeyModifiers::CONTROL)),
+            key(KeyCode::F(4), KeyModifiers::CONTROL)
+        );
+        assert_eq!(
+            decode_event(ct(
+                CtKeyCode::F(12),
+                CtKeyModifiers::SHIFT | CtKeyModifiers::ALT | CtKeyModifiers::CONTROL
+            )),
+            key(
+                KeyCode::F(12),
+                KeyModifiers::SHIFT | KeyModifiers::ALT | KeyModifiers::CONTROL
+            )
+        );
+    }
+
+    // -------------------------------------------------------------------------------- GUARD
+
+    #[test]
+    fn guard_a_key_code_that_is_still_unmodelled_decodes_to_none() {
+        // Insert, Null, Caps Lock and a media key stay unmodelled by v0.9: the "unmodelled key
+        // is dropped" rule the F5 tests used to carry (SPEC UPDATE, GOD #148).
+        let unmodelled = [
+            CtKeyCode::Insert,
+            CtKeyCode::Null,
+            CtKeyCode::CapsLock,
+            CtKeyCode::Media(MediaKeyCode::Play),
+        ];
+        for code in unmodelled {
+            assert_eq!(
+                decode_event(ct(code, CtKeyModifiers::NONE)),
+                None,
+                "{code:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn guard_existing_navigation_keys_decode_as_before() {
+        let pairs = [
+            (CtKeyCode::Up, KeyCode::Up),
+            (CtKeyCode::Down, KeyCode::Down),
+            (CtKeyCode::Left, KeyCode::Left),
+            (CtKeyCode::Right, KeyCode::Right),
+            (CtKeyCode::Home, KeyCode::Home),
+            (CtKeyCode::End, KeyCode::End),
+            (CtKeyCode::PageUp, KeyCode::PageUp),
+            (CtKeyCode::PageDown, KeyCode::PageDown),
+            (CtKeyCode::Delete, KeyCode::Delete),
+        ];
+        for (from, to) in pairs {
+            assert_eq!(
+                decode_event(ct(from, CtKeyModifiers::NONE)),
+                key(to, KeyModifiers::empty()),
+                "{from:?}"
+            );
+        }
+        assert_eq!(
+            decode_event(ct(CtKeyCode::Right, CtKeyModifiers::CONTROL)),
+            key(KeyCode::Right, KeyModifiers::CONTROL)
+        );
+    }
+
+    #[test]
+    fn guard_a_function_key_event_edits_no_text() {
+        // Once an F-key is delivered it reaches a focused text input as `KeyCode::F`: the editor
+        // must neither insert anything for it nor claim the event, so a global F1 handler still
+        // receives it.
+        for n in 1..=12u8 {
+            for mods in [
+                KeyModifiers::empty(),
+                KeyModifiers::SHIFT,
+                KeyModifiers::CONTROL,
+                KeyModifiers::ALT,
+            ] {
+                let mut input = TextInputState::with_text("ab");
+                let before = (input.text.clone(), input.cursor_grapheme);
+                let claimed = input.handle_event(&Event::Key(KeyEvent::new(KeyCode::F(n), mods)));
+                assert!(!claimed, "F{n} {mods:?} was claimed by the editor");
+                assert_eq!(
+                    (input.text.clone(), input.cursor_grapheme),
+                    before,
+                    "F{n} {mods:?} edited the text"
+                );
+            }
+        }
     }
 }

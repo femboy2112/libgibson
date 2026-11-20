@@ -215,8 +215,9 @@ fn a_dropped_release_neither_times_out_early_nor_strands_the_next_key() {
     cmd.env(SYNC_ENV, sync.to_str().unwrap());
     let mut cap = Capture::spawn(cmd, 80, 24, Duration::from_secs(40));
     wait_marker(&mut cap, "READY");
-    // A release, then F5 (a key code LibGibson does not model): neither is delivered.
-    send(&mut cap, b"\x1b[97;1:3u\x1b[15~");
+    // A release, then Insert (a key code LibGibson does not model): neither is delivered.
+    // SPEC UPDATE (GOD #148): F-keys are modelled; was None. This sent F5 (`CSI 15~`) before.
+    send(&mut cap, b"\x1b[97;1:3u\x1b[2~");
     std::fs::write(flag(1), b"").unwrap();
     wait_marker(&mut cap, "PHASE2");
     // One write: the release and the press arrive in the same read.
@@ -457,7 +458,7 @@ fn timeout_child() {
         }
     };
     say("READY");
-    // The parent writes a release and F5, then raises flag 1.
+    // The parent writes a release and Insert, then raises flag 1.
     wait_flag(1);
     let (e, ms) = timed(&mut ctx, 800);
     say(&format!("T1 {e} {ms}"));
