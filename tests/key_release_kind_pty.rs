@@ -263,6 +263,71 @@ fn a_dropped_release_neither_times_out_early_nor_strands_the_next_key() {
     );
 }
 
+/// v0.9 function keys, C ABI (GOD ruling, ACK RESULT #124): ABI v1 has no F-key, so the C poll
+/// skips one and keeps polling for the rest of its timeout. A poll that sees only F-keys waits
+/// out its timeout and then reports `GIBSON_EVENT_NONE`, and an event queued behind an F-key is
+/// delivered at once. GUARD: this passes today because `decode_key` still drops F-keys before the
+/// C poll sees them; it fails if F-keys are decoded and the C poll reports NONE at the first one.
+#[test]
+fn c_poll_skips_a_function_key_and_keeps_polling_to_its_deadline() {
+    let sync = std::env::temp_dir().join(format!("gibson_fkey_sync_{}", std::process::id()));
+    let flag = |n: u8| sync.with_extension(n.to_string());
+    let _ = std::fs::remove_file(flag(1));
+    let _ = std::fs::remove_file(flag(2));
+    let mut cmd = child("cfkey");
+    cmd.env(SYNC_ENV, sync.to_str().unwrap());
+    let mut cap = Capture::spawn(cmd, 80, 24, Duration::from_secs(40));
+    wait_marker(&mut cap, "READY");
+    // F1 (SS3), F5 and Ctrl+F4, all complete sequences, before the first poll.
+    send(&mut cap, b"\x1bOP\x1b[15~\x1b[1;5S");
+    std::fs::write(flag(1), b"").unwrap();
+    wait_marker(&mut cap, "PHASE2");
+    // One write: an F-key and the press behind it arrive in the same read.
+    send(&mut cap, b"\x1bOPb");
+    std::fs::write(flag(2), b"").unwrap();
+    wait_marker(&mut cap, "DONE");
+    let _ = std::fs::remove_file(flag(1));
+    let _ = std::fs::remove_file(flag(2));
+    let out = text(&cap);
+    // `T<n> <event_type> <key_code> <ms>`
+    let line = |tag: &str| -> (i32, u32, u64) {
+        let l = out
+            .split(['\r', '\n'])
+            .find_map(|l| {
+                l.trim()
+                    .strip_prefix(&format!("{tag} "))
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| panic!("no {tag} line in {out:?}"));
+        let mut it = l.split_whitespace();
+        let ty = it.next().unwrap().parse().unwrap();
+        let code = it.next().unwrap().parse().unwrap();
+        let ms = it.next().unwrap().parse().unwrap();
+        (ty, code, ms)
+    };
+    let (ty, code, ms) = line("T1");
+    assert_eq!(
+        (ty, code),
+        (GIBSON_EVENT_NONE, 0),
+        "F-keys alone were reported: {out:?}"
+    );
+    assert!(
+        ms >= 700,
+        "poll(800 ms) returned after {ms} ms with only F-keys queued: an F-key ended the poll"
+    );
+    assert!(
+        ms < 1500,
+        "poll(800 ms) took {ms} ms: the F-keys restarted it"
+    );
+    let (ty, code, ms) = line("T2");
+    assert_eq!(
+        (ty, code),
+        (GIBSON_EVENT_KEY, u32::from('b')),
+        "the press behind an F-key: {out:?}"
+    );
+    assert!(ms < 700, "the queued press took {ms} ms");
+}
+
 /// Key input immediately before a hangup: the press is delivered, the release is not turned
 /// into a second press, and the poll then reports the hangup (BrokenPipe) instead of spinning.
 #[test]
@@ -379,6 +444,7 @@ fn key_release_child() {
         "seq:c" => seq_c(false),
         "seq:ckind" => seq_c(true),
         "timeout" => timeout_child(),
+        "cfkey" => c_function_key_child(),
         "hangup" => hangup_child(),
         other => panic!("unknown role {other}"),
     }
@@ -470,6 +536,50 @@ fn timeout_child() {
     let (e, ms) = timed(&mut ctx, 300);
     say(&format!("T3 {e} {ms}"));
     ctx.restore().unwrap();
+    say("DONE");
+}
+
+/// Child of `c_poll_skips_a_function_key_and_keeps_polling_to_its_deadline`: two timed
+/// `gibson_poll_event` calls on a terminal context.
+fn c_function_key_child() {
+    let sync = std::path::PathBuf::from(std::env::var(SYNC_ENV).expect("sync path"));
+    let wait_flag = |n: u8| {
+        let f = sync.with_extension(n.to_string());
+        let cap = Instant::now() + Duration::from_secs(20);
+        while !f.exists() {
+            assert!(Instant::now() < cap, "parent never wrote sync flag {n}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    unsafe {
+        let mut h: *mut GibsonContextOpaque = std::ptr::null_mut();
+        assert_eq!(
+            gibson_create_context(GIBSON_MODE_INLINE, &mut h),
+            GibsonStatus::Ok
+        );
+        let mut ev = blank_event();
+        let _ = gibson_poll_event(h, 0, &mut ev);
+        let timed = |tag: &str| {
+            let mut ev = blank_event();
+            let t0 = Instant::now();
+            assert_eq!(gibson_poll_event(h, 800, &mut ev), GibsonStatus::Ok);
+            say(&format!(
+                "{tag} {} {} {}",
+                ev.event_type,
+                ev.key_code,
+                t0.elapsed().as_millis()
+            ));
+        };
+        say("READY");
+        // The parent writes F1, F5 and Ctrl+F4, then raises flag 1.
+        wait_flag(1);
+        timed("T1");
+        say("PHASE2");
+        // The parent writes F1 and `b` in one write, then raises flag 2.
+        wait_flag(2);
+        timed("T2");
+        gibson_destroy_context(h);
+    }
     say("DONE");
 }
 
