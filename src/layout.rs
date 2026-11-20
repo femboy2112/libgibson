@@ -108,6 +108,24 @@ pub fn wrap_text(text: &str, wrap: WrapMode, max_width: u16) -> Vec<String> {
     lines
 }
 
+/// The number of rows `text` occupies when word-wrapped at `width` cells, exactly as
+/// `ui::text(text)` paints it: the same wrapping as `wrap_text(text, WrapMode::WordWrap, width)`.
+///
+/// Edge cases:
+/// - `width == 0` follows `wrap_text` at width 0, which puts each grapheme on its own row,
+///   so `"abc"` is 3 (never 0 for non-empty text).
+/// - Empty text is 1 row, as `wrap_text` returns one empty line.
+/// - A trailing `"\n"` adds a blank final row: `"a\n"` is 2.
+/// - The result saturates at `u16::MAX` instead of wrapping.
+/// - A wide glyph is never split, even where it is wider than `width`.
+///
+/// Recipe: captions and any text that may exceed one row use `ui::text()`, never `label()`
+/// (a label is one clipped row); size boxes with `measure_wrapped`.
+pub fn measure_wrapped(_text: &str, _width: u16) -> u16 {
+    // RED stub: deliberately wrong.
+    1
+}
+
 /// Wraps rich text into lines according to the specified wrap mode and maximum width,
 /// preserving span styles across word wraps.
 pub fn wrap_rich_text(rich: &RichText, wrap: WrapMode, max_width: u16) -> Vec<Line> {

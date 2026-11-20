@@ -159,7 +159,7 @@ pub use input::{
     poll_event, set_focus_reporting, set_mouse_capture, Event, FocusChange, KeyCode, KeyEvent,
     KeyModifiers, KeyReleaseReporting, MouseButton, MouseEvent, MouseKind, TextInputState,
 };
-pub use layout::{compute_layout, wrap_rich_text, wrap_text};
+pub use layout::{compute_layout, measure_wrapped, wrap_rich_text, wrap_text};
 pub use node::{
     AlignItems, Dimension, FlexDirection, JustifyContent, LayoutStyle, Node, NodeKind, WrapMode,
 };

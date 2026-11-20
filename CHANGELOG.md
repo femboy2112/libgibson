@@ -15,6 +15,13 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Added (RED)
+- **`measure_wrapped(text, width) -> u16`: rows a text takes when word-wrapped, as `ui::text()`
+  paints it.** RED slice: a stub returning 1, plus `tests/measure_wrapped.rs` (pinned caption,
+  paragraph, hard-break and wide-glyph cases, a painted-rows oracle, and equality with
+  `wrap_text`). `wrap_text` behaviour is pinned unchanged. Design:
+  `docs/design/v0.9-measure-wrapped.md`.
+
 ## [0.8.1] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 1"
 
 A patch release with no library behavior change. The only `src/` change is rustdoc on `Element::overlay`.
