@@ -563,7 +563,9 @@ fn red_runtime_enter_is_an_edit_action_never_a_press() {
 /// No terminal control byte may be in the buffer: no C0 except '\n', no DEL, no C1, no ESC.
 fn assert_clean(text: &str, ctx: &str) {
     assert!(
-        text.chars().all(|c| c == '\n' || !c.is_control()),
+        // TAB is kept (GOD #137 ruling i): the buffer must round-trip byte-exact.
+        text.chars()
+            .all(|c| c == '\n' || c == '\t' || !c.is_control()),
         "{ctx}: control character in buffer {text:?}"
     );
     assert!(
@@ -655,14 +657,41 @@ fn red_paste_escape_sequence_table() {
 
 #[test]
 fn red_paste_tab_and_unicode_separators() {
-    // TAB becomes one space (as in TextInputState); U+2028/U+2029 become newlines instead of
-    // painting as U+FFFD; DEL is dropped.
-    assert_eq!(TextAreaState::normalize_paste("a\tb"), "a b");
+    // TAB is kept verbatim (GOD #137 ruling i: the field holds a system prompt and Reset/Save
+    // must round-trip byte-exact); U+2028/U+2029 become newlines instead of painting as
+    // U+FFFD; DEL is dropped.
+    assert_eq!(TextAreaState::normalize_paste("a\tb"), "a\tb");
+    let mut s = TextAreaState::new();
+    assert!(s.handle_event(&paste("a\tb"), 20, 4));
+    assert_eq!(s.text, "a\tb");
+    assert_eq!(s.cursor_grapheme, 3);
+    let prompt = "rules:\n\t1. be kind\n\t2. be exact\t(always)\n";
+    assert_eq!(TextAreaState::with_text(prompt).text, prompt);
+    let mut t = TextAreaState::new();
+    t.insert_str(prompt);
+    assert_eq!(t.text, prompt);
     assert_eq!(
         TextAreaState::normalize_paste("a\u{2028}b\u{2029}c"),
         "a\nb\nc"
     );
     assert_eq!(TextAreaState::normalize_paste("a\u{7f}b"), "ab");
+}
+
+#[test]
+fn red_tab_is_one_grapheme_four_cells_wide() {
+    // GOD #137 ruling i: a TAB is one grapheme of fixed width 4 (no tab stops) for wrap,
+    // cursor and painter alike.
+    assert_eq!(rows_of("a\tb", 20), vec![(0, 3, 6)]);
+    assert_eq!(state_at("a\tb", 2).cursor_rc(20), (0, 5));
+    // Fixed width, not a tab stop: a TAB after 3 cells is still 4 cells.
+    assert_eq!(state_at("abc\tz", 4).cursor_rc(20), (0, 7));
+    // Wrap at width 10 (limit 9): one unbreakable 12-cell token, hard-broken by grapheme.
+    assert_eq!(rows_of("\t\t\t", 10), vec![(0, 2, 8), (2, 3, 4)]);
+    // The painter shows the TAB as 4 blank cells and keeps the buffer byte-exact.
+    let state = TextAreaState::with_text("a\tb");
+    let surface = paint_area(&state, 20, 3, false);
+    assert_eq!(painted_row(&surface, 0), "a    b");
+    assert_eq!(state.text, "a\tb");
 }
 
 // ---------------------------------------------------------------------------------------------
