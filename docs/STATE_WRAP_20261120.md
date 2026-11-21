@@ -74,3 +74,13 @@ A docs-only snapshot for picking the work back up. Nothing here changes code, CI
 3. Post-tag docs PR.
 4. #444: merge main, green CI, merge GO as the first 0.9.1 item.
 5. Next train: #444 + #433 (with narrow stacking) plus the consumer's upstream needs list.
+
+## Pause addendum, 2026-11-21
+
+- Nothing in this repository changed since the snapshot above:
+  - `main` = `27a958f`;
+  - #449 head `fe7239f` (CI 9/9) still waits on the consumer gate;
+  - #444 and #433 are parked;
+  - every branch is clean and pushed.
+- The maintainer session spent the interval on downstream build/test-speed infrastructure for a consumer project. None of it touches this library.
+- Resume order is unchanged: consumer gate → H2 gates row → CI → merge GO for #449 → tags on separate GOs.
