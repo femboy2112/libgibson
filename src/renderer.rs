@@ -166,6 +166,7 @@ pub struct Renderer {
     pub last_cursor_visible: Option<bool>,
     /// The cursor requested by the last painted frame (region-relative).
     last_cursor_desired: Option<(u16, u16)>,
+    fullscreen_hidden_cursor_home: bool,
     pub anchor: AnchorState,
     last_terminal_size: Option<(u16, u16)>,
 
@@ -226,6 +227,7 @@ impl Renderer {
             last_cursor_x: 0,
             last_cursor_visible: None,
             last_cursor_desired: None,
+            fullscreen_hidden_cursor_home: false,
             anchor: AnchorState::Invalid,
             last_terminal_size: None,
             total_frame_bytes: 0,
@@ -247,6 +249,18 @@ impl Renderer {
             inline_resize_policy: InlineResizePolicy::PreserveAbove,
             inline_resize_bottom_reservation: false,
             inline_history_chunking: false,
+        }
+    }
+
+    /// Park the hidden fullscreen cursor at the top left of each emitted frame.
+    /// This keeps its physical location independent of which cells were painted.
+    /// Defaults to false. Inline anchors and visible cursors are unchanged.
+    pub fn set_fullscreen_hidden_cursor_home(&mut self, enabled: bool) {
+        if self.fullscreen_hidden_cursor_home != enabled {
+            self.fullscreen_hidden_cursor_home = enabled;
+            if self.mode == RenderMode::Fullscreen {
+                self.last_cursor_visible = None;
+            }
         }
     }
 
@@ -622,6 +636,12 @@ impl Renderer {
                 } else {
                     if let Some(cmd) = session.hide_cursor() {
                         tx.push(cmd);
+                    }
+                    if self.fullscreen_hidden_cursor_home {
+                        tx.push(b"\x1b[H");
+                        self.compiler.reset_cursor(0, 0);
+                        self.last_cursor_x = 0;
+                        self.last_cursor_y = 0;
                     }
                 }
             }

@@ -240,3 +240,42 @@ fn a_terminal_context_keeps_observing_its_geometry_from_the_terminal() {
         "a terminal context's geometry must stay observed from the terminal"
     );
 }
+
+#[test]
+fn fullscreen_hidden_cursor_can_park_independently_of_frame_damage() {
+    use gibson::cell::Style;
+    use std::num::NonZeroU16;
+
+    let mut ctx = Context::headless(RenderMode::Fullscreen, 20, 6);
+    let mut parser =
+        vt100::Parser::new(NonZeroU16::new(6).unwrap(), NonZeroU16::new(20).unwrap(), 0);
+    let mut frame = |ctx: &mut Context, node| {
+        ctx.set_root(node);
+        ctx.render().unwrap();
+        parser.process(&ctx.take_rendered_bytes());
+        (
+            parser.screen().hide_cursor(),
+            parser.screen().cursor_position(),
+        )
+    };
+    let plain = || {
+        Node::col()
+            .child(Node::text("heading", Style::default()))
+            .child(Node::text("body", Style::default()))
+    };
+    // A consumer with no opt-in continues to leave it at the final emitted glyph.
+    assert_ne!(frame(&mut ctx, plain()).1, (0, 0));
+    ctx.renderer.set_fullscreen_hidden_cursor_home(true);
+    assert_eq!(frame(&mut ctx, plain()), (true, (0, 0)));
+
+    ctx.resize(15, 5).unwrap();
+    assert_eq!(frame(&mut ctx, plain()), (true, (0, 0)));
+    ctx.resize(20, 6).unwrap();
+    assert_eq!(frame(&mut ctx, plain()), (true, (0, 0)));
+
+    let input = Node::col()
+        .child(Node::text("heading", Style::default()))
+        .child(Node::text_input("answer", 3, None, Style::default()));
+    assert_eq!(frame(&mut ctx, input), (false, (1, 3)));
+    assert_eq!(frame(&mut ctx, plain()), (true, (0, 0)));
+}
