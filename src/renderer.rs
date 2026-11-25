@@ -212,6 +212,7 @@ pub struct Renderer {
     pending_reanchor: Option<ReanchorReport>,
     inline_resize_policy: InlineResizePolicy,
     inline_resize_bottom_reservation: bool,
+    inline_full_height_anchor: bool,
     inline_history_chunking: bool,
 }
 
@@ -248,6 +249,7 @@ impl Renderer {
             pending_reanchor: None,
             inline_resize_policy: InlineResizePolicy::PreserveAbove,
             inline_resize_bottom_reservation: false,
+            inline_full_height_anchor: false,
             inline_history_chunking: false,
         }
     }
@@ -309,6 +311,14 @@ impl Renderer {
     /// Whether eligible inline resize allocations reserve the extra physical row.
     pub fn inline_resize_bottom_reservation(&self) -> bool {
         self.inline_resize_bottom_reservation
+    }
+
+    /// Place a maximal-height inline frame at row zero when establishing its live region.
+    /// The logical surface remains terminal rows minus one. The extra physical line feed
+    /// scrolls earlier output naturally; it never clears scrollback. Short frames, fullscreen,
+    /// scale-one terminals and uncertain-write recovery keep their usual allocation.
+    pub fn set_inline_full_height_anchor(&mut self, enabled: bool) {
+        self.inline_full_height_anchor = enabled;
     }
 
     /// Allow large history insertions to reuse the spare rows above a stable
@@ -674,8 +684,8 @@ impl Renderer {
                     // keep it independently opt-in rather than changing Reclaim
                     // defaults. A maximal normal reanchor scrolls the returned
                     // row into history; it never erases above the tracked region.
-                    let allocation_rows = if self.inline_resize_bottom_reservation
-                        && reanchor
+                    let allocation_rows = if (self.inline_full_height_anchor && term_rows > 1
+                        || self.inline_resize_bottom_reservation && reanchor)
                         && !recover
                         && surface_height == max_inline_rows
                     {

@@ -279,3 +279,42 @@ fn fullscreen_hidden_cursor_can_park_independently_of_frame_damage() {
     assert_eq!(frame(&mut ctx, input), (false, (1, 3)));
     assert_eq!(frame(&mut ctx, plain()), (true, (0, 0)));
 }
+
+#[test]
+fn inline_full_height_anchor_matches_launch_and_regrow_without_losing_history() {
+    use gibson::cell::Style;
+    use std::num::NonZeroU16;
+
+    let dimension = |n| NonZeroU16::new(n).unwrap();
+    let mut ctx = Context::headless(RenderMode::Inline, 20, 6);
+    let mut parser = vt100::Parser::new(dimension(6), dimension(20), 64);
+    ctx.renderer.set_inline_full_height_anchor(true);
+    ctx.set_inline_resize_policy(gibson::InlineResizePolicy::ReclaimLiveRows);
+    ctx.commit_text("COMMITTED_HISTORY").unwrap();
+    for (cols, rows) in [(20, 6), (15, 4), (20, 6)] {
+        ctx.resize(cols, rows).unwrap();
+        parser
+            .screen_mut()
+            .set_size(dimension(rows), dimension(cols));
+        ctx.set_root(
+            Node::col()
+                .height(f32::from(rows - 1))
+                .child(Node::text("SCENE_TOP", Style::default())),
+        );
+        ctx.render().unwrap();
+        parser.process(&ctx.take_rendered_bytes());
+        assert_eq!(
+            parser.screen().rows(0, cols).next().as_deref(),
+            Some("SCENE_TOP")
+        );
+    }
+
+    let mut notice_count = 0;
+    let retained = parser.screen().scrollback_len();
+    for offset in 1..=retained {
+        parser.screen_mut().set_scrollback(offset);
+        notice_count +=
+            usize::from(parser.screen().rows(0, 20).next().as_deref() == Some("COMMITTED_HISTORY"));
+    }
+    assert_eq!(notice_count, 1);
+}
