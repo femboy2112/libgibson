@@ -304,17 +304,28 @@ fn inline_full_height_anchor_matches_launch_and_regrow_without_losing_history() 
         ctx.render().unwrap();
         parser.process(&ctx.take_rendered_bytes());
         assert_eq!(
-            parser.screen().rows(0, cols).next().as_deref(),
+            parser.screen().rows(0, cols).nth(1).as_deref(),
             Some("SCENE_TOP")
         );
+        assert_eq!(parser.screen().rows(0, cols).next().as_deref(), Some(""));
+        if (cols, rows) == (15, 4) {
+            ctx.insert_text_before_live("TURN_MARKER\n").unwrap();
+            parser.process(&ctx.take_rendered_bytes());
+            assert_eq!(
+                parser.screen().rows(0, cols).nth(1).as_deref(),
+                Some("SCENE_TOP")
+            );
+            assert_eq!(parser.screen().rows(0, cols).next().as_deref(), Some(""));
+        }
     }
 
-    let mut notice_count = 0;
+    let (mut notice_count, mut turn_count) = (0, 0);
     let retained = parser.screen().scrollback_len();
     for offset in 1..=retained {
         parser.screen_mut().set_scrollback(offset);
-        notice_count +=
-            usize::from(parser.screen().rows(0, 20).next().as_deref() == Some("COMMITTED_HISTORY"));
+        let top = parser.screen().rows(0, 20).next().unwrap_or_default();
+        notice_count += usize::from(top == "COMMITTED_HISTORY");
+        turn_count += usize::from(top == "TURN_MARKER");
     }
-    assert_eq!(notice_count, 1);
+    assert_eq!((notice_count, turn_count), (1, 1));
 }

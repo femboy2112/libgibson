@@ -313,12 +313,21 @@ impl Renderer {
         self.inline_resize_bottom_reservation
     }
 
-    /// Place a maximal-height inline frame at row zero when establishing its live region.
-    /// The logical surface remains terminal rows minus one. The extra physical line feed
-    /// scrolls earlier output naturally; it never clears scrollback. Short frames, fullscreen,
-    /// scale-one terminals and uncertain-write recovery keep their usual allocation.
+    /// Establish maximal-height inline frames below a reserved top row.
+    /// The extra physical line feed scrolls returned history away from the live frame,
+    /// while the logical rewind keeps the scene at the same origin as history insertion.
+    /// Short frames, fullscreen, one-row terminals and uncertain-write recovery keep
+    /// their usual allocation.
     pub fn set_inline_full_height_anchor(&mut self, enabled: bool) {
         self.inline_full_height_anchor = enabled;
+    }
+
+    fn reserves_inline_top(&self, screen_rows: u16, live_rows: u16) -> bool {
+        self.inline_full_height_anchor
+            && self.mode == RenderMode::Inline
+            && screen_rows > 1
+            && live_rows == screen_rows - 1
+            && !self.physical_uncertain
     }
 
     /// Allow large history insertions to reuse the spare rows above a stable
@@ -684,11 +693,12 @@ impl Renderer {
                     // keep it independently opt-in rather than changing Reclaim
                     // defaults. A maximal normal reanchor scrolls the returned
                     // row into history; it never erases above the tracked region.
-                    let allocation_rows = if (self.inline_full_height_anchor && term_rows > 1
-                        || self.inline_resize_bottom_reservation && reanchor)
-                        && !recover
+                    let reserved_top = self.reserves_inline_top(term_rows, surface_height);
+                    let extra_on_resize = !recover
                         && surface_height == max_inline_rows
-                    {
+                        && self.inline_resize_bottom_reservation
+                        && reanchor;
+                    let allocation_rows = if reserved_top || extra_on_resize {
                         surface_height
                     } else {
                         surface_height.saturating_sub(1)
@@ -697,10 +707,12 @@ impl Renderer {
                         for _ in 0..allocation_rows {
                             tx.push(b"\r\n");
                         }
-                        write!(tx.buffer, "\x1b[{}A\r", allocation_rows).ok();
-                    } else {
-                        tx.push(b"\r");
                     }
+                    let rewind_rows = allocation_rows - u16::from(reserved_top);
+                    if rewind_rows > 0 {
+                        write!(tx.buffer, "\x1b[{}A", rewind_rows).ok();
+                    }
+                    tx.push(b"\r");
                     self.compiler.reset_cursor(0, 0);
                     self.last_cursor_y = 0;
                     self.last_cursor_x = 0;
@@ -1167,7 +1179,9 @@ impl Renderer {
         // framebuffer has the old geometry, so it is not replayed: the region is erased (bounded)
         // and the next frame allocates a fresh one below the inserted lines.
         let resized = self.resize_erase_due(session);
+        let reserved_top = self.reserves_inline_top(term_rows, self.live_region_height);
         let use_fast = !resized
+            && !reserved_top
             && self.live_region_height > 0
             && anchor_stable
             && session.insert_line_supported()
@@ -1213,6 +1227,14 @@ impl Renderer {
             if resized {
                 // Not replayed: the next frame re-establishes the region at the new geometry.
             } else if let Some(prev) = self.previous_surface.clone() {
+                if reserved_top {
+                    for _ in 0..self.live_region_height {
+                        tx.push(b"\r\n");
+                    }
+                    if self.live_region_height > 1 {
+                        write!(tx.buffer, "\x1b[{}A\r", self.live_region_height - 1).ok();
+                    }
+                }
                 // current cursor row is now region row 0
                 self.compiler.reset_cursor(0, 0);
                 let diff = compute_diff(None, &prev);
