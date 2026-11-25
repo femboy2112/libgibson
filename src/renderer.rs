@@ -213,6 +213,8 @@ pub struct Renderer {
     inline_resize_policy: InlineResizePolicy,
     inline_resize_bottom_reservation: bool,
     inline_full_height_anchor: bool,
+    /// The last successful transaction placed the maximal live region below row zero.
+    inline_top_reserved: bool,
     inline_history_chunking: bool,
 }
 
@@ -250,6 +252,7 @@ impl Renderer {
             inline_resize_policy: InlineResizePolicy::PreserveAbove,
             inline_resize_bottom_reservation: false,
             inline_full_height_anchor: false,
+            inline_top_reserved: false,
             inline_history_chunking: false,
         }
     }
@@ -276,6 +279,7 @@ impl Renderer {
     /// Nothing can un-send them, so the honest response is to void every belief about the physical
     /// state and let the next frame re-establish it (RXIV Gate G3).
     fn poison_physical_state(&mut self) {
+        self.inline_top_reserved = false;
         self.physical_uncertain = true;
         self.previous_surface = None;
         self.last_cursor_visible = None;
@@ -443,6 +447,7 @@ impl Renderer {
     /// Marks the physical anchor as untrustworthy and discards diff state so the
     /// next frame fully re-establishes the live region.
     fn invalidate_anchor(&mut self, count_resync: bool) {
+        self.inline_top_reserved = false;
         if count_resync {
             self.anchor_resyncs += 1;
         }
@@ -542,6 +547,8 @@ impl Renderer {
             RenderMode::Fullscreen => term_rows,
             RenderMode::Inline => rect.height.max(1).min(max_inline_rows),
         };
+        let reserved_top = self.reserves_inline_top(term_rows, surface_height);
+        let same_inline_height = surface_height == self.live_region_height;
 
         // 2. Paint pass into next surface
         let mut next_surface = Surface::new(surface_width, surface_height);
@@ -693,7 +700,6 @@ impl Renderer {
                     // keep it independently opt-in rather than changing Reclaim
                     // defaults. A maximal normal reanchor scrolls the returned
                     // row into history; it never erases above the tracked region.
-                    let reserved_top = self.reserves_inline_top(term_rows, surface_height);
                     let extra_on_resize = !recover
                         && surface_height == max_inline_rows
                         && self.inline_resize_bottom_reservation
@@ -833,6 +839,8 @@ impl Renderer {
         };
 
         self.previous_surface = Some(next_surface);
+        self.inline_top_reserved =
+            reserved_top && (is_full_repaint || (self.inline_top_reserved && same_inline_height));
         self.physical_uncertain = false;
         self.owed_reanchor = false;
         // Physical-emission truth, advanced only now that the transaction committed: the cells on
@@ -1180,8 +1188,9 @@ impl Renderer {
         // and the next frame allocates a fresh one below the inserted lines.
         let resized = self.resize_erase_due(session);
         let reserved_top = self.reserves_inline_top(term_rows, self.live_region_height);
+        let rotate_reserved_top = reserved_top && self.inline_top_reserved && current_viewport;
         let use_fast = !resized
-            && !reserved_top
+            && (!reserved_top || rotate_reserved_top)
             && self.live_region_height > 0
             && anchor_stable
             && session.insert_line_supported()
@@ -1292,6 +1301,26 @@ impl Renderer {
                     write!(tx.buffer, "\x1b[{}C", self.last_cursor_x).ok();
                 }
             }
+
+            if rotate_reserved_top {
+                // The last inserted line is on the reserved top row. Scroll it
+                // into history, then insert a blank row above the existing
+                // viewport to restore every live cell and its cursor.
+                let to_bottom = self.live_region_height - 1 - self.last_cursor_y;
+                if to_bottom > 0 {
+                    write!(tx.buffer, "\x1b[{to_bottom}B").ok();
+                }
+                write!(
+                    tx.buffer,
+                    "\r\n\x1b[{}A\x1b[1L\x1b[{}B",
+                    self.live_region_height,
+                    self.last_cursor_y + 1
+                )
+                .ok();
+                if self.last_cursor_x > 0 {
+                    write!(tx.buffer, "\x1b[{}C", self.last_cursor_x).ok();
+                }
+            }
         }
 
         let bytes = match tx.commit_counted() {
@@ -1308,6 +1337,7 @@ impl Renderer {
         // fullscreen canvas stays uncertain until a frame re-establishes it (review finding 4).
         if self.mode == RenderMode::Inline {
             self.physical_uncertain = false;
+            self.inline_top_reserved = reserved_top && current_viewport && !resized;
         }
         if resized {
             // The region was erased, not replayed: the next frame starts a fresh one (#403).
