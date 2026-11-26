@@ -1105,8 +1105,13 @@ fn rev_id_is_sha256_of_the_documented_canonical_bytes() {
 #[test]
 fn golden_rev_id() {
     // Drift here means float evaluation order or serialization changed; requires a minor
-    // release; x86_64 only. The value was RECORDED from the implementation (it is a drift
-    // detector, not an independent truth); its inputs are verified by the oracle tests above.
+    // release; x86_64 only. The value was computed BEFORE the first run by an independent
+    // numpy float32 re-derivation of the documented layout and evaluation order (hashlib
+    // SHA-256), not recorded from the Rust implementation; the geometry itself is checked
+    // against the f64 oracle above.
     let rev = build(1.25, 0.5);
-    assert_eq!(rev.rev_id.to_hex(), "TBD-RECORD-ON-FIRST-RUN");
+    assert_eq!(
+        rev.rev_id.to_hex(),
+        "2127235299442fabca19419d1ae30a93ba9d075b592f0bc9a933451264a92ad5"
+    );
 }
