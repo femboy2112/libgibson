@@ -633,12 +633,7 @@ fn g3_seeded_property_gap_bounds_over_1e5_occurrences() {
             );
             prev = cur;
             // next_after(prev - 1ns) is exactly this occurrence.
-            assert_eq!(
-                s.next_after(cur - ns(1))
-                    .map(|(i, _)| i)
-                    .filter(|&i| i <= k),
-                Some(k)
-            );
+            assert_eq!(s.next_after(cur - ns(1)).map(|(i, _)| i), Some(k));
         }
     }
 }
@@ -723,9 +718,15 @@ fn g4_hidden_means_zero_scheduled_work() {
         Some(ms(100)),
         "visible avatar asks for its frame change"
     );
+    // Positive control for the hidden-phase snapshot check below.
+    assert_eq!(shown.snapshot.next_deadline, Some(ms(100)));
 
     let mut ctx = Context::headless(RenderMode::Fullscreen, 8, 4);
     ctx.scheduler.set_max_fps(u32::MAX);
+    // The motion deadline lives on the driver, not on the Context, because `to_node` carries
+    // no deadline and the host schedules from `driver.next_deadline()`. So the Context checks
+    // below pin only "hidden writes no bytes". The deadline contrast is Some -> None, on the
+    // driver and on the snapshot. Positive control for bytes: the visible frame writes some.
     ctx.set_root(shown.to_node());
     ctx.render_now().unwrap();
     assert!(!ctx.take_rendered_bytes().is_empty());
@@ -761,13 +762,20 @@ fn g4_hidden_means_zero_scheduled_work() {
     );
     assert_eq!(ctx.time_until_frame_needed(), None);
 
-    // Re-show at a later host time resumes from that time and replays nothing.
+    // Re-show at a later host time with the ORIGINAL origin. Elapsed is 900ms, past the 200ms
+    // total, so the figure is at rest. The frames missed while hidden are not replayed, and the
+    // re-shown plane schedules no work.
     let later = ms(900);
-    let s2 = sequence.sample(later - ms(900), MotionPreference::Full);
-    let demand2 = [SourceDemand {
-        key: Key::named("art"),
-        demand: FrameDemand::After(s2.next_in.unwrap()),
-    }];
+    let s2 = sequence.sample(later, MotionPreference::Full);
+    assert_eq!(
+        (s2.index, tag(&s2), s2.next_in),
+        (0, 10, None),
+        "missed frames are not replayed; the sequence rests"
+    );
+    let plane2 = RasterPlane {
+        source: s2.source,
+        ..plane.clone()
+    };
     driver
         .resolve_frame(
             later,
@@ -775,14 +783,48 @@ fn g4_hidden_means_zero_scheduled_work() {
                 compiled: compile(later),
                 viewport: (8, 4),
                 underlay: &underlay,
-                planes: &[],
+                planes: std::slice::from_ref(&plane2),
                 focus: None,
-                demands: &demand2,
+                demands: &[],
                 omissions: &[],
                 motion: MotionPreference::Full,
             },
             limits,
         )
         .unwrap();
-    assert_eq!(driver.next_deadline(), Some(later + ms(100)));
+    assert_eq!(
+        driver.next_deadline(),
+        None,
+        "a re-shown resting figure schedules nothing"
+    );
+
+    // The host restarts the gesture at `restart`. Its demand is relative to that host time, not
+    // to the original origin.
+    let restart = ms(1000);
+    let s3 = sequence.sample(ms(0), MotionPreference::Full); // elapsed since restart
+    let plane3 = RasterPlane {
+        source: s3.source,
+        ..plane.clone()
+    };
+    let demand3 = [SourceDemand {
+        key: Key::named("art"),
+        demand: FrameDemand::After(s3.next_in.expect("restarted sequence plays")),
+    }];
+    driver
+        .resolve_frame(
+            restart,
+            FrameParts {
+                compiled: compile(restart),
+                viewport: (8, 4),
+                underlay: &underlay,
+                planes: std::slice::from_ref(&plane3),
+                focus: None,
+                demands: &demand3,
+                omissions: &[],
+                motion: MotionPreference::Full,
+            },
+            limits,
+        )
+        .unwrap();
+    assert_eq!(driver.next_deadline(), Some(restart + ms(100)));
 }
