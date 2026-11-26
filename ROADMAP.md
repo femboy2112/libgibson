@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-22): v0.8.1 "clear SIGFPE 1"; v0.9.0 "clear SIGKILL 0" prepared
+## Current release (updated 2026-11-26): v0.8.1 "clear SIGFPE 1"; v0.9.0 "clear SIGKILL 0" prepared
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -68,7 +68,7 @@ No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experi
 follows [decision 0004](docs/decisions/0004-release-naming.md) (minor 9 = SIGKILL, patch 0) and is
 confirmed by the release coordinator (GOD #126). The C ABI is unchanged (v1, 67 symbols).
 
-#### v0.9.0 completion status (2026-11-22)
+#### v0.9.0 completion status (2026-11-26)
 
 Each 0.9.0 item, with the evidence that closes it or the recorded deferral that excludes it. A
 `pending` row has no evidence yet; its cell is blank on purpose.
@@ -83,8 +83,9 @@ Each 0.9.0 item, with the evidence that closes it or the recorded deferral that 
 | #443 feat(ui): `toast_lane` (EXPERIMENTAL) | **Done** | Merged as `9202e88`. RED `913df4c`, GREEN `ad0abee`. |
 | #446 feat(input): `KeyCode::F` function keys F1 to F12 (Rust default behavior change: F1–F12 now delivered, were dropped; C ABI still skips them) | **Done** | Merged as `27a958f`. RED `8a25d62`, GREEN `118ed88`. SPEC UPDATE `44d154e` (GOD #188: F3 with modifiers only via `CSI 13;<mod>~`). The C header gained only a comment; ABI stays 67 symbols. |
 | #448 feat(layout): `measure_wrapped` | **Done** | Merged as `8a657fa`. RED `45675ef`, GREEN `7cc3ed7`. |
+| #452 feat(renderer): reserved-top inline anchor (`set_inline_full_height_anchor`) and hidden fullscreen cursor home (`set_fullscreen_hidden_cursor_home`), with `Context` wrappers (opt-in, default off) | **Done** (opt-in, Rust-only) | Merged as `2df1d39` (head `5f9b59d`, hosted CI 45792006317 9/9 plus Release preflight 45792006268). Includes #453 (merged into the #452 branch as `5f9b59d`): blank-scrollback blocker found in review; RED `6948a25` (3 tests: fast path and fallback), GREEN `7648b17`. Local `wire_instrument_fullduplex` failure is pre-existing on `27a958f` and tracked in #454 (not a blocker; hosted CI green). |
 | Release gates (exact-head CI incl. Release preflight; consumer gate) | **PENDING** (placeholder: filled at the cut with the observed run ids and shas only) | |
-| Consumer gate | **PENDING** | |
+| Consumer gate | **SUBSTITUTED** (owner ruling, 2026-11-26) | The MINERVA TRAIN-2 consumer run was dropped as the v0.9.0 gate. The substitute, all on the exact release candidate: (1) hosted CI 9/9 including Release preflight; (2) `git diff v0.8.1 <rc> -- abi include bindings` shows only header comments (#446) and the Python package version; (3) every 0.9.0 surface except the F1–F12 delivery (#446) is opt-in and default off. The consumer re-pins once, to the `v0.9.0` tag. |
 | #444 multi-line text area (EXPERIMENTAL) | **Deferred to 0.9.1** | Recorded deferral (this table). |
 | `max_frame_bytes` for the kitty frame plan | **Deferred to 0.9.1** | Recorded deferral (this table). |
 | Prompt editor | **Deferred to 0.9.1** | Recorded deferral (this table). |
