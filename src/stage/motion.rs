@@ -7,6 +7,11 @@
 //! is purely additive; it adds nothing to any existing Stage type. It is experimental,
 //! so its shape may change in a minor release.
 //!
+//! **This is the keyframe layer, not continuous motion.** [`FrameSequence`] selects whole
+//! frames, and switching between them is a hard cut. Continuous motion, meaning sub-cell
+//! in-between offsets and colour crossfade evaluated as a function of presentation time, is
+//! planned as a later additive layer on top of this one. It is not part of this module yet.
+//!
 //! - [`FrameSequence`] (G1): a finite, authored flipbook of equally sized rasters. It plays
 //!   once in order over half-open intervals, then holds its rest frame with no further
 //!   deadline. Under `Reduced`/`None` motion it is at rest immediately. It holds no

@@ -16,7 +16,7 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 ## [Unreleased]
 
 ### Added (Rust-only, experimental)
-- New experimental module `stage::motion` (M5 G1-G4): `FrameSequence` (a finite authored flipbook with a rest frame, sampled at explicit caller time), `LayerSlots` (registered overlay geometry that validates and builds ordinary `RasterPlane`s), `CueSchedule` (a seeded, deadline-driven jittered cue; its SplitMix64 jitter hash is contract, so a change needs a minor release), and a public contract test that a hidden avatar means zero scheduled work (no new API). Purely additive: no existing type or signature changes, and no C ABI change.
+- New experimental module `stage::motion` (M5 G1-G4): `FrameSequence` (a finite authored flipbook with a rest frame, sampled at explicit caller time), `LayerSlots` (registered overlay geometry that validates and builds ordinary `RasterPlane`s), `CueSchedule` (a seeded, deadline-driven jittered cue; its SplitMix64 jitter hash is contract, so a change needs a minor release), and a public contract test that a hidden avatar means zero scheduled work (no new API). Purely additive: no existing type or signature changes, and no C ABI change. `FrameSequence` is the **keyframe layer**: frame switches are hard cuts. Continuous in-betweens (sub-cell offsets and crossfade) are deferred to a later 0.9.x. There is also a new example, `stage_motion_kit`, which is the synthetic-sprite visual checkpoint used by `docs/evidence/m5a/kit/`.
 
 ## [0.9.1] — 2026-11-26 · GitHub release from `main` · "clear SIGKILL 1"
 
