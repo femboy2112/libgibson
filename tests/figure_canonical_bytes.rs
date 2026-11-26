@@ -285,7 +285,7 @@ impl Rec {
     fn push_str(&mut self, label: &str, s: &str) {
         self.mark(&format!("{label}.len"));
         self.bytes
-            .extend_from_slice(&(s.as_bytes().len() as u32).to_le_bytes());
+            .extend_from_slice(&(s.len() as u32).to_le_bytes());
         self.mark(&format!("{label}.utf8"));
         self.bytes.extend_from_slice(s.as_bytes());
     }
@@ -576,7 +576,7 @@ fn landmark_order_changes_bytes_and_rev_id() {
     let rec_ab = expected_bytes(&fx_ab);
     let rec_ba = expected_bytes(&fx_ba);
     // The UTF-8 length prefix is the BYTE length: f, a, m, then 0xC3 0xA9 = 5.
-    assert_eq!("fam\u{e9}".as_bytes().len(), 5);
+    assert_eq!("fam\u{e9}".len(), 5);
     assert_bytes_match(&rev_ab.canonical_bytes(), &rec_ab, "landmarks [a, b]");
     assert_bytes_match(&rev_ba.canonical_bytes(), &rec_ba, "landmarks [b, a]");
     assert_rev_id_is_sha256_of(&rev_ab, &rec_ab.bytes);

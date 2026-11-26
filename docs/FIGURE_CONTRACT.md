@@ -248,6 +248,33 @@ unchanged inputs, which means a minor release and a changelog note.
   that will be a semantics or layout change under a new prefix version (`v1`). M5-C must not treat
   the v0 control semantics as settled.
 
+### Resolved spec ambiguities A1–A8 (from the independent hand-bytes test; DRAFT until coordinator ratification)
+
+Each resolution states what the Slice-1 implementation does (src/figure/revision.rs @956ae1e) and
+what tests/figure_canonical_bytes.rs assumed; they agree (gate A: 3/3).
+
+- **A1, translation placement.** `Mat4` is column-major, `cols[c][r]`. A transform's translation is
+  `cols[3][0..3]`, and `cols[3][3] = 1`. Inverse binds are written `cols[0][0..4]`, then `cols[1]`,
+  `cols[2]`, `cols[3]`.
+- **A2, landmark offsets.** Written verbatim as declared by the family. They are not shaped:
+  `BoneLengthScale` changes joint rest translations only, never landmark offsets. A landmark's
+  world position still moves with its joint.
+- **A3, morph deltas.** The raw declared delta is written, unscaled by any compile-time or pose-time
+  weight. Weights affect only the shaped vertex positions (layout item 3).
+- **A4, strings.** Any UTF-8 string that validation accepts is written as its UTF-8 bytes, with no
+  normalization. Non-ASCII family ids are accepted in v0. A stricter id alphabet would be a v1
+  layout or validation change.
+- **A5, unset controls.** An unset control takes its default, and the default flows through its
+  effects exactly like a set value. A non-zero default therefore changes the shaped content.
+- **A6, accumulation order.** Effects are applied in family control order, then each control's
+  effect order. `MorphWeight` contributions are summed in f32, left to right, starting from
+  `0.0`. Repeated `BoneLengthScale` effects on one joint multiply the children's translations in
+  that order, in f32. The order is part of the bytes for non-dyadic values.
+- **A7, indices.** Written verbatim in family order. There is no winding or rotation normalization.
+- **A8, unreferenced vertices.** Allowed. Validation requires `indices.len() % 3 == 0` and every
+  index `< vertex count`. It does not require every vertex to be referenced, and unreferenced
+  vertices are serialized like any other.
+
 ### Evaluation order (SLICE 1 subset)
 
 The order is: neutral, then morph targets (`G0 + Σ wᵢ·Δᵢ`), then a sample of the finite clips at
