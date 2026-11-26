@@ -378,10 +378,12 @@ fn g3_hash_golden_table() {
     // changing these values requires a minor release (M5 spec G3).
     // Derived with a separate python3 implementation. origin 10 s, period 4 s, min_gap 1 s
     // (span 3e9 ns): nth(k) = 10e9 + k*4e9 + h % (3e9 + 1).
-    let table: [(u64, u64, u64, u64, Option<u64>); 4] = [
+    let table: [(u64, u64, u64, u64, Option<u64>); 6] = [
         (0, 0, 0, 0x238275bc38fcbe91, Some(11_717_340_104)),
         (1, 2, 3, 0xd0734750fde362b3, Some(24_386_420_295)),
         (0xDEADBEEF, 7, 100, 0xe5a79e8023c79bb9, Some(412_473_340_274)),
+        (42, 7, 0, 0x55be888977820bef, Some(10_736_299_107)),
+        (0xdeadbeef, 1, 1000, 0x02495f72815ba993, Some(4_010_721_989_673)),
         (u64::MAX, u64::MAX, u64::MAX, 0x595b17f487c0e71b, None),
     ];
     for (seed, c, k, h, nth) in table {
@@ -399,6 +401,17 @@ fn g3_hash_golden_table() {
     let big = CueSchedule::new(u64::MAX, u64::MAX, Duration::ZERO, ns(1), Duration::ZERO).unwrap();
     // span 1 -> jitter = h % 2; h is odd so jitter 1.
     assert_eq!(big.nth(u64::MAX), Some(ns(u64::MAX) + ns(0x595b17f487c0e71b % 2)));
+}
+
+#[test]
+fn g3_seed0_cue0_k0_jitter_nonzero() {
+    // Regression: the bare SplitMix64 finalizer has a fixed point at 0, which made
+    // (seed 0, cue 0, k 0) jitter-free. The gamma add removes it.
+    let s = CueSchedule::new(0, 0, Duration::ZERO, Duration::from_secs(4), Duration::ZERO).unwrap();
+    assert_ne!(ref_h(0, 0, 0), 0);
+    let jitter = s.nth(0).unwrap();
+    assert!(jitter > Duration::ZERO, "jitter must be non-zero");
+    assert_eq!(jitter, ns(ref_h(0, 0, 0) % (4 * SEC + 1)));
 }
 
 #[test]
