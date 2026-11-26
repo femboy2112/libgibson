@@ -87,11 +87,7 @@ pub fn rotation(q: [f64; 4]) -> M {
     let v = [q[0] / n, q[1] / n, q[2] / n];
     let w = q[3] / n;
     let vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
-    let cross = [
-        [0.0, -v[2], v[1]],
-        [v[2], 0.0, -v[0]],
-        [-v[1], v[0], 0.0],
-    ];
+    let cross = [[0.0, -v[2], v[1]], [v[2], 0.0, -v[0]], [-v[1], v[0], 0.0]];
     let mut m = identity();
     for i in 0..3 {
         for j in 0..3 {

@@ -130,9 +130,21 @@ fn fixture_family() -> BodyFamily {
 
 fn fixture_family_from(neutral_positions: Vec<[f32; 3]>) -> BodyFamily {
     let joints = vec![
-        Joint::new("root", None, Transform::from_translation(Vec3::new(0.0, 0.0, 0.0))),
-        Joint::new("upper", Some(0), Transform::from_translation(Vec3::new(0.0, 1.0, 0.0))),
-        Joint::new("lower", Some(1), Transform::from_translation(Vec3::new(0.0, 1.0, 0.0))),
+        Joint::new(
+            "root",
+            None,
+            Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+        ),
+        Joint::new(
+            "upper",
+            Some(0),
+            Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
+        ),
+        Joint::new(
+            "lower",
+            Some(1),
+            Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
+        ),
     ];
     let landmarks = vec![
         Landmark::new("head_top", 2, Vec3::new(0.0, 1.0, 0.0)),
@@ -191,9 +203,18 @@ fn identity_trs(t: [f64; 3]) -> oracle::OTrs {
 fn fixture_oracle() -> oracle::ORig {
     oracle::ORig {
         joints: vec![
-            oracle::OJoint { parent: None, rest: identity_trs([0.0, 0.0, 0.0]) },
-            oracle::OJoint { parent: Some(0), rest: identity_trs([0.0, 1.0, 0.0]) },
-            oracle::OJoint { parent: Some(1), rest: identity_trs([0.0, 1.0, 0.0]) },
+            oracle::OJoint {
+                parent: None,
+                rest: identity_trs([0.0, 0.0, 0.0]),
+            },
+            oracle::OJoint {
+                parent: Some(0),
+                rest: identity_trs([0.0, 1.0, 0.0]),
+            },
+            oracle::OJoint {
+                parent: Some(1),
+                rest: identity_trs([0.0, 1.0, 0.0]),
+            },
         ],
         positions: fixture_positions().into_iter().map(widen3).collect(),
         skin: fixture_skin()
@@ -288,7 +309,12 @@ fn to_oracle_pose(case: &Case) -> oracle::OPose {
                     j,
                     oracle::OTrs {
                         t: widen3(t),
-                        q: [f64::from(q[0]), f64::from(q[1]), f64::from(q[2]), f64::from(q[3])],
+                        q: [
+                            f64::from(q[0]),
+                            f64::from(q[1]),
+                            f64::from(q[2]),
+                            f64::from(q[3]),
+                        ],
                         s: widen3(s),
                     },
                 )
@@ -303,12 +329,23 @@ fn to_oracle_pose(case: &Case) -> oracle::OPose {
 
 fn cases() -> Vec<Case> {
     vec![
-        Case { name: "rest", upper_length: 1.0, girth: 0.0, overrides: vec![], pose_girth: None },
+        Case {
+            name: "rest",
+            upper_length: 1.0,
+            girth: 0.0,
+            overrides: vec![],
+            pose_girth: None,
+        },
         Case {
             name: "upper z90",
             upper_length: 1.0,
             girth: 0.0,
-            overrides: vec![(1, [0.0, 1.0, 0.0], axis_angle([0.0, 0.0, 1.0], PI / 2.0), UNIT)],
+            overrides: vec![(
+                1,
+                [0.0, 1.0, 0.0],
+                axis_angle([0.0, 0.0, 1.0], PI / 2.0),
+                UNIT,
+            )],
             pose_girth: None,
         },
         // Cases below were written alongside the implementation.
@@ -319,7 +356,12 @@ fn cases() -> Vec<Case> {
             overrides: vec![
                 (0, [0.0, 0.0, 0.0], axis_angle([0.0, 1.0, 0.0], 0.3), UNIT),
                 (1, [0.0, 1.0, 0.0], axis_angle([1.0, 0.0, 0.0], 0.7), UNIT),
-                (2, [0.0, 1.5, 0.0], axis_angle([1.0, 1.0, 0.0], -0.4), [1.2, 0.9, 1.1]),
+                (
+                    2,
+                    [0.0, 1.5, 0.0],
+                    axis_angle([1.0, 1.0, 0.0], -0.4),
+                    [1.2, 0.9, 1.1],
+                ),
             ],
             pose_girth: None,
         },
@@ -382,9 +424,15 @@ fn quaternion_axis_angle_matches_reference_formula() {
         ([0.0, 1.0, 0.0], -2.5),
     ] {
         let want = axis_angle(axis, ang);
-        let got = Quat::from_axis_angle(Vec3::new(axis[0] as f32, axis[1] as f32, axis[2] as f32), ang as f32);
+        let got = Quat::from_axis_angle(
+            Vec3::new(axis[0] as f32, axis[1] as f32, axis[2] as f32),
+            ang as f32,
+        );
         for (g, w) in [got.x, got.y, got.z, got.w].into_iter().zip(want) {
-            assert!((g - w).abs() < 1e-6, "axis {axis:?} angle {ang}: {g} vs {w}");
+            assert!(
+                (g - w).abs() < 1e-6,
+                "axis {axis:?} angle {ang}: {g} vs {w}"
+            );
         }
     }
     // A zero axis is the identity, not NaN.
@@ -446,11 +494,20 @@ fn affine_inverse_round_trips_and_matches_gauss_jordan() {
     mat_close("M * M^-1", &prod, &oracle::identity());
     let om = oracle::trs_matrix(&oracle::OTrs {
         t: [0.5, -2.0, 1.5],
-        q: [f64::from(q[0]), f64::from(q[1]), f64::from(q[2]), f64::from(q[3])],
+        q: [
+            f64::from(q[0]),
+            f64::from(q[1]),
+            f64::from(q[2]),
+            f64::from(q[3]),
+        ],
         s: [1.5, 0.75, 2.0],
     });
     mat_close("forward matrix vs oracle", &m, &om);
-    mat_close("inverse vs Gauss-Jordan", &inv, &oracle::invert(&om).unwrap());
+    mat_close(
+        "inverse vs Gauss-Jordan",
+        &inv,
+        &oracle::invert(&om).unwrap(),
+    );
 }
 
 #[test]
@@ -475,14 +532,23 @@ fn j(name: &str, parent: Option<usize>) -> Joint {
 
 #[test]
 fn skeleton_validation_errors() {
-    assert_eq!(Skeleton::new(vec![], vec![]).unwrap_err(), SkeletonError::Empty);
+    assert_eq!(
+        Skeleton::new(vec![], vec![]).unwrap_err(),
+        SkeletonError::Empty
+    );
     assert!(matches!(
         Skeleton::new(vec![j("a", None), j("b", Some(2)), j("c", Some(0))], vec![]),
-        Err(SkeletonError::ParentOrder { joint: 1, parent: 2 })
+        Err(SkeletonError::ParentOrder {
+            joint: 1,
+            parent: 2
+        })
     ));
     assert!(matches!(
         Skeleton::new(vec![j("a", Some(0))], vec![]),
-        Err(SkeletonError::ParentOrder { joint: 0, parent: 0 })
+        Err(SkeletonError::ParentOrder {
+            joint: 0,
+            parent: 0
+        })
     ));
     assert!(matches!(
         Skeleton::new(vec![j("a", None), j("a", Some(0))], vec![]),
@@ -509,12 +575,18 @@ fn skeleton_validation_errors() {
     ));
     assert!(matches!(
         Skeleton::new(vec![j("a", None)], vec![Landmark::new("l", 5, Vec3::ZERO)]),
-        Err(SkeletonError::LandmarkJoint { landmark: 0, joint: 5 })
+        Err(SkeletonError::LandmarkJoint {
+            landmark: 0,
+            joint: 5
+        })
     ));
     let cap: Vec<Joint> = (0..MAX_JOINTS)
         .map(|i| j(&format!("j{i}"), if i == 0 { None } else { Some(i - 1) }))
         .collect();
-    assert!(Skeleton::new(cap, vec![]).is_ok(), "exactly the cap is allowed");
+    assert!(
+        Skeleton::new(cap, vec![]).is_ok(),
+        "exactly the cap is allowed"
+    );
 }
 
 #[test]
@@ -522,32 +594,53 @@ fn inverse_binds_degenerate_is_a_typed_error() {
     let mut flat = j("b", Some(0));
     flat.rest.scale = Vec3::new(0.0, 1.0, 1.0);
     let sk = Skeleton::new(vec![j("a", None), flat], vec![]).unwrap();
-    assert_eq!(sk.inverse_binds().unwrap_err(), SkeletonError::DegenerateBind { joint: 1 });
+    assert_eq!(
+        sk.inverse_binds().unwrap_err(),
+        SkeletonError::DegenerateBind { joint: 1 }
+    );
 }
 
 #[test]
 fn skin_validation_errors_and_no_renormalisation() {
     let ok = |l: Vec<(usize, f32)>| SkinWeights::new(&[l], 3);
     assert!(ok(vec![(0, 0.25), (1, 0.75)]).is_ok());
-    assert!(matches!(ok(vec![]), Err(SkinError::InfluenceCount { vertex: 0, count: 0 })));
+    assert!(matches!(
+        ok(vec![]),
+        Err(SkinError::InfluenceCount {
+            vertex: 0,
+            count: 0
+        })
+    ));
     assert!(matches!(
         ok(vec![(0, 0.2), (1, 0.2), (2, 0.2), (0, 0.2), (1, 0.2)]),
         Err(SkinError::InfluenceCount { count: 5, .. })
     ));
-    assert!(matches!(ok(vec![(3, 1.0)]), Err(SkinError::JointOutOfRange { joint: 3, .. })));
+    assert!(matches!(
+        ok(vec![(3, 1.0)]),
+        Err(SkinError::JointOutOfRange { joint: 3, .. })
+    ));
     assert!(matches!(
         ok(vec![(1, 0.5), (1, 0.5)]),
         Err(SkinError::DuplicateJoint { joint: 1, .. })
     ));
-    assert!(matches!(ok(vec![(0, f32::NAN)]), Err(SkinError::NonFinite { .. })));
+    assert!(matches!(
+        ok(vec![(0, f32::NAN)]),
+        Err(SkinError::NonFinite { .. })
+    ));
     assert!(matches!(
         ok(vec![(0, 1.5), (1, -0.5)]),
         Err(SkinError::NegativeWeight { .. })
     ));
     // Sum 0.5 is an error, not silently rescaled; 1 +/- 5e-5 is inside the tolerance, 1 + 2e-4 is not.
-    assert!(matches!(ok(vec![(0, 0.5)]), Err(SkinError::WeightSum { .. })));
+    assert!(matches!(
+        ok(vec![(0, 0.5)]),
+        Err(SkinError::WeightSum { .. })
+    ));
     assert!(ok(vec![(0, 1.00005)]).is_ok());
-    assert!(matches!(ok(vec![(0, 1.0002)]), Err(SkinError::WeightSum { .. })));
+    assert!(matches!(
+        ok(vec![(0, 1.0002)]),
+        Err(SkinError::WeightSum { .. })
+    ));
     // The stored weights are exactly what was given.
     let w = ok(vec![(0, 1.00005)]).unwrap();
     assert_eq!(w.influences(0).unwrap(), vec![(0usize, 1.00005f32)]);
@@ -559,7 +652,10 @@ fn skinning_checks_lengths_and_finiteness() {
     let id = [Mat4::IDENTITY];
     assert!(matches!(
         w.skin(&[], &id, &id),
-        Err(SkinError::LengthMismatch { what: "positions", .. })
+        Err(SkinError::LengthMismatch {
+            what: "positions",
+            ..
+        })
     ));
     assert!(matches!(
         w.skin(&[Vec3::ZERO], &[], &id),
@@ -579,13 +675,19 @@ fn skinning_checks_lengths_and_finiteness() {
 fn morph_validation_and_application_order() {
     let base = vec![Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0)];
     let t0 = MorphTarget::new("a", vec![(1, Vec3::new(0.0, 1.0, 0.0))]);
-    let t1 = MorphTarget::new("b", vec![(1, Vec3::new(0.0, 0.0, 2.0)), (0, Vec3::new(1.0, 1.0, 1.0))]);
+    let t1 = MorphTarget::new(
+        "b",
+        vec![(1, Vec3::new(0.0, 0.0, 2.0)), (0, Vec3::new(1.0, 1.0, 1.0))],
+    );
     let out = apply_morphs(&base, &[t0.clone(), t1.clone()], &[0.5, 0.25]).unwrap();
     assert_eq!(out[0], Vec3::new(0.25, 0.25, 0.25));
     assert_eq!(out[1], Vec3::new(1.0, 0.5, 0.5));
     assert!(matches!(
         apply_morphs(&base, &[t0.clone()], &[]),
-        Err(MorphError::WeightCount { expected: 1, got: 0 })
+        Err(MorphError::WeightCount {
+            expected: 1,
+            got: 0
+        })
     ));
     assert!(matches!(
         apply_morphs(&base, &[t0.clone()], &[f32::INFINITY]),
@@ -594,7 +696,11 @@ fn morph_validation_and_application_order() {
     let oob = MorphTarget::new("o", vec![(2, Vec3::ZERO)]);
     assert!(matches!(
         apply_morphs(&base, &[oob], &[1.0]),
-        Err(MorphError::IndexOutOfRange { vertex: 2, vertex_count: 2, .. })
+        Err(MorphError::IndexOutOfRange {
+            vertex: 2,
+            vertex_count: 2,
+            ..
+        })
     ));
     let dup = MorphTarget::new("d", vec![(0, Vec3::ZERO), (0, Vec3::ZERO)]);
     assert!(matches!(
@@ -633,7 +739,9 @@ fn compiled_revision_shape() {
     // The typed garment placeholder exists and is constructible.
     let g = GarmentFit {
         garment_id: "coat".to_string(),
-        status: FitStatus::Unfit { reason: "too narrow".to_string() },
+        status: FitStatus::Unfit {
+            reason: "too narrow".to_string(),
+        },
     };
     assert!(matches!(g.status, FitStatus::Unfit { .. }));
 }
@@ -648,7 +756,11 @@ fn bone_length_control_reshapes_skeleton() {
     assert_eq!(joints[2].rest.translation, Vec3::new(0.0, 1.5, 0.0));
     // The lower joint's world bind is therefore (0, 2.5, 0) and the head landmark (0, 3.5, 0).
     let world = rev.skeleton.world_bind();
-    assert_close3("lower world", world[2].transform_point(Vec3::ZERO), [0.0, 2.5, 0.0]);
+    assert_close3(
+        "lower world",
+        world[2].transform_point(Vec3::ZERO),
+        [0.0, 2.5, 0.0],
+    );
     assert_close3(
         "head_top landmark",
         rev.skeleton.landmark_world(0, &world).unwrap(),
@@ -656,7 +768,10 @@ fn bone_length_control_reshapes_skeleton() {
     );
     // Default value leaves the family skeleton alone.
     let plain = build(1.0, 0.0);
-    assert_eq!(plain.skeleton.joints()[2].rest.translation, Vec3::new(0.0, 1.0, 0.0));
+    assert_eq!(
+        plain.skeleton.joints()[2].rest.translation,
+        Vec3::new(0.0, 1.0, 0.0)
+    );
 }
 
 #[test]
@@ -677,12 +792,20 @@ fn morph_control_moves_vertices() {
 #[test]
 fn pose_morph_weight_moves_vertices() {
     let rev = build(1.0, 0.0);
-    let posed = rev.evaluate(&PoseInput::new().with_morph("girth", 1.0)).unwrap();
+    let posed = rev
+        .evaluate(&PoseInput::new().with_morph("girth", 1.0))
+        .unwrap();
     assert_close3("pose-morph v4", posed.positions[4], [-0.35, 1.0, -0.35]);
     // Pose morphs act on top of the compiled shape: 0.5 (control) + 1.0 (pose) = 1.5.
     let shaped = build(1.0, 0.5);
-    let both = shaped.evaluate(&PoseInput::new().with_morph("girth", 1.0)).unwrap();
-    assert_close3("stacked v4", both.positions[4], [-0.25 - 0.15, 1.0, -0.25 - 0.15]);
+    let both = shaped
+        .evaluate(&PoseInput::new().with_morph("girth", 1.0))
+        .unwrap();
+    assert_close3(
+        "stacked v4",
+        both.positions[4],
+        [-0.25 - 0.15, 1.0, -0.25 - 0.15],
+    );
 }
 
 #[test]
@@ -690,7 +813,12 @@ fn identity_pose_equals_bind_for_shaped_bodies() {
     for (ul, g) in [(1.0, 0.0), (1.5, 0.5), (0.6, -0.7), (2.0, 2.0)] {
         let rev = build(ul, g);
         let posed = rev.evaluate(&PoseInput::new()).unwrap();
-        for (v, (p, n)) in posed.positions.iter().zip(&rev.neutral.positions).enumerate() {
+        for (v, (p, n)) in posed
+            .positions
+            .iter()
+            .zip(&rev.neutral.positions)
+            .enumerate()
+        {
             assert_close3(
                 &format!("rest vertex {v} (ul {ul}, girth {g})"),
                 *p,
@@ -781,8 +909,16 @@ fn inverse_binds_times_world_bind_is_identity() {
         let rev = build(ul, g);
         let world = rev.skeleton.world_bind();
         for (i, (w, ib)) in world.iter().zip(&rev.inverse_binds).enumerate() {
-            mat_close(&format!("IB{i} * W{i} (ul {ul})"), &ib.mul(w), &oracle::identity());
-            mat_close(&format!("W{i} * IB{i} (ul {ul})"), &w.mul(ib), &oracle::identity());
+            mat_close(
+                &format!("IB{i} * W{i} (ul {ul})"),
+                &ib.mul(w),
+                &oracle::identity(),
+            );
+            mat_close(
+                &format!("W{i} * IB{i} (ul {ul})"),
+                &w.mul(ib),
+                &oracle::identity(),
+            );
         }
     }
 }
@@ -795,44 +931,71 @@ fn every_compile_error_variant_is_reachable() {
     // FamilyMismatch
     let mut r = ok_recipe.clone();
     r.family = FamilyRef::new("synthetic.tube", 2);
-    assert!(matches!(compile(&r, &fam), Err(CompileError::FamilyMismatch { .. })));
+    assert!(matches!(
+        compile(&r, &fam),
+        Err(CompileError::FamilyMismatch { .. })
+    ));
 
     // UnknownControl
     let r = BodyRecipe::new(fam_ref(), vec![("nope".to_string(), 0.0)]);
-    assert!(matches!(compile(&r, &fam), Err(CompileError::UnknownControl { ref id }) if id == "nope"));
+    assert!(
+        matches!(compile(&r, &fam), Err(CompileError::UnknownControl { ref id }) if id == "nope")
+    );
 
     // DuplicateControl
     let r = BodyRecipe::new(
         fam_ref(),
         vec![("girth".to_string(), 0.1), ("girth".to_string(), 0.2)],
     );
-    assert!(matches!(compile(&r, &fam), Err(CompileError::DuplicateControl { .. })));
+    assert!(matches!(
+        compile(&r, &fam),
+        Err(CompileError::DuplicateControl { .. })
+    ));
 
     // ControlOutOfRange (both sides) and NonFinite control value
     for bad in [2.5, 0.4] {
         let r = BodyRecipe::new(fam_ref(), vec![("upper_length".to_string(), bad)]);
-        assert!(matches!(compile(&r, &fam), Err(CompileError::ControlOutOfRange { .. })), "{bad}");
+        assert!(
+            matches!(
+                compile(&r, &fam),
+                Err(CompileError::ControlOutOfRange { .. })
+            ),
+            "{bad}"
+        );
     }
     let r = BodyRecipe::new(fam_ref(), vec![("girth".to_string(), f32::NAN)]);
-    assert!(matches!(compile(&r, &fam), Err(CompileError::NonFinite { part: "control value" })));
+    assert!(matches!(
+        compile(&r, &fam),
+        Err(CompileError::NonFinite {
+            part: "control value"
+        })
+    ));
 
     // SkeletonCycle: a parent that is not earlier (here a forward reference).
     let mut f = fam.clone();
     f.joints[1].parent = Some(2);
     assert!(matches!(
         compile(&ok_recipe, &f),
-        Err(CompileError::SkeletonCycle { joint: 1, parent: 2 })
+        Err(CompileError::SkeletonCycle {
+            joint: 1,
+            parent: 2
+        })
     ));
 
     // NonFinite: vertex position, joint transform.
     let mut f = fam.clone();
     f.neutral.positions[3].x = f32::NAN;
-    assert!(matches!(compile(&ok_recipe, &f), Err(CompileError::NonFinite { part: "positions" })));
+    assert!(matches!(
+        compile(&ok_recipe, &f),
+        Err(CompileError::NonFinite { part: "positions" })
+    ));
     let mut f = fam.clone();
     f.joints[2].rest.translation.y = f32::INFINITY;
     assert!(matches!(
         compile(&ok_recipe, &f),
-        Err(CompileError::NonFinite { part: "joint transform" })
+        Err(CompileError::NonFinite {
+            part: "joint transform"
+        })
     ));
 
     // DegenerateBind: a collapsed scale.
@@ -848,13 +1011,18 @@ fn every_compile_error_variant_is_reachable() {
     f.skin[3] = vec![(0, 0.5)];
     assert!(matches!(
         compile(&ok_recipe, &f),
-        Err(CompileError::SkinWeightInvalid(SkinError::WeightSum { vertex: 3, .. }))
+        Err(CompileError::SkinWeightInvalid(SkinError::WeightSum {
+            vertex: 3,
+            ..
+        }))
     ));
     let mut f = fam.clone();
     f.skin.pop();
     assert!(matches!(
         compile(&ok_recipe, &f),
-        Err(CompileError::SkinWeightInvalid(SkinError::LengthMismatch { .. }))
+        Err(CompileError::SkinWeightInvalid(
+            SkinError::LengthMismatch { .. }
+        ))
     ));
 
     // MorphTopologyMismatch: delta addresses a vertex that does not exist; duplicate vertex.
@@ -862,13 +1030,17 @@ fn every_compile_error_variant_is_reachable() {
     f.morphs[0].deltas.push((99, Vec3::ZERO));
     assert!(matches!(
         compile(&ok_recipe, &f),
-        Err(CompileError::MorphTopologyMismatch(MorphError::IndexOutOfRange { vertex: 99, .. }))
+        Err(CompileError::MorphTopologyMismatch(
+            MorphError::IndexOutOfRange { vertex: 99, .. }
+        ))
     ));
     let mut f = fam.clone();
     f.morphs[0].deltas.push((4, Vec3::ZERO));
     assert!(matches!(
         compile(&ok_recipe, &f),
-        Err(CompileError::MorphTopologyMismatch(MorphError::DuplicateVertex { vertex: 4, .. }))
+        Err(CompileError::MorphTopologyMismatch(
+            MorphError::DuplicateVertex { vertex: 4, .. }
+        ))
     ));
 
     // LimitExceeded: one joint over the cap.
@@ -893,31 +1065,52 @@ fn every_compile_error_variant_is_reachable() {
     f.morphs.push(again);
     assert!(matches!(
         compile(&ok_recipe, &f),
-        Err(CompileError::DuplicateName { kind: "morph target", .. })
+        Err(CompileError::DuplicateName {
+            kind: "morph target",
+            ..
+        })
     ));
     let mut f = fam.clone();
     f.controls[1].id = "upper_length".to_string();
     assert!(matches!(
         compile(&ok_recipe, &f),
-        Err(CompileError::DuplicateName { kind: "control", .. })
+        Err(CompileError::DuplicateName {
+            kind: "control",
+            ..
+        })
     ));
 
     // InvalidFamily: bad index buffer; an effect that points at nothing; an empty range.
     let mut f = fam.clone();
     f.neutral.indices[0] = 99;
-    assert!(matches!(compile(&ok_recipe, &f), Err(CompileError::InvalidFamily { .. })));
+    assert!(matches!(
+        compile(&ok_recipe, &f),
+        Err(CompileError::InvalidFamily { .. })
+    ));
     let mut f = fam.clone();
     f.neutral.indices.pop();
-    assert!(matches!(compile(&ok_recipe, &f), Err(CompileError::InvalidFamily { .. })));
+    assert!(matches!(
+        compile(&ok_recipe, &f),
+        Err(CompileError::InvalidFamily { .. })
+    ));
     let mut f = fam.clone();
     f.controls[0].effects = vec![ControlEffect::BoneLengthScale { joint: 9 }];
-    assert!(matches!(compile(&ok_recipe, &f), Err(CompileError::InvalidFamily { .. })));
+    assert!(matches!(
+        compile(&ok_recipe, &f),
+        Err(CompileError::InvalidFamily { .. })
+    ));
     let mut f = fam.clone();
     f.controls[1].effects = vec![ControlEffect::MorphWeight { target: 4 }];
-    assert!(matches!(compile(&ok_recipe, &f), Err(CompileError::InvalidFamily { .. })));
+    assert!(matches!(
+        compile(&ok_recipe, &f),
+        Err(CompileError::InvalidFamily { .. })
+    ));
     let mut f = fam.clone();
     f.controls[0].min = 3.0;
-    assert!(matches!(compile(&ok_recipe, &f), Err(CompileError::InvalidFamily { .. })));
+    assert!(matches!(
+        compile(&ok_recipe, &f),
+        Err(CompileError::InvalidFamily { .. })
+    ));
 
     // Display and Error are implemented and never empty.
     let e: Box<dyn std::error::Error> = Box::new(CompileError::UnknownControl { id: "x".into() });
@@ -932,7 +1125,10 @@ fn compile_is_all_or_nothing() {
     let before = fam.clone();
     let r = BodyRecipe::new(
         fam_ref(),
-        vec![("upper_length".to_string(), 1.2), ("girth".to_string(), 99.0)],
+        vec![
+            ("upper_length".to_string(), 1.2),
+            ("girth".to_string(), 99.0),
+        ],
     );
     assert!(compile(&r, &fam).is_err());
     assert_eq!(fam, before);
@@ -944,7 +1140,11 @@ fn compile_is_all_or_nothing() {
 #[test]
 fn negative_zero_is_byte_content_and_changes_rev_id() {
     let mut neg = fixture_positions();
-    assert_eq!(neg[0][1].to_bits(), 0.0f32.to_bits(), "fixture vertex 0 has y = +0.0");
+    assert_eq!(
+        neg[0][1].to_bits(),
+        0.0f32.to_bits(),
+        "fixture vertex 0 has y = +0.0"
+    );
     neg[0][1] = -0.0;
     let plus = compile(&recipe(1.0, 0.0), &fixture_family()).unwrap();
     let minus = compile(&recipe(1.0, 0.0), &fixture_family_from(neg)).unwrap();
@@ -953,7 +1153,10 @@ fn negative_zero_is_byte_content_and_changes_rev_id() {
     let b = minus.evaluate(&PoseInput::new()).unwrap();
     assert_eq!(a.positions.len(), b.positions.len());
     for (p, q) in a.positions.iter().zip(b.positions.iter()) {
-        assert!(p.x == q.x && p.y == q.y && p.z == q.z, "geometrically equal");
+        assert!(
+            p.x == q.x && p.y == q.y && p.z == q.z,
+            "geometrically equal"
+        );
     }
 }
 
@@ -970,7 +1173,10 @@ fn deterministic_rev_id() {
     assert_eq!(explicit.rev_id, omitted.rev_id);
     let swapped = BodyRecipe::new(
         fam_ref(),
-        vec![("girth".to_string(), 0.5), ("upper_length".to_string(), 1.25)],
+        vec![
+            ("girth".to_string(), 0.5),
+            ("upper_length".to_string(), 1.25),
+        ],
     );
     assert_eq!(compile(&swapped, &fam).unwrap().rev_id, a.rev_id);
 }
@@ -984,10 +1190,16 @@ fn evaluate_does_not_change_the_revision() {
         let _ = rev.evaluate(&to_pose(&case));
     }
     // Failed evaluations also leave it alone.
-    assert!(rev.evaluate(&PoseInput::new().with_morph("nope", 1.0)).is_err());
+    assert!(rev
+        .evaluate(&PoseInput::new().with_morph("nope", 1.0))
+        .is_err());
     assert_eq!(rev.rev_id, id);
     assert_eq!(rev, snapshot);
-    assert_eq!(rev.content_id(), id, "content still hashes to the stored id");
+    assert_eq!(
+        rev.content_id(),
+        id,
+        "content still hashes to the stored id"
+    );
 }
 
 #[test]
@@ -999,7 +1211,11 @@ fn evaluate_rejects_bad_poses_with_typed_errors() {
         Err(EvalError::UnknownMorph { .. })
     ));
     assert!(matches!(
-        rev.evaluate(&PoseInput::new().with_morph("girth", 1.0).with_morph("girth", 2.0)),
+        rev.evaluate(
+            &PoseInput::new()
+                .with_morph("girth", 1.0)
+                .with_morph("girth", 2.0)
+        ),
         Err(EvalError::DuplicateMorph { .. })
     ));
     assert!(matches!(
@@ -1123,7 +1339,11 @@ fn rev_id_is_sha256_of_the_documented_canonical_bytes() {
     for (ul, g) in [(1.0, 0.0), (1.25, 0.5)] {
         let rev = build(ul, g);
         let bytes = independent_canonical_bytes(&rev);
-        assert_eq!(bytes, rev.canonical_bytes(), "serialization layout drifted from the doc");
+        assert_eq!(
+            bytes,
+            rev.canonical_bytes(),
+            "serialization layout drifted from the doc"
+        );
         let want = sha2::Sha256::digest(&bytes);
         assert_eq!(&rev.rev_id.0[..], want.as_slice());
     }
