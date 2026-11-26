@@ -169,8 +169,11 @@ impl SkinWeights {
     pub fn influences(&self, vertex: usize) -> Option<Vec<(usize, f32)>> {
         let vs = self.vertices.get(vertex)?;
         Some(
-            (0..usize::from(vs.count))
-                .map(|k| (vs.joints[k] as usize, vs.weights[k]))
+            vs.joints
+                .iter()
+                .zip(vs.weights.iter())
+                .take(usize::from(vs.count))
+                .map(|(&j, &w)| (j as usize, w))
                 .collect(),
         )
     }
@@ -180,9 +183,14 @@ impl SkinWeights {
     pub fn write_canonical(&self, out: &mut Vec<u8>) {
         for vs in &self.vertices {
             out.push(vs.count);
-            for k in 0..usize::from(vs.count) {
-                out.extend_from_slice(&vs.joints[k].to_le_bytes());
-                out.extend_from_slice(&vs.weights[k].to_bits().to_le_bytes());
+            for (j, w) in vs
+                .joints
+                .iter()
+                .zip(vs.weights.iter())
+                .take(usize::from(vs.count))
+            {
+                out.extend_from_slice(&j.to_le_bytes());
+                out.extend_from_slice(&w.to_bits().to_le_bytes());
             }
         }
     }
@@ -238,9 +246,14 @@ impl SkinWeights {
         let mut out = Vec::with_capacity(positions.len());
         for (vs, p) in self.vertices.iter().zip(positions.iter()) {
             let mut acc = Vec3::ZERO;
-            for k in 0..usize::from(vs.count) {
-                let m = &skin_mats[vs.joints[k] as usize];
-                acc = acc.add(m.transform_point(*p).scale(vs.weights[k]));
+            for (&j, &w) in vs
+                .joints
+                .iter()
+                .zip(vs.weights.iter())
+                .take(usize::from(vs.count))
+            {
+                let m = &skin_mats[j as usize];
+                acc = acc.add(m.transform_point(*p).scale(w));
             }
             out.push(acc);
         }
