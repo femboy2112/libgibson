@@ -1,7 +1,7 @@
 //! Inspectable typed action routing; application state remains application-owned.
 
 use super::element::Key;
-use crate::input::{Event, TextInputState};
+use crate::input::{Event, TextAreaState, TextInputState};
 use std::fmt;
 use std::sync::Arc;
 
@@ -43,6 +43,11 @@ pub struct Interaction<A> {
     pub on_press: Option<A>,
     pub input: Option<TextInputState>,
     pub on_edit: Option<Arc<dyn Fn(TextInputState) -> A>>,
+    /// EXPERIMENTAL (v0.9.1): a [`text_area`](super::element::text_area)'s snapshot as
+    /// `(state, wrap columns, visible rows)`; `None` for every other element.
+    pub area: Option<(TextAreaState, u16, u16)>,
+    /// EXPERIMENTAL (v0.9.1): the text area's edit callback.
+    pub on_area_edit: Option<Arc<dyn Fn(TextAreaState) -> A>>,
     /// Receives unhandled events for a focused custom control.
     pub on_event: Option<Arc<dyn Fn(Event) -> A>>,
 }

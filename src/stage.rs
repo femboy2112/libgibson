@@ -8,7 +8,7 @@
 //! Presentation timing uses explicit caller time and absolute non-renewing demands.
 
 use crate::ui::Element;
-use crate::{Event, TextInputState};
+use crate::{Event, TextAreaState, TextInputState};
 use std::sync::Arc;
 
 /// Adapts every action channel in a semantic subtree to the host's action type.
@@ -79,6 +79,12 @@ fn map_tree<A: 'static, B: 'static>(element: Element<A>, map: Arc<dyn Fn(A) -> B
         on_edit: element.on_edit.map(|handler| {
             let map = Arc::clone(&map);
             let mapped: Arc<dyn Fn(TextInputState) -> B> =
+                Arc::new(move |state| map(handler(state)));
+            mapped
+        }),
+        on_area_edit: element.on_area_edit.map(|handler| {
+            let map = Arc::clone(&map);
+            let mapped: Arc<dyn Fn(TextAreaState) -> B> =
                 Arc::new(move |state| map(handler(state)));
             mapped
         }),

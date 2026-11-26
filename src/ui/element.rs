@@ -2,7 +2,7 @@
 use super::compile::{BuildCx, PresentationCx};
 use super::motion::MotionRole;
 use super::style::{Density, Elevation, Emphasis, Tone};
-use crate::{Event, Node, Surface, SurfaceFx, TextInputState};
+use crate::{Event, Node, Surface, SurfaceFx, TextAreaState, TextInputState};
 use std::fmt;
 use std::sync::Arc;
 
@@ -93,6 +93,11 @@ pub(crate) enum ElementKind {
         state: TextInputState,
         placeholder: Option<String>,
     },
+    /// EXPERIMENTAL v0.9.1 multi-line editor ([`text_area`]).
+    Area {
+        state: TextAreaState,
+        rows: u16,
+    },
     Progress {
         label: String,
         fraction: f32,
@@ -138,6 +143,7 @@ pub struct Element<A> {
     pub(crate) key: Option<Key>,
     pub(crate) on_press: Option<A>,
     pub(crate) on_edit: Option<Arc<dyn Fn(TextInputState) -> A>>,
+    pub(crate) on_area_edit: Option<Arc<dyn Fn(TextAreaState) -> A>>,
     pub(crate) on_event: Option<Arc<dyn Fn(Event) -> A>>,
     pub(crate) on_dismiss: Option<A>,
     pub(crate) selected: bool,
@@ -167,6 +173,7 @@ impl<A> Element<A> {
             key: None,
             on_press: None,
             on_edit: None,
+            on_area_edit: None,
             on_event: None,
             on_dismiss: None,
             selected: false,
@@ -215,6 +222,23 @@ impl<A> Element<A> {
     /// The application receives the edited state; the UI does not store its own draft.
     pub fn on_edit(mut self, action: impl Fn(TextInputState) -> A + 'static) -> Self {
         self.on_edit = Some(Arc::new(action));
+        self
+    }
+    /// EXPERIMENTAL (v0.9.1): the [`text_area`] counterpart of [`on_edit`](Self::on_edit).
+    /// The application receives the edited [`TextAreaState`] (its `scroll_row` already
+    /// updated for the visible rows); the UI does not store its own draft. This is the
+    /// only edit signal: a text area never emits a commit. See
+    /// `docs/design/v0.9.1-text-area.md`.
+    pub fn on_area_edit(mut self, action: impl Fn(TextAreaState) -> A + 'static) -> Self {
+        self.on_area_edit = Some(Arc::new(action));
+        self
+    }
+    /// Visible rows of a [`text_area`] (at least 1; default 4). Other elements ignore it.
+    /// Set the box with `rows` and `.width(..)`, not `.height(..)`.
+    pub fn rows(mut self, rows: u16) -> Self {
+        if let ElementKind::Area { rows: r, .. } = &mut self.kind {
+            *r = rows.max(1);
+        }
         self
     }
     /// Route unhandled events to a focused custom control, e.g. a viewport.
@@ -699,6 +723,32 @@ pub fn text_input<A>(state: &TextInputState) -> Element<A> {
     Element::new(ElementKind::Input {
         state: state.clone(),
         placeholder: None,
+    })
+}
+/// Default wrap width, in cells, of a [`text_area`] without an explicit `.width(..)`.
+pub(crate) const DEFAULT_AREA_COLS: u16 = 80;
+/// Default visible rows of a [`text_area`].
+pub(crate) const DEFAULT_AREA_ROWS: u16 = 4;
+/// The wrap width, in cells, shared by editing (`TextAreaState::handle_event`) and
+/// painting for a [`text_area`]: its explicit `.width(..)`, else
+/// [`DEFAULT_AREA_COLS`]; never 0. It is not clamped by the parent (like
+/// [`image`], the element does not measure its parent), so editing and painting
+/// can never wrap at different widths.
+pub(crate) fn area_cols<A>(el: &Element<A>) -> u16 {
+    el.layout.width.unwrap_or(DEFAULT_AREA_COLS).max(1)
+}
+/// EXPERIMENTAL (v0.9.1): an application-owned multi-line editor.
+///
+/// Enter inserts a newline and never commits; there is no commit signal on the
+/// element or the state. Provide an explicit Save control. Bind
+/// [`Element::on_area_edit`] to receive an edited copy, and rebuild before the next
+/// event. Set the width with `.width(n)` (the wrap width for editing and painting)
+/// and the visible rows with [`Element::rows`]. Esc and cancel/restore belong to the
+/// consumer: Esc is not consumed. See `docs/design/v0.9.1-text-area.md`.
+pub fn text_area<A>(state: &TextAreaState) -> Element<A> {
+    Element::new(ElementKind::Area {
+        state: state.clone(),
+        rows: DEFAULT_AREA_ROWS,
     })
 }
 pub fn progress<A>(label: impl Into<String>, fraction: f32) -> Element<A> {
