@@ -162,7 +162,7 @@ pub use input::{
     KeyModifiers, KeyReleaseReporting, MouseButton, MouseEvent, MouseKind, TextAreaState,
     TextInputState,
 };
-pub use layout::{compute_layout, wrap_rich_text, wrap_text};
+pub use layout::{compute_layout, measure_wrapped, wrap_rich_text, wrap_text};
 pub use node::{
     AlignItems, Dimension, FlexDirection, JustifyContent, LayoutStyle, Node, NodeKind, WrapMode,
 };

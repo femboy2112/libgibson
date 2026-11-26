@@ -102,8 +102,25 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
-- **0.8.1** "clear SIGFPE 1" ([decision 0004](decisions/0004-release-naming.md)) is the latest
+- **0.9.0** "clear SIGKILL 0" ([decision 0004](decisions/0004-release-naming.md): minor 9 =
+  SIGKILL, patch 0; the name is confirmed by the release coordinator, GOD #126) is the latest
   such milestone and is **tagged and released on GitHub** (state 2):
+  - tag `v0.9.0` → `e17abef` on `main`, with `bindings/go/v0.9.0` on the same commit;
+  - a regular GitHub release of 2026-11-26
+    ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.0)) with the native SDK
+    archive, its checksum and the Python wheel/sdist, not published to any registry.
+
+  It is a minor. No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experimental `ui::Key` is now #[non_exhaustive] (adds Key::Scoped). Its new surfaces are opt-in and Rust-only; the one default change is that Rust applications now receive F1 to F12 as `Event::Key` (#446), which were dropped before (the C ABI still skips them). Its slices
+  are the `CellEncoder` family (`RgbRaster::to_surface_with`, `ui::image_with`, `allowed_encoder`,
+  #436); the pure `capability::probe` decision layer (#437), which writes nothing to a terminal;
+  `SurfaceFx::Offset`/`Blend`, `ui::ViewTransition` and `ui::Key::Scoped` (#434); the experimental
+  `graphics` module, the kitty placeholder route and its per-frame plan (#438, #442), which
+  produce bytes and `Surface`s only and are not wired into the renderer; `ui::toast_lane` (#443);
+  `KeyCode::F` function keys F1 to F12 (#446); and `measure_wrapped` (#448). Deferred to 0.9.1:
+  the multi-line text area (#444). The C ABI is unchanged (`GIBSON_ABI_VERSION` 1, 67 symbols;
+  `include/gibson.h` gained comments only); MSRV 1.85 and Linux x86_64 are unchanged.
+- **0.8.1** "clear SIGFPE 1" ([decision 0004](decisions/0004-release-naming.md)) is
+  **tagged and released on GitHub** (state 2):
   - tag `v0.8.1` → `08f2f71` on `main`, with `bindings/go/v0.8.1` on the same commit;
   - a regular GitHub release of 2026-11-20
     ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.8.1)) with the native SDK

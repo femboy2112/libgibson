@@ -44,7 +44,10 @@
 use crate::cell::{Color, Line, RichText, Span, Style, TextAlign};
 use crate::context::Context;
 use crate::event_source::InjectedQueue;
-use crate::input::{Event, FocusChange, KeyCode, KeyEvent, KeyModifiers, KeyReleaseReporting};
+use crate::input::{
+    Event, FocusChange, KeyCode, KeyEvent, KeyModifiers, KeyReleaseReporting,
+    MAX_DROPS_PAST_DEADLINE,
+};
 use crate::node::{Node, WrapMode};
 use crate::renderer::RenderMode;
 use crate::scheduler::RenderStats;
@@ -54,7 +57,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Current ABI version. Bump on any breaking layout/semantic change.
 pub const GIBSON_ABI_VERSION: u32 = 1;
@@ -1038,12 +1041,39 @@ unsafe fn poll_event_impl(
         let c = &mut *ctx;
         // A headless context delivers what was pushed (gibson_push_event), never the process
         // terminal (#259); its queue never waits, so the timeout does not delay it.
-        let polled = if c.inner.session.is_headless() {
-            // A delivered resize takes effect inside poll_from, the same implementation the Rust
-            // API uses (#293): the next render lays out at the new geometry.
-            c.inner.poll_from(&mut c.injected, timeout)
-        } else {
-            c.inner.poll_event(timeout)
+        //
+        // A function key is not part of ABI v1 (docs/design/v0.9-function-keys.md, GOD ruling,
+        // ACK RESULT #124): it is consumed, not reported, and the poll keeps going for the rest
+        // of the original deadline, so the C poll behaves as it did when F-keys were dropped
+        // upstream. NONE comes back only when the timeout passes (a headless poll, which never
+        // waits, when the queue has nothing else). Once the deadline has passed on a terminal, at
+        // most `MAX_DROPS_PAST_DEADLINE` further F-keys, each already available, are consumed
+        // before the poll gives up, so a flood of them cannot hold a poll past its timeout.
+        let headless = c.inner.session.is_headless();
+        let deadline = Instant::now().checked_add(timeout);
+        let mut skips_past_deadline = 0u32;
+        let polled = loop {
+            let left = deadline.map_or(timeout, |d| d.saturating_duration_since(Instant::now()));
+            let polled = if headless {
+                // A delivered resize takes effect inside poll_from, the same implementation the
+                // Rust API uses (#293): the next render lays out at the new geometry.
+                c.inner.poll_from(&mut c.injected, left)
+            } else {
+                c.inner.poll_event(left)
+            };
+            let is_f_key = matches!(
+                &polled,
+                Ok(Some(Event::Key(k) | Event::KeyRelease(k))) if matches!(k.code, KeyCode::F(_))
+            );
+            if !is_f_key {
+                break polled;
+            }
+            if !headless && left.is_zero() {
+                skips_past_deadline += 1;
+                if skips_past_deadline >= MAX_DROPS_PAST_DEADLINE {
+                    break Ok(None);
+                }
+            }
         };
         match polled {
             Ok(Some(ev)) => {
@@ -1078,6 +1108,9 @@ unsafe fn poll_event_impl(
                             KeyCode::BackTab => GIBSON_KEY_TAB,
                             KeyCode::PageUp => GIBSON_KEY_PAGE_UP,
                             KeyCode::PageDown => GIBSON_KEY_PAGE_DOWN,
+                            // Not reached: the poll loop above consumes every F-key before
+                            // it gets here (ABI v1 has no function-key constant).
+                            KeyCode::F(_) => 0,
                         };
                     }
                     Event::Paste(s) => {
@@ -2224,5 +2257,135 @@ mod terminal_size_tests {
         );
         assert_eq!((c, r), (37, 11));
         unsafe { gibson_destroy_context(ctx) };
+    }
+}
+
+#[cfg(test)]
+mod function_key_tests {
+    //! v0.9 function keys at the C poll. ABI v1 has no F-key constant, so an F-key must be
+    //! skipped: consumed and not reported, with polling continuing (GOD ruling, ACK RESULT #124).
+    //!
+    //! `gibson_push_event` cannot express an F-key, so these queue the Rust `Event` straight into
+    //! the headless context's injected queue. A headless poll never waits (an empty queue answers
+    //! at once; see `InjectedQueue` and the header), so the timing half of the contract, that a
+    //! skipped F-key does not end a *terminal* poll early, is pinned over a real pseudo-terminal
+    //! in `tests/key_release_kind_pty.rs`
+    //! (`c_poll_skips_a_function_key_and_keeps_polling_to_its_deadline`).
+    //!
+    //! `red_*` (named in the RED slice) pin the skip-and-continue loop; they failed against the
+    //! RED stub, which ended the poll at the F-key.
+    //! GUARD: `guard_*` passes today and must stay green.
+    use super::*;
+    use std::time::Instant;
+
+    fn f(n: u8) -> Event {
+        Event::Key(KeyEvent::new(KeyCode::F(n), KeyModifiers::empty()))
+    }
+
+    fn a() -> Event {
+        Event::Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty()))
+    }
+
+    /// A headless context with `events` queued, oldest first.
+    fn headless_with(events: Vec<Event>) -> *mut GibsonContextOpaque {
+        let mut ctx = ptr::null_mut();
+        assert_eq!(
+            unsafe { gibson_create_headless_context(GIBSON_MODE_FULLSCREEN, 40, 10, &mut ctx) },
+            GibsonStatus::Ok
+        );
+        for ev in events {
+            unsafe { (*ctx).injected.push(ev) }.expect("queue has room");
+        }
+        ctx
+    }
+
+    /// One `gibson_poll_event`, the out-event pre-filled with values a poll must overwrite.
+    fn poll(ctx: *mut GibsonContextOpaque, timeout_ms: u32) -> GibsonEvent {
+        let mut ev = GibsonEvent {
+            event_type: -1,
+            key_code: 0xdead,
+            modifiers: 0xff,
+            _pad: [0xff; 3],
+            cols: 9,
+            rows: 9,
+            paste_str: ptr::null(),
+        };
+        assert_eq!(
+            unsafe { gibson_poll_event(ctx, timeout_ms, &mut ev) },
+            GibsonStatus::Ok
+        );
+        ev
+    }
+
+    // -------------------------------------------------------------------------------- RED
+
+    /// (a) An F-key then `a`, both queued: the F-key is skipped and the poll returns the `a`.
+    #[test]
+    fn red_c_poll_skips_an_f_key_and_delivers_the_next_event() {
+        let k = KeyEvent::new(KeyCode::F(5), KeyModifiers::empty());
+        for first in [Event::Key(k), Event::KeyRelease(k)] {
+            let ctx = headless_with(vec![first.clone(), a()]);
+            let ev = poll(ctx, 1000);
+            assert_eq!(
+                (ev.event_type, ev.key_code, ev.modifiers),
+                (GIBSON_EVENT_KEY, u32::from('a'), 0),
+                "{first:?} then 'a' must poll as the 'a' key"
+            );
+            unsafe { gibson_destroy_context(ctx) };
+        }
+    }
+
+    // ------------------------------------------------------------------------------ GUARD
+
+    /// (b), headless half: an F-key alone polls as NONE, and a headless poll still does not wait
+    /// out its timeout. The skip loop must not turn "nothing queued" into a sleep: the header
+    /// says a headless poll delivers "without waiting". The real wait-out-the-timeout contract
+    /// for a terminal is the PTY test named in the module docs.
+    #[test]
+    fn guard_c_poll_of_a_lone_f_key_is_none_and_a_headless_poll_does_not_wait() {
+        let ctx = headless_with(vec![f(1)]);
+        let t0 = Instant::now();
+        let ev = poll(ctx, 5000);
+        let took = t0.elapsed();
+        assert_eq!(
+            (ev.event_type, ev.key_code, ev.modifiers),
+            (GIBSON_EVENT_NONE, 0, 0)
+        );
+        assert!(
+            took < Duration::from_secs(1),
+            "a headless poll waited {took:?} of its 5 s timeout"
+        );
+        unsafe { gibson_destroy_context(ctx) };
+    }
+
+    /// (c) An F-key then a Tick (which the ABI reports as NONE) is what a Tick alone is.
+    #[test]
+    fn guard_c_poll_of_an_f_key_then_a_tick_is_what_a_tick_alone_is() {
+        let alone = headless_with(vec![Event::Tick]);
+        let after_f = headless_with(vec![f(2), Event::Tick]);
+        let want = poll(alone, 1000);
+        let got = poll(after_f, 1000);
+        assert_eq!(want.event_type, GIBSON_EVENT_NONE, "a Tick alone is NONE");
+        assert_eq!(
+            (
+                got.event_type,
+                got.key_code,
+                got.modifiers,
+                got.cols,
+                got.rows
+            ),
+            (
+                want.event_type,
+                want.key_code,
+                want.modifiers,
+                want.cols,
+                want.rows
+            ),
+            "an F-key before a Tick changed what the poll reports"
+        );
+        unsafe {
+            gibson_destroy_context(alone);
+            gibson_destroy_context(after_f);
+        }
     }
 }

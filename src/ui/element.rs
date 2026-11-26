@@ -85,6 +85,10 @@ pub(crate) enum ElementKind {
     Badge(String),
     Button(String),
     Choice(String),
+    /// [`toggle`]: `[x] label` / `[ ] label`; `selected` carries the on state.
+    Toggle(String),
+    /// [`form_row`]: the label; the control is the single child.
+    FormRow(String),
     Input {
         state: TextInputState,
         placeholder: Option<String>,
@@ -147,6 +151,10 @@ pub struct Element<A> {
     pub(crate) revision: u64,
     pub(crate) motion: Option<MotionRole>,
     pub(crate) tone: Tone,
+    /// [`Element::error`]: one `Tone::Danger` row under the control.
+    pub(crate) error: Option<String>,
+    /// [`Element::hint`]: a dim trailing cell on a [`form_row`].
+    pub(crate) hint: Option<String>,
     pub(crate) emphasis: Emphasis,
     pub(crate) density: Option<Density>,
     pub(crate) elevation: Elevation,
@@ -173,6 +181,8 @@ impl<A> Element<A> {
             revision: 0,
             motion: None,
             tone: Tone::Neutral,
+            error: None,
+            hint: None,
             emphasis: Emphasis::Normal,
             density: None,
             elevation: Elevation::Flat,
@@ -259,6 +269,30 @@ impl<A> Element<A> {
     }
     pub fn tone(mut self, tone: Tone) -> Self {
         self.tone = tone;
+        self
+    }
+    /// Attach a validation message shown on a [`Tone::Danger`] line under the
+    /// control. `None` renders nothing and takes no rows. The element stays
+    /// focusable either way, and the message row is never a focus stop.
+    ///
+    /// On a [`form_row`] the line is indented to the control column; on any
+    /// other element it sits at the element's own left edge. It is one row,
+    /// clipped on the right, never wrapped.
+    ///
+    /// The parameter is `Option<String>` (not `Option<impl Into<String>>`) so a
+    /// bare `.error(None)` infers without annotation.
+    pub fn error(mut self, message: Option<String>) -> Self {
+        self.error = message;
+        self
+    }
+    /// Attach a secondary note to a [`form_row`]: a dim, single-row cell after
+    /// the control on the same row, clipped on the right, never wrapped and never
+    /// a focus stop. `None` renders nothing, byte-identical to omitting the call.
+    /// Other elements ignore it.
+    ///
+    /// The parameter is `Option<String>` for the same reason as [`Element::error`].
+    pub fn hint(mut self, hint: Option<String>) -> Self {
+        self.hint = hint;
         self
     }
     pub fn emphasis(mut self, emphasis: Emphasis) -> Self {
@@ -658,6 +692,26 @@ pub fn button<A>(label: impl Into<String>) -> Element<A> {
 }
 pub fn choice<A>(label: impl Into<String>, selected: bool) -> Element<A> {
     Element::new(ElementKind::Choice(label.into())).selected(selected)
+}
+/// A labelled on/off setting, rendered `[x] label` / `[ ] label`.
+///
+/// The marker is text, never colour alone. It is focusable like [`choice`]
+/// (when it has an `on_press`), and Space and Enter fire `on_press`. State stays
+/// application-owned: activation never mutates `on`. A disabled toggle behaves
+/// like a disabled [`choice`]: dim skin, not a focus stop, no actions.
+pub fn toggle<A>(label: impl Into<String>, on: bool) -> Element<A> {
+    Element::new(ElementKind::Toggle(label.into())).selected(on)
+}
+/// One settings row: `label` on the left, `control` on the right, on one row at
+/// 80 columns or wider. Below 80 columns the label stacks on its own row above
+/// the control, which is indented two columns.
+///
+/// The label column is aligned across sibling rows in the same container. The
+/// row is not a focus stop: the control keeps its own key, handlers, focus and
+/// editing behaviour, and a non-interactive control is skipped by Tab. See
+/// [`Element::error`] and [`Element::hint`].
+pub fn form_row<A>(label: impl Into<String>, control: Element<A>) -> Element<A> {
+    Element::new(ElementKind::FormRow(label.into())).child(control)
 }
 /// An application-owned single-line editor. Inputs participate in focus and own
 /// editing keys/paste even without callbacks. Without `on_edit` they consume

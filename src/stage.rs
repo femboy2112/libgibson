@@ -99,6 +99,8 @@ fn map_tree<A: 'static, B: 'static>(element: Element<A>, map: Arc<dyn Fn(A) -> B
         revision: element.revision,
         motion: element.motion,
         tone: element.tone,
+        error: element.error,
+        hint: element.hint,
         emphasis: element.emphasis,
         density: element.density,
         elevation: element.elevation,

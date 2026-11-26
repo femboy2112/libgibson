@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-20): v0.8.1 "clear SIGFPE 1"
+## Current release (updated 2026-11-26): v0.9.0 "clear SIGKILL 0"
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -61,6 +61,63 @@ held. `git diff v0.8.0 v0.8.1 -- src include bindings abi` has only rustdoc `///
 Python package version, hosted CI was 9/9, and the bundle gate passed. The release has 4 assets,
 built from the tag with rustc 1.98.1 using the tagged #429 path remap. After download, all 4 are
 byte-identical to the build, and the private-path scan found 0 hits.
+
+**v0.9.0 "clear SIGKILL 0" was released on 2026-11-26** (state 2):
+- annotated tag `v0.9.0` → `e17abef` on `main` (`e17abefd0a6a1d8e254c001965facdd5246bd332`), with
+  `bindings/go/v0.9.0` on the same commit;
+- a regular GitHub [release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.0), not a
+  prerelease, marked Latest, and not on any registry.
+
+It is a minor. Every slice below merged to `main` before the tag.
+No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experimental `ui::Key` is now #[non_exhaustive] (adds Key::Scoped). The name
+follows [decision 0004](docs/decisions/0004-release-naming.md) (minor 9 = SIGKILL, patch 0) and is
+confirmed by the release coordinator (GOD #126). The C ABI is unchanged (v1, 67 symbols).
+**Consumer gate:** substituted by owner ruling (2026-11-26; see the status table below). MINERVA
+TRAIN-2 was dropped. The substitute is hosted CI 9/9 including Release preflight on the exact
+candidate, plus `git diff v0.8.1 v0.9.0 -- abi include bindings` showing only header comments and
+the Python package version. Release gates: H2 `8673674` CI 45794710234 + preflight 45794710227;
+H3 `7fde6d5` CI 45797133820 + preflight 45797134207; merged `main` `e17abefd` CI 45799612174 8/8.
+The release has 4 assets, built from `e17abefd` with rustc 1.98.1 using the #429 path remap. After
+download, all 4 are byte-identical to the build, and the build-host path scan found 0 hits:
+- `libgibson-0.9.0-linux-x86_64.tar.gz`, 5873632 B, sha256 `d1fa9709970f450aa858778b75fd58595fb30711072dfb8cb85cfd9f691ee5a2`;
+- its `.sha256` file, 102 B, sha256 `fe71887ca26900d30cbac29eebfb132ef6aaa919d399b83c7d1cb7e6121d81ed`;
+- the Python wheel, 18166 B, sha256 `686bc5c3a9386a95d3bae360d9f8c78f6a699ecdbd0302e7f3f0a8ad8dbc427b`;
+- the Python sdist, 18564 B, sha256 `de586b672b1a14fcf02bbba4b345c14833480ca5b4c1be5c227fa8a09439db12`.
+
+Known non-blocker: #454 (`wire_instrument_fullduplex` fails on a low-RAM laptop; hosted CI is green).
+
+#### v0.9.0 completion status (2026-11-26)
+
+Each 0.9.0 item, with the evidence that closes it or the recorded deferral that excludes it. A
+`pending` row has no evidence yet; its cell is blank on purpose.
+
+| Item | Status | Evidence |
+|---|---|---|
+| #436 feat(raster): opt-in cell encoders (`CellEncoder`, `to_surface_with`, `ui::image_with`, `allowed_encoder`) | **Done** (opt-in, Rust-only) | Merged as `9e3f9cf`. RED `c3c700c`, GREEN `c560a5d`. The `Stage` raster-plane seam of the design is a later slice. |
+| #437 feat(capability): terminal capability probe (pure decision layer, not wired into the live tty path) | **Done** (Rust-only) | Merged as `6377c07`. RED `2d1502f`, GREEN `2b38332`. |
+| #434 feat(fx): `SurfaceFx::Offset`/`Blend`, `ui::ViewTransition` and structural `ui::Key::Scoped` (EXPERIMENTAL) | **Done** | Merged as `5854068`. RED `05784e4`, GREEN `5d233aa`. Also RED `3d4003b`, GREEN `8eec49f` for `Key::Scoped`. |
+| #438 feat(graphics): kitty graphics placeholder route (`graphics::kitty`, `ui::pixel_image`; EXPERIMENTAL, bytes and cells only, not wired into the renderer) | **Done** (opt-in, Rust-only) | Merged as `f6c525b`. RED `7026610`, GREEN `e51c611`. Also RED `82a07ca` for the source-preserving pixel image element. |
+| #442 feat(graphics): kitty frame plan (`graphics::frame::KittyFramePlan`; EXPERIMENTAL, not wired in) | **Done** (opt-in, Rust-only) | Merged as `5370628` (into the #438 branch, landed on `main` with `f6c525b`). RED `4722a89`, GREEN `756be89`. |
+| #443 feat(ui): `toast_lane` (EXPERIMENTAL) | **Done** | Merged as `9202e88`. RED `913df4c`, GREEN `ad0abee`. |
+| #446 feat(input): `KeyCode::F` function keys F1 to F12 (Rust default behavior change: F1–F12 now delivered, were dropped; C ABI still skips them) | **Done** | Merged as `27a958f`. RED `8a25d62`, GREEN `118ed88`. SPEC UPDATE `44d154e` (GOD #188: F3 with modifiers only via `CSI 13;<mod>~`). The C header gained only a comment; ABI stays 67 symbols. |
+| #448 feat(layout): `measure_wrapped` | **Done** | Merged as `8a657fa`. RED `45675ef`, GREEN `7cc3ed7`. |
+| #452 feat(renderer): reserved-top inline anchor (`set_inline_full_height_anchor`) and hidden fullscreen cursor home (`set_fullscreen_hidden_cursor_home`), with `Context` wrappers (opt-in, default off) | **Done** (opt-in, Rust-only) | Merged as `2df1d39` (head `5f9b59d`, hosted CI 45792006317 9/9 plus Release preflight 45792006268). Includes #453 (merged into the #452 branch as `5f9b59d`): blank-scrollback blocker found in review; RED `6948a25` (3 tests: fast path and fallback), GREEN `7648b17`. Local `wire_instrument_fullduplex` failure is pre-existing on `27a958f` and tracked in #454 (not a blocker; hosted CI green). |
+| Release gates (exact-head CI incl. Release preflight; consumer gate) | **Met** (observed at H2; H3 differs only in this row) | H2 `8673674`: hosted CI run 45794710234 9/9 success (Rust job 139822294076, MSRV, ASan, Bindings, Go, PTY, Python wire, parser laws) and Release preflight run 45794710227 success. Consumer gate: SUBSTITUTED (row below). |
+| Consumer gate | **SUBSTITUTED** (owner ruling, 2026-11-26) | The MINERVA TRAIN-2 consumer run was dropped as the v0.9.0 gate. The substitute, all on the exact release candidate: (1) hosted CI 9/9 including Release preflight; (2) `git diff v0.8.1 <rc> -- abi include bindings` shows only header comments (#446) and the Python package version; (3) every 0.9.0 surface except the F1–F12 delivery (#446) is opt-in and default off. The consumer re-pins once, to the `v0.9.0` tag. |
+| #444 multi-line text area (EXPERIMENTAL) | **Deferred to 0.9.1** | Recorded deferral (this table). |
+| `max_frame_bytes` for the kitty frame plan | **Deferred to 0.9.1** | Recorded deferral (this table). |
+| Prompt editor | **Deferred to 0.9.1** | Recorded deferral (this table). |
+| Kitty renderer hook | **Out of scope** (parked) | Recorded here; not scheduled. |
+| Panic registry | **Out of scope** (parked) | Recorded here; not scheduled. |
+| Session wiring | **Out of scope** (parked) | Recorded here; not scheduled. |
+| #433 Settings | **Out of scope** (parked) | Recorded here; not scheduled. |
+
+**Not in v0.9.0:**
+- Everything in the "Not in v0.8.1" and "Not in v0.8.0" lists carries over, including the items
+  deferred to ">= v0.9" there (the v0.8 cross-language functionality section, math typesetting
+  (#334), #292, #195, #396). None is scoped into v0.9.0.
+- The LS-4 nice-to-haves enumerated under "Not in v0.8.0" are unchanged: neither #436 nor #437
+  closes one.
 
 #### v0.8.1 completion status (authoritative, 2026-11-19)
 
@@ -332,11 +389,12 @@ Rust, C and the adapter (#302, #303). *[Superseded: v0.7.0 was released 2026-11-
 - no external agent-style consumer has been re-qualified against this `main`;
 - the release prerequisites (version, changelog, notices, exact-head CI and preflight, installed
   artifact and contents audit, MSRV, frozen audio goldens) have not been run for a v0.7.0 candidate.
-**v0.8 — cross-language functionality** *(deferred to >= v0.9; see v0.8.0 plan above)*: independent Rust/C/C++/Python/Go clients built against
+**v0.8 — cross-language functionality** *(deferred to >= v0.9; see "Not in v0.8.0" above)*: independent Rust/C/C++/Python/Go clients built against
 installed artifacts and shared semantic fixtures. *Progress 2026-11-08:* the C++, Python and Go
 wrappers now reach SUPPORTED for events, geometry, cell readback and text in the shared parity
 matrix (#311, #313, #314). Failure codes and lifecycle remain PARTIAL; Rust's native path still
-differs on 28 documented records. **v0.9 — portability and stabilization:**
+differs on 28 documented records. **v0.9 — portability and stabilization** *(the long-range
+plan; v0.9.0 is scoped separately, see its completion status above, and does not deliver this)*:
 terminal/OS matrices, performance envelopes, API simplification, recovery behaviour and migration
 support. **v1.0 — stable reviewed CORE:** explicit API/ABI compatibility commitments, release
 tooling, independently verified support and a documented maintenance model. Optional graphics /
@@ -377,11 +435,11 @@ Tracked by [#334](https://github.com/femboy2112/libgibson/issues/334);
 the executable research plan and separate acceptance oracles are in
 [docs/MATH_TYPESETTING_ROADMAP.md](docs/MATH_TYPESETTING_ROADMAP.md).
 
-- [ ] **v0.8 feasibility** *(deferred to >= v0.9; see v0.8.0 plan above)*: evaluate an offline typesetter (for example MathJax/Typst SVG,
+- [ ] **v0.8 feasibility** *(deferred to >= v0.9; see "Not in v0.8.0" above)*: evaluate an offline typesetter (for example MathJax/Typst SVG,
   subject to licensing, sandbox and Rust 1.85 dependency compatibility), independently
   verify formula geometry/baselines, render bounded pixels through the existing
   scene and headless capture, and distinguish cell-only approximation from fidelity.
-- [ ] **v0.9 opt-in:** a real layout-aware, copyable/accessibly described math block
+- [ ] **v0.9 opt-in** *(not in v0.9.0, see its completion status above)*: a real layout-aware, copyable/accessibly described math block
   through the one renderer, with a *qualified* terminal pixel-graphics transport
   where available, legible explicit Braille/half-block/ASCII fallback elsewhere,
   and clipping, resize, caching, input safety and CPU/memory budgets tested.
@@ -924,7 +982,7 @@ This round converted earlier over-strong claims into verified behavior and expli
   - Progress bars with smooth Unicode fraction characters (`▏▎▍▌▋▊▉█`).
   - Tree views with expandable/collapsible nodes.
   - Tab headers and segmented controls.
-- [ ] **Mathematical typesetting (v0.8→v1.0, #334; v0.8 feasibility deferred to >= v0.9, see v0.8.0 plan above):** genuine font-aware 2D equation layout and display/inline math nodes, with verified image transport and honest lower-fidelity terminal fallback; see [math roadmap](docs/MATH_TYPESETTING_ROADMAP.md). Not yet implemented.
+- [ ] **Mathematical typesetting (v0.8→v1.0, #334; v0.8 feasibility deferred to >= v0.9, see "Not in v0.8.0" above):** genuine font-aware 2D equation layout and display/inline math nodes, with verified image transport and honest lower-fidelity terminal fallback; see [math roadmap](docs/MATH_TYPESETTING_ROADMAP.md). Not yet implemented.
 - [ ] **Markdown and Syntax Highlighting**: streaming Markdown parser with Syntect or Tree-sitter token colorization.
 
 ---
@@ -940,7 +998,7 @@ This round converted earlier over-strong claims into verified behavior and expli
 
 ## Phase 5: Protocol Extensions & Hardening — PLANNED
 
-- [ ] **Terminal Graphics Protocols**: inline image rendering via Kitty graphics protocol, iTerm2 inline images, and Sixel graphics. A qualified pixel path is a prerequisite for the paper-fidelity tier of [math typesetting](docs/MATH_TYPESETTING_ROADMAP.md); an enum reporting Unknown is not proof of support.
+- [ ] **Terminal Graphics Protocols**: inline image rendering via Kitty graphics protocol, iTerm2 inline images, and Sixel graphics. A qualified pixel path is a prerequisite for the paper-fidelity tier of [math typesetting](docs/MATH_TYPESETTING_ROADMAP.md); an enum reporting Unknown is not proof of support. *Progress 2026-11-22:* v0.9.0 adds the pure probe decision layer (#437), the experimental kitty placeholder route (#438: byte builders, placeholder cells, an id cache, a route gate and `ui::pixel_image`) and its per-frame plan (#442). All of it produces bytes and `Surface`s only: nothing is wired into the renderer, `Context` or the session, and no graphics escape sequence is written to a terminal, so no live graphics transport has shipped and this stays open. Still to come: the renderer hook, panic-hook cleanup, session wiring and a real-terminal gate.
 - [ ] **Windows ConPTY Torture Testing**: extended automated testing under the Windows Console API and ConPTY.
 - [ ] **Multiplexer & Remote Shell Hardening**: specialized test matrix for tmux, screen, and SSH connections over high-latency networks.
 - [ ] **Property & Fuzz Testing**: `cargo-fuzz` / AFL suite exercising arbitrary Unicode sequences, arbitrary terminal byte streams, invalid ANSI input, and rapid terminal resizes.

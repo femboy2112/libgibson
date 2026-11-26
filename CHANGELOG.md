@@ -17,27 +17,144 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ### Added
 - **EXPERIMENTAL, v0.9.1 (GREEN): a multi-line text area.** Rust only; the C ABI is unchanged. `TextAreaState` (`text`, `cursor_grapheme`, `scroll_row`, `goal_col`), `ui::text_area` with `.rows(n)` and `.on_area_edit(..)`, and one wrap function (`TextAreaState::visual_rows`) shared by cursor movement, scrolling and painting. Enter inserts a newline and the widget never commits: the application provides an explicit Save control and owns Esc/cancel. A paste keeps `\n` and `\t` byte-exact (a TAB is one grapheme, 4 cells wide), normalizes `\r\n`, and strips every other control character and escape sequence. The implementation is in (`docs/design/v0.9.1-text-area.md`, `tests/text_area.rs`); the type stays EXPERIMENTAL. `TextInputState` is unchanged and stays single-line (#252). **Source break (EXPERIMENTAL `ui`):** `ui::Interaction` gains two public fields, `area` and `on_area_edit`, so code that builds an `Interaction` with a struct literal must add them.
+- Settings form primitives (experimental, opt-in, Rust-only; #433): `ui::toggle` (`[x]`/`[ ]` text marker, focusable like `choice`), `ui::form_row` (label left of the control with an aligned label column; stacks the label above the control below 80 columns; adds no focus stop), `Element::error` (one `Tone::Danger` row under the control) and `Element::hint` (a dim, clipped, single-row note after the control). `error(None)` and `hint(None)` render byte-identically to omitting them. No C ABI or header change; existing elements are unchanged. See `docs/design/v0.9-settings-form.md`.
 
-- **EXPERIMENTAL (v0.9): `ui::toast_lane`.** `toast_lane(toasts)` is a
-  noninteractive overlay host that stacks toasts from the top-right of the element it is mounted
-  on, newest first, each in its own box so they never overlap or cover anything outside the host. If
-  the toasts do not all fit, a one-row "+N more" counts the hidden ones (or, when only the newest
-  fits, a " +N" on its top row); toasts are never dropped silently. The lane is inert (no pointer
-  or focus target) and adds no motion; ordinary `toast()` is unchanged. Design:
-  `docs/design/v0.9-toast-lane.md`.
+## [0.9.0] — 2026-11-26 · GitHub release from `main` · "clear SIGKILL 0"
+
+No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experimental `ui::Key` is now #[non_exhaustive] (adds Key::Scoped). The release adds new opt-in Rust-only surfaces: cell-glyph encoders, a terminal capability decision layer, the kitty graphics placeholder route (bytes and cells only, not wired into the renderer), view transitions, a toast lane, `measure_wrapped`, and a reserved-top inline anchor with hidden fullscreen cursor parking. One default changes for Rust applications: F1 to F12 now arrive as `Event::Key` with `KeyCode::F(n)` (#446), where they were dropped before; the C ABI still skips them. Every other default is unchanged, and the half-block output stays byte-identical.
+- **What changed:** opt-in cell encoders (#436); a pure terminal capability probe decision layer (#437); `SurfaceFx::Offset`/`Blend`, `ui::ViewTransition` and a structural `ui::Key::Scoped` (#434); the experimental kitty graphics placeholder route (#438) with its per-frame plan (#442); `ui::toast_lane` (#443); `KeyCode::F` function keys F1 to F12 (#446); `measure_wrapped` (#448); the reserved-top inline anchor and hidden fullscreen cursor home, with its blank-scrollback fix (#452, #453); CI `--no-fail-fast` (#440).
+- **Unchanged:** `bindings/` (except the Python package version) and `abi/`; `include/gibson.h` gained comments only (#446). `GIBSON_ABI_VERSION` stays 1 (67 symbols). MSRV stays 1.85.
+- **Platforms and distribution:** Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload. The Go module tag `bindings/go/v0.9.0` names the same commit as `v0.9.0`.
+
+### Added (Rust-only, opt-in)
+- **Cell encoders ([#436](https://github.com/femboy2112/libgibson/pull/436)).** `CellEncoder`
+  (`#[non_exhaustive]`: `HalfBlock` (the default), `Quadrant`, `Sextant`, `Octant`, `Braille` and
+  `Auto`) chooses how an `RgbRaster` becomes cells. `RgbRaster::to_surface_with(encoder)` realizes
+  a raster with it, and `ui::image_with(raster, max, alt, ImageOptions)` draws one in the UI layer.
+  Each cell picks the exact best two-colour partition of its samples in linear light. A denser
+  encoder therefore raises edge and luminance detail, not chroma. `HalfBlock` is exactly
+  `to_surface()` and `ui::image`, byte for byte, and the box, the reserved height and the alt-text
+  fallback do not depend on the encoder. `sextant_char` and `octant_char` are the pure glyph
+  tables (the octant table is a bijection on all 256 patterns), and `allowed_encoder(requested,
+  cli, env)` is the passive gate that degrades a request the terminal cannot be trusted to draw
+  (`Octant` to `Sextant` to `HalfBlock`, an unknown terminal never upgrades). All of these are
+  re-exported at the crate root, and `CellEncoder` also from `ui::prelude`. The encoder is not
+  applied by default anywhere: callers opt in, and degrade with `allowed_encoder` first. The
+  design is in `docs/design/v0.9-cell-encoders.md`. Not included: the `Stage` raster-plane seam,
+  which stays a later slice.
+- **Terminal capability probe, decision layer ([#437](https://github.com/femboy2112/libgibson/pull/437)).**
+  The new `capability::probe` module turns evidence into a verdict for sixel, kitty graphics and
+  the block-glyph tier (`GlyphTier`: `Basic`, `Sextant`, `Octant`). It provides the one-shot
+  query bytes (`probe_request_bytes`), parsers for DA1, XTSMGRAPHICS and kitty graphics replies,
+  and `decide`, a pure table that combines the replies with the tmux/screen and ssh policy and
+  an explicit override (`UserForced`). Every verdict carries a `ProbeReason`.
+  `TerminalCapabilities::with_probe` applies a verdict. `Supported` needs positive evidence;
+  silence is `Unknown`, and a timeout is never `Unsupported`. **Nothing is wired into the live
+  terminal path:** no query is written to a terminal in this release, so no behavior changes. The
+  design is in `docs/design/v0.9-capability-probe.md`.
+
+- **Kitty graphics placeholder route, bytes and cells layer ([#438](https://github.com/femboy2112/libgibson/pull/438)).** EXPERIMENTAL; the new
+  `graphics::kitty` module (listed in the experimental tier of the Release Contract) is the byte
+  and `Surface` layer of the Unicode-placeholder route in
+  `docs/design/v0.9-kitty-graphics-route.md`, where a picture is drawn by ordinary text cells.
+  `kitty_transmit_rgba` builds the chunked, quiet APC upload of an RGBA image,
+  `kitty_place_virtual` the virtual placement, `kitty_delete` and `kitty_delete_all` the deletes,
+  and `placeholder_cells(id, cols, rows)` returns a `Surface` of U+10EEEE cells carrying the row
+  and column diacritics (`rowcolumn_diacritic`) with the image id as foreground colour, so the
+  existing diff, clip and compositor already move, hide and restore the picture. `ImageCache`
+  (with `CacheLimits`) gives each distinct image one id by content, uploads it once, evicts the
+  least recently shown beyond a resident cap, and reports the bytes that free everything it
+  uploaded (`teardown_bytes`). `pixel_route` is a pure gate: `PixelRoute::Pixels` only when the
+  application itself passed `Capability::Supported` at 24-bit colour and the environment shows no
+  tmux, screen or ssh (a `force` flag overrides only those two); otherwise
+  `PixelRoute::Fallback(FallbackReason)`, which means "draw the same box with the cell encoder the
+  application chose". `ui::pixel_image(source, max)` and `Element::image_source()` keep the
+  caller's `Arc<RgbaRaster>` on the element (alpha and full resolution), and the source is carried
+  through `stage`'s tree mapping. **Opt-in and not wired in:** nothing calls this layer from the
+  renderer, `Context` or the session, no escape sequence is written to a terminal, and
+  `pixel_image` itself paints as an ordinary `ui::image` (flattened onto black and fitted to the
+  box), so a default render does not change. Not claimed: that any terminal draws the image.
+- **Kitty frame plan ([#442](https://github.com/femboy2112/libgibson/pull/442), landed with [#438](https://github.com/femboy2112/libgibson/pull/438)).** EXPERIMENTAL; the new `graphics::frame`
+  module adds `KittyFramePlan`, the per-frame planner a terminal adapter would own
+  (`begin_frame`, one `place` per image box, `end_frame`, `commit`, `reset`, `fallbacks`).
+  `place` returns a `BoxPlacement`: `Pixels` with the placeholder cells for the box, or
+  `Fallback(BoxFallback)` (`Refused`, `SizeConflict` or `EmptyBox`) so the caller draws the
+  cell-encoder form. `end_frame` returns the graphics bytes (uploads, then deletes, then
+  placements) to write ahead of the frame's cell bytes, and residency is recorded only on
+  `commit`, after the write succeeded; an unconfirmed frame makes its uploads suspect and they are
+  uploaded again. At most one eviction delete may be outstanding (residency never exceeds the cap
+  plus one), and an idle frame produces no bytes. `ImageCache` gains `forget` and `would_evict`
+  (both EXPERIMENTAL). Like the route above, it only produces bytes and cells and is not called
+  by the renderer or the session. Deferred to 0.9.1: the per-frame byte budget
+  (`CacheLimits::max_frame_bytes` is not enforced). Later slices: the renderer hook, the
+  process-wide panic-hook cleanup, session wiring, torn-write recovery and a real-terminal gate.
+- **`SurfaceFx::Offset` and `SurfaceFx::Blend`, with `ui::ViewTransition` ([#434](https://github.com/femboy2112/libgibson/pull/434)).** EXPERIMENTAL.
+  Both are implemented, with `surface_fx::resolve_reset`. See `docs/design/v0.9-view-transitions.md`.
+- **`ui::toast_lane` ([#443](https://github.com/femboy2112/libgibson/pull/443)).** EXPERIMENTAL. `toast_lane(toasts)` is a noninteractive overlay host
+  that stacks toasts from the top-right of the element it is mounted on, newest first, each in
+  its own box so they never overlap or cover anything outside the host. If the toasts do not all
+  fit, a one-row "+N more" counts the hidden ones (or, when only the newest fits, a " +N" on its
+  top row); toasts are never dropped silently. The lane is inert (no pointer or focus target) and
+  adds no motion; ordinary `toast()` is unchanged. Design: `docs/design/v0.9-toast-lane.md`.
+- **`measure_wrapped(text, width) -> u16`: rows a text takes when word-wrapped, as `ui::text()`
+  paints it ([#448](https://github.com/femboy2112/libgibson/pull/448)).** Returns the row count of `wrap_text(text, WrapMode::WordWrap, width)`,
+  saturating at `u16::MAX`. Tests in `tests/measure_wrapped.rs` (pinned caption, paragraph,
+  hard-break and wide-glyph cases, a painted-rows oracle, and equality with `wrap_text`).
+  `wrap_text` behaviour is unchanged. Design: `docs/design/v0.9-measure-wrapped.md`.
+- **Reserved-top inline anchor and fullscreen hidden-cursor home (#452), reachable from `Context`.**
+  `Context::set_inline_full_height_anchor(bool)` keeps a maximal inline live frame (`rows - 1`)
+  below one reserved top row, rotating history insertions through it;
+  `set_fullscreen_hidden_cursor_home(bool)` parks a hidden fullscreen cursor at the top left of
+  each frame. Both are opt-in, default off,
+  emit the same bytes as before when off, and are Rust only (the C ABI is unchanged). A reserved
+  top row that this renderer left blank is now overwritten by the next insertion instead of being
+  scrolled into native scrollback, so insertions add no spurious blank lines to history; a
+  pre-existing top line is still preserved. Tests: `tests/context_resize_contract.rs`,
+  `tests/whole_renderer_vt100.rs`.
 
 ### Changed
-
+- **`KeyCode::F(u8)`: function keys F1 to F12 are now delivered (Rust; default behavior change) ([#446](https://github.com/femboy2112/libgibson/pull/446)).** A consumer wants F1 to open in-app
+  help; until now every function key was dropped before it reached `Event`. `KeyCode` gains
+  `F(u8)` (`KeyCode` is `#[non_exhaustive]`, so the addition is non-breaking). Decoded: F1 through
+  F12, with Shift, Ctrl and Alt, from crossterm's `KeyCode::F` and from the owned Unix source (SS3
+  `ESC O P`..`S`, `CSI 11~`..`CSI 24~`, and the `CSI 1;<mod>P`, `Q`, `S` and `CSI <n>;<mod>~` forms).
+  The C ABI is unchanged and skips F-keys (the header gained only a comment: "F-keys are not
+  exposed in ABI 1; they are skipped"): the C poll consumes one and keeps polling for the rest of
+  its timeout, so C behavior stays as it is today; the symbol count stays 67. F13+ is still
+  dropped (open, #447). Design: `docs/design/v0.9-function-keys.md`.
+  - **SPEC UPDATE (GOD #188): F3 with modifiers is decoded only via `CSI 13;<mod>~`.** The RED
+    slice pinned an ambiguous form: xterm's `CSI 1;<mod>R` is byte-identical to a cursor position
+    reply, so it is decoded as that reply and dropped, never as F3 (as in crossterm upstream). A
+    guard test pins this so it is not "fixed" into phantom keypresses.
+  - **SPEC UPDATE (GOD #148): F-keys are modelled; was None.** The crossterm-level tests that used
+    F5 as "a key code LibGibson does not model" now expect `F(5)`, and the guard for an unmodelled
+    key moved to Insert (`src/input.rs` `key_kind_tests`, `tests/key_release_kind_pty.rs`).
 - **`ui::Key` is now `#[non_exhaustive]` and gains a `Scoped { scope, key }` variant**
-  (EXPERIMENTAL `ui` tier) and the constructor `Key::scoped`. `Element::scoped_keys(prefix)`
+  (EXPERIMENTAL `ui` tier) and the constructor `Key::scoped` ([#434](https://github.com/femboy2112/libgibson/pull/434)). `Element::scoped_keys(prefix)`
   uses it, so a scoped key is structural rather than joined text: scope `a` + key `b` never
   equals a user key `a.b`. An earlier v0.9 draft spelled scoped keys as
   `Key::Named("{prefix}.{key}")`; code that looked a scoped control up by that string should
   use `Key::scoped(prefix, key)`. A `match` on `Key` outside the crate now needs a wildcard
-  arm, once, so later variants are not breaking. (#434)
-- **`SurfaceFx::Offset` and `SurfaceFx::Blend`** are implemented, with
-  `surface_fx::resolve_reset` and `ui::ViewTransition` (EXPERIMENTAL). See
-  `docs/design/v0.9-view-transitions.md`. (#434)
+  arm, once, so later variants are not breaking.
+
+### Tests
+- **`tests/cell_encoders.rs` (27 tests, [#436](https://github.com/femboy2112/libgibson/pull/436)).**
+  Written RED first on compile-shaped stubs. It pins the half-block default and the `ui::image`
+  fallbacks byte for byte, the glyph tables, the encoders and the degrade ladder.
+- **`tests/capability_probe.rs` (39 tests, [#437](https://github.com/femboy2112/libgibson/pull/437)).**
+  Written RED first on compile-shaped stubs, from byte-string fixtures. It pins the request
+  bytes (DA1 last, every CSI a query), the three reply parsers and the decision table.
+- **Kitty route ([#438](https://github.com/femboy2112/libgibson/pull/438), [#442](https://github.com/femboy2112/libgibson/pull/442)).** `tests/kitty_graphics.rs` (40 tests), `tests/kitty_pixel_element.rs`
+  (3) and `tests/kitty_frame_plan.rs` (24), written RED first, on bytes and `Surface`s with
+  formula-generated synthetic images only; no escape sequence is written to a terminal.
+- **Function keys ([#446](https://github.com/femboy2112/libgibson/pull/446)).** RED slice for F-key decoding and for the C poll skipping F-keys.
+- **`measure_wrapped` ([#448](https://github.com/femboy2112/libgibson/pull/448)), `toast_lane` ([#443](https://github.com/femboy2112/libgibson/pull/443)) and view transitions ([#434](https://github.com/femboy2112/libgibson/pull/434)).** Each written RED
+  first, then GREEN.
+
+### Release process
+- **CI runs the main `cargo test` step with `--no-fail-fast`
+  ([#440](https://github.com/femboy2112/libgibson/pull/440)).** A failing test binary no longer
+  hides the results of the binaries after it. No library change.
 
 ## [0.8.1] — 2026-11-19 · GitHub release from `main` · "clear SIGFPE 1"
 
