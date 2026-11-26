@@ -86,6 +86,23 @@ download, all 4 are byte-identical to the build, and the build-host path scan fo
 
 Known non-blocker: #454 (`wire_instrument_fullduplex` fails on a low-RAM laptop; hosted CI is green).
 
+**v0.9.1 "clear SIGKILL 1" is prepared in source** (state 1) on `main`. It is to be tagged
+`v0.9.1` (with `bindings/go/v0.9.1`) as a regular GitHub release on the release coordinator's
+per-tag go. It is a patch: the Settings form primitives (#433), additive, opt-in and Rust-only.
+The name follows [decision 0004](docs/decisions/0004-release-naming.md) (minor 9 = SIGKILL,
+patch 1). The C ABI is unchanged (v1, 67 symbols).
+
+#### v0.9.1 completion status (2026-11-26)
+
+| Item | Status | Evidence |
+|---|---|---|
+| #433 feat(ui): Settings form primitives (`toggle`, `form_row`, `Element::error`, `Element::hint`; EXPERIMENTAL, opt-in, Rust-only) | **Done** | Merged as `d72de6a`. RED `eee5219`/`8c02326`, GREEN `66e9011` (hosted CI run 45818416972 9/9 incl. Release preflight 45818416965). Consumer requirement: GHOST M3-a. A disabled toggle follows a disabled `choice` (owner ruling via the release coordinator, 2026-11-26). |
+| Release gates (exact-head CI incl. Release preflight) | **Pending** | |
+| Consumer gate | **Substituted**, as for 0.9.0 | Hosted CI 9/9 including Release preflight on the exact candidate, plus `git diff v0.9.0 <rc> -- abi include bindings` showing only the Python package version. The consumer (GHOST) adopts #433 from the `v0.9.1` tag. |
+| #444 multi-line text area (EXPERIMENTAL) | **Deferred to 0.10.0** | Its public `ui::Interaction` fields break literal constructors, which needs a minor (Release Contract §1). Not scheduled yet. |
+| `max_frame_bytes` for the kitty frame plan | **Not in 0.9.1** | Was deferred to 0.9.1 by the 0.9.0 table; not scheduled. |
+| Prompt editor | **Not in 0.9.1** | Was deferred to 0.9.1 by the 0.9.0 table; not scheduled. |
+
 #### v0.9.0 completion status (2026-11-26)
 
 Each 0.9.0 item, with the evidence that closes it or the recorded deferral that excludes it. A

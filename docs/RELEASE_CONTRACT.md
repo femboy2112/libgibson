@@ -102,6 +102,15 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
+- **0.9.1** "clear SIGKILL 1" ([decision 0004](decisions/0004-release-naming.md): minor 9 =
+  SIGKILL, patch 1) is **prepared in source** (state 1) on `main`. It is a patch: the Settings
+  form primitives (`ui::toggle`, `ui::form_row`, `Element::error`, `Element::hint`, #433) are
+  additive, opt-in and Rust-only, and change no existing API or default. The multi-line text area
+  (#444) is not in it: its new public `ui::Interaction` fields break literal constructors, which
+  is the "changing an experimental API in a way that breaks a patch consumer" row, so it waits for
+  0.10.0. It is to be tagged `v0.9.1` (with `bindings/go/v0.9.1`) on a `main` commit as a regular
+  GitHub release, only on the release coordinator's per-tag go. The C ABI is unchanged
+  (`GIBSON_ABI_VERSION` 1, 67 symbols); MSRV 1.85 and Linux x86_64 are unchanged.
 - **0.9.0** "clear SIGKILL 0" ([decision 0004](decisions/0004-release-naming.md): minor 9 =
   SIGKILL, patch 0; the name is confirmed by the release coordinator, GOD #126) is the latest
   such milestone and is **tagged and released on GitHub** (state 2):

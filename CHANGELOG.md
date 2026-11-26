@@ -15,7 +15,15 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-### Added
+## [0.9.1] — 2026-11-26 · GitHub release from `main` · "clear SIGKILL 1"
+
+A patch release that adds the Settings form primitives (#433). It is additive, opt-in and Rust-only. No existing API changes shape, every default is unchanged, and existing elements render byte-identically when the new calls are not used.
+- **What changed:** `ui::toggle`, `ui::form_row`, `Element::error` and `Element::hint` (#433).
+- **Unchanged:** `include/`, `abi/` and `bindings/` (except the Python package version). `GIBSON_ABI_VERSION` stays 1 (67 symbols). MSRV stays 1.85.
+- **Not in 0.9.1:** the multi-line text area (#444) adds public fields to the experimental `ui::Interaction`, which breaks struct-literal constructors, so under the Release Contract it waits for a minor (0.10.0).
+- **Platforms and distribution:** Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload. The Go module tag `bindings/go/v0.9.1` names the same commit as `v0.9.1`.
+
+### Added (Rust-only, opt-in)
 - Settings form primitives (experimental, opt-in, Rust-only; #433): `ui::toggle` (`[x]`/`[ ]` text marker, focusable like `choice`), `ui::form_row` (label left of the control with an aligned label column; stacks the label above the control below 80 columns; adds no focus stop), `Element::error` (one `Tone::Danger` row under the control) and `Element::hint` (a dim, clipped, single-row note after the control). `error(None)` and `hint(None)` render byte-identically to omitting them. No C ABI or header change; existing elements are unchanged. See `docs/design/v0.9-settings-form.md`.
 
 ## [0.9.0] — 2026-11-26 · GitHub release from `main` · "clear SIGKILL 0"
