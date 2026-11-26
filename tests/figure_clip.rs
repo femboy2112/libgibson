@@ -186,15 +186,18 @@ fn quaternion_same_hemisphere_unchanged_by_fix() {
 }
 
 #[test]
-fn unit_ish_quaternion_is_normalized_at_construction() {
-    // Length 1.0005, inside the 1e-3 tolerance.
+fn blended_unit_ish_quaternions_are_renormalized() {
+    // Keys of length 1.0005 are within the 1e-3 tolerance and are returned as authored,
+    // but any blend between them is exactly unit length.
+    let k = q(0.0, 0.0, 0.0, 1.0005);
     let c = Clip::new(
         "n",
         ms(10),
-        vec![rot("j", vec![(ms(0), q(0.0, 0.0, 0.0, 1.0005))])],
+        vec![rot("j", vec![(ms(0), k), (ms(10), q(0.0, 0.6, 0.0, 0.8))])],
     )
     .unwrap();
-    let r = c.sample(ms(0)).rotations[0].1;
+    assert_eq!(c.sample(ms(0)).rotations[0].1, k);
+    let r = c.sample(ms(3)).rotations[0].1;
     let len = (r.x * r.x + r.y * r.y + r.z * r.z + r.w * r.w).sqrt();
     assert!((len - 1.0).abs() < 1e-6, "{r:?}");
 }
