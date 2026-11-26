@@ -321,8 +321,7 @@ impl LayerSlots {
                     source: Arc::clone(fill),
                     offset_px: (slot.rect_px.x, slot.rect_px.y),
                     // Slot count is caller-bounded; saturate rather than wrap.
-                    z: z
-                        .saturating_add(1)
+                    z: z.saturating_add(1)
                         .saturating_add(i32::try_from(i).unwrap_or(i32::MAX)),
                 });
             }
@@ -392,8 +391,8 @@ impl CueSchedule {
         }
         let period_ns = u64::try_from(period.as_nanos()).map_err(|_| CueError::PeriodTooLong)?;
         // min_gap <= period, so this fits in u64 too.
-        let span_ns = u64::try_from((period - min_gap).as_nanos())
-            .map_err(|_| CueError::PeriodTooLong)?;
+        let span_ns =
+            u64::try_from((period - min_gap).as_nanos()).map_err(|_| CueError::PeriodTooLong)?;
         Ok(Self {
             seed,
             cue,

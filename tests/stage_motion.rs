@@ -49,7 +49,11 @@ fn g1_half_open_boundaries() {
     ];
     for (t, idx, tg, next) in cases {
         let x = s.sample(ms(t), full);
-        assert_eq!((x.index, tag(&x), x.next_in), (idx, tg, next.map(ms)), "t={t}");
+        assert_eq!(
+            (x.index, tag(&x), x.next_in),
+            (idx, tg, next.map(ms)),
+            "t={t}"
+        );
     }
 }
 
@@ -75,7 +79,10 @@ fn g1_reduced_and_none_rest_immediately() {
 
 #[test]
 fn g1_refusals() {
-    assert_eq!(FrameSequence::new(vec![], 0).unwrap_err(), SequenceError::Empty);
+    assert_eq!(
+        FrameSequence::new(vec![], 0).unwrap_err(),
+        SequenceError::Empty
+    );
     let many: Vec<_> = (0..65).map(|_| frame(1, 1)).collect();
     assert!(matches!(
         FrameSequence::new(many, 0),
@@ -83,13 +90,19 @@ fn g1_refusals() {
     ));
     let max: Vec<_> = (0..64).map(|_| frame(1, 1)).collect();
     assert!(FrameSequence::new(max, 63).is_ok(), "64 frames is allowed");
-    let short = vec![frame(1, 5), SequenceFrame::new(solid(2, 2, [0; 4]), Duration::from_micros(999))];
+    let short = vec![
+        frame(1, 5),
+        SequenceFrame::new(solid(2, 2, [0; 4]), Duration::from_micros(999)),
+    ];
     assert!(matches!(
         FrameSequence::new(short, 0),
         Err(SequenceError::HoldTooShort { index: 1 })
     ));
     let exact = vec![SequenceFrame::new(solid(2, 2, [0; 4]), ms(1))];
-    assert!(FrameSequence::new(exact, 0).is_ok(), "exactly 1 ms is allowed");
+    assert!(
+        FrameSequence::new(exact, 0).is_ok(),
+        "exactly 1 ms is allowed"
+    );
     assert!(matches!(
         FrameSequence::new(vec![frame(1, 5)], 1),
         Err(SequenceError::RestOutOfRange { rest: 1, len: 1 })
@@ -118,7 +131,10 @@ fn g1_sum_of_holds_overflow_is_refused() {
         SequenceError::DurationOverflow
     );
     // One huge hold alone is fine, and samples without panicking.
-    let one = vec![SequenceFrame::new(solid(2, 2, [7, 0, 0, 255]), Duration::MAX)];
+    let one = vec![SequenceFrame::new(
+        solid(2, 2, [7, 0, 0, 255]),
+        Duration::MAX,
+    )];
     let s = FrameSequence::new(one, 0).unwrap();
     let x = s.sample(ms(5), MotionPreference::Full);
     assert_eq!(x.next_in, Some(Duration::MAX - ms(5)));
@@ -144,7 +160,12 @@ fn g1_is_deterministic_and_late_sampling_coalesces() {
 // ---------------------------------------------------------------- G2
 
 fn rect(x: i32, y: i32, w: u32, h: u32) -> PixelRect {
-    PixelRect { x, y, width: w, height: h }
+    PixelRect {
+        x,
+        y,
+        width: w,
+        height: h,
+    }
 }
 fn slots() -> LayerSlots {
     LayerSlots::new(
@@ -217,7 +238,10 @@ fn g2_new_refusals() {
         s(vec![LayerSlot::new("a", rect(0, 7, 2, 2))]),
         Err(SlotError::OutsideBase { .. })
     ));
-    assert!(s(vec![LayerSlot::new("a", rect(6, 6, 2, 2))]).is_ok(), "touching the edge is inside");
+    assert!(
+        s(vec![LayerSlot::new("a", rect(6, 6, 2, 2))]).is_ok(),
+        "touching the edge is inside"
+    );
     assert!(matches!(
         s(vec![LayerSlot::new("a", rect(0, 0, 0, 2))]),
         Err(SlotError::EmptyRect { .. })
@@ -275,7 +299,10 @@ fn g2_planes_refusals() {
         ),
         Err(SlotError::DuplicateFill { .. })
     ));
-    assert!(sl.planes(k(), base(), &[], 0).is_ok(), "no fills is just the base");
+    assert!(
+        sl.planes(k(), base(), &[], 0).is_ok(),
+        "no fills is just the base"
+    );
 }
 
 fn node_root(w: u16, h: u16) -> gibson::Node {
@@ -300,7 +327,11 @@ fn resolve(planes: &[RasterPlane]) -> RgbRaster {
         (8, 4),
         &under(),
         &raw,
-        RasterLimits { planes: 16, nodes: 100, pixels: 100_000 },
+        RasterLimits {
+            planes: 16,
+            nodes: 100,
+            pixels: 100_000,
+        },
     )
     .unwrap()
     .pixels
@@ -337,7 +368,9 @@ fn g2_composite_equals_hand_composite_and_unfilled_equals_base() {
     same(&resolve(&all), &hand);
 
     // Unfilled slots: byte-identical to the base plane alone.
-    let none = sl.planes(anchor.clone(), Arc::clone(&base), &[], 0).unwrap();
+    let none = sl
+        .planes(anchor.clone(), Arc::clone(&base), &[], 0)
+        .unwrap();
     let alone = [RasterPlane {
         anchor: RasterAnchor::Key(anchor),
         source: Arc::clone(&base),
@@ -347,7 +380,12 @@ fn g2_composite_equals_hand_composite_and_unfilled_equals_base() {
     same(&resolve(&none), &resolve(&alone));
     // One slot filled leaves the other region equal to the base alone.
     let part = sl
-        .planes(Key::named("avatar"), Arc::clone(&base), &[("eyes", eyes)], 0)
+        .planes(
+            Key::named("avatar"),
+            Arc::clone(&base),
+            &[("eyes", eyes)],
+            0,
+        )
         .unwrap();
     let (p, b) = (resolve(&part), resolve(&alone));
     assert_eq!(p.get(3, 5), b.get(3, 5));
@@ -358,8 +396,14 @@ fn g2_composite_equals_hand_composite_and_unfilled_equals_base() {
 
 const SEC: u64 = 1_000_000_000;
 fn cue(seed: u64, c: u64) -> CueSchedule {
-    CueSchedule::new(seed, c, Duration::from_secs(10), Duration::from_secs(4), Duration::from_secs(1))
-        .unwrap()
+    CueSchedule::new(
+        seed,
+        c,
+        Duration::from_secs(10),
+        Duration::from_secs(4),
+        Duration::from_secs(1),
+    )
+    .unwrap()
 }
 
 /// Independent reference for the contract hash (standard SplitMix64 step: golden gamma first).
@@ -381,9 +425,21 @@ fn g3_hash_golden_table() {
     let table: [(u64, u64, u64, u64, Option<u64>); 6] = [
         (0, 0, 0, 0x238275bc38fcbe91, Some(11_717_340_104)),
         (1, 2, 3, 0xd0734750fde362b3, Some(24_386_420_295)),
-        (0xDEADBEEF, 7, 100, 0xe5a79e8023c79bb9, Some(412_473_340_274)),
+        (
+            0xDEADBEEF,
+            7,
+            100,
+            0xe5a79e8023c79bb9,
+            Some(412_473_340_274),
+        ),
         (42, 7, 0, 0x55be888977820bef, Some(10_736_299_107)),
-        (0xdeadbeef, 1, 1000, 0x02495f72815ba993, Some(4_010_721_989_673)),
+        (
+            0xdeadbeef,
+            1,
+            1000,
+            0x02495f72815ba993,
+            Some(4_010_721_989_673),
+        ),
         (u64::MAX, u64::MAX, u64::MAX, 0x595b17f487c0e71b, None),
     ];
     for (seed, c, k, h, nth) in table {
@@ -396,11 +452,18 @@ fn g3_hash_golden_table() {
             assert_eq!(cue(seed, c).nth(k), None, "k = u64::MAX overflows");
         }
     }
-    assert_ne!(ref_h(0, 0, 0), 0, "SplitMix64 must not have a zero fixed point");
+    assert_ne!(
+        ref_h(0, 0, 0),
+        0,
+        "SplitMix64 must not have a zero fixed point"
+    );
     // The jitter of the max tuple, via a schedule whose period leaves headroom for k.
     let big = CueSchedule::new(u64::MAX, u64::MAX, Duration::ZERO, ns(1), Duration::ZERO).unwrap();
     // span 1 -> jitter = h % 2; h is odd so jitter 1.
-    assert_eq!(big.nth(u64::MAX), Some(ns(u64::MAX) + ns(0x595b17f487c0e71b % 2)));
+    assert_eq!(
+        big.nth(u64::MAX),
+        Some(ns(u64::MAX) + ns(0x595b17f487c0e71b % 2))
+    );
 }
 
 #[test]
@@ -426,7 +489,10 @@ fn g3_nth_matches_reference_and_differs_across_cues() {
             differing += 1;
         }
     }
-    assert!(differing > 40, "cues are independent: {differing}/50 differ");
+    assert!(
+        differing > 40,
+        "cues are independent: {differing}/50 differ"
+    );
     assert_ne!(cue(1, 1).nth(3), cue(2, 1).nth(3), "seed matters");
 }
 
@@ -434,7 +500,12 @@ fn g3_nth_matches_reference_and_differs_across_cues() {
 fn g3_next_after_before_origin_is_k0() {
     let s = cue(9, 9);
     let n0 = s.nth(0).unwrap();
-    for t in [Duration::ZERO, ms(1), Duration::from_secs(9), Duration::from_secs(10) - ns(1)] {
+    for t in [
+        Duration::ZERO,
+        ms(1),
+        Duration::from_secs(9),
+        Duration::from_secs(10) - ns(1),
+    ] {
         assert_eq!(s.next_after(t), Some((0, n0)), "t={t:?}");
         assert!(n0 > t);
     }
@@ -464,12 +535,18 @@ fn g3_overflow_is_none() {
 #[test]
 fn g3_constructor_refusals() {
     let d = Duration::from_secs;
-    assert_eq!(CueSchedule::new(0, 0, d(0), d(0), d(0)).unwrap_err(), CueError::ZeroPeriod);
+    assert_eq!(
+        CueSchedule::new(0, 0, d(0), d(0), d(0)).unwrap_err(),
+        CueError::ZeroPeriod
+    );
     assert_eq!(
         CueSchedule::new(0, 0, d(0), d(1), d(2)).unwrap_err(),
         CueError::GapExceedsPeriod
     );
-    assert!(CueSchedule::new(0, 0, d(0), d(1), d(1)).is_ok(), "min_gap == period");
+    assert!(
+        CueSchedule::new(0, 0, d(0), d(1), d(1)).is_ok(),
+        "min_gap == period"
+    );
     let too_long = ns(u64::MAX) + ns(1);
     assert_eq!(
         CueSchedule::new(0, 0, d(0), too_long, d(0)).unwrap_err(),
@@ -504,7 +581,10 @@ fn g3_next_after_consistent_with_nth_at_boundaries() {
         assert_eq!(s.nth(k), Some(at));
         assert!(at > t, "strictly after: t={t:?}");
         // Brute force: no earlier occurrence is strictly after t.
-        let first = (0..).map(|j| (j, s.nth(j).unwrap())).find(|(_, x)| *x > t).unwrap();
+        let first = (0..)
+            .map(|j| (j, s.nth(j).unwrap()))
+            .find(|(_, x)| *x > t)
+            .unwrap();
         assert_eq!((k, at), first, "t={t:?}");
     }
 }
@@ -542,7 +622,10 @@ fn g3_seeded_property_gap_bounds_over_1e5_occurrences() {
         for k in 1..25_000u64 {
             let cur = s.nth(k).unwrap();
             let slot = ns(origin) + ns(period) * (k as u32);
-            assert!(cur >= slot && cur <= slot + ns(period - min_gap), "seed={seed:#x} round={round} k={k}");
+            assert!(
+                cur >= slot && cur <= slot + ns(period - min_gap),
+                "seed={seed:#x} round={round} k={k}"
+            );
             let gap = cur - prev;
             assert!(
                 gap >= ns(min_gap) && gap <= ns(2 * period - min_gap),
@@ -550,7 +633,12 @@ fn g3_seeded_property_gap_bounds_over_1e5_occurrences() {
             );
             prev = cur;
             // next_after(prev - 1ns) is exactly this occurrence.
-            assert_eq!(s.next_after(cur - ns(1)).map(|(i, _)| i).filter(|&i| i <= k), Some(k));
+            assert_eq!(
+                s.next_after(cur - ns(1))
+                    .map(|(i, _)| i)
+                    .filter(|&i| i <= k),
+                Some(k)
+            );
         }
     }
 }
@@ -576,7 +664,12 @@ fn g4_hidden_means_zero_scheduled_work() {
     let mut compile = |now: Duration| {
         ui.frame(
             &tree(),
-            UiEnvironment { width: 8, height: 4, motion: MotionPreference::Full, ..Default::default() },
+            UiEnvironment {
+                width: 8,
+                height: 4,
+                motion: MotionPreference::Full,
+                ..Default::default()
+            },
             now,
         )
         .unwrap()
@@ -586,9 +679,14 @@ fn g4_hidden_means_zero_scheduled_work() {
         cadence: ms(25),
     })
     .unwrap();
-    let limits = RasterLimits { planes: 16, nodes: 256, pixels: 100_000 };
+    let limits = RasterLimits {
+        planes: 16,
+        nodes: 256,
+        pixels: 100_000,
+    };
     let mut underlay = RgbRaster::new(8, 8);
-    underlay.clear((1, 2, 3) as Rgb);
+    let bg: Rgb = (1, 2, 3);
+    underlay.clear(bg);
 
     // Visible: a G1-sampled plane and its After(next_in) demand.
     let sequence = FrameSequence::new(vec![frame(10, 100), frame(20, 100)], 0).unwrap();
@@ -600,7 +698,10 @@ fn g4_hidden_means_zero_scheduled_work() {
         offset_px: (0, 0),
         z: 0,
     };
-    let demand = [SourceDemand { key: Key::named("art"), demand: FrameDemand::After(next_in) }];
+    let demand = [SourceDemand {
+        key: Key::named("art"),
+        demand: FrameDemand::After(next_in),
+    }];
     let shown = driver
         .resolve_frame(
             ms(0),
@@ -617,7 +718,11 @@ fn g4_hidden_means_zero_scheduled_work() {
             limits,
         )
         .unwrap();
-    assert_eq!(driver.next_deadline(), Some(ms(100)), "visible avatar asks for its frame change");
+    assert_eq!(
+        driver.next_deadline(),
+        Some(ms(100)),
+        "visible avatar asks for its frame change"
+    );
 
     let mut ctx = Context::headless(RenderMode::Fullscreen, 8, 4);
     ctx.scheduler.set_max_fps(u32::MAX);
@@ -650,13 +755,19 @@ fn g4_hidden_means_zero_scheduled_work() {
     assert_eq!(ctx.time_until_frame_needed(), None);
     // Idle run_once emits nothing.
     assert!(ctx.run_once(ms(1)).unwrap().is_none());
-    assert!(ctx.take_rendered_bytes().is_empty(), "idle run_once emits 0 bytes");
+    assert!(
+        ctx.take_rendered_bytes().is_empty(),
+        "idle run_once emits 0 bytes"
+    );
     assert_eq!(ctx.time_until_frame_needed(), None);
 
     // Re-show at a later host time resumes from that time and replays nothing.
     let later = ms(900);
     let s2 = sequence.sample(later - ms(900), MotionPreference::Full);
-    let demand2 = [SourceDemand { key: Key::named("art"), demand: FrameDemand::After(s2.next_in.unwrap()) }];
+    let demand2 = [SourceDemand {
+        key: Key::named("art"),
+        demand: FrameDemand::After(s2.next_in.unwrap()),
+    }];
     driver
         .resolve_frame(
             later,
