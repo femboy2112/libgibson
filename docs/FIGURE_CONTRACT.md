@@ -1,7 +1,9 @@
 # Figure contract: CharacterRevision, expression requests, asset packs (DRAFT)
 
-**Status: DRAFT, not frozen.** This is a shared interface. The coordinator reviews it before it
-is frozen, and changes after freezing need a coordinator ruling. It covers three interfaces:
+**Status: DRAFT, not frozen.** This is a shared interface. Changes after freezing need a
+coordinator ruling. It freezes only after the consumer's producer-side drafts (I-1 and I-3) have
+been cross-read against it, and the coordinator then issues FREEZE. Rulings #38 Q1 and Q2 are
+folded in. It covers three interfaces:
 - I-2, `CharacterRevision`, which libgibson owns;
 - the libgibson (consumer) side of I-3, `ExpressionRequest`;
 - I-4, the `AssetPack` manifest.
@@ -47,7 +49,7 @@ pub struct CharacterRevision {
     pub skin: SkinWeights,               // ≤ 4 influences per vertex, normalized
     pub morphs: Vec<MorphTarget>,        // named sparse deltas; face and expression targets
     pub colliders: Vec<Collider>,        // LATER: empty in Slice 1
-    pub garment_fits: Vec<GarmentFit>,   // LATER: empty in Slice 1
+    pub garment_fits: Vec<GarmentFit>,   // LATER: empty in Slice 1; each has a FitStatus
     pub calibration: MotionCalibration,  // LATER: defaulted in Slice 1
     pub support: SupportClass,           // Supported | NeedsAdaptation | Experimental
 }
@@ -83,12 +85,17 @@ the consumer side. libgibson never stores identity, personality, memory or appro
    - It borrows the revision immutably, so `rev_id` cannot change.
    - Clothing changes and animation create no new body revision.
 5. **Never rescue a fit by reshaping the body.**
-   - A garment that does not fit is reported as a typed per-garment outcome
-     (`GarmentFit::NeedsAdaptation { reason }`).
+   - A garment that does not fit is reported in the revision as a typed per-garment outcome,
+     `FitStatus::Unfit { reason }`.
+   - An unfit garment carries **no** fit data, and is never drawn with a degenerate fit.
    - The neutral body is not altered to make it fit.
-   - Body errors (invalid controls, a degenerate skeleton) fail the whole `compile`.
-   - **Open question for the coordinator:** should an unfit *required* garment fail `compile`,
-     or set `support = NeedsAdaptation`? The draft takes the second option.
+   - `compile` still succeeds, with `support = NeedsAdaptation`, even when the unfit garment is
+     a *required* one.
+   - A geometry, transform or topology corruption, or invalid controls, are still a
+     `CompileError`, never `NeedsAdaptation`.
+   - **Activation is the host's decision.** The host refuses to activate a recipe whose required
+     garment is unfit. That rule lives in the consumer's avatar-recipe contract, not in
+     libgibson. *(Coordinator ruling #38, Q1.)*
 6. **Typed errors.** `CompileError` is `#[non_exhaustive]` and names the failing part. Examples:
    - `UnknownControl`, `ControlOutOfRange`, `FamilyMismatch`;
    - `SkeletonCycle`, `NonFinite`, `DegenerateBind`, `SkinWeightInvalid`, `MorphTopologyMismatch`;
@@ -158,7 +165,7 @@ pub enum Expression {
 #[non_exhaustive]
 pub struct ExpressionRequest {
     pub expression: Expression,
-    pub source: RequestSource,    // Host | Operator
+    pub source: RequestSource,    // Host | Operator; for tracing only, never used for precedence
     pub priority: u8,
     pub deadline: Option<Duration>,  // on the presentation clock; a late request is dropped, never replayed
     pub settle: Settle,           // how the realization ends (return to rest, hold)
@@ -184,10 +191,12 @@ pub struct ExpressionRequest {
     its designed static rest state.
 - **Hidden quiescence.** A hidden figure schedules no deadline and writes no bytes. This is
   pinned by M5-A G4.
-- **Arbitration among already-admitted requests** is mechanical: highest `priority` first, then
-  latest-issued.
-  - **Open question for the coordinator:** is even this host-side? The draft keeps it in
-    libgibson because it is deterministic and policy-free.
+- **Arbitration among already-admitted requests** is mechanical and lives in libgibson: highest
+  `priority` first, then latest-issued. The ordering is deterministic. *(Coordinator ruling #38,
+  Q2.)*
+  - Admission, source authority and operator-over-host precedence are consumer policy. The
+    consumer expresses them **only** through the `priority` it assigns.
+  - libgibson never inspects `source` for precedence. `source` is carried for tracing only.
 
 ---
 
