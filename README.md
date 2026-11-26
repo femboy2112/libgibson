@@ -67,6 +67,10 @@ procedural audio.
 
 ---
 
+## Gibson World — proposed 2.0 native GUI horizon
+
+The [Gibson World architecture](docs/GIBSON_WORLD_2_0_SPEC.md), [implementation gates](docs/GIBSON_WORLD_2_0_EXECUTION.md) and [coordinator handoff](handoffs/GIBSON_WORLD_2_0_COORDINATOR_HANDOFF.md) describe a **future, optional native-window/GPU presentation layer** built from the existing semantic Experience and Stage contracts. A window becomes a viewport onto one application-owned semantic world; terminal and native projections preserve essential status and typed actions without conflating visuals with host permissions. **Design only:** no native GUI implementation, new release version or desktop-control capability is claimed.
+
 ## Why LibGibson
 
 Traditional terminal libraries force a choice: take over the whole screen with an
