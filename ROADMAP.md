@@ -97,7 +97,7 @@ patch 1). The C ABI is unchanged (v1, 67 symbols).
 | Item | Status | Evidence |
 |---|---|---|
 | #433 feat(ui): Settings form primitives (`toggle`, `form_row`, `Element::error`, `Element::hint`; EXPERIMENTAL, opt-in, Rust-only) | **Done** | Merged as `d72de6a`. RED `eee5219`/`8c02326`, GREEN `66e9011` (hosted CI run 45818416972 9/9 incl. Release preflight 45818416965). Consumer requirement: GHOST M3-a. A disabled toggle follows a disabled `choice` (owner ruling via the release coordinator, 2026-11-26). |
-| Release gates (exact-head CI incl. Release preflight) | **Pending** | |
+| Release gates (exact-head CI incl. Release preflight) | **Met** (observed at H1; H2 differs only in this row) | H1 `590650a`: hosted CI run 45821763261 9/9 success (Rust job 139915550386, MSRV, ASan, Bindings, Go, PTY, Python wire, parser laws) and Release preflight run 45821763072 (job 139915549184). `git diff v0.9.0 590650a -- abi include bindings` shows only the Python package version. Known non-blocker: #454 (local-only `wire_instrument_fullduplex`; hosted CI green). |
 | Consumer gate | **Substituted**, as for 0.9.0 | Hosted CI 9/9 including Release preflight on the exact candidate, plus `git diff v0.9.0 <rc> -- abi include bindings` showing only the Python package version. The consumer (GHOST) adopts #433 from the `v0.9.1` tag. |
 | #444 multi-line text area (EXPERIMENTAL) | **Deferred to 0.10.0** | Its public `ui::Interaction` fields break literal constructors, which needs a minor (Release Contract §1). Not scheduled yet. |
 | `max_frame_bytes` for the kitty frame plan | **Not in 0.9.1** | Was deferred to 0.9.1 by the 0.9.0 table; not scheduled. |
