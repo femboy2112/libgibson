@@ -2,8 +2,8 @@
 
 **Status: DRAFT, not frozen.** This is a shared interface. Changes after freezing need a
 coordinator ruling. It freezes only after the consumer's producer-side drafts (I-1 and I-3) have
-been cross-read against it, and the coordinator then issues FREEZE. Rulings #38 Q1 and Q2 are
-folded in. It covers three interfaces:
+been cross-read against it, and the coordinator then issues FREEZE. Rulings #38 Q1 and Q2 and
+ruling #48 (the cross-read of the consumer's AvatarRecipe draft, D1–D9) are folded in. It covers three interfaces:
 - I-2, `CharacterRevision`, which libgibson owns;
 - the libgibson (consumer) side of I-3, `ExpressionRequest`;
 - I-4, the `AssetPack` manifest.
@@ -53,14 +53,38 @@ pub struct CharacterRevision {
     pub morphs: Vec<MorphTarget>,        // named sparse deltas; face and expression targets
     pub colliders: Vec<Collider>,        // LATER: empty in Slice 1
     pub garment_fits: Vec<GarmentFit>,   // LATER: empty in Slice 1; each has a FitStatus
-    pub calibration: MotionCalibration,  // LATER: defaulted in Slice 1
-    pub support: SupportClass,           // Supported | NeedsAdaptation | Experimental
+    pub calibration: MotionCalibration,  // LATER: defaulted in Slice 1; derived from the body only
+    pub support: SupportClass,           // quality label only, never an activation input
+}
+
+#[non_exhaustive]
+pub enum FitStatus {                     // per garment, the consumer's names (ruling #48 D1)
+    Fit,
+    NeedsAdaptation { reason: FitReason },
+    Unfit { reason: FitReason },         // carries no fit data
 }
 ```
 
 `BodyRecipe` is generic: a family reference plus `{control_id → value}`, already resolved
 from any locks and symmetry links. The consumer's richer `AvatarRecipe` (I-1) is mapped to it on
 the consumer side. libgibson never stores identity, personality, memory or approval state.
+
+**Input mapping from `AvatarRecipe` (ruling #48):**
+
+| AvatarRecipe | libgibson | notes |
+|---|---|---|
+| `body.body_family` (`id@ver`) | `BodyRecipe.family` | `FamilyMismatch` if it differs from the supplied `BodyFamily` |
+| `body.controls` (i32 thousandths, -1000..=1000, ≤256) | `BodyRecipe.controls` | converted as `value / 1000` to `f32`; range is checked against the family's declared bounds (`ControlOutOfRange`) |
+| `body.locks` | not mapped | a Studio editing constraint only; never reaches `compile` |
+| `body.symmetry` | not mapped | resolved by the host before `compile` |
+| `owner`, `revision`, `RecipeRef` | not mapped | stripped. Two owners with identical bodies get the same `rev_id`: it is content, not lineage |
+| `appearance` (skin, eyes, hair, makeup) | not in `rev_id` | rides beside the revision; materials are LATER. An appearance change is not a new body revision |
+| `motion_style` | not a compile input | a runtime posing or realization parameter; not in `rev_id` (D3) |
+| `asset_pins` (sha256, lowercase hex) | I-4 per-asset `sha256` | same encoding |
+| `wardrobe[]` | `garment_fits` (LATER) | one `FitStatus` per wardrobe entry |
+
+`MotionCalibration` is derived from the body only (bone lengths, limits). It is never derived from
+`motion_style`, so a tempo or sway change never mints a new `rev_id`.
 
 ### Laws
 
@@ -95,17 +119,22 @@ the consumer side. libgibson never stores identity, personality, memory or appro
    - It borrows the revision immutably, so `rev_id` cannot change.
    - Clothing changes and animation create no new body revision.
 5. **Never rescue a fit by reshaping the body.**
-   - A garment that does not fit is reported in the revision as a typed per-garment outcome,
-     `FitStatus::Unfit { reason }`.
+   - Each garment is reported in the revision as a typed per-garment outcome, `FitStatus`:
+     `Fit`, `NeedsAdaptation { reason }` or `Unfit { reason }`.
    - An unfit garment carries **no** fit data, and is never drawn with a degenerate fit.
    - The neutral body is not altered to make it fit.
-   - `compile` still succeeds, with `support = NeedsAdaptation`, even when the unfit garment is
-     a *required* one.
+   - `compile` still succeeds when a garment is unfit, even a *required* one.
    - A geometry, transform or topology corruption, or invalid controls, are still a
-     `CompileError`, never `NeedsAdaptation`.
-   - **Activation is the host's decision.** The host refuses to activate a recipe whose required
-     garment is unfit. That rule lives in the consumer's avatar-recipe contract, not in
-     libgibson. *(Coordinator ruling #38, Q1.)*
+     `CompileError`, never a fit outcome.
+   - **Activation is the host's decision, derived ONLY from the per-garment `FitStatus`**
+     (ruling #38 Q1, ruling #48 D1). This rule lives in the consumer's avatar-recipe contract:
+     - a required `Unfit` garment: the host refuses activation;
+     - a required `NeedsAdaptation` garment: activatable, with a visible warning;
+     - an optional `Unfit` garment: omitted and listed, never dropped silently.
+   - `SupportClass` is a libgibson quality label. It is **never** an activation input.
+   - **Slice 1 has no garment fitting** (`garment_fits` is empty). A recipe with a required
+     garment therefore gets no fit verdict, and the host refuses it (`NoFitReport`). That is the
+     correct fail-closed behaviour, not a bug. A garment-free recipe activates. *(Ruling #48 D2.)*
 6. **Typed errors.** `CompileError` is `#[non_exhaustive]` and names the failing part. Examples:
    - `UnknownControl`, `ControlOutOfRange`, `FamilyMismatch`;
    - `SkeletonCycle`, `NonFinite`, `DegenerateBind`, `SkinWeightInvalid`, `MorphTopologyMismatch`;
@@ -163,24 +192,38 @@ The request type is **one** type for both the sprite backend (M5-A: `FrameSequen
 ```rust
 #[non_exhaustive]
 pub enum Expression {
-    Attend,
-    Look(LookTarget),             // a scene-local target or a vector; never the OS or a camera
+    Attend,                       // attentional posture; no payload (ruling #48 D4)
+    Look(LookTarget),             // separate from Attend
     Acknowledge,
-    Express { affect: AffectId, intensity: f32 },  // the affect id is opaque to libgibson
+    Express { affect: AffectId, intensity: u16 },  // thousandths 0..=1000; the affect id is opaque
     Gesture(GestureId),
     Posture(PostureId),
-    Speak(SpeakTiming),           // AudioTiming(..) | TextOnly
+    Speak(SpeakTiming),           // AudioTiming { lead_in_ms, duration_ms } | TextOnly
     Rest,
+}
+#[non_exhaustive]
+pub enum LookTarget {             // symbolic, mapped through the host data table
+    Operator,
+    Screen,
+    Away,
+    // LATER: a scene-local point. Never OS or camera input.
 }
 #[non_exhaustive]
 pub struct ExpressionRequest {
     pub expression: Expression,
     pub source: RequestSource,    // Host | Operator; for tracing only, never used for precedence
-    pub priority: u8,
-    pub deadline: Option<Duration>,  // on the presentation clock; a late request is dropped, never replayed
-    pub settle: Settle,           // how the realization ends (return to rest, hold)
+    pub priority: u8,             // higher wins
+    pub deadline: Option<Duration>,  // ABSOLUTE on the presentation clock; late is dropped, never replayed
+    pub settle: Settle,
+}
+pub struct Settle {
+    pub ease: Duration,           // 0 under reduced motion
+    pub end: SettleEnd,           // ReturnToRest (default) | Hold
 }
 ```
+
+- `intensity` outside `0..=1000` is a typed error, never a clamp that hides it (D5).
+- `deadline` is `Option` for generic hosts. The consumer described in I-1 always sends one (D7).
 
 ### Laws for libgibson
 
@@ -196,14 +239,19 @@ pub struct ExpressionRequest {
 - **Modes.**
   - `Still`: rest only, with no cues.
   - `Responsive`: admitted requests only.
-  - `Ambient`: requests plus seeded cues.
+  - `Ambient`: requests plus seeded cues. There is **one ambient source** (ruling #48 D9):
+    `CueSchedule` only *proposes* times, and the host's producer admits a proposal by emitting an
+    ordinary `Posture` or `Gesture` request. libgibson never realizes a cue the host did not turn
+    into a request. While the figure is withheld (hidden or detached), nothing is admitted and
+    nothing is replayed.
   - Each mode composes with `MotionPreference`. `Reduced` and `None` realize every request as
     its designed static rest state.
 - **Hidden quiescence.** A hidden figure schedules no deadline and writes no bytes. This is
   pinned by M5-A G4.
 - **Arbitration among already-admitted requests** is mechanical and lives in libgibson: highest
-  `priority` first, then latest-issued. The ordering is deterministic. *(Coordinator ruling #38,
-  Q2.)*
+  `priority` first, then the latest in **submission order into the consumer**. There is no
+  timestamp comparison, and the ordering is deterministic. *(Coordinator ruling #38 Q2, ruling #48
+  D8.)*
   - Admission, source authority and operator-over-host precedence are consumer policy. The
     consumer expresses them **only** through the `priority` it assigns.
   - libgibson never inspects `source` for precedence. `source` is carried for tracing only.
