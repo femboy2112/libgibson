@@ -125,6 +125,10 @@ fn fixture_girth_deltas() -> Vec<(u32, [f32; 3])> {
 }
 
 fn fixture_family() -> BodyFamily {
+    fixture_family_from(fixture_positions())
+}
+
+fn fixture_family_from(neutral_positions: Vec<[f32; 3]>) -> BodyFamily {
     let joints = vec![
         Joint::new("root", None, Transform::from_translation(Vec3::new(0.0, 0.0, 0.0))),
         Joint::new("upper", Some(0), Transform::from_translation(Vec3::new(0.0, 1.0, 0.0))),
@@ -134,7 +138,7 @@ fn fixture_family() -> BodyFamily {
         Landmark::new("head_top", 2, Vec3::new(0.0, 1.0, 0.0)),
         Landmark::new("upper_mid", 1, Vec3::new(0.0, 0.5, 0.0)),
     ];
-    let positions: Vec<Vec3> = fixture_positions()
+    let positions: Vec<Vec3> = neutral_positions
         .iter()
         .map(|p| Vec3::new(p[0], p[1], p[2]))
         .collect();
@@ -932,6 +936,25 @@ fn compile_is_all_or_nothing() {
     );
     assert!(compile(&r, &fam).is_err());
     assert_eq!(fam, before);
+}
+
+/// Normative v0 behaviour (FIGURE_CONTRACT, canonical serialization): `-0.0` is not
+/// canonicalized. Two geometrically equal bodies whose bytes differ only in the sign of a zero
+/// get different `rev_id`s. This pins the current byte-content semantics.
+#[test]
+fn negative_zero_is_byte_content_and_changes_rev_id() {
+    let mut neg = fixture_positions();
+    assert_eq!(neg[0][1].to_bits(), 0.0f32.to_bits(), "fixture vertex 0 has y = +0.0");
+    neg[0][1] = -0.0;
+    let plus = compile(&recipe(1.0, 0.0), &fixture_family()).unwrap();
+    let minus = compile(&recipe(1.0, 0.0), &fixture_family_from(neg)).unwrap();
+    assert_ne!(plus.rev_id, minus.rev_id, "-0.0 is byte content");
+    let a = plus.evaluate(&PoseInput::new()).unwrap();
+    let b = minus.evaluate(&PoseInput::new()).unwrap();
+    assert_eq!(a.positions.len(), b.positions.len());
+    for (p, q) in a.positions.iter().zip(b.positions.iter()) {
+        assert!(p.x == q.x && p.y == q.y && p.z == q.z, "geometrically equal");
+    }
 }
 
 #[test]
