@@ -1234,6 +1234,18 @@ fn look_rejects_bad_directions_and_unordered_retargets() {
     );
 }
 
+#[test]
+fn look_caps_the_number_of_retargets() {
+    let mut l = Look::new("h", FORWARD, FORWARD, ms(10)).unwrap();
+    for k in 0..4096u64 {
+        l = l.retarget(ms(k + 1), FORWARD).unwrap();
+    }
+    assert_eq!(
+        l.retarget(ms(5000), FORWARD).unwrap_err(),
+        MotionError::TooManyRetargets
+    );
+}
+
 /// The look layer replaces only the aimed joint of a body pose.
 #[test]
 fn look_overlays_only_its_joint() {
