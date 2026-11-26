@@ -1,20 +1,28 @@
 //! M5-B Slice 1 geometry core: skeleton, skinning, morphs and `CharacterRevision`.
 //!
-//! The synthetic fixture is a 3-joint chain (root, upper, lower) along +Y with a square tube
-//! mesh. The independent f64 oracle lives in `tests/figure_oracle` and shares no code with
+//! Two synthetic fixtures live here.
+//! - The SIMPLE fixture (`fixture_family`, 3 joints, dyadic values, identity rest rotations) is
+//!   hand-derivable. The hand-computed tests and the validation tests use it.
+//! - The RICH fixture (`rich_family`, 4 joints, 5 controls) is the strength fixture that the
+//!   oracle, the direct world-bind / inverse-bind comparisons, the landmark checks and the
+//!   golden use: non-identity rest rotations on every chain, a non-uniformly scaled joint,
+//!   non-dyadic lengths, weights and control values, a 4-influence vertex, skin weight sums
+//!   that are inside the 1e-4 tolerance but not exact, an unsorted influence order, an
+//!   unsorted morph delta list with a zero delta, and two controls on one morph target.
+//!   `rich_fixture_meets_the_required_strength` fails if any of that is weakened.
+//!
+//! The independent f64 oracle lives in `tests/figure_oracle` and shares no code with
 //! `gibson::figure::math`.
 //!
 //! Mutation controls (`RUSTFLAGS='--cfg figure_mutant="..."'`) are caught by these ordinary
-//! behavioural tests, none of which inspect the cfg:
-//! - `ignored_skeleton_update`: `bone_length_control_reshapes_skeleton`,
-//!   `oracle_matches_implementation`, `each_control_changes_rev_id`, `golden_rev_id`, ...
-//! - `stale_bind`: `identity_pose_equals_bind_for_shaped_bodies`,
-//!   `inverse_binds_times_world_bind_is_identity`, `oracle_matches_implementation`,
-//!   `golden_rev_id`, ...
-//! - `noop_morph`: `morph_control_moves_vertices`, `pose_morph_weight_moves_vertices`,
-//!   `oracle_matches_implementation`, `each_control_changes_rev_id`, `golden_rev_id`, ...
+//! behavioural tests, none of which inspect the cfg. Each test's doc comment lists the mutants
+//! it is designed to kill: A = `ignored_skeleton_update`, B = `stale_bind`, C = `noop_morph`.
+//! Every mutant is killed by at least one test that is NOT the golden. The predicted kill
+//! matrix is `docs/evidence/m5b/KILL_MATRIX_PREDICTED.md` (a prediction until it is run under
+//! heavy). The `golden_rev_id` test is a REGRESSION PIN (not independent).
 #![cfg(feature = "figure")]
 #![allow(clippy::needless_range_loop)]
+#![allow(clippy::excessive_precision)]
 
 mod figure_oracle;
 
@@ -33,12 +41,32 @@ use sha2::Digest as _;
 
 /// Comparison tolerance, DECLARED BEFORE any comparison and never tuned to results.
 ///
-/// Absolute-or-relative: `|impl - oracle| <= TOL * max(1, |oracle|)`. Error bound: f32 unit
-/// roundoff is 6e-8 (epsilon 1.2e-7); a vertex passes through at most ~40 dependent flops
-/// (chain depth 3 matrix products at 12 flops each, an inverse, one blend), and fixture
-/// coordinates and conditioning stay O(1) (|coordinate| <= ~4, scales in [0.5, 2]), so the
-/// accumulated error is <= 1.2e-7 * 40 * 4 ~ 2e-5; TOL = 1e-4 leaves 5x headroom and is far
-/// below the smallest effect any test relies on (0.05).
+/// Absolute-or-relative: `|impl - oracle| <= TOL * max(1, |oracle|)`.
+///
+/// Error bound. The f32 unit roundoff is `u = 2^-24 = 5.96e-8` (epsilon = 2u = 1.19e-7 is the
+/// spacing at 1, not the per-operation error). Each rounded operation adds a relative error of
+/// at most `u`, so a dependent chain of `N` operations over quantities whose magnitudes sum to
+/// at most `S` has absolute error at most about `N * u * S` (first order, worst case). A
+/// matrix-entry product is an inner product of length 4: 4 multiplications and 3 additions =
+/// 7 flops (not 12). The longest dependent chain, for a vertex skinned to joint 2 or 3
+/// (world = L0 * L1 * Lj), counted along the critical path:
+///   - `from_transform`: 4 (squared length) + 1 (sqrt) + 1 (reciprocal) + 1 (normalize)
+///     + 4 (matrix entry from products, sum, `2*`, `1-`) + 1 (column scale) = 12
+///   - two matrix products for the world chain: 2 * 7 = 14            -> 26 so far
+///   - affine inverse: 3x3 block 9 (cofactor 3, determinant 5, divide 1) + translation 6 = 15
+///     -> 41 on the inverse-bind path
+///   - `W * IB`: 7 -> 48; point transform: 3 mul + 3 add = 6 -> 54
+///   - blend of up to 4 influences (1 mul + 3 add) = 4 -> 58; the morphed input position
+///     (weight accumulation, mul, add) adds 4 -> 62, rounded up to N = 64.
+/// Fixture magnitudes: |coordinate| <= 3.4, |inverse-bind entry| <= 3.2 (largest over the
+/// control sets used), world entries <= 2.6 and a 3-term product-and-sum, so S <= 12.
+/// Then `N * u * S = 64 * 5.96e-8 * 12 = 4.6e-5`. TOL = 1e-4 is 2.2x above that worst case and
+/// is 500x below the smallest effect any test relies on (0.05).
+///
+/// What TOL cannot see: a skin weight sum of `1 +- 5e-5` (inside the 1e-4 validation
+/// tolerance) changes a coordinate by at most `5e-5 * |x|`, below `TOL * max(1, |x|)`. So
+/// "no renormalization" is NOT proved by an oracle comparison; the dedicated test
+/// `weights_are_applied_as_declared_never_renormalized` uses an absolute tolerance instead.
 const TOL: f64 = 1.0e-4;
 
 fn close(a: f32, b: f64) -> bool {
@@ -237,6 +265,7 @@ fn fixture_oracle() -> oracle::ORig {
                 morph_target: Some(0),
             },
         ],
+        landmarks: vec![(2, [0.0, 1.0, 0.0]), (1, [0.0, 0.5, 0.0])],
     }
 }
 
@@ -410,6 +439,481 @@ fn mat_close(label: &str, m: &Mat4, o: &oracle::M) {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// RICH fixture (the strength fixture; see the module doc)
+// ---------------------------------------------------------------------------------------
+//
+// Values are decimal literals on purpose (non-dyadic). `docs/evidence/m5b/golden_rev_id.py`
+// carries the same literals; keep the two value-for-value identical.
+//
+// Skeleton (parent -> child): root(0) -> upper(1) -> lower(2), and upper(1) -> arm(3).
+// Controls (family order):
+//   0 upper_length  BoneLengthScale { joint: 1 }  -> scales the rest translation of joints 2, 3
+//   1 torso_length  BoneLengthScale { joint: 0 }  -> scales the rest translation of joint 1
+//   2 girth         MorphWeight { target: 0 }
+//   3 girth_fine    MorphWeight { target: 0 }     (accumulates with girth)
+//   4 taper         MorphWeight { target: 1 }
+
+const RICH_CONTROL_IDS: [&str; 5] = [
+    "upper_length",
+    "torso_length",
+    "girth",
+    "girth_fine",
+    "taper",
+];
+/// The recipe the golden pins: non-dyadic values, all inside their ranges.
+const RICH_CTL: [f32; 5] = [1.3, 0.85, 0.35, 0.15, -0.4];
+const RICH_DEFAULTS: [f32; 5] = [1.0, 1.0, 0.0, 0.0, 0.0];
+
+const RICH_RING_Y: [f32; 4] = [0.0, 1.1, 2.2, 3.3];
+const RICH_RING_HX: [f32; 4] = [0.30, 0.27, 0.24, 0.21];
+const RICH_RING_HZ: [f32; 4] = [0.20, 0.18, 0.16, 0.14];
+
+/// `(name, parent, translation, rotation xyzw, scale)`. The quaternions are unit to within
+/// f32 rounding; joint 2 is non-uniformly scaled and joint 3 mildly so.
+type RichJoint = (&'static str, Option<usize>, [f32; 3], [f32; 4], [f32; 3]);
+const RICH_JOINTS: [RichJoint; 4] = [
+    (
+        "root",
+        None,
+        [0.1, -0.05, 0.2],
+        [0.0, 0.1, 0.0, 0.99498744],
+        [1.0, 1.0, 1.0],
+    ),
+    (
+        "upper",
+        Some(0),
+        [0.05, 1.05, -0.03],
+        [0.06, 0.0, -0.08, 0.99498744],
+        [1.0, 1.0, 1.0],
+    ),
+    (
+        "lower",
+        Some(1),
+        [-0.02, 0.95, 0.04],
+        [-0.1, 0.05, 0.0, 0.99373035],
+        [1.2, 0.8, 1.1],
+    ),
+    (
+        "arm",
+        Some(1),
+        [0.6, 0.3, 0.05],
+        [0.2, 0.4, 0.4, 0.8],
+        [1.0, 1.1, 0.9],
+    ),
+];
+
+const RICH_LANDMARKS: [(&str, usize, [f32; 3]); 3] = [
+    ("head_top", 2, [0.05, 1.1, -0.07]),
+    ("upper_mid", 1, [0.0, 0.55, 0.0]),
+    ("hand", 3, [0.12, 0.31, -0.04]),
+];
+
+fn rich_fam_ref() -> FamilyRef {
+    FamilyRef::new("synthetic.tube.rich", 1)
+}
+
+fn rich_positions() -> Vec<[f32; 3]> {
+    let mut out = Vec::new();
+    for r in 0..4 {
+        for k in 0..4 {
+            let sx = if k == 0 || k == 3 {
+                -RICH_RING_HX[r]
+            } else {
+                RICH_RING_HX[r]
+            };
+            let sz = if k < 2 {
+                -RICH_RING_HZ[r]
+            } else {
+                RICH_RING_HZ[r]
+            };
+            out.push([sx, RICH_RING_Y[r], sz]);
+        }
+    }
+    out
+}
+
+/// Non-dyadic weights. Vertex 5 sums to 1 + 5.0e-5 and vertex 8 (four influences, declared
+/// out of joint order) to 1 - 5.0e-5 in f64: inside the 1e-4 tolerance, not exact, never
+/// renormalized. Several vertices declare their influences out of joint order.
+fn rich_skin() -> Vec<Vec<(usize, f32)>> {
+    vec![
+        vec![(0, 1.0)],
+        vec![(0, 1.0)],
+        vec![(0, 0.7), (1, 0.3)],
+        vec![(0, 1.0)],
+        vec![(0, 0.6), (1, 0.4)],
+        vec![(1, 0.3), (2, 0.70005)],
+        vec![(0, 0.45), (1, 0.55)],
+        vec![(1, 0.3), (3, 0.7)],
+        vec![(3, 0.2), (0, 0.15), (2, 0.35), (1, 0.29995)],
+        vec![(2, 0.65), (1, 0.35)],
+        vec![(3, 0.4), (1, 0.6)],
+        vec![(1, 0.25), (2, 0.5), (3, 0.25)],
+        vec![(2, 1.0)],
+        vec![(2, 0.8), (3, 0.2)],
+        vec![(2, 1.0)],
+        vec![(2, 0.55), (3, 0.45)],
+    ]
+}
+
+/// "girth": vertices 4..12, `dx = +-0.12` and `dz = +-0.08` with the ring's signs.
+fn rich_girth_deltas() -> Vec<(u32, [f32; 3])> {
+    (4..12u32)
+        .map(|v| {
+            let k = (v % 4) as usize;
+            let dx = if k == 0 || k == 3 { -0.12 } else { 0.12 };
+            let dz = if k < 2 { -0.08 } else { 0.08 };
+            (v, [dx, 0.0, dz])
+        })
+        .collect()
+}
+
+/// "taper": declared in an order that is NOT sorted by vertex, and vertex 14 is a zero delta
+/// (kept, per the canonical serialization).
+fn rich_taper_deltas() -> Vec<(u32, [f32; 3])> {
+    vec![
+        (13, [0.05, -0.04, 0.0]),
+        (12, [-0.03, 0.02, 0.01]),
+        (14, [0.0, 0.0, 0.0]),
+        (15, [-0.06, 0.0, 0.03]),
+    ]
+}
+
+fn widen4(q: [f32; 4]) -> [f64; 4] {
+    [
+        f64::from(q[0]),
+        f64::from(q[1]),
+        f64::from(q[2]),
+        f64::from(q[3]),
+    ]
+}
+
+fn rich_family() -> BodyFamily {
+    let joints: Vec<Joint> = RICH_JOINTS
+        .iter()
+        .map(|&(name, parent, t, q, s)| {
+            Joint::new(
+                name,
+                parent,
+                Transform::new(
+                    Vec3::new(t[0], t[1], t[2]),
+                    Quat::new(q[0], q[1], q[2], q[3]),
+                    Vec3::new(s[0], s[1], s[2]),
+                ),
+            )
+        })
+        .collect();
+    let landmarks: Vec<Landmark> = RICH_LANDMARKS
+        .iter()
+        .map(|&(name, j, o)| Landmark::new(name, j, Vec3::new(o[0], o[1], o[2])))
+        .collect();
+    let positions: Vec<Vec3> = rich_positions()
+        .iter()
+        .map(|p| Vec3::new(p[0], p[1], p[2]))
+        .collect();
+    let to_deltas = |d: Vec<(u32, [f32; 3])>| -> Vec<(u32, Vec3)> {
+        d.into_iter()
+            .map(|(v, x)| (v, Vec3::new(x[0], x[1], x[2])))
+            .collect()
+    };
+    BodyFamily::new(
+        rich_fam_ref(),
+        NeutralMesh::new(positions, fixture_indices()),
+        joints,
+        landmarks,
+        rich_skin(),
+    )
+    .with_morphs(vec![
+        MorphTarget::new("girth", to_deltas(rich_girth_deltas())),
+        MorphTarget::new("taper", to_deltas(rich_taper_deltas())),
+    ])
+    .with_controls(vec![
+        ControlDef::new(
+            "upper_length",
+            0.5,
+            2.0,
+            1.0,
+            vec![ControlEffect::BoneLengthScale { joint: 1 }],
+        ),
+        ControlDef::new(
+            "torso_length",
+            0.5,
+            2.0,
+            1.0,
+            vec![ControlEffect::BoneLengthScale { joint: 0 }],
+        ),
+        ControlDef::new(
+            "girth",
+            -1.0,
+            2.0,
+            0.0,
+            vec![ControlEffect::MorphWeight { target: 0 }],
+        ),
+        ControlDef::new(
+            "girth_fine",
+            -0.5,
+            0.5,
+            0.0,
+            vec![ControlEffect::MorphWeight { target: 0 }],
+        ),
+        ControlDef::new(
+            "taper",
+            -1.0,
+            1.0,
+            0.0,
+            vec![ControlEffect::MorphWeight { target: 1 }],
+        ),
+    ])
+}
+
+fn rich_recipe(ctl: [f32; 5]) -> BodyRecipe {
+    BodyRecipe::new(
+        rich_fam_ref(),
+        RICH_CONTROL_IDS
+            .iter()
+            .zip(ctl.iter())
+            .map(|(id, v)| ((*id).to_string(), *v))
+            .collect(),
+    )
+}
+
+fn rich_build(ctl: [f32; 5]) -> CharacterRevision {
+    compile(&rich_recipe(ctl), &rich_family()).expect("rich fixture compiles")
+}
+
+fn ctl64(ctl: &[f32; 5]) -> Vec<f64> {
+    ctl.iter().map(|&v| f64::from(v)).collect()
+}
+
+/// The oracle's view of the rich fixture, built from the same plain arrays.
+fn rich_oracle() -> oracle::ORig {
+    let to_morph = |d: Vec<(u32, [f32; 3])>| -> Vec<(usize, [f64; 3])> {
+        d.into_iter()
+            .map(|(v, x)| (v as usize, widen3(x)))
+            .collect()
+    };
+    let bone = |of: usize| oracle::OControl {
+        default: 1.0,
+        bone_scale_of_children_of: Some(of),
+        morph_target: None,
+    };
+    let morph = |t: usize| oracle::OControl {
+        default: 0.0,
+        bone_scale_of_children_of: None,
+        morph_target: Some(t),
+    };
+    oracle::ORig {
+        joints: RICH_JOINTS
+            .iter()
+            .map(|&(_, parent, t, q, s)| oracle::OJoint {
+                parent,
+                rest: oracle::OTrs {
+                    t: widen3(t),
+                    q: widen4(q),
+                    s: widen3(s),
+                },
+            })
+            .collect(),
+        positions: rich_positions().into_iter().map(widen3).collect(),
+        skin: rich_skin()
+            .into_iter()
+            .map(|l| l.into_iter().map(|(j, w)| (j, f64::from(w))).collect())
+            .collect(),
+        morphs: vec![to_morph(rich_girth_deltas()), to_morph(rich_taper_deltas())],
+        controls: vec![bone(1), bone(0), morph(0), morph(0), morph(1)],
+        landmarks: RICH_LANDMARKS
+            .iter()
+            .map(|&(_, j, o)| (j, widen3(o)))
+            .collect(),
+    }
+}
+
+/// Control sets the direct comparisons run over: the pinned recipe, all defaults, and two
+/// range-edge mixes.
+fn rich_control_sets() -> Vec<[f32; 5]> {
+    vec![
+        RICH_CTL,
+        RICH_DEFAULTS,
+        [2.0, 0.5, -1.0, -0.5, 1.0],
+        [0.5, 2.0, 2.0, 0.5, -1.0],
+    ]
+}
+
+/// A rich pose case. Angles are small and the values smooth (no snapping between poses).
+struct RichCase {
+    name: &'static str,
+    ctl: [f32; 5],
+    overrides: Vec<Ovr>,
+    /// `(morph name, morph target index, weight)`.
+    pose_morphs: Vec<(&'static str, usize, f32)>,
+}
+
+fn rich_pose(case: &RichCase) -> PoseInput {
+    pose_from(&case.overrides, &case.pose_morphs)
+}
+
+fn pose_from(overrides: &[Ovr], pose_morphs: &[(&'static str, usize, f32)]) -> PoseInput {
+    let mut p = PoseInput::new();
+    for &(j, t, q, s) in overrides {
+        p = p.with_joint(
+            j,
+            Transform::new(
+                Vec3::new(t[0], t[1], t[2]),
+                Quat::new(q[0], q[1], q[2], q[3]),
+                Vec3::new(s[0], s[1], s[2]),
+            ),
+        );
+    }
+    for &(name, _, w) in pose_morphs {
+        p = p.with_morph(name, w);
+    }
+    p
+}
+
+fn oracle_pose_from(
+    overrides: &[Ovr],
+    pose_morphs: &[(&'static str, usize, f32)],
+) -> oracle::OPose {
+    oracle::OPose {
+        locals: overrides
+            .iter()
+            .map(|&(j, t, q, s)| {
+                (
+                    j,
+                    oracle::OTrs {
+                        t: widen3(t),
+                        q: widen4(q),
+                        s: widen3(s),
+                    },
+                )
+            })
+            .collect(),
+        morph_weights: pose_morphs
+            .iter()
+            .map(|&(_, t, w)| (t, f64::from(w)))
+            .collect(),
+    }
+}
+
+fn rich_cases() -> Vec<RichCase> {
+    vec![
+        RichCase {
+            name: "bind pose, pinned recipe",
+            ctl: RICH_CTL,
+            overrides: vec![],
+            pose_morphs: vec![],
+        },
+        // Control case for mutant A, NOT a detector of it. Joint 0 is not the child of any
+        // bone-length control, so it is the only joint whose local this pose replaces. For
+        // every other joint j the skinning matrix is W'_j * IB_j = W'_0 * (L_1 .. L_j)
+        // * (L_1 .. L_j)^-1 * W_0^-1 = W'_0 * W_0^-1, in which every shaped child local L_j
+        // cancels exactly. The posed mesh is therefore identical whether or not the bone
+        // length control was applied (PASS1 finding 5). Only the direct world-bind and
+        // inverse-bind comparisons, the landmark check and rev_id can see mutant A with this pose.
+        RichCase {
+            name: "root-only override (L_j cancels in W' * IB)",
+            ctl: RICH_CTL,
+            overrides: vec![(
+                0,
+                [0.12, -0.04, 0.18],
+                axis_angle([0.2, 1.0, -0.1], 0.35),
+                UNIT,
+            )],
+            pose_morphs: vec![],
+        },
+        // The pose that makes mutant A visible in the MESH: it replaces the local of joint 2,
+        // the child scaled by `upper_length`, with a transform that does not depend on the
+        // control. Then W'_2 = W'_1 * L'_2 no longer contains the scaled L_2, but IB_2 still
+        // does (it is the inverse of the SHAPED bind). The product W'_2 * IB_2 therefore
+        // depends on the bone length, and an implementation that ignored the control would
+        // use a different IB_2. Joint 1 is overridden too, which does the same for
+        // `torso_length`.
+        RichCase {
+            name: "joints 1 and 2 overridden (scaled children)",
+            ctl: RICH_CTL,
+            overrides: vec![
+                (
+                    1,
+                    [0.05, 1.05, -0.03],
+                    axis_angle([1.0, 0.5, -0.3], 0.5),
+                    UNIT,
+                ),
+                (
+                    2,
+                    [0.0, 1.1, 0.05],
+                    axis_angle([0.3, 1.0, 0.2], -0.6),
+                    [1.1, 0.9, 1.05],
+                ),
+            ],
+            pose_morphs: vec![],
+        },
+        RichCase {
+            name: "scaled child joint 2 only, rotated with non-uniform scale",
+            ctl: RICH_CTL,
+            overrides: vec![(
+                2,
+                [0.0, 1.1, 0.05],
+                axis_angle([0.3, 1.0, 0.2], -0.6),
+                [1.1, 0.9, 1.05],
+            )],
+            pose_morphs: vec![],
+        },
+        RichCase {
+            name: "root and arm overridden with pose-time morph weights",
+            ctl: RICH_CTL,
+            overrides: vec![
+                (0, [0.1, -0.05, 0.2], axis_angle([0.0, 1.0, 0.0], 0.3), UNIT),
+                (
+                    3,
+                    [0.6, 0.3, 0.05],
+                    axis_angle([1.0, 0.0, 1.0], 0.4),
+                    [1.0, 1.1, 0.9],
+                ),
+            ],
+            pose_morphs: vec![("girth", 0, 0.3), ("taper", 1, 0.5)],
+        },
+        RichCase {
+            name: "range-edge controls, joints 1 and 2 overridden",
+            ctl: [2.0, 0.5, -1.0, -0.5, 1.0],
+            overrides: vec![
+                (
+                    1,
+                    [0.05, 0.5, -0.03],
+                    axis_angle([0.0, 1.0, 0.3], 0.4),
+                    [1.05, 1.0, 0.95],
+                ),
+                (
+                    2,
+                    [-0.02, 1.9, 0.04],
+                    axis_angle([1.0, 0.0, 0.0], -0.5),
+                    UNIT,
+                ),
+            ],
+            pose_morphs: vec![("girth", 0, -0.4)],
+        },
+        RichCase {
+            name: "default controls, joints 2 and 3 overridden",
+            ctl: RICH_DEFAULTS,
+            overrides: vec![
+                (
+                    2,
+                    [-0.02, 0.95, 0.04],
+                    axis_angle([0.0, 0.0, 1.0], 0.45),
+                    [1.2, 0.8, 1.1],
+                ),
+                (
+                    3,
+                    [0.6, 0.3, 0.05],
+                    axis_angle([0.0, 1.0, 0.0], -0.35),
+                    [1.0, 1.1, 0.9],
+                ),
+            ],
+            pose_morphs: vec![],
+        },
+    ]
 }
 
 // ---------------------------------------------------------------------------------------
@@ -736,16 +1240,18 @@ fn compiled_revision_shape() {
     let posed = rev.evaluate(&PoseInput::new()).unwrap();
     assert_eq!(posed.indices, rev.neutral.indices);
     assert_eq!(posed.joint_world.len(), 3);
-    // The typed garment placeholder exists and is constructible.
-    let g = GarmentFit {
-        garment_id: "coat".to_string(),
-        status: FitStatus::Unfit {
-            reason: "too narrow".to_string(),
-        },
+    // The typed per-garment outcome exists. `GarmentFit` is `#[non_exhaustive]`, so an
+    // integration test cannot build one with a struct expression (E0639); it can only name the
+    // type, and construct the variants of the `FitStatus` enum.
+    let _typed: &[GarmentFit] = &rev.garment_fits;
+    let status = FitStatus::Unfit {
+        reason: "too narrow".to_string(),
     };
-    assert!(matches!(g.status, FitStatus::Unfit { .. }));
+    assert!(matches!(status, FitStatus::Unfit { .. }));
+    assert_ne!(status, FitStatus::Fit);
 }
 
+/// Designed to kill: Mutant A (`ignored_skeleton_update`): the rest translation and landmark stay unscaled.
 #[test]
 fn bone_length_control_reshapes_skeleton() {
     let rev = build(1.5, 0.0);
@@ -774,6 +1280,7 @@ fn bone_length_control_reshapes_skeleton() {
     );
 }
 
+/// Designed to kill: Mutant C (`noop_morph`): the compile-time morph moves no vertex.
 #[test]
 fn morph_control_moves_vertices() {
     let rev = build(1.0, 0.5);
@@ -789,6 +1296,8 @@ fn morph_control_moves_vertices() {
     assert_close3("thin v4", thin.neutral.positions[4], [-0.20, 1.0, -0.20]);
 }
 
+/// Designed to kill: Mutant C (`noop_morph`), POSE-time path: the compiled shape has weight 0, so only a working
+/// `apply_morphs` in `evaluate` can move vertex 4.
 #[test]
 fn pose_morph_weight_moves_vertices() {
     let rev = build(1.0, 0.0);
@@ -808,6 +1317,10 @@ fn pose_morph_weight_moves_vertices() {
     );
 }
 
+/// Designed to kill: Mutant B (`stale_bind`): W' is shaped but IB is from the unshaped skeleton, so the identity
+/// pose no longer reproduces the shaped neutral for any body with `upper_length != 1`.
+/// Mutant C also (the oracle shaped neutral moves with girth). Mutant A is NOT killed here:
+/// W' and IB both ignore the control, so they cancel (PASS1 finding 5).
 #[test]
 fn identity_pose_equals_bind_for_shaped_bodies() {
     for (ul, g) in [(1.0, 0.0), (1.5, 0.5), (0.6, -0.7), (2.0, 2.0)] {
@@ -870,6 +1383,8 @@ fn single_joint_rotated_90_degrees_hand_computed() {
     assert_close3("head_top", head, [-2.0, 1.0, 0.0]);
 }
 
+/// Designed to kill: Mutants A (rest translations and inverse binds compared directly), B (inverse binds, and the
+/// pose-time vertices) and C (case with `pose_girth`, and compile-time girth).
 #[test]
 fn oracle_matches_implementation() {
     let rig = fixture_oracle();
@@ -903,6 +1418,8 @@ fn oracle_matches_implementation() {
     }
 }
 
+/// Designed to kill: Mutant B only (IB from the unshaped skeleton times the shaped W is not the identity). It
+/// cannot see A: IB and W are both unscaled, so their product is still the identity.
 #[test]
 fn inverse_binds_times_world_bind_is_identity() {
     for (ul, g) in [(1.0, 0.0), (1.5, 0.5), (0.5, -1.0), (2.0, 2.0)] {
@@ -1240,6 +1757,8 @@ fn evaluate_rejects_bad_poses_with_typed_errors() {
     ));
 }
 
+/// Designed to kill: Mutants A (a bone-length control changes no `rev_id`) and C (the girth control then changes
+/// no vertex, so `rev_id` does not move). Mutant B is not designed for here.
 #[test]
 fn each_control_changes_rev_id() {
     let base = build(1.0, 0.0).rev_id;
@@ -1351,16 +1870,424 @@ fn rev_id_is_sha256_of_the_documented_canonical_bytes() {
     }
 }
 
+// ---------------------------------------------------------------------------------------
+// RICH fixture tests
+// ---------------------------------------------------------------------------------------
+
+fn v3(p: [f32; 3]) -> Vec3 {
+    Vec3::new(p[0], p[1], p[2])
+}
+
+/// Guards the fixture itself: fails if the strength the oracle, the mutation controls and the
+/// golden depend on is weakened. Not a mutant killer.
+#[test]
+fn rich_fixture_meets_the_required_strength() {
+    let fam = rich_family();
+    // 1. A non-identity rest rotation on every joint, so on every chain; and a non-uniform
+    //    rest scale on at least one joint.
+    for (i, jt) in fam.joints.iter().enumerate() {
+        assert_ne!(jt.rest.rotation, Quat::IDENTITY, "joint {i} has a rotation");
+    }
+    assert!(
+        fam.joints.iter().any(|jt| {
+            let s = jt.rest.scale;
+            s.x != s.y || s.y != s.z
+        }),
+        "a joint is scaled non-uniformly"
+    );
+    // 2. Non-dyadic values: the low 8 mantissa bits are not all zero (0.3 is 0x3E99999A).
+    let non_dyadic = |v: f32| v.to_bits() & 0xFF != 0;
+    for v in RICH_CTL {
+        assert!(non_dyadic(v), "control value {v}");
+    }
+    for jt in &fam.joints {
+        for v in [
+            jt.rest.translation.x,
+            jt.rest.translation.y,
+            jt.rest.translation.z,
+        ] {
+            assert!(v == 0.0 || non_dyadic(v), "joint translation {v}");
+        }
+    }
+    assert!(fam.skin.iter().flatten().any(|&(_, w)| w == 0.3));
+    assert!(fam.skin.iter().flatten().any(|&(_, w)| w == 0.7));
+    // 3. A full 4-influence vertex.
+    assert!(fam.skin.iter().any(|s| s.len() == 4));
+    // 4. Weight sums that are inside the 1e-4 tolerance but not exact (f64 sums of the f32
+    //    weights), one above and one below 1.
+    let dev = |s: &Vec<(usize, f32)>| s.iter().map(|&(_, w)| f64::from(w)).sum::<f64>() - 1.0;
+    assert!(fam.skin.iter().all(|s| dev(s).abs() < 1.0e-4));
+    assert!(fam.skin.iter().any(|s| (dev(s) - 5.0e-5).abs() < 1.0e-6));
+    assert!(fam.skin.iter().any(|s| (dev(s) + 5.0e-5).abs() < 1.0e-6));
+    // 5. Declared influence order is not sorted by joint, and the taper deltas are not sorted
+    //    by vertex and include a zero delta.
+    assert!(fam
+        .skin
+        .iter()
+        .any(|s| s.windows(2).any(|p| p[0].0 > p[1].0)));
+    let taper = &fam.morphs[1].deltas;
+    assert!(taper.windows(2).any(|p| p[0].0 > p[1].0));
+    assert!(taper.iter().any(|&(_, d)| d == Vec3::ZERO));
+    // 6. Two controls feed one morph target, and a bone control has two children.
+    let girth_controls = fam
+        .controls
+        .iter()
+        .filter(|c| c.effects == vec![ControlEffect::MorphWeight { target: 0 }])
+        .count();
+    assert_eq!(girth_controls, 2);
+    assert_eq!(
+        fam.joints.iter().filter(|jt| jt.parent == Some(1)).count(),
+        2
+    );
+}
+
+/// The shaped rest translations: a bone-length control scales the DIRECT children of its
+/// joint, and nothing else, against the oracle's own shaping.
+///
+/// Designed to kill: mutant A (`ignored_skeleton_update`).
+#[test]
+fn rich_bone_length_controls_scale_direct_children_only() {
+    let rev = rich_build(RICH_CTL);
+    let joints = rev.skeleton.joints();
+    // Joint 0 has no parent: its translation is exactly the declared one.
+    assert_eq!(
+        joints[0].rest.translation,
+        Vec3::new(0.1, -0.05, 0.2),
+        "the root is untouched"
+    );
+    // Joint 1 is the child of joint 0: scaled by torso_length (0.85) only.
+    // Joints 2 and 3 are the children of joint 1: scaled by upper_length (1.3) only.
+    for (j, ci) in [(1usize, 1usize), (2, 0), (3, 0)] {
+        let t = RICH_JOINTS[j].2;
+        let kk = f64::from(RICH_CTL[ci]);
+        assert_close3(
+            &format!("rest translation of joint {j}"),
+            joints[j].rest.translation,
+            [
+                f64::from(t[0]) * kk,
+                f64::from(t[1]) * kk,
+                f64::from(t[2]) * kk,
+            ],
+        );
+        // The rotation and scale are not touched by a bone-length control.
+        assert_eq!(joints[j].rest.rotation.w, RICH_JOINTS[j].3[3]);
+        assert_eq!(joints[j].rest.scale.y, RICH_JOINTS[j].4[1]);
+    }
+}
+
+/// DIRECT comparison of the shaped skeleton's world bind and the inverse binds with the
+/// oracle, beside (not instead of) the posed-mesh check, because the posed mesh cannot see a
+/// skipped bone-length update unless the pose replaces a scaled child (PASS1 finding 5).
+///
+/// Designed to kill: mutant A (world bind and IB use the unscaled bone), mutant B (IB from the
+/// unshaped skeleton; the world bind still matches, the IB does not).
+#[test]
+fn rich_world_bind_and_inverse_binds_match_oracle_directly() {
+    let rig = rich_oracle();
+    for ctl in rich_control_sets() {
+        let rev = rich_build(ctl);
+        let c = ctl64(&ctl);
+        let rest = oracle::shaped_rest(&rig, &c);
+        let ow = oracle::world_bind(&rig, &c);
+        let oib = oracle::inverse_binds(&rig, &c);
+        let world = rev.skeleton.world_bind();
+        assert_eq!(world.len(), 4);
+        assert_eq!(rev.inverse_binds.len(), 4);
+        for i in 0..4 {
+            let ctx = format!("ctl {ctl:?} joint {i}");
+            assert_close3(
+                &format!("{ctx}: rest t"),
+                rev.skeleton.joints()[i].rest.translation,
+                rest[i].t,
+            );
+            mat_close(&format!("{ctx}: world bind"), &world[i], &ow[i]);
+            mat_close(
+                &format!("{ctx}: inverse bind"),
+                &rev.inverse_binds[i],
+                &oib[i],
+            );
+        }
+    }
+}
+
+/// Landmarks evaluated through the skeleton and compared with the oracle, at the bind pose
+/// for every control set and in every posed case.
+///
+/// Designed to kill: mutant A (landmarks ride on joints whose world bind is wrong).
+#[test]
+fn rich_landmarks_match_oracle_at_bind_and_posed() {
+    let rig = rich_oracle();
+    for ctl in rich_control_sets() {
+        let rev = rich_build(ctl);
+        let ow = oracle::world_bind(&rig, &ctl64(&ctl));
+        let world = rev.skeleton.world_bind();
+        for l in 0..RICH_LANDMARKS.len() {
+            assert_close3(
+                &format!("ctl {ctl:?} landmark {l} at bind"),
+                rev.skeleton.landmark_world(l, &world).unwrap(),
+                oracle::landmark_world(&rig, &ow, l),
+            );
+        }
+    }
+    for case in rich_cases() {
+        let rev = rich_build(case.ctl);
+        let posed = rev.evaluate(&rich_pose(&case)).unwrap();
+        let opose = oracle_pose_from(&case.overrides, &case.pose_morphs);
+        let ow = oracle::posed_world(&rig, &ctl64(&case.ctl), &opose);
+        for l in 0..RICH_LANDMARKS.len() {
+            assert_close3(
+                &format!("{}: landmark {l}", case.name),
+                rev.skeleton.landmark_world(l, &posed.joint_world).unwrap(),
+                oracle::landmark_world(&rig, &ow, l),
+            );
+        }
+    }
+}
+
+/// The full posed mesh, posed joint worlds and posed landmarks against the f64 oracle, over
+/// the rich cases: non-identity rest rotations, a non-uniform scale, 4-influence and
+/// off-by-5e-5 weight vertices, morph-before-skin with rotated joints, and compile-time plus
+/// pose-time morph weights together.
+///
+/// Designed to kill:
+/// - mutant A, but ONLY through the cases that replace the local of a joint that a bone-length
+///   control scaled, with a non-rest local: "joints 1 and 2 overridden", "scaled child joint 2
+///   only", "root and arm overridden" (joint 3 is a scaled child) and "range-edge controls".
+///   The bind-pose, root-only and default-control cases cannot see A in the mesh;
+/// - mutant B in every case, even the bind pose (W' is shaped, IB is not);
+/// - mutant C in every case with a non-zero compile-time or pose-time morph weight.
+#[test]
+fn rich_posed_mesh_matches_oracle() {
+    let rig = rich_oracle();
+    for case in rich_cases() {
+        let rev = rich_build(case.ctl);
+        let posed = rev.evaluate(&rich_pose(&case)).unwrap();
+        let opose = oracle_pose_from(&case.overrides, &case.pose_morphs);
+        let c = ctl64(&case.ctl);
+        let ow = oracle::posed_world(&rig, &c, &opose);
+        for (i, w) in posed.joint_world.iter().enumerate() {
+            mat_close(&format!("{}: world {i}", case.name), w, &ow[i]);
+        }
+        let want = oracle::posed(&rig, &c, &opose);
+        assert_eq!(posed.positions.len(), want.len());
+        for (v, (p, w)) in posed.positions.iter().zip(&want).enumerate() {
+            assert_close3(&format!("{}: vertex {v}", case.name), *p, *w);
+        }
+    }
+}
+
+/// At the bind pose the posed mesh is the shaped neutral, for every control set.
+///
+/// Designed to kill: mutant B (the skinning matrices W' * IB are not the identity), mutant C
+/// (the shaped neutral against the oracle).
+#[test]
+fn rich_identity_pose_reproduces_the_shaped_neutral() {
+    let rig = rich_oracle();
+    for ctl in rich_control_sets() {
+        let rev = rich_build(ctl);
+        let posed = rev.evaluate(&PoseInput::new()).unwrap();
+        let want = oracle::shaped_neutral(&rig, &ctl64(&ctl));
+        for (v, (p, w)) in posed.positions.iter().zip(&want).enumerate() {
+            assert_close3(&format!("ctl {ctl:?} vertex {v}"), *p, *w);
+        }
+        for (v, (p, n)) in posed
+            .positions
+            .iter()
+            .zip(&rev.neutral.positions)
+            .enumerate()
+        {
+            assert_close3(
+                &format!("ctl {ctl:?} vs stored neutral, vertex {v}"),
+                *p,
+                [f64::from(n.x), f64::from(n.y), f64::from(n.z)],
+            );
+        }
+    }
+}
+
+/// Compile-time morph weights: `girth` and `girth_fine` accumulate on one target, the zero
+/// delta and the unsorted delta order do not matter to the geometry, and vertices outside a
+/// target are untouched.
+///
+/// Designed to kill: mutant C (`noop_morph`) at compile time.
+#[test]
+fn rich_morph_controls_accumulate_on_one_target() {
+    let rig = rich_oracle();
+    let rev = rich_build(RICH_CTL);
+    let want = oracle::shaped_neutral(&rig, &ctl64(&RICH_CTL));
+    for (v, (p, w)) in rev.neutral.positions.iter().zip(&want).enumerate() {
+        assert_close3(&format!("shaped neutral vertex {v}"), *p, *w);
+    }
+    // Vertex 4 moves by (0.35 + 0.15) * (-0.12, 0, -0.08) from its declared position.
+    let base = rich_positions()[4];
+    assert_close3(
+        "vertex 4",
+        rev.neutral.positions[4],
+        [
+            f64::from(base[0]) - 0.5 * 0.12,
+            f64::from(base[1]),
+            f64::from(base[2]) - 0.5 * 0.08,
+        ],
+    );
+    // The zero delta and the vertices outside every target stay exactly where they were.
+    assert_eq!(rev.neutral.positions[14], v3(rich_positions()[14]));
+    assert_eq!(rev.neutral.positions[0], v3(rich_positions()[0]));
+}
+
+/// A POSE-time morph weight, on a body whose compile-time morph weights are all zero, moves
+/// the vertices, and it moves them BEFORE skinning: the same rotated pose with and without the
+/// pose morph is compared with the oracle, which morphs first and skins second. A morph applied
+/// after skinning would differ under the rotations here.
+///
+/// Designed to kill: mutant C (`noop_morph`) on the pose-time path specifically.
+#[test]
+fn rich_pose_time_morph_moves_vertices_before_skinning() {
+    let rig = rich_oracle();
+    let rev = rich_build(RICH_DEFAULTS);
+    let c = ctl64(&RICH_DEFAULTS);
+    let ovr: Vec<Ovr> = vec![
+        (0, [0.1, -0.05, 0.2], axis_angle([0.0, 1.0, 0.0], 0.3), UNIT),
+        (
+            3,
+            [0.6, 0.3, 0.05],
+            axis_angle([1.0, 0.0, 1.0], 0.4),
+            [1.0, 1.1, 0.9],
+        ),
+    ];
+    let morphs: Vec<(&'static str, usize, f32)> = vec![("girth", 0, 0.8), ("taper", 1, -0.6)];
+    let without = rev.evaluate(&pose_from(&ovr, &[])).unwrap();
+    let with = rev.evaluate(&pose_from(&ovr, &morphs)).unwrap();
+    let o_without = oracle::posed(&rig, &c, &oracle_pose_from(&ovr, &[]));
+    let o_with = oracle::posed(&rig, &c, &oracle_pose_from(&ovr, &morphs));
+    for v in 0..16 {
+        assert_close3(
+            &format!("without morph, vertex {v}"),
+            without.positions[v],
+            o_without[v],
+        );
+        assert_close3(
+            &format!("with morph, vertex {v}"),
+            with.positions[v],
+            o_with[v],
+        );
+        // How far the oracle says the pose morph moves this vertex, and how far we moved it.
+        let want: f64 = (0..3)
+            .map(|k| (o_with[v][k] - o_without[v][k]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let got: f64 = [
+            with.positions[v].x - without.positions[v].x,
+            with.positions[v].y - without.positions[v].y,
+            with.positions[v].z - without.positions[v].z,
+        ]
+        .iter()
+        .map(|d| f64::from(*d).powi(2))
+        .sum::<f64>()
+        .sqrt();
+        assert!(
+            (got - want).abs() <= 1.0e-4,
+            "vertex {v}: moved {got}, oracle {want}"
+        );
+        // Girth moves vertices 4..12 by about 0.1 even after the rotations; the taper moves
+        // 12, 13 and 15 (not the zero-delta vertex 14).
+        if (4..12).contains(&v) {
+            assert!(
+                got > 0.05,
+                "girth pose morph must move vertex {v} (moved {got})"
+            );
+        }
+        if v == 12 || v == 13 || v == 15 {
+            assert!(
+                got > 0.01,
+                "taper pose morph must move vertex {v} (moved {got})"
+            );
+        }
+        if v == 14 || v < 4 {
+            assert!(got < 1.0e-4, "vertex {v} has no delta (moved {got})");
+        }
+    }
+}
+
+/// Weights are used exactly as declared. A sum of `1 + 5e-5` is inside the validation
+/// tolerance and is NOT renormalized. This needs its own absolute tolerance: the oracle
+/// comparisons cannot see it, because `5e-5 * |x|` is below `TOL * max(1, |x|)` at every
+/// coordinate of the rich fixture. The vertex sits at x = 20: an unrenormalized result is
+/// `20 * 1.00005 = 20.001`, a renormalized one is `20.0`, a gap of 1e-3 against the absolute
+/// tolerance 1e-4 (f32 rounding at 20 is about 2e-6).
+///
+/// Designed to kill: a renormalizing implementation (not one of the three planted mutants).
+#[test]
+fn weights_are_applied_as_declared_never_renormalized() {
+    let id = FamilyRef::new("synthetic.weights", 1);
+    let fam = BodyFamily::new(
+        id.clone(),
+        NeutralMesh::new(vec![Vec3::new(20.0, 0.0, 0.0); 3], vec![0, 1, 2]),
+        vec![Joint::new("only", None, Transform::IDENTITY)],
+        vec![],
+        vec![vec![(0usize, 1.00005f32)]; 3],
+    );
+    let rev = compile(&BodyRecipe::new(id, vec![]), &fam).expect("compiles");
+    // Stored exactly as declared.
+    assert_eq!(rev.skin.influences(0).unwrap(), vec![(0usize, 1.00005f32)]);
+    let posed = rev.evaluate(&PoseInput::new()).unwrap();
+    for p in &posed.positions {
+        assert!(
+            (f64::from(p.x) - 20.001).abs() < 1.0e-4,
+            "posed x = {}, want 20.001 (20.0 would mean renormalization)",
+            p.x
+        );
+        assert!(p.y.abs() < 1.0e-6 && p.z.abs() < 1.0e-6);
+    }
+}
+
+/// Each of the five controls, moved alone from the defaults, mints a different `rev_id`, and
+/// the explicit defaults equal the omitted controls.
+///
+/// Designed to kill: mutant A (a bone-length control that changes no byte), mutant C (a girth
+/// control that moves no vertex, so the shaped positions in the bytes do not change).
+#[test]
+fn rich_each_control_changes_rev_id() {
+    let base = rich_build(RICH_DEFAULTS).rev_id;
+    let omitted = compile(&BodyRecipe::new(rich_fam_ref(), vec![]), &rich_family())
+        .unwrap()
+        .rev_id;
+    assert_eq!(base, omitted, "explicit defaults equal omitted controls");
+    let moved = [1.3f32, 0.85, 0.35, 0.15, -0.4];
+    let mut ids = vec![base];
+    for (i, v) in moved.iter().enumerate() {
+        let mut ctl = RICH_DEFAULTS;
+        ctl[i] = *v;
+        let id = rich_build(ctl).rev_id;
+        assert_ne!(
+            id, base,
+            "control {} alone must change rev_id",
+            RICH_CONTROL_IDS[i]
+        );
+        ids.push(id);
+    }
+    for a in 0..ids.len() {
+        for b in a + 1..ids.len() {
+            assert_ne!(ids[a], ids[b], "ids {a} and {b} must differ");
+        }
+    }
+}
+
+/// REGRESSION PIN (not independent). The hash was produced by
+/// `docs/evidence/m5b/golden_rev_id.py`, a numpy float32 replication that mirrors the
+/// implementation's float evaluation order ON PURPOSE and shares its formulas (adjugate
+/// inverse, column-scaled `to_mat`). It pins the documented byte layout and the float32
+/// arithmetic order for the rich fixture and the pinned recipe, and it detects drift. It is
+/// NOT an independent bearing on correctness: if the implementation had a formula error, the
+/// script would carry it too. The independent bearings are the f64 oracle tests above and
+/// `tests/figure_canonical_bytes.rs`. A change here means "the bytes changed", not "which side
+/// is right". Drift requires a minor release; x86_64 only.
+///
+/// Mutants A, B and C all change this hash, but it is never the only test that kills them.
 #[test]
 fn golden_rev_id() {
-    // Drift here means float evaluation order or serialization changed; requires a minor
-    // release; x86_64 only. The value was computed BEFORE the first run by an independent
-    // numpy float32 re-derivation of the documented layout and evaluation order (hashlib
-    // SHA-256), not recorded from the Rust implementation; the geometry itself is checked
-    // against the f64 oracle above.
-    let rev = build(1.25, 0.5);
+    let rev = rich_build(RICH_CTL);
     assert_eq!(
         rev.rev_id.to_hex(),
-        "2127235299442fabca19419d1ae30a93ba9d075b592f0bc9a933451264a92ad5"
+        "0042bc1826da28bce4f31b222b6b86382f60da56e0c762076d8e2edb98063ed8"
     );
 }

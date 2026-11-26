@@ -41,6 +41,8 @@ pub struct ORig {
     /// Per target, sparse `(vertex, delta)`.
     pub morphs: Vec<Vec<(usize, [f64; 3])>>,
     pub controls: Vec<OControl>,
+    /// Per landmark `(joint, offset in that joint's frame)`.
+    pub landmarks: Vec<(usize, [f64; 3])>,
 }
 
 /// A pose: local-TRS overrides (replacing the shaped rest local) and extra morph weights.
@@ -171,6 +173,11 @@ fn world_matrices(joints: &[OJoint], locals: &[OTrs]) -> Vec<M> {
 /// The shaped rest TRS list for `control_values` (one per control): each bone-length control
 /// multiplies the rest translation of every direct child of its joint, controls in order.
 pub fn shaped_rest(rig: &ORig, control_values: &[f64]) -> Vec<OTrs> {
+    assert_eq!(
+        control_values.len(),
+        rig.controls.len(),
+        "one value per control"
+    );
     let mut rest: Vec<OTrs> = rig.joints.iter().map(|j| j.rest).collect();
     for (c, &v) in rig.controls.iter().zip(control_values) {
         if let Some(pj) = c.bone_scale_of_children_of {
@@ -189,6 +196,11 @@ pub fn shaped_rest(rig: &ORig, control_values: &[f64]) -> Vec<OTrs> {
 /// The shaped neutral: `G0 + sum_i w_i * delta_i` with `w_i` the sum of control values mapped
 /// to target `i`.
 pub fn shaped_neutral(rig: &ORig, control_values: &[f64]) -> Vec<[f64; 3]> {
+    assert_eq!(
+        control_values.len(),
+        rig.controls.len(),
+        "one value per control"
+    );
     let mut w = vec![0.0; rig.morphs.len()];
     for (c, &v) in rig.controls.iter().zip(control_values) {
         if let Some(t) = c.morph_target {
@@ -234,6 +246,12 @@ pub fn posed_world(rig: &ORig, control_values: &[f64], pose: &OPose) -> Vec<M> {
         locals[j] = t;
     }
     world_matrices(&rig.joints, &locals)
+}
+
+/// World position of landmark `index`: its offset carried by joint world matrix `world[joint]`.
+pub fn landmark_world(rig: &ORig, world: &[M], index: usize) -> [f64; 3] {
+    let (joint, offset) = rig.landmarks[index];
+    matvec_point(&world[joint], offset)
 }
 
 /// The full reference: posed vertex positions for `control_values` and `pose`.
