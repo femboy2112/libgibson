@@ -15,6 +15,9 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Added (Rust-only, experimental)
+- New experimental module `stage::motion` (M5 G1-G4): `FrameSequence` (a finite authored flipbook with a rest frame, sampled at explicit caller time), `LayerSlots` (registered overlay geometry that validates and builds ordinary `RasterPlane`s), `CueSchedule` (a seeded, deadline-driven jittered cue; its SplitMix64 jitter hash is contract, so a change needs a minor release), and a public contract test that a hidden avatar means zero scheduled work (no new API). Purely additive: no existing type or signature changes, and no C ABI change.
+
 ## [0.9.1] — 2026-11-26 · GitHub release from `main` · "clear SIGKILL 1"
 
 A patch release that adds the Settings form primitives (#433). It is additive, opt-in and Rust-only. No existing API changes shape, every default is unchanged, and existing elements render byte-identically when the new calls are not used.
