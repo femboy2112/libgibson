@@ -778,8 +778,8 @@ fn preempt_preserves_rotation_and_weight_rate_at_t0() {
 /// The offset reaches exactly zero at `t0 + ease`: the pose is then bit for bit the new motion,
 /// and stays so. One millisecond before, the offset and its rate are already negligible
 /// (`h0, h1 ~ (1 - x)^3`). Before `t0` the pose is the old motion bit for bit.
-/// Kills: S (the early blend values differ), F (the freeze leaves a residual only if the weight
-/// were wrong; the exact-equality assertions pin the end state).
+/// Kills: none of S, F, L by itself (every mutant also ends on the new clip); it pins the end
+/// state and the "no state before the preemption" half of the contract.
 #[test]
 fn preempt_offset_reaches_exactly_zero_and_poses_follow_the_new_clip() {
     let pre = preempt(T0);

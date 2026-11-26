@@ -339,7 +339,9 @@ def main():
         f = lambda t, mut=None: crossfade(fa, fb, start, ease, t, mut)
         m0, _ = max_dv(f, nm, 0.0, 1.8)
         ms, _ = max_dv(lambda t: crossfade(fa, fb, start, ease, t, 'snap_transition'), nm, 0.0, 1.8)
-        rows.append((f"crossfade {nm}", m0, bnd, ms, None, None))
+        fal = lambda t: sample_clip(A, t, mut='linear_keys'); fbl = lambda t: sample_clip(N, max(t - start, 0.0), mut='linear_keys')
+        ml, _ = max_dv(lambda t: crossfade(fal, fbl, start, ease, t), nm, 0.0, 1.8)
+        rows.append((f"crossfade {nm}", m0, bnd, ms, None, ml))
     # --- T4: preempt A(once) -> N(start at t0), t0 = 750 ms, ease 400 ms
     at = 0.75; T = 0.4
     fo = lambda t: sample_clip(A, t); fn = lambda t: sample_clip(N, max(t - at, 0.0))
@@ -355,7 +357,9 @@ def main():
         m0, _ = max_dv(lambda t: preempt(fo, fn, at, T, t), nm, 0.0, 2.0)
         ms, _ = max_dv(lambda t: preempt(fo, fn, at, T, t, 'snap_transition'), nm, 0.0, 2.0)
         mf, _ = max_dv(lambda t: preempt(fo, fn, at, T, t, 'freeze_on_preempt'), nm, 0.0, 2.0)
-        rows.append((f"preempt {nm}", m0, bnd, ms, mf, None))
+        fol = lambda t: sample_clip(A, t, mut='linear_keys'); fnl = lambda t: sample_clip(N, max(t - at, 0.0), mut='linear_keys')
+        ml, _ = max_dv(lambda t: preempt(fol, fnl, at, T, t), nm, 0.0, 2.0)
+        rows.append((f"preempt {nm}", m0, bnd, ms, mf, ml))
     report(rows)
 
     print("== preempt at t0: |FD vel before - after| (arm, y comp) and premise |v| ; reported-rate check")
@@ -429,9 +433,6 @@ def main():
             v, d, ex = eval_keys(ts, vs, t, fx['dur'] if loop else None, True, True); mn = min(mn, np.linalg.norm(v))
         print(f"   {nm_fx} spine min|n| = {mn:.4f}")
 
-if __name__ == '__main__':
-    main()
-
 def premises():
     """Facts the tests assert as PREMISES (so that a mutant can be detected at all)."""
     print("== premises used by tests/figure_motion.rs")
@@ -459,5 +460,28 @@ def premises():
         pred = x0*0.5 + (vo - vn)*0.4*(5/32)
         print(f"   closed form (new started at 600 ms, 1 ms central differences), mut={mut}: |got-pred|_inf = {np.max(np.abs(got-pred)):.3g} (TOL_CF 2e-4)")
 
+def look_numbers():
+    print("== look: reported-omega continuity at the second retarget (|omega(700ms) - omega(699.999ms)|) and the")
+    print("   aim jump across the first retarget instant (|d(500ms) - d(499.999999ms)|)")
+    ease = 0.4
+    fwd = np.array([0., 0, 1]); sched = [(0.5, np.array([1., 0, 0])), (0.7, np.array([0., 1, 0]))]
+    def rbt(a, b):
+        c = np.cross(a, b); q = np.array([*c, 1 + float(np.dot(a, b))]); return q/np.linalg.norm(q)
+    tg = [np.array([0, 0, 0, 1.0])] + [rbt(fwd, d) for _, d in sched]
+    for mut in (None, 'snap_transition', 'freeze_on_preempt'):
+        def aim(count, t):
+            if count == 0: return tg[0], np.zeros(3)
+            at_, _ = sched[count-1]; e_ = 0.0 if mut == 'snap_transition' else ease
+            if e_ == 0 or t - at_ >= e_: return tg[count], np.zeros(3)
+            old = aim(count-1, at_); n = (tg[count], np.zeros(3))
+            return preempt_rot(old, n, n, (t-at_)/e_, e_, mut)
+        def look(t): return aim(sum(1 for a, _ in sched if a <= t), t)
+        w1 = look(0.699999)[1]; w2 = look(0.7)[1]
+        d1 = qrot(look(0.499999999)[0], fwd); d2 = qrot(look(0.5)[0], fwd)
+        print(f"   mut={mut}: |d omega| = {np.linalg.norm(w2-w1):.4g} (tol 2e-3; |omega| before = {np.linalg.norm(w1):.3g});"
+              f" |d jump| = {np.linalg.norm(d2-d1):.4g} (tol 1e-5)")
+
 if __name__ == '__main__':
+    main()
     premises()
+    look_numbers()
