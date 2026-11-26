@@ -140,6 +140,8 @@ def stills(args, man):
     man["stills"] = out
     man["still_png_total_bytes"] = sum(s["bytes"] for s in out)
     man["cues_ms_python"] = cues
+    g3 = [s for s in out if s["name"].startswith("g3-")]
+    man["cues_match_python"] = bool(g3) and all(s.get("cues_match_python") for s in g3)
 
 
 def strip(args, man):

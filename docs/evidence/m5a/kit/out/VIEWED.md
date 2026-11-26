@@ -53,11 +53,29 @@ residue and no alt-screen leak.
    "orange=nearest cue", but that tick is drawn yellow.
 3. **Kit label: the unit is printed after null (cosmetic).** The header shows `next_in=nullms`
    when there is no deadline.
-4. **Kit manifest: `cues_match_python` is null.** The cross-check was never computed. I compared
-   the values by eye instead (G3 above).
+4. ~~Kit manifest: `cues_match_python` is null.~~ **RETRACTED, reviewer error.** The cross-check
+   WAS computed per G3 shot, and all three are `true`. I had queried a missing top-level key. The
+   kit now also writes a top-level summary.
 5. **Coverage limit, not a defect: the strip is not live playback.** Every strip tile is a
    separate process sampled at a fixed time. That proves time sampling only. It does NOT test
    live frame pacing, popping or jitter during continuous playback. A live-run capture is a
    follow-up if Leah wants it.
 
 None of these are defects in libgibson's G1–G4 behaviour.
+
+## Leah's verdict
+
+**Leah, 2026-11-26 ~22:50Z: "Pass, add live capture."** Relayed by GOD, who also viewed the
+contact sheet, g2-slots, the g3 blink, g4-hidden and after-exit, and agrees with the list of
+things seen, the fringe included. V-M5A-VIS is CLOSED for this checkpoint at f1ad72c.
+
+Binding for the NEXT motion checkpoint (the M5-A follow-ups and M5-E/G):
+- a real live-playback capture: continuous ffmpeg x11grab of the Xvfb display at 30 fps or more,
+  recording one process in real time;
+- frame-timing analysis: actual switch times against expected, jitter p50/p99, and any popping or
+  dropped frames;
+- key frames viewed by the session, plus the MP4 for Leah.
+
+Kit fixes made after the verdict (no re-run needed, per GOD): the legend now says "yellow", the
+deadline label prints `none` instead of `nullms`, and the manifest has a top-level
+`cues_match_python`.

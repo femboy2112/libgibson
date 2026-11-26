@@ -30,6 +30,10 @@ fn ms(n: u64) -> Duration {
 fn opt(d: Option<Duration>) -> String {
     d.map_or("null".to_string(), |d| d.as_millis().to_string())
 }
+/// Like `opt`, but with the unit attached only when there is a value (`300ms` or `none`).
+fn opt_ms(d: Option<Duration>) -> String {
+    d.map_or("none".to_string(), |d| format!("{}ms", d.as_millis()))
+}
 /// Fill a block in logical units (1 logical unit = 2x2 raster px).
 fn blk(r: &mut RgbaRaster, x: i32, y: i32, w: i32, h: i32, c: Px) {
     px(r, 2 * x, 2 * y, 2 * w, 2 * h, c);
@@ -182,7 +186,7 @@ fn main() {
         "g1" | "g1-reduced" | "g4-hidden" => {
             let s = sequence().sample(if scenario == "g4-hidden" { ms(0) } else { now }, motion);
             (frame_idx, next_in) = (Some(s.index), s.next_in);
-            info = format!("frame idx={} next_in={}ms", s.index, opt(s.next_in));
+            info = format!("frame idx={} next_in={}", s.index, opt_ms(s.next_in));
             vec![RasterPlane {
                 anchor: RasterAnchor::Key(key()),
                 source: s.source,
@@ -244,7 +248,7 @@ fn main() {
             .collect();
         lines.push(format!("seed={SEED:#x} cues(ms): {}", list[..4].join(" ")));
         lines.push(format!("                  {}", list[4..].join(" ")));
-        lines.push("ruler 0..10000ms, orange=nearest cue, white=--at-ms".into());
+        lines.push("ruler 0..10000ms, yellow=nearest cue, white=--at-ms".into());
     }
     lines.resize(lines.len().max(2), String::new());
 
