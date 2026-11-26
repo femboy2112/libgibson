@@ -143,8 +143,10 @@ impl CueSchedule {
   `(0, nth(0))`. Since `nth(0) >= origin > t`, that is strictly after `t`.
 - **The jitter hash is contract.** Occurrence times are part of observable behavior (hosts and
   goldens depend on them), so a 0.9.x patch must not change the hash. It is fixed as:
-  - `mix(x)` = the SplitMix64 finalizer: `x ^= x >> 30; x *= 0xbf58476d1ce4e5b9;
-    x ^= x >> 27; x *= 0x94d049bb133111eb; x ^= x >> 31` (wrapping multiplies);
+  - `mix(x)` = one SplitMix64 step: `z = x + 0x9e3779b97f4a7c15; z ^= z >> 30;
+    z *= 0xbf58476d1ce4e5b9; z ^= z >> 27; z *= 0x94d049bb133111eb; z ^= z >> 31` (wrapping
+    arithmetic). The gamma add matters: the bare finalizer maps 0 to 0, so seed 0, cue 0
+    would pin occurrence 0's jitter at 0;
   - `h = mix(mix(mix(seed) ^ cue) ^ k)`;
   - `jitter = h % (span_ns + 1)` nanoseconds, where `span_ns = (period - min_gap)` in whole
     nanoseconds. The modulo bias is accepted and is part of the contract.
