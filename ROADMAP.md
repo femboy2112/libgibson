@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-26): v0.9.0 "clear SIGKILL 0"
+## Current release (updated 2026-11-26): v0.9.1 "clear SIGKILL 1"
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -86,11 +86,22 @@ download, all 4 are byte-identical to the build, and the build-host path scan fo
 
 Known non-blocker: #454 (`wire_instrument_fullduplex` fails on a low-RAM laptop; hosted CI is green).
 
-**v0.9.1 "clear SIGKILL 1" is prepared in source** (state 1) on `main`. It is to be tagged
-`v0.9.1` (with `bindings/go/v0.9.1`) as a regular GitHub release on the release coordinator's
-per-tag go. It is a patch: the Settings form primitives (#433), additive, opt-in and Rust-only.
+**v0.9.1 "clear SIGKILL 1" was released on 2026-11-26** (state 2):
+- annotated tag `v0.9.1` → `57e9abc` on `main` (`57e9abc81fd8908e1599a9d2b3c6a5599d53b6b3`), with
+  `bindings/go/v0.9.1` on the same commit;
+- a regular GitHub [release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.1), not a
+  prerelease, marked Latest, and not on any registry.
+
+It is a patch: the Settings form primitives (#433), additive, opt-in and Rust-only.
 The name follows [decision 0004](docs/decisions/0004-release-naming.md) (minor 9 = SIGKILL,
-patch 1). The C ABI is unchanged (v1, 67 symbols).
+patch 1). The C ABI is unchanged (v1, 67 symbols). Merged `main` `57e9abc` CI run 45826287491 8/8.
+The release has 4 assets, built from `57e9abc` with rustc 1.98.1 using the #429 path remap. After
+download, all 4 are byte-identical to the build, and the native libraries contain no build-host
+paths (the only scan hit is the public sponsor link in the bundled README, as in v0.9.0):
+- `libgibson-0.9.1-linux-x86_64.tar.gz`, 5874591 B, sha256 `1d215ec891c46a026be481120edf2014a412b81e06a9250927470c142a48ef57`;
+- its `.sha256` file, 102 B, sha256 `c33d9cc4c1b85b4cba56101615f21a7f8c2ddca3a5e6e54ccfd9d9b3014f08de`;
+- the Python wheel, 18168 B, sha256 `4914413745cd101f782cfd02d0acc1d3ccfecb6ee9f0a92410ae656b2a29ed9b`;
+- the Python sdist, 18561 B, sha256 `c4e03a89303a0edede226d00261a0b31d8491e9e4636c8209472fe01b3f75719`.
 
 #### v0.9.1 completion status (2026-11-26)
 

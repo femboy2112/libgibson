@@ -12,6 +12,16 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.9.1 "clear SIGKILL 1" released (2026-11-26):**
+- tag `v0.9.1` → `57e9abc` on `main`, with `bindings/go/v0.9.1` on the same commit;
+- a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.1).
+
+It is a patch that adds the Settings form primitives (#433): `ui::toggle`, `ui::form_row`,
+`Element::error` and `Element::hint`, additive, opt-in and Rust-only. The C ABI is unchanged (v1,
+67 symbols) and MSRV stays 1.85. The multi-line text area (#444) waits for 0.10.0. The consumer
+gate was substituted as for 0.9.0. The 4 release assets were built from `57e9abc` with rustc
+1.98.1 using the #429 path remap; after download all 4 are byte-identical to the build.
+
 **v0.9.0 "clear SIGKILL 0" released (2026-11-26):**
 - tag `v0.9.0` → `e17abef` on `main`, with `bindings/go/v0.9.0` on the same commit;
 - a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.0).
