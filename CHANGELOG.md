@@ -15,6 +15,9 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### Added
+- Settings form primitives (experimental, opt-in, Rust-only; #433): `ui::toggle` (`[x]`/`[ ]` text marker, focusable like `choice`), `ui::form_row` (label left of the control with an aligned label column; stacks the label above the control below 80 columns; adds no focus stop), `Element::error` (one `Tone::Danger` row under the control) and `Element::hint` (a dim, clipped, single-row note after the control). `error(None)` and `hint(None)` render byte-identically to omitting them. No C ABI or header change; existing elements are unchanged. See `docs/design/v0.9-settings-form.md`.
+
 ## [0.9.0] — 2026-11-26 · GitHub release from `main` · "clear SIGKILL 0"
 
 No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experimental `ui::Key` is now #[non_exhaustive] (adds Key::Scoped). The release adds new opt-in Rust-only surfaces: cell-glyph encoders, a terminal capability decision layer, the kitty graphics placeholder route (bytes and cells only, not wired into the renderer), view transitions, a toast lane, `measure_wrapped`, and a reserved-top inline anchor with hidden fullscreen cursor parking. One default changes for Rust applications: F1 to F12 now arrive as `Event::Key` with `KeyCode::F(n)` (#446), where they were dropped before; the C ABI still skips them. Every other default is unchanged, and the half-block output stays byte-identical.

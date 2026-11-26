@@ -4,7 +4,7 @@ use super::interaction::{Interaction, InteractionMap, ModalScope, UiError};
 use super::motion::MotionRole;
 use super::skin::{Chrome, ControlRole, ControlState, ResolvedSkin, Skin, UiEnvironment};
 use super::style::{Density, Elevation, Emphasis, Tone};
-use crate::{AlignItems, Dimension, JustifyContent, Node, SurfaceFx, WrapMode};
+use crate::{AlignItems, Dimension, JustifyContent, Node, Style, SurfaceFx, WrapMode};
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
@@ -142,6 +142,7 @@ fn collect<A: Clone>(
                 | ElementKind::Row
                 | ElementKind::Tabs
                 | ElementKind::Column
+                | ElementKind::FormRow(_)
                 | ElementKind::Stack
                 | ElementKind::Panel(_)
                 | ElementKind::Card(_)
@@ -633,6 +634,12 @@ fn lower_role<A>(
             }
         }
     }
+    if !matches!(
+        el.kind,
+        ElementKind::Row | ElementKind::Tabs | ElementKind::Stack
+    ) {
+        align_form_labels(&mut children, &el.children, cx.build.environment.width);
+    }
     let available = cx
         .build
         .environment
@@ -739,6 +746,26 @@ fn lower_role<A>(
             },
             style,
         ),
+        ElementKind::Toggle(s) => {
+            // The marker is the text; selection styling rides on the base style
+            // so no extra selected glyph shifts the `[x]`.
+            let base = if el.selected {
+                style.overlay(cx.build.skin.selection)
+            } else {
+                style
+            };
+            cx.build.skin.control(
+                &format!("[{}] {s}", if el.selected { "x" } else { " " }),
+                ControlRole::Choice,
+                ControlState {
+                    focused,
+                    selected: false,
+                    disabled,
+                },
+                base,
+            )
+        }
+        ElementKind::FormRow(label) => form_row_node(cx, el, label, style, children),
         ElementKind::Input { state, placeholder } => {
             let input_style = if cx.build.skin.chrome == Chrome::Window {
                 style.bg(cx.build.skin.well)
@@ -1068,7 +1095,89 @@ fn lower_role<A>(
         }
         node = layers;
     }
+    if let (Some(message), false) = (&el.error, matches!(el.kind, ElementKind::FormRow(_))) {
+        node = Node::col().child(node).child(error_node(cx, message));
+    }
     node
+}
+
+/// Narrow terminals stack a form row's label above its control.
+const FORM_ROW_STACK_BELOW: u16 = 80;
+/// Columns between the label column and the control.
+const FORM_ROW_GAP: u16 = 2;
+
+/// One `Tone::Danger` row, clipped on the right, never wrapped.
+fn error_node(cx: &PresentationCx, message: &str) -> Node {
+    Node::text(message, cx.build.skin.style(Tone::Danger, Emphasis::Normal))
+        .height(1.0)
+        .min_width(0.0)
+        .flex_shrink(1.0)
+}
+
+fn form_row_node<A>(
+    cx: &PresentationCx,
+    el: &Element<A>,
+    label: &str,
+    style: Style,
+    controls: Vec<Node>,
+) -> Node {
+    let mut line = Node::row().min_width(0.0).flex_shrink(1.0);
+    for control in controls {
+        line = line.child(control);
+    }
+    if let Some(hint) = &el.hint {
+        line = line.child(
+            Node::text(format!("  {hint}"), cx.build.skin.styles.faint)
+                .height(1.0)
+                .min_width(0.0)
+                .flex_shrink(1.0),
+        );
+    }
+    let mut right = Node::col().child(line);
+    if let Some(message) = &el.error {
+        right = right.child(error_node(cx, message));
+    }
+    let label_node = Node::text(label, style).height(1.0).min_width(0.0);
+    if cx.build.environment.width < FORM_ROW_STACK_BELOW {
+        Node::col().percent_width(100.0).child(label_node).child(
+            Node::row()
+                .child(Node::text("  ", style).width(2.0).height(1.0))
+                .child(right.min_width(0.0).flex_shrink(1.0)),
+        )
+    } else {
+        // `align_form_labels` widens this to the shared label column.
+        let own = crate::text::display_width(label) as f32 + FORM_ROW_GAP as f32;
+        Node::row()
+            .percent_width(100.0)
+            .child(label_node.width(own).flex_shrink(0.0))
+            .child(right.min_width(0.0).flex_grow(1.0).flex_shrink(1.0))
+    }
+}
+
+/// Give sibling [`form_row`]s one label column: the longest label plus the gap,
+/// capped so the control keeps at least half the width.
+fn align_form_labels<A>(nodes: &mut [Node], rows: &[Element<A>], width: u16) {
+    if width < FORM_ROW_STACK_BELOW {
+        return;
+    }
+    let is_row =
+        |r: &Element<A>| matches!(r.kind, ElementKind::FormRow(_)) && r.overlays.is_empty();
+    let widest = rows
+        .iter()
+        .filter_map(|r| match &r.kind {
+            ElementKind::FormRow(label) if is_row(r) => Some(crate::text::display_width(label)),
+            _ => None,
+        })
+        .max();
+    let Some(widest) = widest else { return };
+    let column = (widest + FORM_ROW_GAP as usize).min((width / 2) as usize) as f32;
+    for (node, row) in nodes.iter_mut().zip(rows) {
+        if is_row(row) {
+            if let Some(label) = node.children.first_mut() {
+                label.layout_style.width = Dimension::Length(column);
+            }
+        }
+    }
 }
 
 /// A toast's default height in rows, shared by lowering and the lane's fill rule.
