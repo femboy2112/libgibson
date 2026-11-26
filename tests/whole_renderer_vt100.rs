@@ -272,6 +272,139 @@ fn insert_line_fast_path_multiple_rows_and_cursor_restore() {
 }
 
 #[test]
+fn reserved_top_insertion_preserves_painted_cells_cursor_and_native_history() {
+    let mut h = Harness::new(40, 6);
+    h.parser = vt100::Parser::new(6.try_into().unwrap(), 40.try_into().unwrap(), 32);
+    h.parser.process(b"INHERITED-HISTORY\r");
+    h.renderer.set_inline_full_height_anchor(true);
+    h.renderer.set_inline_history_chunking(true);
+    let mut root = Node::col()
+        .child(Node::text("LIVE-TOP", Style::default()))
+        .child(Node::text_input("draft", 2, None, Style::default()))
+        .child(Node::text("", Style::default()).height(1.0))
+        .child(Node::text("LIVE-LOW", Style::default()))
+        .child(Node::text("LIVE-END", Style::default()));
+    h.render(&mut root);
+    let before = h.screen_rows();
+    let cursor = h.cursor();
+    assert_eq!(before[0], "INHERITED-HISTORY");
+    assert!(!h.hide_cursor());
+    let exact_width = "ABCDEFGHIJ0123456789ABCDEFGHIJ0123456789";
+
+    for text in ["FIRST-LINE", &format!("{exact_width}\nLAST-LINE")] {
+        let mut out = Vec::new();
+        let (_, strategy) = h
+            .renderer
+            .insert_text_before_live(text, &mut h.session, &mut out)
+            .unwrap();
+        assert_eq!(strategy, InsertStrategy::InsertLineFastPath);
+        let wire = String::from_utf8(out).unwrap();
+        assert!(wire.contains("\x1b[1L"));
+        assert!(!wire.contains("\x1b[J"));
+        assert!(!wire.contains("LIVE-"));
+        h.parser.process(wire.as_bytes());
+        let after = h.screen_rows();
+        assert!(after[0].is_empty());
+        assert_eq!(after[1..], before[1..]);
+        assert_eq!(h.cursor(), cursor);
+        assert!(!h.hide_cursor());
+    }
+    assert_eq!(h.render(&mut root), (0, 0, false));
+    let mut history = Vec::new();
+    for offset in (1..=h.parser.screen().scrollback_len()).rev() {
+        h.parser.screen_mut().set_scrollback(offset);
+        let line = h.screen_rows().remove(0);
+        if !line.is_empty() {
+            history.push(line);
+        }
+    }
+    assert_eq!(
+        history,
+        ["INHERITED-HISTORY", "FIRST-LINE", exact_width, "LAST-LINE"]
+    );
+}
+
+/// A reserved top row that an earlier insertion left blank is overwritten by the next one, never
+/// scrolled into native history: only the pre-existing line and the inserted lines appear, once
+/// each, in order, with no spurious blank (#452).
+#[test]
+fn reserved_top_fast_path_insertions_add_no_blank_lines_to_native_history() {
+    let mut h = Harness::new(40, 6);
+    h.parser = vt100::Parser::new(6.try_into().unwrap(), 40.try_into().unwrap(), 32);
+    h.parser.process(b"INHERITED-HISTORY\r");
+    h.renderer.set_inline_full_height_anchor(true);
+    h.renderer.set_inline_history_chunking(true);
+    let mut root = Node::col()
+        .child(Node::text("LIVE-TOP", Style::default()))
+        .child(Node::text_input("draft", 2, None, Style::default()))
+        .child(Node::text("", Style::default()).height(1.0))
+        .child(Node::text("LIVE-LOW", Style::default()))
+        .child(Node::text("LIVE-END", Style::default()));
+    h.render(&mut root);
+    let before = h.screen_rows();
+    let cursor = h.cursor();
+    assert_eq!(before[0], "INHERITED-HISTORY");
+    assert!(!h.hide_cursor());
+    let exact_width = "ABCDEFGHIJ0123456789ABCDEFGHIJ0123456789";
+
+    let inserts = [
+        "A-ONE".to_string(),
+        "B-TWO".to_string(),
+        "C-THREE".to_string(),
+        format!("D-FOUR\n{exact_width}"),
+    ];
+    for text in &inserts {
+        let mut out = Vec::new();
+        let (_, strategy) = h
+            .renderer
+            .insert_text_before_live(text, &mut h.session, &mut out)
+            .unwrap();
+        assert_eq!(strategy, InsertStrategy::InsertLineFastPath);
+        let wire = String::from_utf8(out).unwrap();
+        assert!(!wire.contains("\x1b[J"));
+        assert!(!wire.contains("LIVE-"));
+        h.parser.process(wire.as_bytes());
+        let after = h.screen_rows();
+        assert!(after[0].is_empty());
+        assert_eq!(after[1..], before[1..]);
+        assert_eq!(h.cursor(), cursor);
+        assert!(!h.hide_cursor());
+    }
+    assert_eq!(h.render(&mut root), (0, 0, false));
+    let mut history = Vec::new();
+    for offset in (1..=h.parser.screen().scrollback_len()).rev() {
+        h.parser.screen_mut().set_scrollback(offset);
+        history.push(h.screen_rows().remove(0));
+    }
+    assert_eq!(
+        history,
+        [
+            "INHERITED-HISTORY",
+            "A-ONE",
+            "B-TWO",
+            "C-THREE",
+            "D-FOUR",
+            exact_width
+        ]
+    );
+}
+
+#[test]
+fn turning_on_reservation_waits_for_a_transaction_that_establishes_the_top_row() {
+    let mut h = Harness::new(40, 4);
+    let mut root = live_root();
+    h.render(&mut root);
+    assert_eq!(h.screen_rows()[0], "LIVE-TOP");
+
+    h.renderer.set_inline_full_height_anchor(true);
+    assert_eq!(h.insert(&["ESTABLISH"]).1, InsertStrategy::RepaintFallback);
+    assert_eq!(h.screen_rows()[1], "LIVE-TOP");
+    let before = h.screen_rows();
+    assert_eq!(h.insert(&["FAST"]).1, InsertStrategy::InsertLineFastPath);
+    assert_eq!(h.screen_rows(), before);
+}
+
+#[test]
 fn chunked_inline_insertion_preserves_sparse_viewport_cursor_and_history() {
     let mut h = Harness::new(40, 6);
     h.parser = vt100::Parser::new(6.try_into().unwrap(), 40.try_into().unwrap(), 32);

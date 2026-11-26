@@ -240,3 +240,174 @@ fn a_terminal_context_keeps_observing_its_geometry_from_the_terminal() {
         "a terminal context's geometry must stay observed from the terminal"
     );
 }
+
+#[test]
+fn fullscreen_hidden_cursor_can_park_independently_of_frame_damage() {
+    use gibson::cell::Style;
+    use std::num::NonZeroU16;
+
+    let mut ctx = Context::headless(RenderMode::Fullscreen, 20, 6);
+    let mut parser =
+        vt100::Parser::new(NonZeroU16::new(6).unwrap(), NonZeroU16::new(20).unwrap(), 0);
+    let mut frame = |ctx: &mut Context, node| {
+        ctx.set_root(node);
+        ctx.render().unwrap();
+        parser.process(&ctx.take_rendered_bytes());
+        (
+            parser.screen().hide_cursor(),
+            parser.screen().cursor_position(),
+        )
+    };
+    let plain = || {
+        Node::col()
+            .child(Node::text("heading", Style::default()))
+            .child(Node::text("body", Style::default()))
+    };
+    // A consumer with no opt-in continues to leave it at the final emitted glyph.
+    assert_ne!(frame(&mut ctx, plain()).1, (0, 0));
+    ctx.renderer.set_fullscreen_hidden_cursor_home(true);
+    assert_eq!(frame(&mut ctx, plain()), (true, (0, 0)));
+
+    ctx.resize(15, 5).unwrap();
+    assert_eq!(frame(&mut ctx, plain()), (true, (0, 0)));
+    ctx.resize(20, 6).unwrap();
+    assert_eq!(frame(&mut ctx, plain()), (true, (0, 0)));
+
+    let input = Node::col()
+        .child(Node::text("heading", Style::default()))
+        .child(Node::text_input("answer", 3, None, Style::default()));
+    assert_eq!(frame(&mut ctx, input), (false, (1, 3)));
+    assert_eq!(frame(&mut ctx, plain()), (true, (0, 0)));
+}
+
+#[test]
+fn inline_full_height_anchor_matches_launch_and_regrow_without_losing_history() {
+    use gibson::cell::Style;
+    use std::num::NonZeroU16;
+
+    let dimension = |n| NonZeroU16::new(n).unwrap();
+    let mut ctx = Context::headless(RenderMode::Inline, 20, 6);
+    let mut parser = vt100::Parser::new(dimension(6), dimension(20), 64);
+    ctx.renderer.set_inline_full_height_anchor(true);
+    ctx.set_inline_resize_policy(gibson::InlineResizePolicy::ReclaimLiveRows);
+    ctx.commit_text("COMMITTED_HISTORY").unwrap();
+    for (cols, rows) in [(20, 6), (15, 4), (20, 6)] {
+        ctx.resize(cols, rows).unwrap();
+        parser
+            .screen_mut()
+            .set_size(dimension(rows), dimension(cols));
+        ctx.set_root(
+            Node::col()
+                .height(f32::from(rows - 1))
+                .child(Node::text("SCENE_TOP", Style::default())),
+        );
+        ctx.render().unwrap();
+        parser.process(&ctx.take_rendered_bytes());
+        assert_eq!(
+            parser.screen().rows(0, cols).nth(1).as_deref(),
+            Some("SCENE_TOP")
+        );
+        assert_eq!(parser.screen().rows(0, cols).next().as_deref(), Some(""));
+        if (cols, rows) == (15, 4) {
+            ctx.insert_text_before_live("TURN_MARKER\n").unwrap();
+            parser.process(&ctx.take_rendered_bytes());
+            assert_eq!(
+                parser.screen().rows(0, cols).nth(1).as_deref(),
+                Some("SCENE_TOP")
+            );
+            assert_eq!(parser.screen().rows(0, cols).next().as_deref(), Some(""));
+        }
+    }
+
+    let (mut notice_count, mut turn_count) = (0, 0);
+    let retained = parser.screen().scrollback_len();
+    for offset in 1..=retained {
+        parser.screen_mut().set_scrollback(offset);
+        let top = parser.screen().rows(0, 20).next().unwrap_or_default();
+        notice_count += usize::from(top == "COMMITTED_HISTORY");
+        turn_count += usize::from(top == "TURN_MARKER");
+    }
+    assert_eq!((notice_count, turn_count), (1, 1));
+}
+
+/// Seeds the parser with `PRIOR\r`, establishes a reserved-top full-height inline region on a
+/// headless 20x6 context, and returns the pair. Row 0 then holds the user's pre-existing line,
+/// which is real history; the region sits on rows 1..=5.
+fn reserved_top_context_over_prior_line() -> (Context, vt100::Parser) {
+    use std::num::NonZeroU16;
+
+    let dimension = |n| NonZeroU16::new(n).unwrap();
+    let mut ctx = Context::headless(RenderMode::Inline, 20, 6);
+    let mut parser = vt100::Parser::new(dimension(6), dimension(20), 64);
+    parser.process(b"PRIOR\r");
+    ctx.renderer.set_inline_full_height_anchor(true);
+    ctx.set_root(
+        Node::col()
+            .height(5.0)
+            .child(Node::text("SCENE_TOP", Style::default())),
+    );
+    ctx.render().unwrap();
+    parser.process(&ctx.take_rendered_bytes());
+    // Establishing the region allocates rows without scrolling: PRIOR stays on row 0 until the
+    // first insertion scrolls it out.
+    assert_eq!(parser.screen().scrollback_len(), 0);
+    assert_eq!(parser.screen().rows(0, 20).next().as_deref(), Some("PRIOR"));
+    (ctx, parser)
+}
+
+/// Every native scrollback row, oldest first, unfiltered (blank rows included).
+fn unfiltered_scrollback(parser: &mut vt100::Parser) -> Vec<String> {
+    let retained = parser.screen().scrollback_len();
+    let mut rows = Vec::new();
+    for offset in (1..=retained).rev() {
+        parser.screen_mut().set_scrollback(offset);
+        rows.push(parser.screen().rows(0, 20).next().unwrap_or_default());
+    }
+    parser.screen_mut().set_scrollback(0);
+    rows
+}
+
+fn assert_reserved_top_blank_and_scene_intact(parser: &vt100::Parser) {
+    assert_eq!(parser.screen().rows(0, 20).next().as_deref(), Some(""));
+    assert_eq!(
+        parser.screen().rows(0, 20).nth(1).as_deref(),
+        Some("SCENE_TOP")
+    );
+}
+
+/// Single-line inserts fit the one spare row, so a headless session (Insert Line `Supported`)
+/// takes the `CSI L` fast path with a rotated reserved top row. The row an insertion leaves blank
+/// must be overwritten by the next one, never scrolled into native history (#452).
+#[test]
+fn reserved_top_single_line_insertions_add_no_blank_lines_to_scrollback() {
+    let (mut ctx, mut parser) = reserved_top_context_over_prior_line();
+    for text in ["H1", "H2", "H3"] {
+        ctx.insert_text_before_live(text).unwrap();
+        ctx.render().unwrap();
+        parser.process(&ctx.take_rendered_bytes());
+        assert_reserved_top_blank_and_scene_intact(&parser);
+    }
+    // The first insertion scrolls PRIOR (real history) out; nothing else is blank.
+    assert_eq!(
+        unfiltered_scrollback(&mut parser),
+        ["PRIOR", "H1", "H2", "H3"]
+    );
+}
+
+/// `"Hn\n"` is two lines (`["Hn", ""]`), which exceed the one spare row without chunking, so this
+/// takes the `RepaintFallback` reserved-top replay. The blank after each `Hn` is the caller's own
+/// line; no other blank may enter native history (#452).
+#[test]
+fn reserved_top_fallback_insertions_add_no_blank_lines_to_scrollback() {
+    let (mut ctx, mut parser) = reserved_top_context_over_prior_line();
+    for text in ["H1\n", "H2\n", "H3\n"] {
+        ctx.insert_text_before_live(text).unwrap();
+        ctx.render().unwrap();
+        parser.process(&ctx.take_rendered_bytes());
+        assert_reserved_top_blank_and_scene_intact(&parser);
+    }
+    assert_eq!(
+        unfiltered_scrollback(&mut parser),
+        ["PRIOR", "H1", "", "H2", "", "H3", ""]
+    );
+}

@@ -97,6 +97,16 @@ No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experi
   saturating at `u16::MAX`. Tests in `tests/measure_wrapped.rs` (pinned caption, paragraph,
   hard-break and wide-glyph cases, a painted-rows oracle, and equality with `wrap_text`).
   `wrap_text` behaviour is unchanged. Design: `docs/design/v0.9-measure-wrapped.md`.
+- **Reserved-top inline anchor and fullscreen hidden-cursor home (#452), reachable from `Context`.**
+  `Context::set_inline_full_height_anchor(bool)` keeps a maximal inline live frame (`rows - 1`)
+  below one reserved top row, rotating history insertions through it;
+  `set_fullscreen_hidden_cursor_home(bool)` parks a hidden fullscreen cursor at the top left of
+  each frame. Both are opt-in, default off,
+  emit the same bytes as before when off, and are Rust only (the C ABI is unchanged). A reserved
+  top row that this renderer left blank is now overwritten by the next insertion instead of being
+  scrolled into native scrollback, so insertions add no spurious blank lines to history; a
+  pre-existing top line is still preserved. Tests: `tests/context_resize_contract.rs`,
+  `tests/whole_renderer_vt100.rs`.
 
 ### Changed
 - **`KeyCode::F(u8)`: function keys F1 to F12 are now delivered (Rust; default behavior change) ([#446](https://github.com/femboy2112/libgibson/pull/446)).** A consumer wants F1 to open in-app
