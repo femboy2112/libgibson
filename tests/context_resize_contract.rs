@@ -329,3 +329,85 @@ fn inline_full_height_anchor_matches_launch_and_regrow_without_losing_history() 
     }
     assert_eq!((notice_count, turn_count), (1, 1));
 }
+
+/// Seeds the parser with `PRIOR\r`, establishes a reserved-top full-height inline region on a
+/// headless 20x6 context, and returns the pair. Row 0 then holds the user's pre-existing line,
+/// which is real history; the region sits on rows 1..=5.
+fn reserved_top_context_over_prior_line() -> (Context, vt100::Parser) {
+    use std::num::NonZeroU16;
+
+    let dimension = |n| NonZeroU16::new(n).unwrap();
+    let mut ctx = Context::headless(RenderMode::Inline, 20, 6);
+    let mut parser = vt100::Parser::new(dimension(6), dimension(20), 64);
+    parser.process(b"PRIOR\r");
+    ctx.renderer.set_inline_full_height_anchor(true);
+    ctx.set_root(
+        Node::col()
+            .height(5.0)
+            .child(Node::text("SCENE_TOP", Style::default())),
+    );
+    ctx.render().unwrap();
+    parser.process(&ctx.take_rendered_bytes());
+    // Establishing the region allocates rows without scrolling: PRIOR stays on row 0 until the
+    // first insertion scrolls it out.
+    assert_eq!(parser.screen().scrollback_len(), 0);
+    assert_eq!(parser.screen().rows(0, 20).next().as_deref(), Some("PRIOR"));
+    (ctx, parser)
+}
+
+/// Every native scrollback row, oldest first, unfiltered (blank rows included).
+fn unfiltered_scrollback(parser: &mut vt100::Parser) -> Vec<String> {
+    let retained = parser.screen().scrollback_len();
+    let mut rows = Vec::new();
+    for offset in (1..=retained).rev() {
+        parser.screen_mut().set_scrollback(offset);
+        rows.push(parser.screen().rows(0, 20).next().unwrap_or_default());
+    }
+    parser.screen_mut().set_scrollback(0);
+    rows
+}
+
+fn assert_reserved_top_blank_and_scene_intact(parser: &vt100::Parser) {
+    assert_eq!(parser.screen().rows(0, 20).next().as_deref(), Some(""));
+    assert_eq!(
+        parser.screen().rows(0, 20).nth(1).as_deref(),
+        Some("SCENE_TOP")
+    );
+}
+
+/// Single-line inserts fit the one spare row, so a headless session (Insert Line `Supported`)
+/// takes the `CSI L` fast path with a rotated reserved top row. The row an insertion leaves blank
+/// must be overwritten by the next one, never scrolled into native history (#452).
+#[test]
+fn reserved_top_single_line_insertions_add_no_blank_lines_to_scrollback() {
+    let (mut ctx, mut parser) = reserved_top_context_over_prior_line();
+    for text in ["H1", "H2", "H3"] {
+        ctx.insert_text_before_live(text).unwrap();
+        ctx.render().unwrap();
+        parser.process(&ctx.take_rendered_bytes());
+        assert_reserved_top_blank_and_scene_intact(&parser);
+    }
+    // The first insertion scrolls PRIOR (real history) out; nothing else is blank.
+    assert_eq!(
+        unfiltered_scrollback(&mut parser),
+        ["PRIOR", "H1", "H2", "H3"]
+    );
+}
+
+/// `"Hn\n"` is two lines (`["Hn", ""]`), which exceed the one spare row without chunking, so this
+/// takes the `RepaintFallback` reserved-top replay. The blank after each `Hn` is the caller's own
+/// line; no other blank may enter native history (#452).
+#[test]
+fn reserved_top_fallback_insertions_add_no_blank_lines_to_scrollback() {
+    let (mut ctx, mut parser) = reserved_top_context_over_prior_line();
+    for text in ["H1\n", "H2\n", "H3\n"] {
+        ctx.insert_text_before_live(text).unwrap();
+        ctx.render().unwrap();
+        parser.process(&ctx.take_rendered_bytes());
+        assert_reserved_top_blank_and_scene_intact(&parser);
+    }
+    assert_eq!(
+        unfiltered_scrollback(&mut parser),
+        ["PRIOR", "H1", "", "H2", "", "H3", ""]
+    );
+}
