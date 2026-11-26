@@ -622,6 +622,10 @@ fn compiled_revision_shape() {
     assert_eq!(rev.morphs.len(), 1);
     assert_eq!(rev.family, fam_ref());
     assert_eq!(rev.rev_id, rev.content_id());
+    // A renderer gets positions, indices and joint worlds from the posed mesh alone.
+    let posed = rev.evaluate(&PoseInput::new()).unwrap();
+    assert_eq!(posed.indices, rev.neutral.indices);
+    assert_eq!(posed.joint_world.len(), 3);
     // The typed garment placeholder exists and is constructible.
     let g = GarmentFit {
         garment_id: "coat".to_string(),

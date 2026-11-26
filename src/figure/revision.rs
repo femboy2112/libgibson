@@ -557,6 +557,7 @@ impl CharacterRevision {
             .map_err(EvalError::Skin)?;
         Ok(PosedMesh {
             positions,
+            indices: self.neutral.indices.clone(),
             joint_world,
         })
     }
@@ -594,7 +595,12 @@ impl PoseInput {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct PosedMesh {
+    /// Skinned vertex positions.
     pub positions: Vec<Vec3>,
+    /// Triangle index buffer (3 per triangle), copied from the revision's neutral mesh so a
+    /// renderer needs nothing but the posed mesh.
+    pub indices: Vec<u32>,
+    /// Posed joint world matrices, one per joint.
     pub joint_world: Vec<Mat4>,
 }
 
