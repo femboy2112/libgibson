@@ -156,15 +156,16 @@ is ratified, it is the spec: the implementation and every audit are checked agai
 - `u8`: 1 byte.
 - `u32`: 4 bytes, unsigned.
 - `i32`: 4 bytes, two's complement.
-- `f32`: the IEEE-754 binary32 bit pattern, written as a `u32`.
+- `f32`: the IEEE-754 binary32 bit pattern, written as a `u32`, after `-0.0` becomes `+0.0`.
 - `str`: a `u32` byte length, then the UTF-8 bytes, with no terminator and no normalization.
 - Every count prefix below is a `u32`, except the per-vertex skin influence count, which is a
   `u8`.
 
 **Byte content, not geometry.**
-- Floats are not canonicalized. `-0.0` and `+0.0` are different bytes. So two geometrically equal
-  bodies whose data differ only in the sign of a zero get different `rev_id`s. A test pins this:
-  `negative_zero_is_byte_content_and_changes_rev_id`.
+- **`-0.0` is canonicalized to `+0.0`** in every serialized `f32` field (ruling #59; it reverses
+  #58 point 3). Ordinary negation, such as `-(0.0)` in an inverse-bind translation, produces
+  `-0.0` incidentally. Without this rule, semantically neutral refactors would change `rev_id`.
+  A test pins it: `negative_zero_canonicalized_same_rev_id`.
 - NaN and infinity cannot occur, because they are a `CompileError`.
 - Order matters wherever the family declares an order: reordering influences, deltas, morphs or
   landmarks changes `rev_id`.

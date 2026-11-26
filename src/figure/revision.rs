@@ -13,7 +13,7 @@
 //!
 //! # Canonical serialization (`gibson.figure.rev.v0`)
 //!
-//! Little-endian; floats as `to_bits().to_le_bytes()`; counts are `u32`; strings are a `u32`
+//! Little-endian; floats as their IEEE-754 bits with `-0.0` canonicalized to `+0.0`; counts are `u32`; strings are a `u32`
 //! byte length followed by UTF-8. In order: the 21-byte prefix `b"gibson.figure.rev.v0\0"`,
 //! family ref (id string, `u32` version), vertex count then positions (x, y, z), index count
 //! then indices (`u32`), joint count then joints (name, parent as `i32` with -1 for the root,
@@ -416,7 +416,18 @@ fn put_u32(out: &mut Vec<u8>, v: u32) {
 }
 
 fn put_f32(out: &mut Vec<u8>, v: f32) {
-    out.extend_from_slice(&v.to_bits().to_le_bytes());
+    out.extend_from_slice(&canonical_f32_bits(v).to_le_bytes());
+}
+
+/// The canonical bit pattern of a serialized `f32`: `-0.0` is written as `+0.0`, so an
+/// ordinary negation such as `-(0.0)` cannot change `rev_id` (ruling #59). NaN never reaches
+/// serialization, because it is a `CompileError`.
+pub(crate) fn canonical_f32_bits(v: f32) -> u32 {
+    if v == 0.0 {
+        0
+    } else {
+        v.to_bits()
+    }
 }
 
 fn put_str(out: &mut Vec<u8>, s: &str) {

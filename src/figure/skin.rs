@@ -190,7 +190,9 @@ impl SkinWeights {
                 .take(usize::from(vs.count))
             {
                 out.extend_from_slice(&j.to_le_bytes());
-                out.extend_from_slice(&w.to_bits().to_le_bytes());
+                out.extend_from_slice(
+                    &crate::figure::revision::canonical_f32_bits(*w).to_le_bytes(),
+                );
             }
         }
     }

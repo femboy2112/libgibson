@@ -1134,11 +1134,11 @@ fn compile_is_all_or_nothing() {
     assert_eq!(fam, before);
 }
 
-/// Normative v0 behaviour (FIGURE_CONTRACT, canonical serialization): `-0.0` is not
-/// canonicalized. Two geometrically equal bodies whose bytes differ only in the sign of a zero
-/// get different `rev_id`s. This pins the current byte-content semantics.
+/// Normative v0 behaviour (FIGURE_CONTRACT, canonical serialization; ruling #59): the
+/// serialization canonicalizes `-0.0` to `+0.0`. So a body whose data differ only in the sign
+/// of a zero, which ordinary negation produces, has the same `rev_id`.
 #[test]
-fn negative_zero_is_byte_content_and_changes_rev_id() {
+fn negative_zero_canonicalized_same_rev_id() {
     let mut neg = fixture_positions();
     assert_eq!(
         neg[0][1].to_bits(),
@@ -1146,18 +1146,20 @@ fn negative_zero_is_byte_content_and_changes_rev_id() {
         "fixture vertex 0 has y = +0.0"
     );
     neg[0][1] = -0.0;
+    assert_ne!(
+        neg[0][1].to_bits(),
+        0.0f32.to_bits(),
+        "the input really is -0.0"
+    );
     let plus = compile(&recipe(1.0, 0.0), &fixture_family()).unwrap();
     let minus = compile(&recipe(1.0, 0.0), &fixture_family_from(neg)).unwrap();
-    assert_ne!(plus.rev_id, minus.rev_id, "-0.0 is byte content");
-    let a = plus.evaluate(&PoseInput::new()).unwrap();
-    let b = minus.evaluate(&PoseInput::new()).unwrap();
-    assert_eq!(a.positions.len(), b.positions.len());
-    for (p, q) in a.positions.iter().zip(b.positions.iter()) {
-        assert!(
-            p.x == q.x && p.y == q.y && p.z == q.z,
-            "geometrically equal"
-        );
-    }
+    assert_eq!(plus.rev_id, minus.rev_id, "-0.0 is canonicalized to +0.0");
+    assert_eq!(plus.canonical_bytes(), minus.canonical_bytes());
+    // Positive control: a real non-zero change in the same slot does change rev_id.
+    let mut moved = fixture_positions();
+    moved[0][1] = 1.0e-3;
+    let other = compile(&recipe(1.0, 0.0), &fixture_family_from(moved)).unwrap();
+    assert_ne!(plus.rev_id, other.rev_id);
 }
 
 #[test]

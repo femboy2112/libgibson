@@ -67,7 +67,9 @@ impl MorphTarget {
         for &(v, d) in &self.deltas {
             out.extend_from_slice(&v.to_le_bytes());
             for c in [d.x, d.y, d.z] {
-                out.extend_from_slice(&c.to_bits().to_le_bytes());
+                out.extend_from_slice(
+                    &crate::figure::revision::canonical_f32_bits(c).to_le_bytes(),
+                );
             }
         }
     }
