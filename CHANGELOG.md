@@ -16,6 +16,16 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 ## [Unreleased]
 
 ### Added
+- **Reserved-top inline anchor and fullscreen hidden-cursor home (#452), reachable from `Context`.**
+  `Context::set_inline_full_height_anchor(bool)` keeps a maximal inline live frame (`rows - 1`)
+  below one reserved top row, rotating history insertions through it;
+  `set_fullscreen_hidden_cursor_home(bool)` parks a hidden fullscreen cursor at the top left of
+  each frame. Both are opt-in, default off,
+  emit the same bytes as before when off, and are Rust only (the C ABI is unchanged). A reserved
+  top row that this renderer left blank is now overwritten by the next insertion instead of being
+  scrolled into native scrollback, so insertions add no spurious blank lines to history; a
+  pre-existing top line is still preserved. Tests: `tests/context_resize_contract.rs`,
+  `tests/whole_renderer_vt100.rs`.
 - **`KeyCode::F(u8)`: function keys F1–F12.** A consumer wants F1 to open in-app help; until now
   every function key was dropped before it reached `Event`. `KeyCode` gains `F(u8)` (`KeyCode` is
   `#[non_exhaustive]`, so the addition is non-breaking). Decoded: F1 through F12, with Shift, Ctrl

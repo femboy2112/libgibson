@@ -166,6 +166,7 @@ pub struct Renderer {
     pub last_cursor_visible: Option<bool>,
     /// The cursor requested by the last painted frame (region-relative).
     last_cursor_desired: Option<(u16, u16)>,
+    fullscreen_hidden_cursor_home: bool,
     pub anchor: AnchorState,
     last_terminal_size: Option<(u16, u16)>,
 
@@ -211,6 +212,12 @@ pub struct Renderer {
     pending_reanchor: Option<ReanchorReport>,
     inline_resize_policy: InlineResizePolicy,
     inline_resize_bottom_reservation: bool,
+    inline_full_height_anchor: bool,
+    /// The last successful transaction placed the maximal live region below row zero.
+    inline_top_reserved: bool,
+    /// The reserved top row is known blank (left so by an insertion this renderer emitted), so the
+    /// next insertion may write onto it instead of scrolling the blank into native history.
+    inline_top_blank: bool,
     inline_history_chunking: bool,
 }
 
@@ -226,6 +233,7 @@ impl Renderer {
             last_cursor_x: 0,
             last_cursor_visible: None,
             last_cursor_desired: None,
+            fullscreen_hidden_cursor_home: false,
             anchor: AnchorState::Invalid,
             last_terminal_size: None,
             total_frame_bytes: 0,
@@ -246,7 +254,22 @@ impl Renderer {
             pending_reanchor: None,
             inline_resize_policy: InlineResizePolicy::PreserveAbove,
             inline_resize_bottom_reservation: false,
+            inline_full_height_anchor: false,
+            inline_top_reserved: false,
+            inline_top_blank: false,
             inline_history_chunking: false,
+        }
+    }
+
+    /// Park the hidden fullscreen cursor at the top left of each emitted frame.
+    /// This keeps its physical location independent of which cells were painted.
+    /// Defaults to false. Inline anchors and visible cursors are unchanged.
+    pub fn set_fullscreen_hidden_cursor_home(&mut self, enabled: bool) {
+        if self.fullscreen_hidden_cursor_home != enabled {
+            self.fullscreen_hidden_cursor_home = enabled;
+            if self.mode == RenderMode::Fullscreen {
+                self.last_cursor_visible = None;
+            }
         }
     }
 
@@ -260,6 +283,8 @@ impl Renderer {
     /// Nothing can un-send them, so the honest response is to void every belief about the physical
     /// state and let the next frame re-establish it (RXIV Gate G3).
     fn poison_physical_state(&mut self) {
+        self.inline_top_reserved = false;
+        self.inline_top_blank = false;
         self.physical_uncertain = true;
         self.previous_surface = None;
         self.last_cursor_visible = None;
@@ -295,6 +320,23 @@ impl Renderer {
     /// Whether eligible inline resize allocations reserve the extra physical row.
     pub fn inline_resize_bottom_reservation(&self) -> bool {
         self.inline_resize_bottom_reservation
+    }
+
+    /// Establish maximal-height inline frames below a reserved top row.
+    /// The extra physical line feed scrolls returned history away from the live frame,
+    /// while the logical rewind keeps the scene at the same origin as history insertion.
+    /// Short frames, fullscreen, one-row terminals and uncertain-write recovery keep
+    /// their usual allocation.
+    pub fn set_inline_full_height_anchor(&mut self, enabled: bool) {
+        self.inline_full_height_anchor = enabled;
+    }
+
+    fn reserves_inline_top(&self, screen_rows: u16, live_rows: u16) -> bool {
+        self.inline_full_height_anchor
+            && self.mode == RenderMode::Inline
+            && screen_rows > 1
+            && live_rows == screen_rows - 1
+            && !self.physical_uncertain
     }
 
     /// Allow large history insertions to reuse the spare rows above a stable
@@ -410,6 +452,8 @@ impl Renderer {
     /// Marks the physical anchor as untrustworthy and discards diff state so the
     /// next frame fully re-establishes the live region.
     fn invalidate_anchor(&mut self, count_resync: bool) {
+        self.inline_top_reserved = false;
+        self.inline_top_blank = false;
         if count_resync {
             self.anchor_resyncs += 1;
         }
@@ -509,6 +553,8 @@ impl Renderer {
             RenderMode::Fullscreen => term_rows,
             RenderMode::Inline => rect.height.max(1).min(max_inline_rows),
         };
+        let reserved_top = self.reserves_inline_top(term_rows, surface_height);
+        let same_inline_height = surface_height == self.live_region_height;
 
         // 2. Paint pass into next surface
         let mut next_surface = Surface::new(surface_width, surface_height);
@@ -623,6 +669,12 @@ impl Renderer {
                     if let Some(cmd) = session.hide_cursor() {
                         tx.push(cmd);
                     }
+                    if self.fullscreen_hidden_cursor_home {
+                        tx.push(b"\x1b[H");
+                        self.compiler.reset_cursor(0, 0);
+                        self.last_cursor_x = 0;
+                        self.last_cursor_y = 0;
+                    }
                 }
             }
             RenderMode::Inline => {
@@ -654,11 +706,11 @@ impl Renderer {
                     // keep it independently opt-in rather than changing Reclaim
                     // defaults. A maximal normal reanchor scrolls the returned
                     // row into history; it never erases above the tracked region.
-                    let allocation_rows = if self.inline_resize_bottom_reservation
-                        && reanchor
-                        && !recover
+                    let extra_on_resize = !recover
                         && surface_height == max_inline_rows
-                    {
+                        && self.inline_resize_bottom_reservation
+                        && reanchor;
+                    let allocation_rows = if reserved_top || extra_on_resize {
                         surface_height
                     } else {
                         surface_height.saturating_sub(1)
@@ -667,10 +719,12 @@ impl Renderer {
                         for _ in 0..allocation_rows {
                             tx.push(b"\r\n");
                         }
-                        write!(tx.buffer, "\x1b[{}A\r", allocation_rows).ok();
-                    } else {
-                        tx.push(b"\r");
                     }
+                    let rewind_rows = allocation_rows - u16::from(reserved_top);
+                    if rewind_rows > 0 {
+                        write!(tx.buffer, "\x1b[{}A", rewind_rows).ok();
+                    }
+                    tx.push(b"\r");
                     self.compiler.reset_cursor(0, 0);
                     self.last_cursor_y = 0;
                     self.last_cursor_x = 0;
@@ -791,6 +845,12 @@ impl Renderer {
         };
 
         self.previous_surface = Some(next_surface);
+        self.inline_top_reserved =
+            reserved_top && (is_full_repaint || (self.inline_top_reserved && same_inline_height));
+        self.inline_top_blank = self.inline_top_blank
+            && self.inline_top_reserved
+            && !is_full_repaint
+            && same_inline_height;
         self.physical_uncertain = false;
         self.owed_reanchor = false;
         // Physical-emission truth, advanced only now that the transaction committed: the cells on
@@ -1137,7 +1197,12 @@ impl Renderer {
         // framebuffer has the old geometry, so it is not replayed: the region is erased (bounded)
         // and the next frame allocates a fresh one below the inserted lines.
         let resized = self.resize_erase_due(session);
+        let reserved_top = self.reserves_inline_top(term_rows, self.live_region_height);
+        let rotate_reserved_top = reserved_top && self.inline_top_reserved && current_viewport;
+        // Overwrite (never scroll out) a reserved top row this renderer left blank.
+        let reuse_blank_top = reserved_top && self.inline_top_blank && current_viewport && !resized;
         let use_fast = !resized
+            && (!reserved_top || rotate_reserved_top)
             && self.live_region_height > 0
             && anchor_stable
             && session.insert_line_supported()
@@ -1167,8 +1232,9 @@ impl Renderer {
                 let erased = self.erase_live_after_resize(&mut tx, session);
                 debug_assert!(erased, "`resized` implies an outstanding bounded erase");
             } else if self.live_region_height > 0 {
-                if self.last_cursor_y > 0 {
-                    write!(tx.buffer, "\x1b[{}A\r", self.last_cursor_y).ok();
+                let up = self.last_cursor_y + u16::from(reuse_blank_top);
+                if up > 0 {
+                    write!(tx.buffer, "\x1b[{}A\r", up).ok();
                 } else {
                     tx.push(b"\r");
                 }
@@ -1183,6 +1249,14 @@ impl Renderer {
             if resized {
                 // Not replayed: the next frame re-establishes the region at the new geometry.
             } else if let Some(prev) = self.previous_surface.clone() {
+                if reserved_top {
+                    for _ in 0..self.live_region_height {
+                        tx.push(b"\r\n");
+                    }
+                    if self.live_region_height > 1 {
+                        write!(tx.buffer, "\x1b[{}A\r", self.live_region_height - 1).ok();
+                    }
+                }
                 // current cursor row is now region row 0
                 self.compiler.reset_cursor(0, 0);
                 let diff = compute_diff(None, &prev);
@@ -1211,7 +1285,18 @@ impl Renderer {
             // live framebuffer is never repainted.
             strategy = InsertStrategy::InsertLineFastPath;
 
-            for chunk in lines.chunks(spare_rows) {
+            let mut rest = lines;
+            if reuse_blank_top {
+                let up = self.last_cursor_y + 1;
+                write!(tx.buffer, "\x1b[{up}A\r\x1b[2K").ok();
+                tx.push(lines[0].as_bytes());
+                write!(tx.buffer, "\r\x1b[{up}B").ok();
+                if self.last_cursor_x > 0 {
+                    write!(tx.buffer, "\x1b[{}C", self.last_cursor_x).ok();
+                }
+                rest = &lines[1..];
+            }
+            for chunk in rest.chunks(spare_rows) {
                 let rows = chunk.len() as u16;
                 // Shift the viewport as needed, using only the spare rows.
                 if self.last_cursor_y < self.live_region_height - 1 {
@@ -1240,6 +1325,26 @@ impl Renderer {
                     write!(tx.buffer, "\x1b[{}C", self.last_cursor_x).ok();
                 }
             }
+
+            if rotate_reserved_top {
+                // The last inserted line is on the reserved top row. Scroll it
+                // into history, then insert a blank row above the existing
+                // viewport to restore every live cell and its cursor.
+                let to_bottom = self.live_region_height - 1 - self.last_cursor_y;
+                if to_bottom > 0 {
+                    write!(tx.buffer, "\x1b[{to_bottom}B").ok();
+                }
+                write!(
+                    tx.buffer,
+                    "\r\n\x1b[{}A\x1b[1L\x1b[{}B",
+                    self.live_region_height,
+                    self.last_cursor_y + 1
+                )
+                .ok();
+                if self.last_cursor_x > 0 {
+                    write!(tx.buffer, "\x1b[{}C", self.last_cursor_x).ok();
+                }
+            }
         }
 
         let bytes = match tx.commit_counted() {
@@ -1256,6 +1361,10 @@ impl Renderer {
         // fullscreen canvas stays uncertain until a frame re-establishes it (review finding 4).
         if self.mode == RenderMode::Inline {
             self.physical_uncertain = false;
+            self.inline_top_reserved = reserved_top && current_viewport && !resized;
+            // Rotation (fast path) and the reserved replay (fallback) both end with a blank top row.
+            self.inline_top_blank = self.inline_top_reserved
+                && (rotate_reserved_top || strategy == InsertStrategy::RepaintFallback);
         }
         if resized {
             // The region was erased, not replayed: the next frame starts a fresh one (#403).
