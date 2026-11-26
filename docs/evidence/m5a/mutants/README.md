@@ -13,8 +13,9 @@ compile and exercise the API.
 | `planes_flat.patch` | `LayerSlots::planes` ignores slot offsets and gives every fill `z = 0` | G2 tests |
 
 The patches are evidence only. They are never applied to `src` in a commit. To reproduce them,
-use `run.sh`. Recorded results are in `gate3-results.txt` (the first three patches; G2 is run
-separately).
+use `run.sh`. Recorded results are in `results.txt`: the first three patches are from gate 3, and
+`planes_flat` is from the separate G2 run (3 G2 assertion failures; the 2 refusal tests are out
+of the stub's reach).
 
 Accepted reading: the five G3 structural tests (slot and gap bounds, `nth`/`next_after`
 consistency, overflow, O(1)) still pass under `hash_zero`. A zero-jitter schedule really does
