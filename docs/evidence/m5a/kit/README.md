@@ -60,7 +60,9 @@ reported frame with the expected one.
   (x = ms*79/10000 cells), cursor off.
 - `g4-hidden`: no sprite and no stale pixels where it was (it was shown for 400 ms first, then
   hidden); stderr shows `next_deadline_hidden=null`, `idle_run_once_none=true`,
-  `idle_bytes=0`. Defect: STALE FRAME AFTER HIDE (a ghost of the figure left in the terminal),
+  `idle_bytes=0`. **These byte and deadline numbers are PROXY evidence**: they come from a
+  headless twin `Context`, because the real alt-screen sink cannot be captured. The screenshot is
+  the direct evidence. Defect: STALE FRAME AFTER HIDE (a ghost of the figure left in the terminal),
   a non-null deadline, a non-zero idle write.
 - `after-exit`: the xterm shows only `RESTORED-OK` on the normal screen with the prompt-less
   shell. Defects: RESIDUE/GARBAGE after exit (sprite cells, stray escape text, alt screen left

@@ -209,6 +209,9 @@ def main():
     finally:
         killall()
         man["wall_seconds_last_run"] = round(time.time() - t0, 1)
+        man["g4_bytes_evidence"] = ("PROXY: idle_bytes/next_deadline in g4-hidden are measured on a "
+                                    "headless twin Context, not on the real alt-screen sink; the "
+                                    "screenshot is the direct evidence of no stale frame")
         total = man.get("still_png_total_bytes", 0)
         man["still_png_total_kb"] = round(total / 1024, 1)
         json.dump(man, open(mpath, "w"), indent=1, sort_keys=True)
