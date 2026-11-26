@@ -96,6 +96,10 @@ name = "fx_lab"
 path = "examples/fx_lab.rs"
 
 [[example]]
+name = "stage_motion_kit"
+path = "examples/stage_motion_kit.rs"
+
+[[example]]
 name = "instrument_workbench"
 path = "examples/instrument_workbench/main.rs"
 
