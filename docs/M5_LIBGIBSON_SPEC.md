@@ -74,7 +74,8 @@ impl FrameSequence {
 - Interruption needs nothing new. The host samples a different sequence from its own new origin,
   and the sequence holds no state.
 - `new` refuses an empty sequence, more than 64 frames, `hold` under 1 ms, an out-of-range
-  `rest`, and frames whose dimensions differ. Equal dimensions are the registration invariant: a
+  `rest`, a total duration that overflows (`Σ hold > Duration::MAX`, checked with
+  `checked_add`), and frames whose dimensions differ. Equal dimensions are the registration invariant: a
   frame swap never moves the ground line.
 - The host feeds `next_in` to `SourceDemand { demand: FrameDemand::After(next_in) }`. The sampled
   `source` becomes a `RasterPlane`.
@@ -83,7 +84,7 @@ impl FrameSequence {
 - sampling at every boundary, half-open intervals;
 - rest after the total duration, with `next_in == None`;
 - `Reduced`/`None` return the rest frame at t=0 with no deadline;
-- every refusal case;
+- every refusal case, including the `Σ hold` overflow (two holds near `Duration::MAX`);
 - determinism: the same inputs give the same output, and there is no clock dependency;
 - missed deadlines coalesce: sampling late jumps to the current frame and never replays.
 
@@ -122,10 +123,11 @@ impl CueSchedule {
     pub fn new(seed: u64, cue: u64, origin: Duration, period: Duration, min_gap: Duration)
         -> Result<Self, CueError>;
     /// Occurrence k: slot start `origin + k*period` plus a jitter in `[0, period - min_gap]`
-    /// that is a pure hash of (seed, cue, k).
-    pub fn nth(&self, k: u64) -> Duration;
+    /// that is a pure hash of (seed, cue, k). `None` only if the time overflows `Duration`.
+    pub fn nth(&self, k: u64) -> Option<Duration>;
     /// The first occurrence strictly after `t`, as (k, time). O(1), no iteration from origin.
-    pub fn next_after(&self, t: Duration) -> (u64, Duration);
+    /// For `t < origin` this is k = 0. `None` only on `Duration` overflow.
+    pub fn next_after(&self, t: Duration) -> Option<(u64, Duration)>;
 }
 ```
 
@@ -137,10 +139,27 @@ impl CueSchedule {
   focus or STOP may suppress it, and a hidden avatar never asks.
 - The host then samples a G1 sequence from the admitted time. There is no state, so hiding and
   re-showing needs nothing: the host calls `next_after(now)`.
-- `new` refuses a zero `period` and `min_gap > period`.
+- **Before the origin:** for any `t < origin`, `next_after(t)` returns k = 0, that is
+  `(0, nth(0))`. Since `nth(0) >= origin > t`, that is strictly after `t`.
+- **The jitter hash is contract.** Occurrence times are part of observable behavior (hosts and
+  goldens depend on them), so a 0.9.x patch must not change the hash. It is fixed as:
+  - `mix(x)` = the SplitMix64 finalizer: `x ^= x >> 30; x *= 0xbf58476d1ce4e5b9;
+    x ^= x >> 27; x *= 0x94d049bb133111eb; x ^= x >> 31` (wrapping multiplies);
+  - `h = mix(mix(mix(seed) ^ cue) ^ k)`;
+  - `jitter = h % (span_ns + 1)` nanoseconds, where `span_ns = (period - min_gap)` in whole
+    nanoseconds. The modulo bias is accepted and is part of the contract.
+- `new` refuses a zero `period`, `min_gap > period`, and a `period` above `u64::MAX`
+  nanoseconds (about 584 years), so `span_ns` fits in a `u64`.
+- The return types are `Option` so a huge `k` or `origin` overflows to `None`, never wraps or
+  saturates to a false time. (A signature change from the first draft, made while adding the
+  t < origin rule.)
 
 **Tests:**
 - `nth` is fixed for a given seed (golden values) and differs across cues;
+- **a hash golden test** pins `h` and `nth` for a fixed table of (seed, cue, k) values, with a
+  comment that changing it needs a minor release;
+- `next_after(t)` for `t < origin` (including `t = 0` with a large origin) returns k = 0;
+- overflow returns `None` (`k = u64::MAX`, and an origin near `Duration::MAX`);
 - the gap bounds hold over 10⁵ occurrences;
 - `next_after` is consistent with `nth`, including at boundaries;
 - `next_after` is O(1): no loop proportional to `t`;
@@ -216,6 +235,14 @@ inline renderer without erasing committed history.
 1. **Fullscreen on the alternate screen** for the living view. The alternate screen has no
    scrollback for the terminal to pull rows back from. This is conjectured for VTE 0.76 and must
    be probed with the application stopped: shrink, then grow, then capture.
+   - **The probe must record the `RenderMode` the original repro used.** On the consumer side,
+     the fullscreen path restores with `leave_alternate_screen` (GHOST `living_terminal.rs:321`)
+     and `clear_live_region` runs on the Inline path only (`:340`).
+   - **If the repro was Inline:** the fix may be just choosing fullscreen, or the existing
+     clear on hide/detach (mitigation 2).
+   - **If the repro was already fullscreen:** this alternate-screen conjecture is refuted, and
+     the transient needs a new explanation before any change.
+   - The consumer team owns this probe on the GHOST side; libgibson supplies no code for it.
 2. **Clear the live region on hide or detach** with `Context::clear_live_region`
    (`src/context.rs:759`), so a detached or hidden avatar leaves no rows for a later resize to
    reveal. This does not help a resize while the avatar is visible.
@@ -226,7 +253,8 @@ inline renderer without erasing committed history.
 
 **Recommendation:**
 - Treat the stopped-application regrow transient as terminal-only.
-- Run probe 1 (alternate screen) before any libgibson change. If it removes the transient, the
+- Run probe 1 (alternate screen), recording the repro's `RenderMode`, before any libgibson
+  change. If it removes the transient, the
   fix is a consumer mode choice, not libgibson code.
 - Mitigation 2 is a one-line host call that already exists.
 
