@@ -12,6 +12,7 @@
 pub mod clip;
 pub mod math;
 pub mod morph;
+pub mod motion;
 pub mod revision;
 pub mod sha256;
 pub mod skeleton;
