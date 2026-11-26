@@ -15,10 +15,11 @@ merged; this document cites them as design input, not as shipped behavior.
 body measurements, reference images, private paths or approval records appear in libgibson code,
 tests or docs.
 
-**Code home:** a new experimental `figure` module (`src/figure/**`), behind an off-by-default
-cargo feature. The default build, the terminal renderer contract, the C ABI and the MSRV are
-unchanged. New dependencies are optional and enabled only by that feature. The dependency
-evaluation and ruling come before any of them is added.
+**Code home:** a new experimental `figure` module (`src/figure/**`), behind the off-by-default
+`figure` cargo feature. The default build, the terminal renderer contract, the C ABI and the
+MSRV are unchanged. Slice 1 adds **no runtime dependency** (ruling #39; the evaluation is in
+`docs/design/figure-dep-eval.md`). `figure-gltf` (gltf-json, default features off, never
+`import`) and `figure-vrm` (serde_vrm) are reserved names, and each needs its own ruling.
 
 Claim labels: **SHIPPED** means in a release; **SLICE 1** means planned for the first
 implementation slice; **LATER** means reserved shape only, not implemented.
@@ -37,7 +38,9 @@ implementation slice; **LATER** means reserved shape only, not implemented.
 ### Shape (proposed)
 
 ```rust
-pub fn compile(recipe: &BodyRecipe, pack: &AssetPack) -> Result<CharacterRevision, CompileError>;
+// Slice 1: the body family is in-code synthetic data. The AssetPack (I-4) loader produces
+// a BodyFamily in a later slice, without changing compile's laws.
+pub fn compile(recipe: &BodyRecipe, family: &BodyFamily) -> Result<CharacterRevision, CompileError>;
 
 #[non_exhaustive]
 pub struct CharacterRevision {
@@ -67,7 +70,7 @@ the consumer side. libgibson never stores identity, personality, memory or appro
    - No partially built revision is ever observable, and there is no in-place mutation API.
    - An edit is a new `compile`; the previous revision stays valid until the host drops it.
 2. **Deterministic.**
-   - The same recipe and the same pack bytes give the same `rev_id` and the same derived data,
+   - The same recipe and the same family data give the same `rev_id` and the same derived data,
      bit for bit, on one build.
    - There is no clock, no randomness without an explicit seed, no environment read and no I/O.
 3. **Content-hashed.**
@@ -78,7 +81,14 @@ the consumer side. libgibson never stores identity, personality, memory or appro
    - It identifies bytes only. It does **not** certify likeness, correctness or approval.
    - The serialization is versioned. Changing it changes `rev_id` for unchanged inputs, which
      needs a minor release and a changelog note.
-   - The digest crate is pending the dependency ruling.
+   - The digest is SHA-256, hand-written in `figure::sha256` with no dependency (ruling #39).
+     It is checked against the NIST FIPS 180-4 vectors and differentially against the `sha2`
+     crate, which is a dev-dependency only. It is a **content identifier, not a security
+     primitive**: no constant-time or side-channel claims are made.
+   - **Bit-stability scope.** Evaluation is scalar `f32` with no SIMD, no `unsafe` and a fixed
+     evaluation order. `rev_id` is bit-stable **on the platforms we test, which today is
+     x86_64 only**. Cross-architecture identity is not claimed. A golden `rev_id` test catches
+     any drift in float evaluation order.
 4. **Posing never touches the revision.**
    - Evaluation is `rev.evaluate(&PoseInput) -> PosedMesh`. It takes joint locals or a sampled
      clip, plus morph weights.

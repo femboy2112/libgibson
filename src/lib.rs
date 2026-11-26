@@ -54,6 +54,11 @@ pub mod field;
 /// Domain-neutral scalar-field observation: heatmap/mono rendering, point probes,
 /// and a conservation-law receipt, reconciled with pointer selection (Wave 4).
 pub mod field_view;
+/// Experimental generic character mechanics (skeleton, skinning, morphs, finite clips,
+/// content-addressed `CharacterRevision`). Off by default behind the `figure` feature;
+/// adds no dependency. See `docs/FIGURE_CONTRACT.md`.
+#[cfg(feature = "figure")]
+pub mod figure;
 pub mod focus;
 pub mod frame;
 pub mod geom;
