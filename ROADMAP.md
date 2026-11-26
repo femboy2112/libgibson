@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-26): v0.8.1 "clear SIGFPE 1"; v0.9.0 "clear SIGKILL 0" prepared
+## Current release (updated 2026-11-26): v0.9.0 "clear SIGKILL 0"
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -62,11 +62,29 @@ Python package version, hosted CI was 9/9, and the bundle gate passed. The relea
 built from the tag with rustc 1.98.1 using the tagged #429 path remap. After download, all 4 are
 byte-identical to the build, and the private-path scan found 0 hits.
 
-**v0.9.0 "clear SIGKILL 0" is prepared in source** (state 1): every slice below has merged to
-`main`. Nothing is tagged.
+**v0.9.0 "clear SIGKILL 0" was released on 2026-11-26** (state 2):
+- annotated tag `v0.9.0` → `e17abef` on `main` (`e17abefd0a6a1d8e254c001965facdd5246bd332`), with
+  `bindings/go/v0.9.0` on the same commit;
+- a regular GitHub [release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.0), not a
+  prerelease, marked Latest, and not on any registry.
+
+It is a minor. Every slice below merged to `main` before the tag.
 No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experimental `ui::Key` is now #[non_exhaustive] (adds Key::Scoped). The name
 follows [decision 0004](docs/decisions/0004-release-naming.md) (minor 9 = SIGKILL, patch 0) and is
 confirmed by the release coordinator (GOD #126). The C ABI is unchanged (v1, 67 symbols).
+**Consumer gate:** substituted by owner ruling (2026-11-26; see the status table below). MINERVA
+TRAIN-2 was dropped. The substitute is hosted CI 9/9 including Release preflight on the exact
+candidate, plus `git diff v0.8.1 v0.9.0 -- abi include bindings` showing only header comments and
+the Python package version. Release gates: H2 `8673674` CI 45794710234 + preflight 45794710227;
+H3 `7fde6d5` CI 45797133820 + preflight 45797134207; merged `main` `e17abefd` CI 45799612174 8/8.
+The release has 4 assets, built from `e17abefd` with rustc 1.98.1 using the #429 path remap. After
+download, all 4 are byte-identical to the build, and the build-host path scan found 0 hits:
+- `libgibson-0.9.0-linux-x86_64.tar.gz`, 5873632 B, sha256 `d1fa9709970f450aa858778b75fd58595fb30711072dfb8cb85cfd9f691ee5a2`;
+- its `.sha256` file, 102 B, sha256 `fe71887ca26900d30cbac29eebfb132ef6aaa919d399b83c7d1cb7e6121d81ed`;
+- the Python wheel, 18166 B, sha256 `686bc5c3a9386a95d3bae360d9f8c78f6a699ecdbd0302e7f3f0a8ad8dbc427b`;
+- the Python sdist, 18564 B, sha256 `de586b672b1a14fcf02bbba4b345c14833480ca5b4c1be5c227fa8a09439db12`.
+
+Known non-blocker: #454 (`wire_instrument_fullduplex` fails on a low-RAM laptop; hosted CI is green).
 
 #### v0.9.0 completion status (2026-11-26)
 
