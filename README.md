@@ -17,12 +17,18 @@ procedural audio.
 
 </div>
 
-> **Current release: [v0.8.1 — clear SIGFPE 1](https://github.com/femboy2112/libgibson/releases/tag/v0.8.1)**
-> (2026-11-20, tag `v0.8.1` → `main` `08f2f71`; the Go module tag `bindings/go/v0.8.1` names the
-> same commit). v0.8.1 is a patch with no library behavior change: the only `src/` change is rustdoc
-> on `Element::overlay`. The native SDK binaries no longer embed build-host paths (#429), and the
-> inline popup recipe is documented (#427) and pinned by a regression test (#431). v0.8.0 was a
-> minor: the experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }`
+> **Current release: [v0.9.0 — clear SIGKILL 0](https://github.com/femboy2112/libgibson/releases/tag/v0.9.0)**
+> (2026-11-26, tag `v0.9.0` → `main` `e17abef`; the Go module tag `bindings/go/v0.9.0` names the
+> same commit). v0.9.0 is a minor with no breaking changes to stable-tier APIs; the experimental
+> `ui::Key` is now `#[non_exhaustive]` (it adds `Key::Scoped`). One Rust default changes: F1 to F12
+> are delivered as `KeyCode::F(n)` (#446); the C ABI still skips them. Everything else is opt-in:
+> the cell encoders (#436), the capability probe (#437), transitions (#434), the kitty placeholder
+> route (#438, #442), `toast_lane` (#443), `measure_wrapped` (#448), and the reserved-top inline
+> anchor plus hidden fullscreen cursor home (#452, with the #453 blank-scrollback fix). The C ABI
+> is unchanged (v1, 67 symbols) and MSRV stays 1.85. v0.8.1 was a patch with no library behavior
+> change: the only `src/` change was rustdoc on `Element::overlay`. Its native SDK binaries no
+> longer embed build-host paths (#429), and the inline popup recipe is documented (#427) and pinned
+> by a regression test (#431). v0.8.0 was a minor: the experimental `Compiled::geometry_paths` field breaks literal `Compiled { .. }`
 > constructors, and the experimental Standard/Blades typed `on_press` behavior changes. It added the
 > Rust-only `TerminalSession::try_terminal_size`, a fallible size read for consent gates (#425),
 > fixed #312, a shifted key in the screen-switch window (#421), and ported layout to taffy 0.15.1
@@ -182,7 +188,7 @@ of this film ([how it was captured](docs/assets/README.md)).
 ## Install & use
 
 LibGibson ships as **GitHub source plus a native SDK archive** on the
-[release](https://github.com/femboy2112/libgibson/releases/tag/v0.8.1). It is not
+[release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.0). It is not
 published to any package registry.
 
 ### Rust
@@ -192,7 +198,7 @@ crate you `use` is `gibson`:
 
 ```toml
 [dependencies]
-libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.8.1" }
+libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.9.0" }
 ```
 
 ```rust
@@ -235,14 +241,14 @@ For a short Python walkthrough using the released SDK, see
 headless starters and a staged-artifact smoke check, see
 [`onboarding/README.md`](onboarding/README.md).
 
-The release attaches `libgibson-0.8.1-linux-x86_64.tar.gz` (with a `.sha256`): headers,
+The release attaches `libgibson-0.9.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
 `libgibson.a`, the versioned shared object (`libgibson.so.1` + a `libgibson.so` dev
 symlink), and a relocatable `pkg-config` file.
 
 ```bash
-sha256sum -c libgibson-0.8.1-linux-x86_64.tar.gz.sha256
-tar -xzf libgibson-0.8.1-linux-x86_64.tar.gz          # -> ./libgibson-0.8.1-linux-x86_64/
-export PKG_CONFIG_PATH="$PWD/libgibson-0.8.1-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
+sha256sum -c libgibson-0.9.0-linux-x86_64.tar.gz.sha256
+tar -xzf libgibson-0.9.0-linux-x86_64.tar.gz          # -> ./libgibson-0.9.0-linux-x86_64/
+export PKG_CONFIG_PATH="$PWD/libgibson-0.9.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 cc app.c $(pkg-config --cflags --libs libgibson) -o app   # C consumer
 ```
