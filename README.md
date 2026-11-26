@@ -17,9 +17,11 @@ procedural audio.
 
 </div>
 
-> **Current release: [v0.9.0 — clear SIGKILL 0](https://github.com/femboy2112/libgibson/releases/tag/v0.9.0)**
-> (2026-11-26, tag `v0.9.0` → `main` `e17abef`; the Go module tag `bindings/go/v0.9.0` names the
-> same commit). v0.9.0 is a minor with no breaking changes to stable-tier APIs; the experimental
+> **Current release: [v0.9.1 — clear SIGKILL 1](https://github.com/femboy2112/libgibson/releases/tag/v0.9.1)**
+> (2026-11-26, tag `v0.9.1` → `main` `57e9abc`; the Go module tag `bindings/go/v0.9.1` names the
+> same commit). v0.9.1 is a patch that adds the Settings form primitives (#433): `ui::toggle`,
+> `ui::form_row`, `Element::error` and `Element::hint`. They are additive, opt-in and Rust-only,
+> and no existing API or default changes. v0.9.0 (tag → `e17abef`) was a minor with no breaking changes to stable-tier APIs; the experimental
 > `ui::Key` is now `#[non_exhaustive]` (it adds `Key::Scoped`). One Rust default changes: F1 to F12
 > are delivered as `KeyCode::F(n)` (#446); the C ABI still skips them. Everything else is opt-in:
 > the cell encoders (#436), the capability probe (#437), transitions (#434), the kitty placeholder
@@ -188,7 +190,7 @@ of this film ([how it was captured](docs/assets/README.md)).
 ## Install & use
 
 LibGibson ships as **GitHub source plus a native SDK archive** on the
-[release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.0). It is not
+[release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.1). It is not
 published to any package registry.
 
 ### Rust
@@ -198,7 +200,7 @@ crate you `use` is `gibson`:
 
 ```toml
 [dependencies]
-libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.9.0" }
+libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.9.1" }
 ```
 
 ```rust
@@ -241,14 +243,14 @@ For a short Python walkthrough using the released SDK, see
 headless starters and a staged-artifact smoke check, see
 [`onboarding/README.md`](onboarding/README.md).
 
-The release attaches `libgibson-0.9.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
+The release attaches `libgibson-0.9.1-linux-x86_64.tar.gz` (with a `.sha256`): headers,
 `libgibson.a`, the versioned shared object (`libgibson.so.1` + a `libgibson.so` dev
 symlink), and a relocatable `pkg-config` file.
 
 ```bash
-sha256sum -c libgibson-0.9.0-linux-x86_64.tar.gz.sha256
-tar -xzf libgibson-0.9.0-linux-x86_64.tar.gz          # -> ./libgibson-0.9.0-linux-x86_64/
-export PKG_CONFIG_PATH="$PWD/libgibson-0.9.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
+sha256sum -c libgibson-0.9.1-linux-x86_64.tar.gz.sha256
+tar -xzf libgibson-0.9.1-linux-x86_64.tar.gz          # -> ./libgibson-0.9.1-linux-x86_64/
+export PKG_CONFIG_PATH="$PWD/libgibson-0.9.1-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 cc app.c $(pkg-config --cflags --libs libgibson) -o app   # C consumer
 ```
