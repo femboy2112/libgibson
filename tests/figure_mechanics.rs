@@ -58,6 +58,7 @@ use sha2::Digest as _;
 ///   - `W * IB`: 7 -> 48; point transform: 3 mul + 3 add = 6 -> 54
 ///   - blend of up to 4 influences (1 mul + 3 add) = 4 -> 58; the morphed input position
 ///     (weight accumulation, mul, add) adds 4 -> 62, rounded up to N = 64.
+///
 /// Fixture magnitudes: |coordinate| <= 3.4, |inverse-bind entry| <= 3.2 (largest over the
 /// control sets used), world entries <= 2.6 and a 3-term product-and-sum, so S <= 12.
 /// Then `N * u * S = 64 * 5.96e-8 * 12 = 4.6e-5`. TOL = 1e-4 is 2.2x above that worst case and
@@ -1187,14 +1188,14 @@ fn morph_validation_and_application_order() {
     assert_eq!(out[0], Vec3::new(0.25, 0.25, 0.25));
     assert_eq!(out[1], Vec3::new(1.0, 0.5, 0.5));
     assert!(matches!(
-        apply_morphs(&base, &[t0.clone()], &[]),
+        apply_morphs(&base, std::slice::from_ref(&t0), &[]),
         Err(MorphError::WeightCount {
             expected: 1,
             got: 0
         })
     ));
     assert!(matches!(
-        apply_morphs(&base, &[t0.clone()], &[f32::INFINITY]),
+        apply_morphs(&base, std::slice::from_ref(&t0), &[f32::INFINITY]),
         Err(MorphError::NonFinite { .. })
     ));
     let oob = MorphTarget::new("o", vec![(2, Vec3::ZERO)]);
