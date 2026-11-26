@@ -62,7 +62,9 @@ fn nist_one_million_a() {
 
 #[test]
 fn padding_boundaries_match_oracle() {
-    for len in [0usize, 1, 54, 55, 56, 57, 63, 64, 65, 119, 120, 127, 128, 129] {
+    for len in [
+        0usize, 1, 54, 55, 56, 57, 63, 64, 65, 119, 120, 127, 128, 129,
+    ] {
         let m: Vec<u8> = (0..len).map(|i| (i * 7 + 3) as u8).collect();
         assert_eq!(digest(&m), oracle(&m), "length {len}");
     }
