@@ -231,6 +231,15 @@ pub enum SupportClass {
 #[non_exhaustive]
 pub struct Collider {}
 
+/// Why a garment needs adaptation or does not fit: exactly one variant per check the code
+/// performs (coordinator ruling #68; no catch-all). Slice 1 performs NO garment fit checks
+/// (`garment_fits` is always empty), so this enum has no variants yet and
+/// `FitStatus::NeedsAdaptation` / `FitStatus::Unfit` cannot be constructed. Each future fit
+/// check adds its own variant, with a typed payload where one is needed.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum FitReason {}
+
 /// The typed outcome of fitting one garment (contract law 5).
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -239,11 +248,11 @@ pub enum FitStatus {
     /// The garment fits only after adaptation. A required garment in this state is still
     /// activatable by the host, with a visible warning (contract law 5, ruling #48 D1).
     NeedsAdaptation {
-        reason: String,
+        reason: FitReason,
     },
     /// The garment does not fit; it carries no fit data.
     Unfit {
-        reason: String,
+        reason: FitReason,
     },
 }
 

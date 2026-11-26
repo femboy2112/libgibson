@@ -1240,15 +1240,13 @@ fn compiled_revision_shape() {
     let posed = rev.evaluate(&PoseInput::new()).unwrap();
     assert_eq!(posed.indices, rev.neutral.indices);
     assert_eq!(posed.joint_world.len(), 3);
-    // The typed per-garment outcome exists. `GarmentFit` is `#[non_exhaustive]`, so an
-    // integration test cannot build one with a struct expression (E0639); it can only name the
-    // type, and construct the variants of the `FitStatus` enum.
+    // The typed per-garment outcome exists. Slice 1 runs no fit checks, so `FitReason` has no
+    // variants and only `Fit` is constructible; the list is empty.
     let _typed: &[GarmentFit] = &rev.garment_fits;
-    let status = FitStatus::Unfit {
-        reason: "too narrow".to_string(),
-    };
-    assert!(matches!(status, FitStatus::Unfit { .. }));
-    assert_ne!(status, FitStatus::Fit);
+    assert!(rev.garment_fits.is_empty());
+    let fit = GarmentFit::new("coat", FitStatus::Fit);
+    assert_eq!(fit.garment_id, "coat");
+    assert_eq!(fit.status, FitStatus::Fit);
 }
 
 /// Designed to kill: Mutant A (`ignored_skeleton_update`): the rest translation and landmark stay unscaled.
