@@ -143,6 +143,100 @@ the consumer side. libgibson never stores identity, personality, memory or appro
 7. **Bounded.** Hard limits are declared constants and are checked before allocation: joints,
    vertices, morph targets, influences per vertex, clip keys and clip duration.
 
+### Canonical serialization `gibson.figure.rev.v0` (NORMATIVE)
+
+*From the Slice-1 implementation. Ratified by the coordinator only after the independent
+oracle/golden audit (PASS1/PASS2) and gate A. Until then this is DRAFT normative text. Once it
+is ratified, it is the spec: the implementation and every audit are checked against it.*
+
+`rev_id = SHA-256(bytes)`.
+
+**Encoding.**
+- Every integer and every float is **little-endian**.
+- `u8`: 1 byte.
+- `u32`: 4 bytes, unsigned.
+- `i32`: 4 bytes, two's complement.
+- `f32`: the IEEE-754 binary32 bit pattern, written as a `u32`.
+- `str`: a `u32` byte length, then the UTF-8 bytes, with no terminator and no normalization.
+- Every count prefix below is a `u32`, except the per-vertex skin influence count, which is a
+  `u8`.
+
+**Byte content, not geometry.**
+- Floats are not canonicalized. `-0.0` and `+0.0` are different bytes. So two geometrically equal
+  bodies whose data differ only in the sign of a zero get different `rev_id`s. A test pins this:
+  `negative_zero_is_byte_content_and_changes_rev_id`.
+- NaN and infinity cannot occur, because they are a `CompileError`.
+- Order matters wherever the family declares an order: reordering influences, deltas, morphs or
+  landmarks changes `rev_id`.
+- `rev_id` identifies bytes. It does not identify geometric equivalence.
+
+**Layout, in order.**
+1. The prefix: the 21 bytes `gibson.figure.rev.v0\0`.
+2. The family: `str id`, then `u32 version`.
+3. The vertices: `u32 n`, then `n ×` (`f32 x, f32 y, f32 z`), in vertex-index order. These are
+   the **shaped** neutral positions, with the compile-time morph weights applied.
+4. The indices: `u32 n` (the number of indices, i.e. 3 × triangles), then `n × u32`, in the
+   family's order.
+5. The joints: `u32 n`, then for each joint in **family order**, which validation requires to be
+   parent-before-child:
+   - `str name`;
+   - `i32 parent` (`-1` for a root);
+   - the **shaped** rest translation (`3 × f32`);
+   - the rest rotation as `f32 x, y, z, w`;
+   - the rest scale (`3 × f32`).
+6. The landmarks: `u32 n`, then for each landmark in **family order**: `str name`, `u32 joint`,
+   then the offset (`3 × f32`).
+7. The inverse binds: `u32 n`, which equals the joint count, then for each joint in joint order
+   16 `f32`s, column-major (`cols[0][0..4]`, then `cols[1][0..4]`, and so on).
+8. The skin: `u32 vertex_count`. Then for each vertex in vertex order:
+   - a `u8 count` (1..=4);
+   - `count ×` (`u32 joint`, `f32 weight`), in the family's **declared influence order**. This
+     order is NOT sorted by joint. Unused slots are not written.
+   - Weights are **not renormalized**. They are serialized exactly as declared, after validation
+     has checked that each weight is ≥ 0, that the weights sum to 1 within
+     `WEIGHT_SUM_TOLERANCE` (1e-4, with the sum taken in f64), and that no joint repeats.
+9. The morphs: `u32 n`. Then for each target in **family order**, which is not sorted by name:
+   - `str name`;
+   - `u32` delta count;
+   - per delta, in the family's **declared order** (NOT sorted by vertex): `u32 vertex`, then
+     `3 × f32`.
+   - **Zero deltas are kept**, not omitted. A vertex can appear at most once, and validation
+     refuses a duplicate.
+
+Colliders, garment fits, calibration and `support` are not serialized in v0. Any change to this
+layout, or to what it hashes, is a new prefix version (`…rev.v1\0`). That changes `rev_id` for
+unchanged inputs, which means a minor release and a changelog note.
+
+### Body controls (NORMATIVE, Slice 1)
+
+*From the Slice-1 implementation. Ratification follows the same rule as above.*
+
+- A `BodyFamily` declares its controls in order. Each has an `id`, a closed range `[min, max]`, a
+  default, and a list of effects.
+- A `BodyRecipe` sets values by id. Errors:
+  - an unknown id: `UnknownControl`;
+  - the same id twice: `DuplicateControl`;
+  - a non-finite value: `NonFinite`;
+  - a value outside the range: `ControlOutOfRange`, never a clamp.
+- A control that is not set takes its default.
+- **`rev_id` hashes the resolved, derived content, never the recipe.** The recipe values are not
+  serialized at all; only their effect on the shaped geometry is. So an explicit default and an
+  omitted control give equal `rev_id`s, and so does any reordering of recipe entries. A test pins
+  this: `deterministic_rev_id`.
+- Effects are applied in **family-declared control order**, then in each control's effect order.
+  - `BoneLengthScale { joint }`: every joint whose parent is `joint` has its rest translation
+    multiplied by the control value `v`. `v = 1` leaves the bone unchanged.
+  - `MorphWeight { target }`: adds `v` to target `target`'s compile-time weight. Several controls
+    on one target accumulate.
+- The shaped neutral is `G0 + Σ wᵢ·Δᵢ` over the accumulated compile-time weights. The inverse
+  binds are derived from the shaped skeleton: `IB_j = (W_j at bind)⁻¹`.
+- A pose-time morph weight (`PoseInput`) adds on top of the shaped neutral. It never changes
+  `rev_id`.
+- **KNOWN v0 LIMIT.** `BoneLengthScale` moves **no vertices**. That is accepted for the Slice-1
+  synthetic skeleton only. The parametric body (M5-C) needs bone-driven vertex displacement, and
+  that will be a semantics or layout change under a new prefix version (`v1`). M5-C must not treat
+  the v0 control semantics as settled.
+
 ### Evaluation order (SLICE 1 subset)
 
 The order is: neutral, then morph targets (`G0 + Σ wᵢ·Δᵢ`), then a sample of the finite clips at
