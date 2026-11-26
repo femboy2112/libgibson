@@ -215,6 +215,9 @@ pub struct Renderer {
     inline_full_height_anchor: bool,
     /// The last successful transaction placed the maximal live region below row zero.
     inline_top_reserved: bool,
+    /// The reserved top row is known blank (left so by an insertion this renderer emitted), so the
+    /// next insertion may write onto it instead of scrolling the blank into native history.
+    inline_top_blank: bool,
     inline_history_chunking: bool,
 }
 
@@ -253,6 +256,7 @@ impl Renderer {
             inline_resize_bottom_reservation: false,
             inline_full_height_anchor: false,
             inline_top_reserved: false,
+            inline_top_blank: false,
             inline_history_chunking: false,
         }
     }
@@ -280,6 +284,7 @@ impl Renderer {
     /// state and let the next frame re-establish it (RXIV Gate G3).
     fn poison_physical_state(&mut self) {
         self.inline_top_reserved = false;
+        self.inline_top_blank = false;
         self.physical_uncertain = true;
         self.previous_surface = None;
         self.last_cursor_visible = None;
@@ -448,6 +453,7 @@ impl Renderer {
     /// next frame fully re-establishes the live region.
     fn invalidate_anchor(&mut self, count_resync: bool) {
         self.inline_top_reserved = false;
+        self.inline_top_blank = false;
         if count_resync {
             self.anchor_resyncs += 1;
         }
@@ -841,6 +847,10 @@ impl Renderer {
         self.previous_surface = Some(next_surface);
         self.inline_top_reserved =
             reserved_top && (is_full_repaint || (self.inline_top_reserved && same_inline_height));
+        self.inline_top_blank = self.inline_top_blank
+            && self.inline_top_reserved
+            && !is_full_repaint
+            && same_inline_height;
         self.physical_uncertain = false;
         self.owed_reanchor = false;
         // Physical-emission truth, advanced only now that the transaction committed: the cells on
@@ -1189,6 +1199,8 @@ impl Renderer {
         let resized = self.resize_erase_due(session);
         let reserved_top = self.reserves_inline_top(term_rows, self.live_region_height);
         let rotate_reserved_top = reserved_top && self.inline_top_reserved && current_viewport;
+        // Overwrite (never scroll out) a reserved top row this renderer left blank.
+        let reuse_blank_top = reserved_top && self.inline_top_blank && current_viewport && !resized;
         let use_fast = !resized
             && (!reserved_top || rotate_reserved_top)
             && self.live_region_height > 0
@@ -1220,8 +1232,9 @@ impl Renderer {
                 let erased = self.erase_live_after_resize(&mut tx, session);
                 debug_assert!(erased, "`resized` implies an outstanding bounded erase");
             } else if self.live_region_height > 0 {
-                if self.last_cursor_y > 0 {
-                    write!(tx.buffer, "\x1b[{}A\r", self.last_cursor_y).ok();
+                let up = self.last_cursor_y + u16::from(reuse_blank_top);
+                if up > 0 {
+                    write!(tx.buffer, "\x1b[{}A\r", up).ok();
                 } else {
                     tx.push(b"\r");
                 }
@@ -1272,7 +1285,18 @@ impl Renderer {
             // live framebuffer is never repainted.
             strategy = InsertStrategy::InsertLineFastPath;
 
-            for chunk in lines.chunks(spare_rows) {
+            let mut rest = lines;
+            if reuse_blank_top {
+                let up = self.last_cursor_y + 1;
+                write!(tx.buffer, "\x1b[{up}A\r\x1b[2K").ok();
+                tx.push(lines[0].as_bytes());
+                write!(tx.buffer, "\r\x1b[{up}B").ok();
+                if self.last_cursor_x > 0 {
+                    write!(tx.buffer, "\x1b[{}C", self.last_cursor_x).ok();
+                }
+                rest = &lines[1..];
+            }
+            for chunk in rest.chunks(spare_rows) {
                 let rows = chunk.len() as u16;
                 // Shift the viewport as needed, using only the spare rows.
                 if self.last_cursor_y < self.live_region_height - 1 {
@@ -1338,6 +1362,9 @@ impl Renderer {
         if self.mode == RenderMode::Inline {
             self.physical_uncertain = false;
             self.inline_top_reserved = reserved_top && current_viewport && !resized;
+            // Rotation (fast path) and the reserved replay (fallback) both end with a blank top row.
+            self.inline_top_blank = self.inline_top_reserved
+                && (rotate_reserved_top || strategy == InsertStrategy::RepaintFallback);
         }
         if resized {
             // The region was erased, not replayed: the next frame starts a fresh one (#403).

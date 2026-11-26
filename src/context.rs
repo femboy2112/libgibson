@@ -215,6 +215,24 @@ impl Context {
         self.renderer.set_inline_history_chunking(enabled);
     }
 
+    /// Keep a maximal inline live frame (`rows - 1` tall) below one reserved top row, so history
+    /// returned above it stays out of the frame. Insertions into scrollback then rotate that row
+    /// through native history; a top row this renderer left blank is overwritten by the next
+    /// insertion rather than scrolled into history. Short frames, fullscreen, one-row terminals
+    /// and uncertain-write recovery keep their usual allocation. Defaults to false, preserving
+    /// existing bytes. Rust only: the C ABI is unchanged. Takes effect on the next frame that
+    /// establishes the region.
+    pub fn set_inline_full_height_anchor(&mut self, enabled: bool) {
+        self.renderer.set_inline_full_height_anchor(enabled);
+    }
+
+    /// Park the hidden fullscreen cursor at the top left of each emitted frame, so its physical
+    /// location does not depend on which cells were painted. Defaults to false. Inline anchors
+    /// and visible cursors are unchanged. Rust only: the C ABI is unchanged.
+    pub fn set_fullscreen_hidden_cursor_home(&mut self, enabled: bool) {
+        self.renderer.set_fullscreen_hidden_cursor_home(enabled);
+    }
+
     /// Enables recording of per-frame dirty-cell coordinates (for damage-map
     /// debug overlays). Off by default because it allocates per frame.
     pub fn set_capture_damage(&mut self, on: bool) {
