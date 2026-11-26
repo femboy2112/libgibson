@@ -48,7 +48,7 @@ Mutants: **S** = `snap_transition` (no blend: the transition switches at its sta
 | `motion_is_a_pure_function_of_time` | - | - | - | |
 
 Every mutant has at least one killer, and no killer depends on the cfg:
-S is killed by 9 tests, F by 7, L by 7 (the counts of `K` in each column above).
+S is killed by 11 tests, F by 7, L by 7 (the counts of `K` in each column above).
 
 ## Normal-build predictions (the same checks without a mutant)
 
