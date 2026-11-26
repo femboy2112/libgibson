@@ -475,7 +475,11 @@ fn g3_constructor_refusals() {
         CueSchedule::new(0, 0, d(0), too_long, d(0)).unwrap_err(),
         CueError::PeriodTooLong
     );
-    assert!(CueSchedule::new(0, 0, d(0), ns(u64::MAX), d(0)).is_ok());
+    // Maximal span (span_ns == u64::MAX): the jitter modulus is 2^64, so the jitter is the
+    // whole hash. This must not overflow `span_ns + 1` (reviewer-found panic).
+    let widest = CueSchedule::new(0, 0, d(0), ns(u64::MAX), d(0)).unwrap();
+    assert_eq!(widest.nth(0), Some(ns(0x238275bc38fcbe91)));
+    assert_eq!(widest.next_after(d(0)), Some((0, ns(0x238275bc38fcbe91))));
     // min_gap == period: zero jitter, perfectly periodic.
     let fixed = CueSchedule::new(3, 3, d(2), d(1), d(1)).unwrap();
     for k in 0..5 {
