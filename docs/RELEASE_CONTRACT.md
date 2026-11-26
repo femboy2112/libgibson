@@ -102,18 +102,39 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
-- **0.8.1** is **prepared in source** (state 1) on `main`, named "clear SIGFPE 1"
-  ([decision 0004](decisions/0004-release-naming.md)). It is a patch: no API or behavior
-  change. It is release-process and docs/test only: the native SDK build remaps build-host paths
-  (#429), and the inline popup recipe is documented (#427) and pinned by a regression test (#431).
-  It is to be tagged `v0.8.1` (with `bindings/go/v0.8.1`) on a `main` commit as a regular GitHub
-  release, only on the release coordinator's per-tag go. The C ABI is unchanged
-  (`GIBSON_ABI_VERSION` 1, 67 symbols); MSRV 1.85 and Linux x86_64 are unchanged.
+- **0.9.0** "clear SIGKILL 0" ([decision 0004](decisions/0004-release-naming.md): minor 9 =
+  SIGKILL, patch 0; the name is confirmed by the release coordinator, GOD #126) is the latest
+  such milestone and is **tagged and released on GitHub** (state 2):
+  - tag `v0.9.0` → `e17abef` on `main`, with `bindings/go/v0.9.0` on the same commit;
+  - a regular GitHub release of 2026-11-26
+    ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.0)) with the native SDK
+    archive, its checksum and the Python wheel/sdist, not published to any registry.
+
+  It is a minor. No breaking changes to stable-tier APIs; C ABI 1 and MSRV 1.85 unchanged. Experimental `ui::Key` is now #[non_exhaustive] (adds Key::Scoped). Its new surfaces are opt-in and Rust-only; the one default change is that Rust applications now receive F1 to F12 as `Event::Key` (#446), which were dropped before (the C ABI still skips them). Its slices
+  are the `CellEncoder` family (`RgbRaster::to_surface_with`, `ui::image_with`, `allowed_encoder`,
+  #436); the pure `capability::probe` decision layer (#437), which writes nothing to a terminal;
+  `SurfaceFx::Offset`/`Blend`, `ui::ViewTransition` and `ui::Key::Scoped` (#434); the experimental
+  `graphics` module, the kitty placeholder route and its per-frame plan (#438, #442), which
+  produce bytes and `Surface`s only and are not wired into the renderer; `ui::toast_lane` (#443);
+  `KeyCode::F` function keys F1 to F12 (#446); and `measure_wrapped` (#448). Deferred to 0.9.1:
+  the multi-line text area (#444). The C ABI is unchanged (`GIBSON_ABI_VERSION` 1, 67 symbols;
+  `include/gibson.h` gained comments only); MSRV 1.85 and Linux x86_64 are unchanged.
+- **0.8.1** "clear SIGFPE 1" ([decision 0004](decisions/0004-release-naming.md)) is
+  **tagged and released on GitHub** (state 2):
+  - tag `v0.8.1` → `08f2f71` on `main`, with `bindings/go/v0.8.1` on the same commit;
+  - a regular GitHub release of 2026-11-20
+    ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.8.1)) with the native SDK
+    archive, its checksum and the Python wheel/sdist, not published to any registry.
+
+  It is a patch: no API or behavior change. It is release-process and docs/test only: the native
+  SDK build remaps build-host paths (#429), and the inline popup recipe is documented (#427) and
+  pinned by a regression test (#431). The C ABI is unchanged (`GIBSON_ABI_VERSION` 1, 67
+  symbols); MSRV 1.85 and Linux x86_64 are unchanged.
   **Owner decision (2026-11-19):** the published v0.7.x native SDK assets, which embed the
   build host's dependency source paths, stay as published. They are not rebuilt or replaced;
   v0.8.0 is the first release whose assets were built with the remap.
-- **0.8.0** "clear SIGFPE 0" ([decision 0004](decisions/0004-release-naming.md)) is the latest
-  such milestone and is **tagged and released on GitHub** (state 2):
+- **0.8.0** "clear SIGFPE 0" ([decision 0004](decisions/0004-release-naming.md)) is
+  **tagged and released on GitHub** (state 2):
   - tag `v0.8.0` → `4d58e5a` on `main`, with `bindings/go/v0.8.0` on the same commit;
   - a regular GitHub release of 2026-11-19
     ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.8.0)) with the native SDK
@@ -323,6 +344,7 @@ breaking them in a pure patch:
 - `ui::experience` — semantic experience grammars realizing one `Experience` through
   several presentation grammars (Rust only; see [EXPERIENCE_GRAMMARS.md](EXPERIENCE_GRAMMARS.md))
   (0.7.0); `BladesStyle`, `Blades::with_style` and `Blades::with_skin` (0.7.0)
+- `graphics` — experimental pixel-image routes; currently the kitty graphics Unicode-placeholder route (`graphics::kitty`, plus the terminal adapter's per-frame plan `graphics::frame`; v0.9 design slices, not wired into the renderer)
 - `temporal` — experimental temporal cell realization (`TemporalDisplayProcessor`,
   `TemporalBrailleField`, the exact RGB subcell projector, `PresentationProfile`,
   `TemporalSafetyPolicy`, `ResetPolicy`). Rust-only, introduced in the 0.3.0

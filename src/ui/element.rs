@@ -7,15 +7,31 @@ use std::fmt;
 use std::sync::Arc;
 
 /// Explicit keys survive reordering. Unkeyed elements receive positional paths.
-/// Named and positional identities have separate namespaces.
+/// Named, positional and scoped identities have separate namespaces.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum Key {
     Named(String),
     Path(Vec<usize>),
+    /// An explicit key placed under a scope by [`Element::scoped_keys`]. The scope is a
+    /// structural part of the identity, not text joined onto the key, so scope `a` + key
+    /// `b` never equals the user key `a.b`. Scopes nest: scoping an already scoped subtree
+    /// wraps the existing key again.
+    Scoped {
+        scope: String,
+        key: Box<Key>,
+    },
 }
 impl Key {
     pub fn named(value: impl ToString) -> Self {
         Self::Named(value.to_string())
+    }
+    /// `key` placed under `scope`, as [`Element::scoped_keys`] produces it.
+    pub fn scoped(scope: impl ToString, key: impl Into<Key>) -> Self {
+        Self::Scoped {
+            scope: scope.to_string(),
+            key: Box::new(key.into()),
+        }
     }
 }
 impl From<&str> for Key {
@@ -33,6 +49,8 @@ impl fmt::Display for Key {
         match self {
             Self::Named(s) => write!(f, "{s}"),
             Self::Path(p) => write!(f, "path:{p:?}"),
+            // Display is for people; identity is structural (see `Key::Scoped`).
+            Self::Scoped { scope, key } => write!(f, "{scope}::{key}"),
         }
     }
 }
@@ -53,6 +71,9 @@ pub(crate) enum ElementKind {
         fitted: super::image::Fitted,
         max: (u16, u16),
         alt: String,
+        /// How `fitted` was sampled and is realized. `HalfBlock` is [`image`] /
+        /// [`image_area`]: one sample per cell column, two per cell row.
+        encoder: crate::glyph::CellEncoder,
     },
     Heading(String),
     Code(String),
@@ -85,6 +106,7 @@ pub(crate) enum ElementKind {
     },
     Modal(String),
     Toast(String),
+    ToastLane,
     Viewport(i32, i32),
     Raw(Node),
     Presented(Arc<dyn Fn(&PresentationCx) -> Node>),
@@ -125,6 +147,8 @@ pub struct Element<A> {
     pub(crate) number: Option<u16>,
     pub(crate) layout: Layout,
     pub(crate) effects: Vec<SurfaceFx>,
+    /// Full-resolution source kept by [`pixel_image`]; `None` for every other element.
+    pub(crate) source: Option<Arc<crate::raster::RgbaRaster>>,
 }
 impl<A> Element<A> {
     fn new(kind: ElementKind) -> Self {
@@ -148,6 +172,7 @@ impl<A> Element<A> {
             number: None,
             layout: Layout::default(),
             effects: vec![],
+            source: None,
         }
     }
     pub fn child(mut self, child: Self) -> Self {
@@ -312,6 +337,25 @@ impl<A> Element<A> {
         self.effects.extend(effects);
         self
     }
+    /// Place every explicit key in this subtree (this element, children and overlays) under
+    /// the scope `prefix`: key `k` becomes [`Key::Scoped`] `{ scope: prefix, key: k }`
+    /// (see [`Key::scoped`]), so a second copy of the same view can coexist in one tree
+    /// without `UiError::DuplicateKey`. The scope is structural, so it can never alias a user
+    /// key that happens to contain a separator. Unkeyed elements keep their position-derived
+    /// keys, which are already unique. Used for the outgoing view of a transition; see
+    /// `docs/design/v0.9-view-transitions.md`.
+    pub fn scoped_keys(mut self, prefix: &str) -> Self {
+        self.scope_keys_in_place(prefix);
+        self
+    }
+    fn scope_keys_in_place(&mut self, prefix: &str) {
+        if let Some(key) = self.key.take() {
+            self.key = Some(Key::scoped(prefix, key));
+        }
+        for child in self.children.iter_mut().chain(self.overlays.iter_mut()) {
+            child.scope_keys_in_place(prefix);
+        }
+    }
 }
 
 /// Optional semantic extension route. Ordinary functions returning `Element<A>`
@@ -474,6 +518,7 @@ pub fn image<A>(
         fitted: super::image::Fitted::from_raster(raster, max.0, max.1.saturating_mul(2)),
         max,
         alt: alt.into(),
+        encoder: crate::glyph::CellEncoder::HalfBlock,
     })
 }
 /// [`image`] with an exact area (box) filter instead of nearest-pixel
@@ -490,7 +535,88 @@ pub fn image_area<A>(
         fitted: super::image::Fitted::from_raster_area(raster, max.0, max.1.saturating_mul(2)),
         max,
         alt: alt.into(),
+        encoder: crate::glyph::CellEncoder::HalfBlock,
     })
+}
+/// Options for [`image_with`]. The default is the half-block encoder, so
+/// `image_with(.., ImageOptions::default())` draws what [`image`] draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub struct ImageOptions {
+    /// How the picture is realized as cells. The box, its reserved height and
+    /// the alt-text rule do not depend on it.
+    pub encoder: crate::glyph::CellEncoder,
+}
+
+impl ImageOptions {
+    /// The default options: half-block, as [`image`].
+    pub const fn new() -> Self {
+        Self {
+            encoder: crate::glyph::CellEncoder::HalfBlock,
+        }
+    }
+
+    /// These options with `encoder`.
+    pub fn with_encoder(mut self, encoder: crate::glyph::CellEncoder) -> Self {
+        self.encoder = encoder;
+        self
+    }
+}
+
+/// [`image`] with an opt-in cell encoder (v0.9.0 design:
+/// `docs/design/v0.9-cell-encoders.md`). The box, the reserved height and the
+/// alt-text fallback are those of [`image`] for every encoder.
+///
+/// [`CellEncoder::HalfBlock`](crate::glyph::CellEncoder::HalfBlock) (the default
+/// option) is exactly [`image`]. Any other encoder changes only the sampling
+/// density: the footprint in cells is the half-block one, and it is sampled at the
+/// encoder's grid (`sample_grid`) with the exact area filter of [`image_area`], so
+/// one-pixel detail does not alias. Like `image` it stores only the fitted
+/// samples. Colour depth is applied after encoding, at paint time. The encoder is
+/// not gated here: degrade it first with [`crate::allowed_encoder`].
+pub fn image_with<A>(
+    raster: &crate::raster::RgbRaster,
+    max: (u16, u16),
+    alt: impl Into<String>,
+    options: ImageOptions,
+) -> Element<A> {
+    let encoder = options.encoder;
+    if encoder == crate::glyph::CellEncoder::HalfBlock {
+        return image(raster, max, alt);
+    }
+    Element::new(ElementKind::Image {
+        fitted: super::image::Fitted::from_raster_grid(
+            raster,
+            max.0,
+            max.1.saturating_mul(2),
+            encoder.sample_grid(),
+        ),
+        max,
+        alt: alt.into(),
+        encoder,
+    })
+}
+/// A static picture that keeps its full-resolution straight-alpha source.
+///
+/// Unlike [`image`], the element holds the caller's `Arc<RgbaRaster>` itself
+/// (the same shape as `stage::RasterPlane.source`), so alpha and the source
+/// resolution survive lowering. The element carries no pixel route and no image
+/// cache handle: whether a terminal paints it as pixels or as cells is decided
+/// later, by the terminal adapter, on the lowered frame.
+///
+/// Today's lowering paints it as an ordinary [`image`]: the source is flattened onto black
+/// and fitted to `max`. The kept source is what a later terminal adapter reads.
+pub fn pixel_image<A>(source: Arc<crate::raster::RgbaRaster>, max: (u16, u16)) -> Element<A> {
+    let flat = crate::raster::flatten(&source, (0, 0, 0));
+    let mut element = image(&flat, max, String::new());
+    element.source = Some(source);
+    element
+}
+impl<A> Element<A> {
+    /// The full-resolution source kept by [`pixel_image`]; `None` for every other element.
+    pub fn image_source(&self) -> Option<&Arc<crate::raster::RgbaRaster>> {
+        self.source.as_ref()
+    }
 }
 pub fn heading<A>(value: impl Into<String>) -> Element<A> {
     Element::new(ElementKind::Heading(value.into()))
@@ -612,6 +738,27 @@ pub fn modal<A>(title: impl Into<String>) -> Element<A> {
 }
 pub fn toast<A>(value: impl Into<String>) -> Element<A> {
     Element::new(ElementKind::Toast(value.into())).tone(Tone::Success)
+}
+/// EXPERIMENTAL (v0.9 design): a noninteractive lane that stacks toasts from the top-right of
+/// the element it is mounted on. Mount it with [`Element::overlay`] on the element whose
+/// rectangle the toasts must stay inside, so anything outside that host is never covered.
+///
+/// Pass the newest toast first. Each toast is drawn at its own height (3 rows by default, or
+/// its `.height(...)`), so toasts never overlap. When they do not all fit, the newest ones are
+/// drawn and a one-row "+N more" counts the rest; toasts are never dropped silently. The lane
+/// is inert: it paints its toasts but adds no pointer or focus target of its own, and a toast
+/// inside it is not a pointer target either. The application owns expiry.
+/// See `docs/design/v0.9-toast-lane.md`. An ordinary [`toast`] is unchanged.
+///
+/// ```
+/// use gibson::ui::prelude::*;
+///
+/// let lane: Element<()> = toast_lane([toast("saved"), toast("synced")]);
+/// let host: Element<()> = column().overlay(lane);
+/// # let _ = host;
+/// ```
+pub fn toast_lane<A>(toasts: impl IntoIterator<Item = Element<A>>) -> Element<A> {
+    Element::new(ElementKind::ToastLane).children(toasts)
 }
 pub fn viewport<A>(x: i32, y: i32) -> Element<A> {
     Element::new(ElementKind::Viewport(x, y))

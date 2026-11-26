@@ -12,6 +12,33 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.9.0 "clear SIGKILL 0" released (2026-11-26):**
+- tag `v0.9.0` → `e17abef` on `main`, with `bindings/go/v0.9.0` on the same commit;
+- a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.0).
+
+It is a minor with no breaking changes to stable-tier APIs; the experimental `ui::Key` is now
+`#[non_exhaustive]` (it adds `Key::Scoped`). One Rust default changes: F1 to F12 are delivered as
+`KeyCode::F(n)` (#446); the C ABI still skips them. Everything else is opt-in: the cell encoders
+(#436), the capability probe (#437), transitions (#434), the kitty placeholder route (#438, #442),
+`toast_lane` (#443), `measure_wrapped` (#448), and the reserved-top inline anchor plus hidden
+fullscreen cursor home (#452, with the #453 blank-scrollback fix). The C ABI is unchanged (v1, 67
+symbols) and MSRV stays 1.85. The consumer gate was substituted by owner ruling (hosted CI 9/9
+including Release preflight on the exact candidate, plus an `abi include bindings` diff of header
+comments and the Python version). The 4 release assets were built from `e17abefd` with rustc 1.98.1
+using the #429 path remap; after download all 4 are byte-identical to the build, and the build-host
+path scan found 0 hits.
+
+**v0.8.1 "clear SIGFPE 1" released (2026-11-20):**
+- tag `v0.8.1` → `08f2f71` on `main`, with `bindings/go/v0.8.1` on the same commit;
+- a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.8.1).
+
+It is a patch with no library behavior change: the only `src/` change is rustdoc on
+`Element::overlay`. The native SDK binaries no longer embed build-host paths (#429), and the inline
+popup recipe is documented (#427) and pinned by a regression test (#431). The C ABI is unchanged
+(v1, 67 symbols). The 4 release assets were built from the tag with rustc 1.98.1 using the tagged
+#429 path remap; after download all 4 are byte-identical to the build, and the private-path scan
+found 0 hits.
+
 **v0.8.0 "clear SIGFPE 0" released (2026-11-19):**
 - tag `v0.8.0` → `4d58e5a` on `main`, with `bindings/go/v0.8.0` on the same commit;
 - a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.8.0).

@@ -62,6 +62,8 @@ pub mod geom;
 pub mod gesture;
 pub mod glitch;
 pub mod glyph;
+/// Experimental pixel-image routes (kitty graphics placeholders). v0.9.0 opt-in.
+pub mod graphics;
 /// Layered spatial hit testing and pointer capture (issue #127).
 pub mod hit_test;
 /// Experimental: held-key inference for press-only terminals on a simulation timebase — an
@@ -152,14 +154,14 @@ pub use geom::{Mesh, Projector, Transform3, Vec3};
 pub use gesture::{DragGesture, DragIntent};
 pub use glitch::{invert_rect, row_shift, sanitize_wide, scramble_rect, tear};
 pub use glyph::{
-    detect_glyph_mode, detect_glyph_mode_from_env, transcode_surface_glyphs, GlyphChoice,
-    SubcellGlyphMode,
+    allowed_encoder, detect_glyph_mode, detect_glyph_mode_from_env, octant_char, sextant_char,
+    transcode_surface_glyphs, CellEncoder, GlyphChoice, SubcellGlyphMode,
 };
 pub use input::{
     poll_event, set_focus_reporting, set_mouse_capture, Event, FocusChange, KeyCode, KeyEvent,
     KeyModifiers, KeyReleaseReporting, MouseButton, MouseEvent, MouseKind, TextInputState,
 };
-pub use layout::{compute_layout, wrap_rich_text, wrap_text};
+pub use layout::{compute_layout, measure_wrapped, wrap_rich_text, wrap_text};
 pub use node::{
     AlignItems, Dimension, FlexDirection, JustifyContent, LayoutStyle, Node, NodeKind, WrapMode,
 };

@@ -148,6 +148,7 @@ fn collect<A: Clone>(
                 | ElementKind::Section(_)
                 | ElementKind::List
                 | ElementKind::Modal(_)
+                | ElementKind::ToastLane
                 | ElementKind::Viewport(..)
         )
     {
@@ -217,10 +218,27 @@ fn collect<A: Clone>(
             on_event: el.on_event.clone(),
         });
     }
-    for (i, child) in el.children.iter().enumerate() {
-        path.push(i);
-        collect(child, path, scope.clone(), disabled, out)?;
-        path.pop();
+    if matches!(el.kind, ElementKind::ToastLane) {
+        // The lane is inert: its toasts are validated (depth, children, duplicate keys among
+        // themselves) into a scratch map that is then dropped, so none becomes a pointer or
+        // focus target and none joins the frame's key set.
+        let mut scratch = UiMetadata {
+            interactions: InteractionMap::default(),
+            keys: BTreeMap::new(),
+            targets: Vec::new(),
+            tags: HashMap::new(),
+        };
+        for (i, child) in el.children.iter().enumerate() {
+            path.push(i);
+            collect(child, path, None, true, &mut scratch)?;
+            path.pop();
+        }
+    } else {
+        for (i, child) in el.children.iter().enumerate() {
+            path.push(i);
+            collect(child, path, scope.clone(), disabled, out)?;
+            path.pop();
+        }
     }
     for (i, child) in el.overlays.iter().enumerate() {
         path.extend([usize::MAX, i]);
@@ -659,9 +677,20 @@ fn lower_role<A>(
             );
             rich_label_node(&line, style)
         }
-        ElementKind::Image { fitted, max, alt } => {
+        ElementKind::Image {
+            fitted,
+            max,
+            alt,
+            encoder,
+        } => {
             let width = el.layout.width.unwrap_or(max.0).min(max.0).min(available);
-            cx.build.skin.image(fitted, max.1, alt, width)
+            if *encoder == crate::glyph::CellEncoder::HalfBlock {
+                cx.build.skin.image(fitted, max.1, alt, width)
+            } else {
+                cx.build
+                    .skin
+                    .image_encoded(fitted, *encoder, max.1, alt, width)
+            }
         }
         ElementKind::Heading(s) => Node::text(
             s,
@@ -898,6 +927,23 @@ fn lower_role<A>(
                 .justify_content(JustifyContent::End)
                 .child(panel)
         }
+        ElementKind::ToastLane => {
+            let skin = &cx.build.skin;
+            let counter = match skin.chrome {
+                Chrome::Rail => style.bg(skin.well),
+                Chrome::Window | Chrome::Editorial => style.bg(skin.surface),
+            };
+            let toasts: Vec<(Node, u16)> = children
+                .into_iter()
+                .zip(&el.children)
+                .map(|(node, toast)| (node, toast.layout.height.unwrap_or(TOAST_ROWS)))
+                .collect();
+            // The host's height is only known after layout, so the fill rule runs when the
+            // canvas paints, against the rectangle layout gave it (design note section 4).
+            Node::canvas(move |rect| lane_surface(rect, &toasts, counter))
+                .percent_width(100.0)
+                .percent_height(100.0)
+        }
         ElementKind::Viewport(x, y) => Node::viewport(*x, *y).children(children),
         ElementKind::Raw(raw) => {
             let mut n = without_hit_tags(raw.clone());
@@ -1023,6 +1069,97 @@ fn lower_role<A>(
         node = layers;
     }
     node
+}
+
+/// A toast's default height in rows, shared by lowering and the lane's fill rule.
+const TOAST_ROWS: u16 = 3;
+
+/// What a lane draws for a host `host` rows high: how many leading toasts, and the counter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LaneCounter {
+    /// Every toast fits: no counter.
+    None,
+    /// The newest toast alone, with a right-aligned " +N" on its top row.
+    Inline(usize),
+    /// A one-row "+N more" directly below the last drawn toast.
+    Below(usize),
+}
+
+/// The design note's fill rule (section 3): `(drawn toasts, counter)` for toast `heights`
+/// (newest first) in a host `host` rows high. `(0, None)` draws nothing.
+fn lane_plan(heights: &[u16], host: u16) -> (usize, LaneCounter) {
+    let host = u32::from(host);
+    let total: u32 = heights.iter().map(|&h| u32::from(h)).sum();
+    let Some(&newest) = heights.first() else {
+        return (0, LaneCounter::None);
+    };
+    let newest = u32::from(newest);
+    if total <= host {
+        return (heights.len(), LaneCounter::None);
+    }
+    if host < newest {
+        return (0, LaneCounter::None);
+    }
+    if host <= newest {
+        // The newest fits exactly (host == newest) but not with a counter row under it.
+        return (1, LaneCounter::Inline(heights.len() - 1));
+    }
+    let mut remaining = host;
+    let mut drawn = 0;
+    for &h in heights {
+        let h = u32::from(h);
+        // The toast must fit in `remaining - 1`, keeping one row for the counter.
+        if h >= remaining {
+            break;
+        }
+        remaining -= h;
+        drawn += 1;
+    }
+    (drawn, LaneCounter::Below(heights.len() - drawn))
+}
+
+/// Lays out `node` in a `width` x `height` box and paints it onto a transparent surface.
+fn lane_box(mut node: Node, width: u16, height: u16) -> crate::Surface {
+    node.layout_style.width = Dimension::Length(f32::from(width));
+    node.layout_style.height = Dimension::Length(f32::from(height));
+    let mut out = crate::Surface::new_transparent(width, height);
+    if crate::layout::compute_layout(&mut node, width, height).is_ok() {
+        crate::painter::paint(&node, &mut out);
+    }
+    out
+}
+
+/// Paints a toast lane into a transparent surface the size of its host rectangle: toasts from
+/// the top, each at its own height and right-aligned, then the counter the fill rule asks for.
+fn lane_surface(
+    rect: crate::surface::Rect,
+    toasts: &[(Node, u16)],
+    counter: crate::Style,
+) -> crate::Surface {
+    let (width, height) = (rect.width, rect.height);
+    let mut out = crate::Surface::new_transparent(width, height);
+    if width == 0 || height == 0 {
+        return out;
+    }
+    let heights: Vec<u16> = toasts.iter().map(|(_, h)| *h).collect();
+    let (drawn, tail) = lane_plan(&heights, height);
+    let mut y = 0u16;
+    for (node, h) in toasts.iter().take(drawn) {
+        if *h > 0 {
+            out.blit_transparent_at(&lane_box(node.clone(), width, *h), 0, y);
+        }
+        y += *h;
+    }
+    let (text, row) = match tail {
+        LaneCounter::None => return out,
+        LaneCounter::Inline(n) => (format!(" +{n}"), 0),
+        LaneCounter::Below(n) => (format!("+{n} more"), y),
+    };
+    let line = Node::col()
+        .align_items(AlignItems::End)
+        .child(Node::text(text, counter).height(1.0));
+    out.blit_transparent_at(&lane_box(line, width, 1), 0, row);
+    out
 }
 
 /// One row: nothing from the first line break on (later spans included), and no
