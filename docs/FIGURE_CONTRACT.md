@@ -1,8 +1,13 @@
-# Figure contract: CharacterRevision, expression requests, asset packs (DRAFT)
+# Figure contract: CharacterRevision, expression requests, asset packs (PARTIALLY FROZEN)
 
-**Status: DRAFT, not frozen.** This is a shared interface. Changes after freezing need a
-coordinator ruling. It freezes only after the consumer's producer-side drafts (I-1 and I-3) have
-been cross-read against it, and the coordinator then issues FREEZE. Rulings #38 Q1 and Q2 and
+**Status: PARTIALLY FROZEN (GOD FREEZE #63, 2026-11-26).**
+- FROZEN: the I-1 input-mapping table, I-2 Law 5 (activation and fit), and the I-3
+  `ExpressionRequest` shape and rules. Changes to these need a GOD RULING.
+- STILL DRAFT: the `rev.v0` canonical serialization and the body-controls normative sections,
+  until the PASS2 audit, the hand-derived bytes test and gate B. Everything else is also DRAFT.
+
+This is a shared interface. Freezing happened only after the consumer's producer-side drafts (I-1 and I-3) have
+been cross-read against it and the coordinator issued FREEZE. Rulings #38 Q1 and Q2 and
 ruling #48 (the cross-read of the consumer's AvatarRecipe draft, D1–D9) are folded in. It covers three interfaces:
 - I-2, `CharacterRevision`, which libgibson owns;
 - the libgibson (consumer) side of I-3, `ExpressionRequest`;
@@ -126,6 +131,9 @@ the consumer side. libgibson never stores identity, personality, memory or appro
    - `compile` still succeeds when a garment is unfit, even a *required* one.
    - A geometry, transform or topology corruption, or invalid controls, are still a
      `CompileError`, never a fit outcome.
+   - **Host policy may be STRICTER than this mechanism** (FREEZE #63). For example, the
+     consumer refuses any garment that has no fit verdict (its rule R5). libgibson stays
+     mechanism-only and never enforces host policy.
    - **Activation is the host's decision, derived ONLY from the per-garment `FitStatus`**
      (ruling #38 Q1, ruling #48 D1). This rule lives in the consumer's avatar-recipe contract:
      - a required `Unfit` garment: the host refuses activation;
@@ -312,7 +320,7 @@ pub struct ExpressionRequest {
     pub settle: Settle,
 }
 pub struct Settle {
-    pub ease: Duration,           // 0 under reduced motion
+    pub ease: Duration,           // a BLEND duration, not a delay (ruling 17); 0 under reduced motion
     pub end: SettleEnd,           // ReturnToRest (default) | Hold
 }
 ```
