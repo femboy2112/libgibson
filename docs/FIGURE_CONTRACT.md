@@ -116,8 +116,10 @@ the consumer side. libgibson never stores identity, personality, memory or appro
      primitive**: no constant-time or side-channel claims are made.
    - **Bit-stability scope.** Evaluation is scalar `f32` with no SIMD, no `unsafe` and a fixed
      evaluation order. `rev_id` is bit-stable **on the platforms we test, which today is
-     x86_64 only**. Cross-architecture identity is not claimed. A golden `rev_id` test catches
-     any drift in float evaluation order.
+     x86_64 only**. Cross-architecture identity is not claimed. A golden `rev_id` test is a
+     regression pin: it detects drift in the serialized bytes, and in the float evaluation
+     order only to the extent the fixture makes the order visible (see "Verification
+     obligations"). It is not an independent check of correctness.
 4. **Posing never touches the revision.**
    - Evaluation is `rev.evaluate(&PoseInput) -> PosedMesh`. It takes joint locals or a sampled
      clip, plus morph weights.
@@ -268,16 +270,53 @@ declared per asset when they land (RFC #445 §3). IK, contacts and secondary mot
 
 - **Independent geometry oracle.**
   - The f32 implementation is checked against a separately written f64 reference: a different
-    code path, not the same routine run at a wider float type.
+    code path, not the same routine run at a wider float type. The oracle is row-major, uses a
+    different quaternion-to-matrix formula and a general (Gauss-Jordan) inverse, and shares no
+    code with `figure::math`.
   - The tolerance is declared before the comparison and justified by an error bound, not tuned
-    to the result.
-- **Mutation controls**, each of which must fail the suite:
-  1. An ignored skeleton update: a control changes a bone length, but the inverse binds or the
-     posed mesh do not change.
-  2. A stale bind: inverse binds left over from an earlier revision.
-  3. A no-op morph: a morph weight that has no effect on any vertex.
+    to the result. The bound is `N * u * S`, with `u = 2^-24` (the f32 unit roundoff, not
+    epsilon), 7 flops per matrix-entry product (4 multiplications and 3 additions), a dependent
+    chain of `N = 64` operations and a magnitude sum `S <= 12`: `64 * 5.96e-8 * 12 = 4.6e-5`,
+    against `TOL = 1e-4`. The derivation is written out at `TOL` in `tests/figure_mechanics.rs`.
+  - **Fixture strength.** The oracle fixture must have non-identity rest rotations on every
+    chain, a non-uniformly scaled joint, non-dyadic lengths, weights and control values, a
+    4-influence vertex, and skin weight sums that are inside `WEIGHT_SUM_TOLERANCE` but not
+    exact. Landmarks are evaluated and compared. The world bind matrices and the inverse binds
+    are compared with the oracle directly, as well as through the posed mesh.
+  - `TOL` cannot detect a renormalized weight sum within `1 +- 5e-5`. "No renormalization" is
+    checked by an absolute-tolerance test on a large coordinate, and by the stored weights.
+- **Mutation controls**, each of which must fail the suite through at least one test that is
+  not the golden:
+  1. An ignored skeleton update: a control changes a bone length, but the skeleton does not.
+     The detectors are: the rest translations, the world bind matrices and the inverse binds
+     compared directly with the oracle; the landmark positions; and `rev_id`. The posed mesh
+     detects it **only** when the pose replaces the local transform of a joint whose bone
+     length the control scaled. Otherwise the scaled local cancels in `W' * IB`, and the mesh
+     is identical with or without the update. A suite that relies on the posed mesh alone does
+     not detect this fault.
+  2. A stale bind: inverse binds left over from an earlier revision. Detected by the inverse
+     binds compared with the oracle, by `W' * IB` at the bind pose (the posed mesh is not the
+     shaped neutral), and by the posed mesh in any pose.
+  3. A no-op morph: a morph weight that has no effect on any vertex. Detected at compile time
+     by the shaped neutral positions, and at pose time by a test that supplies a pose-time
+     morph weight on a body whose compile-time weights are zero.
 - Each control must also visibly change `rev_id` or the posed output, so that the tests are
   shown to discriminate.
+- **Golden `rev_id`: REGRESSION PIN (not independent).**
+  - `docs/evidence/m5b/golden_rev_id.py` is a numpy float32 replication of the implementation.
+    It mirrors the implementation's float evaluation order on purpose, and shares its
+    formulas. It pins the documented byte layout and the value content of one fixture and
+    recipe. It is not an independent bearing on correctness.
+  - What it can detect: a change to the serialized layout or content, and a change in float
+    evaluation order that alters an f32 result on that fixture. Measured on the rich fixture
+    with the script: reversing the summation order of the 4-term matrix product changes the
+    hash, and so does reversing the summation order of the inverse-bind translation. Reversing
+    the order of the 3-term determinant does NOT change it. So the claim is limited to those
+    orderings; it is not a general "any drift in evaluation order" guarantee, and no
+    cross-architecture claim is made.
+  - Independent bearings are the f64 oracle comparisons and the hand-derived canonical bytes
+    test (`tests/figure_canonical_bytes.rs`), which is written by a separate author from the
+    normative text only.
 
 ---
 
