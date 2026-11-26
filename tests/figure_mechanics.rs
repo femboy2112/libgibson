@@ -1786,7 +1786,9 @@ fn independent_canonical_bytes(rev: &CharacterRevision) -> Vec<u8> {
         o.extend_from_slice(&v.to_le_bytes());
     }
     fn f32le(o: &mut Vec<u8>, v: f32) {
-        o.extend_from_slice(&v.to_bits().to_le_bytes());
+        // rev.v0 canonicalizes -0.0 to +0.0 (ruling #59).
+        let bits = if v == 0.0 { 0 } else { v.to_bits() };
+        o.extend_from_slice(&bits.to_le_bytes());
     }
     fn string(o: &mut Vec<u8>, s: &str) {
         u32le(o, s.len() as u32);

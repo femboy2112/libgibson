@@ -236,6 +236,11 @@ pub struct Collider {}
 #[non_exhaustive]
 pub enum FitStatus {
     Fit,
+    /// The garment fits only after adaptation. A required garment in this state is still
+    /// activatable by the host, with a visible warning (contract law 5, ruling #48 D1).
+    NeedsAdaptation {
+        reason: String,
+    },
     /// The garment does not fit; it carries no fit data.
     Unfit {
         reason: String,
@@ -248,6 +253,17 @@ pub enum FitStatus {
 pub struct GarmentFit {
     pub garment_id: String,
     pub status: FitStatus,
+}
+
+impl GarmentFit {
+    /// Builds a fit outcome from exactly its two fields. There is deliberately no `Default`:
+    /// a fit status is never implied.
+    pub fn new(garment_id: impl Into<String>, status: FitStatus) -> GarmentFit {
+        GarmentFit {
+            garment_id: garment_id.into(),
+            status,
+        }
+    }
 }
 
 /// LATER: motion calibration. Defaulted in Slice 1.
