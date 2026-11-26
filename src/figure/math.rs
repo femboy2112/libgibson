@@ -52,6 +52,7 @@ pub struct Transform {
 /// Determinants whose magnitude is below this are treated as singular by [`Mat4::inverse`].
 pub const SINGULAR_DET: f32 = 1.0e-12;
 
+#[allow(clippy::should_implement_trait)]
 impl Vec3 {
     /// The zero vector.
     pub const ZERO: Vec3 = Vec3 {
@@ -115,6 +116,7 @@ impl Vec3 {
     }
 }
 
+#[allow(clippy::should_implement_trait)]
 impl Quat {
     /// The identity rotation.
     pub const IDENTITY: Quat = Quat {
@@ -206,6 +208,7 @@ impl Quat {
     }
 }
 
+#[allow(clippy::should_implement_trait)]
 impl Mat4 {
     /// The identity matrix.
     pub const IDENTITY: Mat4 = Mat4 {

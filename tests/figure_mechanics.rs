@@ -14,6 +14,7 @@
 //! - `noop_morph`: `morph_control_moves_vertices`, `pose_morph_weight_moves_vertices`,
 //!   `oracle_matches_implementation`, `each_control_changes_rev_id`, `golden_rev_id`, ...
 #![cfg(feature = "figure")]
+#![allow(clippy::needless_range_loop)]
 
 mod figure_oracle;
 

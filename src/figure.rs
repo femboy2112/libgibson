@@ -16,3 +16,12 @@ pub mod revision;
 pub mod sha256;
 pub mod skeleton;
 pub mod skin;
+
+pub use math::{Mat4, Quat, Transform, Vec3};
+pub use morph::MorphTarget;
+pub use revision::{
+    compile, BodyFamily, BodyRecipe, CharacterRevision, CompileError, EvalError, FamilyRef,
+    PoseInput, PosedMesh, RevisionId, SupportClass,
+};
+pub use skeleton::{Joint, Landmark, Skeleton};
+pub use skin::SkinWeights;
