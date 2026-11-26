@@ -40,10 +40,9 @@ for t in $TARGETS; do
   [ "$RC" -eq 0 ] || fail "head $t rc=$RC"
   [ "$n" -gt 0 ] || fail "head $t ran 0 tests"
 done
-run head_lib_figure $T test --features figure --lib figure::
-n=$(passed head_lib_figure); echo "head_lib_figure_passed=$n"
-[ "$RC" -eq 0 ] || fail "lib figure rc=$RC"
-[ "$n" -gt 0 ] || fail "lib figure:: matched 0 tests"
+# src/figure has no #[cfg(test)] unit tests: every figure test is an integration target above.
+# Assert that stays true, so a future unit test is not silently skipped by this instrument.
+if grep -rqs 'cfg(test)' src/figure src/figure.rs; then fail "src/figure gained unit tests; add a lib step"; fi
 
 # Mutant kill matrix: each mutant MUST compile and fail on assertions (not compile errors).
 for mu in ignored_skeleton_update stale_bind noop_morph; do
