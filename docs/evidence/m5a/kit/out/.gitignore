@@ -1,0 +1,4 @@
+# MP4 is never committed; strip frames are local by default.
+*.mp4
+strip/
+*.stderr
