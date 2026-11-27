@@ -61,14 +61,59 @@ pub const FIT_ALGORITHM_ID: &str = "gibson.fit.vertex-normal-penetration.v2";
 pub const FIT_ADAPT_ALGORITHM_ID: &str = "gibson.fit.vertex-normal-penetration.v2+adapt.v1";
 /// Upper bound on [`AdaptationV1::smooth_iterations`].
 pub const MAX_ADAPT_ITERATIONS: u32 = 16;
+/// The garment-fit algorithm id hashed into the fit id when the recipe has two or more garments
+/// and no adaptation: garments are LAYERED in recipe order (see [`RecipeV1::garments`]). With zero
+/// or one garment nothing can be layered and [`FIT_ALGORITHM_ID`] is hashed, bit for bit as before.
+pub const FIT_LAYERED_ALGORITHM_ID: &str = "gibson.fit.vertex-normal-penetration.v2+layers.v1";
+/// The layered id with adaptation (two or more garments and [`FitParamsV1::adaptation`] set).
+pub const FIT_ADAPT_LAYERED_ALGORITHM_ID: &str =
+    "gibson.fit.vertex-normal-penetration.v2+adapt.v1+layers.v1";
 
-/// The closed set of material slot names.
+/// Part kinds that are FACE PARTS: body-bound meshes (eyes, brows, lashes, teeth) that are shaped
+/// and skinned with the body like a garment but are never gated by a [`FitStatus`] and are drawn
+/// by default (see [`FacePartsV1`]). A face part cannot be named as a garment.
+pub const FACE_PART_KINDS: [&str; 4] = ["eyes", "eyebrows", "eyelashes", "teeth"];
+/// The face-part styling rule hashed into the presentation id when face parts are drawn: the
+/// eye regions (front axis, cone angles), and the fixed slots each kind takes.
+pub const FACE_STYLE_ID: &str = "gibson.figure.face-style.v1";
+/// The body's front direction in the rest pose (the asset frame is `+z` up and the figure faces
+/// `-y`; a front camera looks from `-y` toward `+y`). The eyes look along it at rest.
+pub const BODY_FRONT: Vec3 = Vec3::new(0.0, -1.0, 0.0);
+/// Cosine of the pupil half-angle (15 degrees) about an eye's forward axis.
+pub const EYE_PUPIL_COS: f32 = 0.965_925_8;
+/// Cosine of the iris half-angle (30 degrees) about an eye's forward axis.
+pub const EYE_IRIS_COS: f32 = 0.866_025_4;
+
 /// Positions, normals and per-triangle slots of one mesh, flattened for `figure::preview`.
 type FlatMesh = (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<u8>);
 
 /// Fraction of the frame height the auto-framed [`Compiled::preview`] figure fills.
 pub const PREVIEW_FILL: f32 = 0.8;
 
+/// Recipe-independent slots a [`RenderMesh`] may carry past the end of [`MATERIAL_SLOTS`]: slot
+/// index `MATERIAL_SLOTS.len() + k` is `FIXED_SLOTS[k]`. Resolve them with
+/// [`Compiled::fixed_slot_albedo`]; a recipe cannot bind them.
+pub const FIXED_SLOTS: [&str; 4] = ["sclera", "pupil", "hair", "enamel"];
+/// Slot index of the fixed near-white eye sclera.
+pub const SLOT_SCLERA: u8 = 8;
+/// Slot index of the fixed near-black pupil.
+pub const SLOT_PUPIL: u8 = 9;
+/// Slot index of the recipe's hair colour (`recipe().hair.color`): brows and lashes.
+pub const SLOT_HAIR: u8 = 10;
+/// Slot index of the fixed off-white tooth enamel.
+pub const SLOT_ENAMEL: u8 = 11;
+/// Slot index of `iris` in [`MATERIAL_SLOTS`] (the recipe's iris material).
+pub const SLOT_IRIS: u8 = 6;
+/// `(albedo, roughness)` of [`FIXED_SLOTS`] in linear light; the hair entry's albedo is replaced
+/// by the recipe's hair colour.
+const FIXED_SLOT_STYLE: [([f32; 3], f32); 4] = [
+    ([0.82, 0.80, 0.76], 0.35),
+    ([0.015, 0.015, 0.015], 0.3),
+    ([0.0, 0.0, 0.0], 0.5),
+    ([0.80, 0.76, 0.66], 0.4),
+];
+
+/// The closed set of material slot names.
 pub const MATERIAL_SLOTS: [&str; 8] = [
     "base",
     "panel",
@@ -1204,6 +1249,24 @@ pub struct AdaptationReport {
     pub applied: bool,
 }
 
+/// Which face parts (parts of a kind in [`FACE_PART_KINDS`]) the figure draws. Hashed into the
+/// presentation id only (never the body or fit id).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FacePartsV1 {
+    /// Every face part of the asset set, in asset part order (the default). An asset with no face
+    /// parts draws none and its presentation id is exactly what it was before face parts existed.
+    AssetDefault,
+    /// No face parts.
+    Off,
+}
+
+impl Default for FacePartsV1 {
+    fn default() -> FacePartsV1 {
+        FacePartsV1::AssetDefault
+    }
+}
+
 /// The recipe of `figure::studio` (docs/design/m5c-studio-api.md section 1). All fields explicit.
 ///
 /// Build it with [`RecipeV1::new`] (or `Default`) and assign fields; the struct is
@@ -1214,9 +1277,16 @@ pub struct RecipeV1 {
     /// Body control values by name. An omitted control takes its default. Never clamped.
     pub controls: Vec<(String, f32)>,
     pub footwear: FootwearV1,
-    /// The garment set, in host-declared (layering) order.
+    /// The garment set, in host-declared LAYERING order, innermost first. Each garment's fit check
+    /// (and adaptation, when enabled) measures it against the body AND against the garments drawn
+    /// before it: where an inner garment's surface is nearer than the body, the garment must also
+    /// clear that surface by the same vertex-normal rule. An outer garment an inner one pokes
+    /// through is therefore not `Fitted` (or is adapted out over it). The order is hashed into the
+    /// fit id.
     pub garments: Vec<GarmentV1>,
     pub hair: HairV1,
+    /// Which face parts are drawn (default: all of the asset's). Presentation only.
+    pub face_parts: FacePartsV1,
     pub attachments: Vec<AttachmentV1>,
     pub materials: Vec<MaterialSlotV1>,
     /// When set, jaw and mouth expression channels are inert (see
@@ -1239,6 +1309,7 @@ impl RecipeV1 {
             footwear: FootwearV1::default(),
             garments: Vec::new(),
             hair: HairV1::default(),
+            face_parts: FacePartsV1::AssetDefault,
             attachments: Vec::new(),
             materials: Vec::new(),
             lower_face_covered: false,
@@ -1373,7 +1444,7 @@ pub enum CompileError {
     DuplicateGarment {
         id: String,
     },
-    /// The part named as a garment is hair.
+    /// The part named as a garment is hair or a face part ([`FACE_PART_KINDS`]).
     NotAGarment {
         id: String,
     },
@@ -1423,7 +1494,9 @@ impl fmt::Display for CompileError {
             CompileError::NonFinite { part } => write!(f, "{part} is not finite"),
             CompileError::UnknownGarment { id } => write!(f, "unknown garment {id:?}"),
             CompileError::DuplicateGarment { id } => write!(f, "garment {id:?} is listed twice"),
-            CompileError::NotAGarment { id } => write!(f, "part {id:?} is hair, not a garment"),
+            CompileError::NotAGarment { id } => {
+                write!(f, "part {id:?} is hair or a face part, not a garment")
+            }
             CompileError::UnknownHair { id } => write!(f, "unknown hair style {id:?}"),
             CompileError::UnknownMaterialSlot { slot } => {
                 write!(f, "unknown material slot {slot:?}")
@@ -1542,37 +1615,103 @@ fn unit_normals(p: &[Vec3], indices: &[u32], n: usize) -> Vec<Vec3> {
     v
 }
 
-/// Penetration of `garment` into the body: for each garment vertex the nearest body vertex (ties:
-/// lowest index) among `candidates`, and the signed distance along that vertex's normal. Below
-/// zero is inside. A garment vertex whose nearest body vertex is `masked` (hidden under the
-/// garment) is skipped. Returns `(count deeper than tolerance, deepest depth)`.
-fn penetration(
-    garment: &[Vec3],
-    body: &[Vec3],
-    normals: &[Vec3],
-    candidates: &[usize],
-    masked: &[bool],
-    tolerance: f32,
-) -> (u32, f32) {
-    let mut count = 0u32;
-    let mut max_depth = 0.0f32;
-    for &g in garment {
+/// The nearest body vertex of `g` among `candidates` (ties: lowest index) and its squared
+/// distance; `(usize::MAX, inf)` if there is no candidate. Masking is the caller's business.
+fn nearest_candidate(g: Vec3, body: &[Vec3], candidates: &[usize]) -> (usize, f32) {
+    let mut best = usize::MAX;
+    let mut best_d2 = f32::INFINITY;
+    for &b in candidates {
+        let d = g.sub(body[b]);
+        let d2 = d.dot(d);
+        if d2 < best_d2 {
+            best_d2 = d2;
+            best = b;
+        }
+    }
+    (best, best_d2)
+}
+
+/// The surface a garment is measured against: the body, plus the inner LAYERS (the vertices of
+/// the garments drawn before it, see [`RecipeV1::garments`]).
+struct BodySurface<'a> {
+    positions: &'a [Vec3],
+    normals: &'a [Vec3],
+    candidates: &'a [usize],
+    masked: &'a [bool],
+    /// Inner-layer vertices (only those in a triangle), garment by garment in recipe order.
+    layers: &'a [Vec3],
+    /// Unit normals of `layers`.
+    layer_normals: &'a [Vec3],
+}
+
+impl BodySurface<'_> {
+    /// The nearest unmasked body vertex of `g` (ties: lowest index). `None` if there is none or
+    /// the nearest one is hidden.
+    fn nearest_body(&self, g: Vec3) -> Option<usize> {
+        let (best, _) = nearest_candidate(g, self.positions, self.candidates);
+        if best == usize::MAX || self.masked[best] {
+            None
+        } else {
+            Some(best)
+        }
+    }
+
+    /// The nearest inner-layer vertex of `g` (ties: lowest index), but only when it is strictly
+    /// nearer than the nearest body vertex (hidden or not): an inner garment is measured only
+    /// where it, not the body, is the surface right under `g`.
+    fn nearer_layer(&self, g: Vec3) -> Option<usize> {
+        // Fault injection (mutation control `no_layers`): garments are measured against the body
+        // only, as if each were the innermost layer.
+        if self.layers.is_empty() || cfg!(figure_mutant = "no_layers") {
+            return None;
+        }
+        let (_, body_d2) = nearest_candidate(g, self.positions, self.candidates);
         let mut best = usize::MAX;
-        let mut best_d2 = f32::INFINITY;
-        for &b in candidates {
-            let d = g.sub(body[b]);
+        let mut best_d2 = body_d2;
+        for (l, &p) in self.layers.iter().enumerate() {
+            let d = g.sub(p);
             let d2 = d.dot(d);
             if d2 < best_d2 {
                 best_d2 = d2;
-                best = b;
+                best = l;
             }
         }
-        if best == usize::MAX || masked[best] {
-            continue;
+        if best == usize::MAX {
+            None
+        } else {
+            Some(best)
         }
-        let s = g.sub(body[best]).dot(normals[best]);
-        if s < 0.0 {
-            let depth = -s;
+    }
+}
+
+/// Penetration of `garment` into the surface: for each garment vertex the nearest body vertex
+/// (ties: lowest index) among the candidates, and the signed distance along that vertex's normal;
+/// below zero is inside. A garment vertex whose nearest body vertex is `masked` (hidden under the
+/// garment) is not measured against the body. Where an inner layer is nearer than the body
+/// ([`BodySurface::nearer_layer`]) the vertex is ALSO measured against that layer vertex by the
+/// same rule, and its depth is the deeper of the two. With no layers this is exactly the body-only
+/// measure. Returns `(count deeper than tolerance, deepest depth)`.
+fn penetration(garment: &[Vec3], surface: &BodySurface<'_>, tolerance: f32) -> (u32, f32) {
+    let mut count = 0u32;
+    let mut max_depth = 0.0f32;
+    for &g in garment {
+        let mut depth: Option<f32> = None;
+        if let Some(best) = surface.nearest_body(g) {
+            let s = g.sub(surface.positions[best]).dot(surface.normals[best]);
+            if s < 0.0 {
+                depth = Some(-s);
+            }
+        }
+        if let Some(l) = surface.nearer_layer(g) {
+            let s = g.sub(surface.layers[l]).dot(surface.layer_normals[l]);
+            if s < 0.0 {
+                depth = Some(match depth {
+                    Some(d) if d >= -s => d,
+                    _ => -s,
+                });
+            }
+        }
+        if let Some(depth) = depth {
             if depth > tolerance {
                 count += 1;
             }
@@ -1584,37 +1723,10 @@ fn penetration(
     (count, max_depth)
 }
 
-/// The nearest unmasked body vertex of `g` among `candidates` (ties: lowest index), the same rule
-/// as [`penetration`]. `None` if there is none or the nearest one is hidden.
-fn nearest_body(g: Vec3, body: &[Vec3], candidates: &[usize], masked: &[bool]) -> Option<usize> {
-    let mut best = usize::MAX;
-    let mut best_d2 = f32::INFINITY;
-    for &b in candidates {
-        let d = g.sub(body[b]);
-        let d2 = d.dot(d);
-        if d2 < best_d2 {
-            best_d2 = d2;
-            best = b;
-        }
-    }
-    if best == usize::MAX || masked[best] {
-        None
-    } else {
-        Some(best)
-    }
-}
-
-/// The body surface the adaptation step measures against.
-struct BodySurface<'a> {
-    positions: &'a [Vec3],
-    normals: &'a [Vec3],
-    candidates: &'a [usize],
-    masked: &'a [bool],
-}
-
 /// Push every vertex of `region` (ascending) whose signed distance along its nearest body
-/// vertex's normal is below `clearance` out to `clearance`; sets `pushed[i]` for each and returns
-/// how many were newly marked.
+/// vertex's normal is below `clearance` out to `clearance`, then, where an inner layer is nearer
+/// than the body, do the same against that layer vertex; sets `pushed[i]` for each and returns
+/// how many were newly marked. With no layers this is exactly the body-only step.
 fn enforce_clearance(
     pos: &mut [Vec3],
     region: impl Iterator<Item = usize>,
@@ -1624,18 +1736,94 @@ fn enforce_clearance(
 ) -> u32 {
     let mut count = 0u32;
     for i in region {
-        if let Some(b) = nearest_body(pos[i], body.positions, body.candidates, body.masked) {
+        let mut hit = false;
+        if let Some(b) = body.nearest_body(pos[i]) {
             let s = pos[i].sub(body.positions[b]).dot(body.normals[b]);
             if s < clearance {
                 pos[i] = pos[i].add(body.normals[b].scale(clearance - s));
-                if !pushed[i] {
-                    pushed[i] = true;
-                    count += 1;
-                }
+                hit = true;
             }
+        }
+        if let Some(l) = body.nearer_layer(pos[i]) {
+            let s = pos[i].sub(body.layers[l]).dot(body.layer_normals[l]);
+            if s < clearance {
+                pos[i] = pos[i].add(body.layer_normals[l].scale(clearance - s));
+                hit = true;
+            }
+        }
+        if hit && !pushed[i] {
+            pushed[i] = true;
+            count += 1;
         }
     }
     count
+}
+
+/// Per-triangle slots of an eye mesh (one or more eyeballs; each connected island of triangles is
+/// one eye). An island's centre is the centre of the bounding box of its vertices that are in a
+/// triangle. A triangle whose centroid direction from its island's centre lies within the pupil
+/// cone ([`EYE_PUPIL_COS`]) about `front` is [`SLOT_PUPIL`], within the iris cone
+/// ([`EYE_IRIS_COS`]) [`SLOT_IRIS`], else [`SLOT_SCLERA`]. Computed once on the rest pose: the
+/// slots ride with the mesh, so an eye rotation (gaze) carries its iris with it. Deterministic:
+/// islands are rooted at their lowest vertex index, `f32` throughout, no trigonometry.
+fn eye_slots(pos: &[Vec3], indices: &[u32], front: Vec3) -> Vec<u8> {
+    fn find(parent: &mut [usize], mut x: usize) -> usize {
+        while parent[x] != x {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        x
+    }
+    let n = pos.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+    for t in indices.chunks_exact(3) {
+        let mut a = find(&mut parent, t[0] as usize);
+        for &v in &t[1..] {
+            let b = find(&mut parent, v as usize);
+            let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+            parent[hi] = lo;
+            a = lo;
+        }
+    }
+    let mut lo: Vec<Vec3> = vec![Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY); n];
+    let mut hi: Vec<Vec3> =
+        vec![Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY); n];
+    for &v in indices {
+        let r = find(&mut parent, v as usize);
+        let p = pos[v as usize];
+        lo[r] = Vec3::new(lo[r].x.min(p.x), lo[r].y.min(p.y), lo[r].z.min(p.z));
+        hi[r] = Vec3::new(hi[r].x.max(p.x), hi[r].y.max(p.y), hi[r].z.max(p.z));
+    }
+    let mut out = Vec::with_capacity(indices.len() / 3);
+    for t in indices.chunks_exact(3) {
+        let r = find(&mut parent, t[0] as usize);
+        let c = lo[r].add(hi[r]).scale(0.5);
+        let (a, b, e) = (pos[t[0] as usize], pos[t[1] as usize], pos[t[2] as usize]);
+        let g = Vec3::new(
+            (a.x + b.x + e.x) / 3.0,
+            (a.y + b.y + e.y) / 3.0,
+            (a.z + b.z + e.z) / 3.0,
+        );
+        let d = g.sub(c);
+        let len = d.length();
+        let k = d.dot(front);
+        let slot = if len <= 0.0 || !len.is_finite() || !k.is_finite() {
+            SLOT_SCLERA
+        } else if k >= EYE_PUPIL_COS * len {
+            SLOT_PUPIL
+        } else if k >= EYE_IRIS_COS * len {
+            SLOT_IRIS
+        } else {
+            SLOT_SCLERA
+        };
+        out.push(slot);
+    }
+    out
+}
+
+/// Whether `kind` is a face-part kind ([`FACE_PART_KINDS`]).
+fn is_face_kind(kind: &str) -> bool {
+    FACE_PART_KINDS.contains(&kind)
 }
 
 /// The adaptation step (see [`AdaptationV1`]). Returns the adapted positions (the input, unchanged,
@@ -1768,6 +1956,28 @@ pub struct DrawableGarment {
     skin: SkinWeights,
 }
 
+/// A face part ([`FACE_PART_KINDS`]) fitted to the shaped body like a garment and skinned by its
+/// own (body-transferred) weights, with no verdict: face parts are presentation (the
+/// presentation id), never gated by a [`FitStatus`] and never in the fit id.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct FittedFacePart {
+    pub id: String,
+    pub kind: String,
+    /// Fitted vertex positions at rest (the shaped body's frame).
+    pub positions: Vec<Vec3>,
+    pub indices: Vec<u32>,
+    /// Rest vertex normals (area-weighted, unit; a vertex in no triangle gets +z).
+    pub normals: Vec<Vec3>,
+    /// One per triangle: `eyes` take [`SLOT_PUPIL`], [`SLOT_IRIS`] or [`SLOT_SCLERA`] (see
+    /// [`BODY_FRONT`], [`EYE_IRIS_COS`]); `eyebrows` and `eyelashes` take [`SLOT_HAIR`]; `teeth`
+    /// take [`SLOT_ENAMEL`].
+    pub slot_per_triangle: Vec<u8>,
+    /// Body vertices hidden under this part (its `delete_verts`), as for a drawn garment.
+    pub hidden_body_vertices: Vec<u32>,
+    skin: SkinWeights,
+}
+
 /// The hair style, fitted to the body (no verdict: hair is presentation, not part of the fit id).
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -1851,6 +2061,8 @@ pub struct PosedFigure {
     /// Drawable garments only, in set order.
     pub garments: Vec<PosedPart>,
     pub hair: Option<PosedPart>,
+    /// Face parts, in [`Compiled::face_parts`] order.
+    pub face: Vec<PosedPart>,
     /// Joint world matrices (without the root translation).
     pub joint_world: Vec<Mat4>,
 }
@@ -1862,11 +2074,14 @@ pub enum MeshRole {
     Body,
     Garment,
     Hair,
+    /// A face part (eyes, brows, lashes, teeth; see [`FACE_PART_KINDS`]).
+    Face,
 }
 
 /// One drawable mesh, ready for a renderer: positions and normals per vertex, triangles, and a
-/// material slot per triangle (an index into [`MATERIAL_SLOTS`]; resolve it with
-/// [`Compiled::material`]). Only drawable content appears: garments without a `Fitted` verdict
+/// material slot per triangle (an index into [`MATERIAL_SLOTS`], resolved with
+/// [`Compiled::material`], or past its end into [`FIXED_SLOTS`], resolved with
+/// [`Compiled::fixed_slot_albedo`]). Only drawable content appears: garments without a `Fitted` verdict
 /// are absent, and body triangles that use a vertex hidden under a drawn garment (its
 /// `delete_verts`) are dropped, so the body never shows through its clothes.
 #[derive(Debug, Clone, PartialEq)]
@@ -1877,9 +2092,9 @@ pub struct RenderMesh {
     pub positions: Vec<Vec3>,
     pub normals: Vec<Vec3>,
     pub triangles: Vec<[u32; 3]>,
-    /// One per triangle: index into [`MATERIAL_SLOTS`]. The body is `base` (0); a garment takes
-    /// the slot of its first slot binding, else `base`; hair is `base` (its colour is
-    /// `recipe().hair.color`).
+    /// One per triangle: index into [`MATERIAL_SLOTS`] then [`FIXED_SLOTS`]. The body is `base`
+    /// (0); a garment takes the slot of its first slot binding, else `base`; hair is `base` (its
+    /// colour is `recipe().hair.color`); a face part takes its [`FittedFacePart`] slots.
     pub slot_per_triangle: Vec<u8>,
 }
 
@@ -1919,6 +2134,20 @@ fn mesh_of(
     }
 }
 
+fn face_mesh(f: &FittedFacePart, positions: Vec<Vec3>, normals: Vec<Vec3>) -> RenderMesh {
+    let mut m = mesh_of(
+        &f.id,
+        MeshRole::Face,
+        positions,
+        normals,
+        &f.indices,
+        0,
+        None,
+    );
+    m.slot_per_triangle = f.slot_per_triangle.clone();
+    m
+}
+
 /// The result of [`compile`]: the shaped body, the derived skeleton, the garment verdicts and the
 /// three identities.
 #[derive(Debug, Clone)]
@@ -1940,6 +2169,7 @@ pub struct Compiled {
     fit_reports: Vec<GarmentFitReport>,
     garments: Vec<DrawableGarment>,
     hair: Option<FittedHair>,
+    face: Vec<FittedFacePart>,
     diagnostics: Vec<Diagnostic>,
     provenance: Option<ProvenanceV1>,
     lower_face_covered: bool,
@@ -1997,6 +2227,24 @@ impl Compiled {
     /// The fitted hair, if the recipe named a style.
     pub fn hair(&self) -> Option<&FittedHair> {
         self.hair.as_ref()
+    }
+
+    /// The drawn face parts ([`RecipeV1::face_parts`]), in asset part order.
+    pub fn face_parts(&self) -> &[FittedFacePart] {
+        &self.face
+    }
+
+    /// The linear albedo of a fixed slot (an index `MATERIAL_SLOTS.len() + k` into
+    /// [`FIXED_SLOTS`]): the constant sclera, pupil and enamel colours of [`FACE_STYLE_ID`], and
+    /// the recipe's hair colour for [`SLOT_HAIR`]. `None` for any other index.
+    pub fn fixed_slot_albedo(&self, slot: u8) -> Option<[f32; 3]> {
+        let k = usize::from(slot).checked_sub(MATERIAL_SLOTS.len())?;
+        let (albedo, _) = FIXED_SLOT_STYLE.get(k)?;
+        if slot == SLOT_HAIR {
+            Some(self.recipe.hair.color)
+        } else {
+            Some(*albedo)
+        }
     }
 
     /// The canonical `gibson.figure.rev.v1` bytes the body id is the SHA-256 of.
@@ -2128,6 +2376,11 @@ impl Compiled {
                 mask[h as usize] = true;
             }
         }
+        for f in &self.face {
+            for &h in &f.hidden_body_vertices {
+                mask[h as usize] = true;
+            }
+        }
         mask
     }
 
@@ -2142,10 +2395,10 @@ impl Compiled {
     }
 
     /// The drawable meshes at rest (the shaped body): the body, then every `Fitted` garment in
-    /// set order, then the hair.
+    /// set order, then the hair, then the face parts.
     pub fn rest_render_meshes(&self) -> Vec<RenderMesh> {
         let mask = self.hidden_mask();
-        let mut out = Vec::with_capacity(self.garments.len() + 2);
+        let mut out = Vec::with_capacity(self.garments.len() + self.face.len() + 2);
         out.push(mesh_of(
             "body",
             MeshRole::Body,
@@ -2177,6 +2430,9 @@ impl Compiled {
                 None,
             ));
         }
+        for f in &self.face {
+            out.push(face_mesh(f, f.positions.clone(), f.normals.clone()));
+        }
         out
     }
 
@@ -2197,7 +2453,7 @@ impl Compiled {
             bounds_of, frame_bounds, render_preview, PreviewLight, PreviewMaterial, PreviewMesh,
         };
         let meshes = self.render_meshes(frame)?;
-        let hair_slot = MATERIAL_SLOTS.len() as u8;
+        let hair_slot = SLOT_HAIR;
         let mut materials: Vec<PreviewMaterial> = (0..MATERIAL_SLOTS.len())
             .map(|i| match self.material(i as u8) {
                 Some(m) => PreviewMaterial {
@@ -2212,12 +2468,19 @@ impl Compiled {
                 None => PreviewMaterial::DEFAULT,
             })
             .collect();
-        materials.push(PreviewMaterial {
-            albedo_linear: self.recipe.hair.color,
-            roughness: 0.5,
-            metalness: 0.0,
-            emissive: [0.0; 3],
-        });
+        for (k, (albedo, roughness)) in FIXED_SLOT_STYLE.iter().enumerate() {
+            let slot = (MATERIAL_SLOTS.len() + k) as u8;
+            materials.push(PreviewMaterial {
+                albedo_linear: if slot == SLOT_HAIR {
+                    self.recipe.hair.color
+                } else {
+                    *albedo
+                },
+                roughness: *roughness,
+                metalness: 0.0,
+                emissive: [0.0; 3],
+            });
+        }
         let flat: Vec<FlatMesh> = meshes
             .iter()
             .map(|m| {
@@ -2263,7 +2526,7 @@ impl Compiled {
     pub fn render_meshes(&self, frame: &TapeFrame) -> Result<Vec<RenderMesh>, PoseError> {
         let posed = self.pose_vertices(frame)?;
         let mask = self.hidden_mask();
-        let mut out = Vec::with_capacity(self.garments.len() + 2);
+        let mut out = Vec::with_capacity(self.garments.len() + self.face.len() + 2);
         out.push(mesh_of(
             "body",
             MeshRole::Body,
@@ -2295,10 +2558,13 @@ impl Compiled {
                 None,
             ));
         }
+        for (f, p) in self.face.iter().zip(posed.face) {
+            out.push(face_mesh(f, p.positions, p.normals));
+        }
         Ok(out)
     }
 
-    /// Skin the body, every drawable garment and the hair for one tape frame, with the body's
+    /// Skin the body, every drawable garment, the hair and the face parts for one tape frame, with the body's
     /// skinning mode. Garments are skinned by their own (body-transferred) weights, so they follow
     /// the pose. A garment without a `Fitted` verdict is not in the result.
     pub fn pose_vertices(&self, frame: &TapeFrame) -> Result<PosedFigure, PoseError> {
@@ -2370,11 +2636,28 @@ impl Compiled {
             }
             None => None,
         };
+        let mut face = Vec::with_capacity(self.face.len());
+        for f in &self.face {
+            let p = f
+                .skin
+                .skin_with(self.mode, &f.positions, &world, &self.inverse_binds)
+                .map_err(PoseError::Skin)?;
+            let n = f
+                .skin
+                .skin_normals(self.mode, &f.normals, &world, &self.inverse_binds)
+                .map_err(PoseError::Skin)?;
+            face.push(PosedPart {
+                id: f.id.clone(),
+                positions: shift(p),
+                normals: n,
+            });
+        }
         Ok(PosedFigure {
             body: shift(body),
             body_normals,
             garments,
             hair,
+            face,
             joint_world: world,
         })
     }
@@ -2487,7 +2770,7 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
         let Some(part) = assets.parts.iter().find(|p| p.id == g.id) else {
             return Err(CompileError::UnknownGarment { id: g.id.clone() });
         };
-        if part.kind == "hair" {
+        if part.kind == "hair" || is_face_kind(&part.kind) {
             return Err(CompileError::NotAGarment { id: g.id.clone() });
         }
         for (_, slot) in &g.slot_bindings {
@@ -2732,6 +3015,9 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
     }
     let mut fit_reports: Vec<GarmentFitReport> = Vec::with_capacity(garment_parts.len());
     let mut drawable: Vec<DrawableGarment> = Vec::new();
+    // Inner layers: the vertices (in a triangle) of the garments drawn so far, in recipe order.
+    let mut layers: Vec<Vec3> = Vec::new();
+    let mut layer_normals: Vec<Vec3> = Vec::new();
     for part in &garment_parts {
         let pos = fit_part(part, fit_src);
         let finite = pos.iter().all(|p| p.is_finite());
@@ -2747,23 +3033,18 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
         let mut pos = pos;
         if finite {
             // Fault injection (mutation control `no_adapt`): the adaptation step is skipped.
+            let surface = BodySurface {
+                positions: fit_src,
+                normals: &normals,
+                candidates: &candidates,
+                masked: &masked,
+                layers: &layers,
+                layer_normals: &layer_normals,
+            };
             if let (Some(a), false) = (&fp.adaptation, cfg!(figure_mutant = "no_adapt")) {
-                let surface = BodySurface {
-                    positions: fit_src,
-                    normals: &normals,
-                    candidates: &candidates,
-                    masked: &masked,
-                };
                 // A garment that is `Rejected` before adaptation stays rejected: adaptation only
                 // repairs `NeedsAdaptation`, so it can never loosen the `adapt_depth_m` bound.
-                let (c0, d0) = penetration(
-                    &pos,
-                    fit_src,
-                    &normals,
-                    &candidates,
-                    &masked,
-                    fp.tolerance_m,
-                );
+                let (c0, d0) = penetration(&pos, &surface, fp.tolerance_m);
                 let pre = verdict(
                     &FitMetrics {
                         vertices: pos.len() as u32,
@@ -2803,14 +3084,7 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
                 }
                 adaptation = Some(rep);
             }
-            let (count, max_depth) = penetration(
-                &pos,
-                fit_src,
-                &normals,
-                &candidates,
-                &masked,
-                fp.tolerance_m,
-            );
+            let (count, max_depth) = penetration(&pos, &surface, fp.tolerance_m);
             metrics = FitMetrics {
                 vertices: pos.len() as u32,
                 penetrating: count,
@@ -2826,6 +3100,13 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
             status = FitStatus::Rejected(FitReason::NonFiniteFit);
         }
         if status == FitStatus::Fitted {
+            let raw = body_normals(&pos, &part.indices, pos.len());
+            for (v, n) in raw.iter().enumerate() {
+                if n.dot(*n) > 0.0 {
+                    layers.push(pos[v]);
+                    layer_normals.push(*n);
+                }
+            }
             drawable.push(DrawableGarment {
                 id: part.id.clone(),
                 kind: part.kind.clone(),
@@ -2861,6 +3142,40 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
         }
         None => None,
     };
+    // Face parts: fitted like garments, never gated.
+    let face_sel: Vec<&PartAsset> = match recipe.face_parts {
+        FacePartsV1::AssetDefault => assets
+            .parts
+            .iter()
+            .filter(|p| is_face_kind(&p.kind))
+            .collect(),
+        FacePartsV1::Off => Vec::new(),
+    };
+    // Fault injection (mutation control `face_iris_backward`): the eyes look backward.
+    let front = if cfg!(figure_mutant = "face_iris_backward") {
+        BODY_FRONT.neg()
+    } else {
+        BODY_FRONT
+    };
+    let mut face: Vec<FittedFacePart> = Vec::with_capacity(face_sel.len());
+    for p in &face_sel {
+        let positions = fit_part(p, fit_src);
+        let slot_per_triangle = match p.kind.as_str() {
+            "eyes" => eye_slots(&positions, &p.indices, front),
+            "teeth" => vec![SLOT_ENAMEL; p.indices.len() / 3],
+            _ => vec![SLOT_HAIR; p.indices.len() / 3],
+        };
+        face.push(FittedFacePart {
+            id: p.id.clone(),
+            kind: p.kind.clone(),
+            normals: unit_normals(&positions, &p.indices, positions.len()),
+            positions,
+            indices: p.indices.clone(),
+            slot_per_triangle,
+            hidden_body_vertices: p.hidden.clone(),
+            skin: p.skin.clone(),
+        });
+    }
 
     let mut fit_bytes: Vec<u8> = Vec::new();
     fit_bytes.extend_from_slice(FIT_PREFIX);
@@ -2870,9 +3185,17 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
         put_str(&mut fit_bytes, &part.id);
         fit_bytes.extend_from_slice(&part.sha);
     }
+    let layered = garment_parts.len() >= 2;
     match &fp.adaptation {
         None => {
-            put_str(&mut fit_bytes, FIT_ALGORITHM_ID);
+            put_str(
+                &mut fit_bytes,
+                if layered {
+                    FIT_LAYERED_ALGORITHM_ID
+                } else {
+                    FIT_ALGORITHM_ID
+                },
+            );
             put_u32(&mut fit_bytes, 2);
             put_str(&mut fit_bytes, "tolerance_m");
             put_f32(&mut fit_bytes, fp.tolerance_m);
@@ -2880,7 +3203,14 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
             put_f32(&mut fit_bytes, fp.adapt_depth_m);
         }
         Some(a) => {
-            put_str(&mut fit_bytes, FIT_ADAPT_ALGORITHM_ID);
+            put_str(
+                &mut fit_bytes,
+                if layered {
+                    FIT_ADAPT_LAYERED_ALGORITHM_ID
+                } else {
+                    FIT_ADAPT_ALGORITHM_ID
+                },
+            );
             put_u32(&mut fit_bytes, 5);
             put_str(&mut fit_bytes, "tolerance_m");
             put_f32(&mut fit_bytes, fp.tolerance_m);
@@ -2981,6 +3311,18 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
     }
     put_str(&mut pb, "lower_face_covered");
     put_f32(&mut pb, if recipe.lower_face_covered { 1.0 } else { 0.0 });
+    // Face parts (appended only when any are drawn, so a face-less presentation is unchanged).
+    // Fault injection (mutation control `face_unhashed`): the face choice is not hashed.
+    if !face_sel.is_empty() && !cfg!(figure_mutant = "face_unhashed") {
+        put_str(&mut pb, "face_parts");
+        put_str(&mut pb, FACE_STYLE_ID);
+        put_u32(&mut pb, face_sel.len() as u32);
+        for p in &face_sel {
+            put_str(&mut pb, &p.id);
+            put_str(&mut pb, &p.kind);
+            pb.extend_from_slice(&p.sha);
+        }
+    }
     let present_id = PresentationId(sha256::digest(&pb));
 
     let rest_normals = unit_normals(&shaped, &body.indices, body.n_body);
@@ -3002,6 +3344,7 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
         fit_reports,
         garments: drawable,
         hair,
+        face,
         diagnostics,
         provenance: recipe.provenance.clone(),
         lower_face_covered: recipe.lower_face_covered,
