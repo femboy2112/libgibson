@@ -1219,9 +1219,9 @@ impl BeatPlan {
                 d[D_PEL + 1] = s[D_PEL + 1] + w.sway * env * sp;
                 d[D_PEL + 2] = s[D_PEL + 2] - w.extra * env + w.bob * env * sp * sp;
                 d[D_PELROT + 2] = s[D_PELROT + 2] - w.twist * env * sp;
-                d[D_SPINE + 2] = s[D_SPINE + 2] + 0.8 * w.twist * env * sp;
-                d[D_SPINE] = s[D_SPINE] + w.lean * env;
                 let gz = 1.0 - ramp(t, 0.0, 2.0 * w.tau);
+                d[D_SPINE + 2] = s[D_SPINE + 2] * gz + 0.8 * w.twist * env * sp;
+                d[D_SPINE] = s[D_SPINE] + w.lean * env;
                 d[D_GAZE] = s[D_GAZE] * gz;
                 d[D_GAZE + 1] = s[D_GAZE + 1] * gz;
                 d[D_NOD] = s[D_NOD] * gz;
