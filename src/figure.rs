@@ -19,6 +19,7 @@ pub mod math;
 pub mod morph;
 pub mod motion;
 pub mod perform;
+pub mod preview;
 pub mod refit;
 pub mod revision;
 pub mod sha256;
@@ -32,6 +33,10 @@ pub use perform::{
     perform, perform_with, Beat, GestureKind, Intent, IntentKind, Live, PerformError,
     PerformOptions, Performance, PerformanceScript, Pose, Rig, RigGeometry, RigMap, RigRoles,
     Style, Tape, TapeFiles, TapeIdentity,
+};
+pub use preview::{
+    frame_bounds, frame_bounds_view, render_preview, PreviewCamera, PreviewImage, PreviewLight,
+    PreviewMaterial, PreviewMesh, PreviewOptions,
 };
 pub use refit::{refit_skeleton, JointAnchor, Refit, RefitError};
 pub use revision::{

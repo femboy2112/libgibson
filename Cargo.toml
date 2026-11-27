@@ -1,6 +1,6 @@
 [package]
 name = "libgibson"
-version = "0.9.1"
+version = "0.9.2"
 edition = "2021"
 rust-version = "1.85"
 authors = ["LibGibson Contributors"]
@@ -88,6 +88,11 @@ path = "examples/figure_vis3d_kit.rs"
 required-features = ["figure"]
 
 [[example]]
+name = "figure_preview_png"
+path = "examples/figure_preview_png.rs"
+required-features = ["figure"]
+
+[[example]]
 name = "agent_chat"
 path = "examples/agent_chat.rs"
 
@@ -106,6 +111,10 @@ path = "examples/polished_agent.rs"
 [[example]]
 name = "fx_lab"
 path = "examples/fx_lab.rs"
+
+[[example]]
+name = "stage_motion_kit"
+path = "examples/stage_motion_kit.rs"
 
 [[example]]
 name = "instrument_workbench"
@@ -138,4 +147,4 @@ panic = "unwind"
 # Fault-injection points for the figure module's mutation controls (tests must FAIL when
 # any is enabled via RUSTFLAGS='--cfg figure_mutant="..."'). Never set in normal builds.
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(figure_mutant, values("ignored_skeleton_update", "stale_bind", "noop_morph", "snap_transition", "freeze_on_preempt", "linear_keys", "dqs_as_lbs", "dqs_no_align", "ignored_refit", "ignore_skeleton_update_v1", "ignore_surface_update", "stale_fit", "stale_control", "no_adapt", "adapt_rejected"))'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(figure_mutant, values("ignored_skeleton_update", "stale_bind", "noop_morph", "snap_transition", "freeze_on_preempt", "linear_keys", "dqs_as_lbs", "dqs_no_align", "ignored_refit", "ignore_skeleton_update_v1", "ignore_surface_update", "stale_fit", "stale_control", "no_adapt", "adapt_rejected", "preview_stale", "contact_ignored", "snap_beats", "no_root_motion"))'] }

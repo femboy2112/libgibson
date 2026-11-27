@@ -35,7 +35,6 @@
 //! adjusts the step length so the path length is covered exactly.
 //!
 //! Zero dependencies, scalar `f32` in the solver, `f64` in the plans, no `unsafe`, no clock.
-#![allow(unexpected_cfgs)]
 #![allow(clippy::needless_range_loop, clippy::too_many_arguments)]
 
 use std::f64::consts::PI;
