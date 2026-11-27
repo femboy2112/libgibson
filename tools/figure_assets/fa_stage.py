@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
 """Blender-side stage helpers shared by render_tape.py and render_probe.py (imports bpy; never run on its own).
 
-UNRUN when committed (heavy-only): written against the Blender 4.5 API.  Everything here is generic stage craft:
-materials (Principled BSDF, EEVEE Next), the 3-point + soft-top light rig, ground, cameras fitted from projected bounds,
-the figure-mask pass used by the contact-shadow check, ray-cast clearance checks, text labels, engine selection.
-
-Defects of the MEASURE probe this module fixes (docs/evidence/m5c/measure/RESULT.md, viewed items 1, 2, 5):
-  1. the ground is placed at the min z of the EVALUATED body vertices (never helper or hidden geometry) and checked;
-  2. the camera is fitted from the projected body vertices so the figure spans a target fraction of the frame height;
-  5. key / fill / rim lighting, a skin material with subsurface, dark brows and lashes, eyes with an iris and pupil.
+The tape renderer measures the posed, dressed surface for its floor and matched full-body cameras.
+The close-up follows the eyes. Three area lights illuminate the figure and physical receiver;
+the beauty and silhouette passes supply the near-foot shadow check.
 `mutant=True` reproduces the probe bug (bounds over every mesh object including a hidden helper proxy that is 0.40 m
 below the feet and 2.80 m tall) so the self-checks can be shown to FAIL.
 """
@@ -23,6 +18,7 @@ import json
 import bpy
 from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Matrix, Vector
+from mathutils.kdtree import KDTree
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
@@ -30,7 +26,9 @@ if HERE not in sys.path:
 import fa_checks as ck  # noqa: E402
 import fa_common as fc  # noqa: E402
 import fa_hair  # noqa: E402
+import fa_materials  # noqa: E402
 import fa_skirt  # noqa: E402
+import fa_surface  # noqa: E402
 import fa_tape as ft  # noqa: E402
 
 SKIRT_ID = "skirt_a_line"
@@ -52,12 +50,11 @@ def load_json(p):
 
 def verdict_of(v):
     """fit_status values may be a string or a one-key object; -> (is_fitted, text)."""
-    if isinstance(v, dict) and v:
-        k = sorted(v)[0]
-        txt = "%s %s" % (k, json.dumps(v[k], sort_keys=True)[:60]) if v[k] not in (None, {}, []) else k
-    else:
-        txt = str(v)
-    return txt.strip().lower().startswith("fitted"), txt
+    if isinstance(v, dict) and len(v) == 1:
+        key, detail = next(iter(v.items()))
+        text = f"{key} {json.dumps(detail, sort_keys=True)[:60]}" if detail not in (None, {}, []) else key
+        return key == "Fitted", text
+    return v == "Fitted", str(v)
 
 
 # =========================================================================== materials
@@ -100,7 +97,7 @@ def slot_material(slot, spec):
     return m
 
 
-def skin_material(spec):
+def skin_material(spec, pack=None):
     """Skin with subsurface scattering (EEVEE Next supports the Principled SSS inputs)."""
     m, b = new_principled("skin")
     alb = spec.get("albedo", [0.62, 0.40, 0.31])
@@ -113,31 +110,62 @@ def skin_material(spec):
     set_input(b, ("Specular IOR Level", "Specular"), float(spec.get("specular", 0.22)))
     m.diffuse_color = rgba(alb)
     m["fa_sss_inputs"] = str(got)
+    if pack is not None:
+        tex = pack.node(m, "skin_diffuse")
+        fa_materials.tinted_albedo(m, tex, alb, (0.68, 0.46, 0.34))
+        fa_materials.skin_detail(m)
     return m, got
 
 
-def hair_material(color, rough=0.38):
+def hair_material(color, rough=0.38, pack=None):
     m, b = new_principled("hair")
     set_input(b, ("Base Color",), rgba(color))
     set_input(b, ("Roughness",), rough)
     set_input(b, ("Specular IOR Level", "Specular"), 0.6)
     m.diffuse_color = rgba(color)
+    if pack is not None:
+        tex = pack.node(m, "hair_long01_diffuse")
+        # Use the recipe pigment to dye the measured light-brown source fibres.
+        # Direct texture colour washes out the painted highlight at the crown.
+        mix = m.node_tree.nodes.new("ShaderNodeMix")
+        mix.data_type = "RGBA"
+        mix.blend_type = "MULTIPLY"
+        inputs = {s.identifier: s for s in mix.inputs}
+        inputs["Factor_Float"].default_value = 1.0
+        inputs["B_Color"].default_value = rgba([min(1.0, c / ref) for c, ref in zip(color, (0.36, 0.28, 0.20))])
+        m.node_tree.links.new(tex.outputs["Color"], inputs["A_Color"])
+        result = next(s for s in mix.outputs if s.identifier == "Result_Color")
+        m.node_tree.links.new(result, b.inputs["Base Color"])
+        fa_materials.alpha_cards(m, tex)
+        set_input(b, ("Roughness",), 0.58)
+        set_input(b, ("Anisotropic IOR Level",), 0.15)
+        set_input(b, ("Specular IOR Level",), 0.15)
     return m
 
 
-def brow_material(color, name="brow"):
+def brow_material(color, name="brow", pack=None):
     m, b = new_principled(name)
     set_input(b, ("Base Color",), rgba(color))
     set_input(b, ("Roughness",), 0.55)
     m.diffuse_color = rgba(color)
+    if pack is not None:
+        asset_id = "eyebrow001_diffuse" if name == "brow" else "eyelashes01_diffuse"
+        fa_materials.alpha_cards(m, pack.node(m, asset_id))
     return m
 
 
-def eye_material(iris_rgb):
+def eye_material(iris_rgb, pack=None):
     """Pupil / iris / sclera from the MPFB low-poly eye UVs: the left eyeball (x > 0) is mapped around UV (0.705, 0.70) and the right one
     around (0.30, 0.30) (measured from the pack's low-poly.obj: the front vertex rings at 20 and 38 degrees sit 0.05 and 0.10 from those
     centres).  Distance to the nearer centre drives a constant colour ramp; the cornea is a glossy coat."""
     m, b = new_principled("eye")
+    if pack is not None:
+        tex = pack.node(m, "eyes_blue_diffuse")
+        fa_materials.tinted_albedo(m, tex, iris_rgb, (0.2, 0.3, 0.42), iris_only=True)
+        set_input(b, ("Roughness",), 0.24)
+        fa_materials.corneal_coat(m)
+        m.diffuse_color = rgba(iris_rgb)
+        return m
     nt = m.node_tree
     tc = nt.nodes.new("ShaderNodeTexCoord")
     dists = []
@@ -305,10 +333,97 @@ def add_hidden_helper_proxy(body_lo_z, height=2.80, drop=0.40):
     return o
 
 
-def make_ground(z, size=40.0, albedo=(0.35, 0.35, 0.36)):
-    h = 0.5 * size
-    o = mesh_object("Ground", [(-h, -h, 0.0), (h, -h, 0.0), (h, h, 0.0), (-h, h, 0.0)], [(0, 1, 2, 3)], role="ground", smooth=False)
-    o.location = (0.0, 0.0, z)
+def bounds_of(points):
+    return (Vector([min(p[i] for p in points) for i in range(3)]),
+            Vector([max(p[i] for p in points) for i in range(3)]))
+
+
+def visible_figure_points(figure_objs):
+    return [p for obj in figure_objs if not obj.hide_render for p in fa_surface.visible_positions(obj)]
+
+
+def reference_stage(body, eye_objs, ref_foot_idx, *, figure_objs=None, mutant=False):
+    """Measure the posed, dressed render surface once, before adding scenery.
+
+    Foot indices belong to the armature cage; subdivision and garment masks change its
+    topology. Associate the dressed contact surface with its closest posed cage vertex.
+    This check stays independent of the minimum used to place the floor, even for a
+    wide-legged pose with another body part or a piece of fabric between the feet.
+    """
+    objects = figure_objs if figure_objs is not None else [body, *eye_objs]
+    surfaces = {obj: fa_surface.visible_positions(obj) for obj in objects if not obj.hide_render}
+    points = [p for surface in surfaces.values() for p in surface]
+    body_points = surfaces[body]
+    lo, hi = bounds_of(points)
+    body_bounds = bounds_of(body_points)
+    height = hi.z - lo.z
+    center = (lo + hi) * 0.5
+    stage_bounds = (lo, hi)
+    if mutant:
+        add_hidden_helper_proxy(lo.z)
+        stage_bounds = mesh_bounds_all(include_hidden=True)
+
+    cage = eval_positions(body)
+    tree = KDTree(len(cage))
+    for i, point in enumerate(cage):
+        tree.insert(point, i)
+    tree.balance()
+    foot_ids = set(ref_foot_idx)
+    foot = [p for obj, surface in surfaces.items() if obj.get("fa_role") in ("body", "garment")
+            for p in surface if tree.find(p)[1] in foot_ids]
+    if not foot:
+        raise RuntimeError("no visible sole or foot surface in the reference pose")
+
+    # Use the actual posed eyeballs. The MPFB attachment is one mesh spanning
+    # both eyes; partition in bind space so root translation/rotation do not swap sides.
+    eye_points = [[], []]
+    for obj in eye_objs:
+        if obj.hide_render:
+            continue
+        verts = obj.data.vertices
+        posed = eval_positions(obj)
+        if len(verts) != len(posed):
+            continue
+        middle_x = (max(v.co.x for v in verts) + min(v.co.x for v in verts)) * 0.5
+        for v, p in zip(verts, posed):
+            eye_points[int(v.co.x < middle_x)].append(p)
+    eye_centers = []
+    if all(eye_points):
+        for eye in eye_points:
+            lower, upper = bounds_of(eye)
+            eye_centers.append(tuple((lower + upper) * 0.5))
+        eye_mid = (Vector(eye_centers[0]) + Vector(eye_centers[1])) * 0.5
+    else:
+        eye_mid = Vector((center.x, center.y, body_bounds[1].z - 0.105))
+    ex, ey, ez = eye_mid
+    face_points = [p for p in body_points if abs(p[0] - ex) <= 0.14
+                   and abs(p[1] - ey) <= 0.23 and ez - 0.14 <= p[2] <= ez + 0.19]
+    if not face_points:
+        raise RuntimeError("no visible head surface at the reference-pose eye position")
+    ctx = {"points": points, "bounds": stage_bounds, "body_bounds": body_bounds, "height": height, "center": tuple(center),
+           "mutant": mutant, "foot_points": foot, "eye_centers": eye_centers,
+           "face_center": (ex, ey, ez - 0.02), "face_points": face_points}
+    return ctx, stage_bounds[0].z
+
+
+def make_ground(z, size=40.0, albedo=(0.35, 0.35, 0.36), center_xy=(0.0, 0.0)):
+    """An actual flat receiver around the subject sweeps up outside the camera orbit."""
+    radius, bend = size * 0.22, size * 0.08
+    profile = [(radius * 0.8, 0.0)]
+    for i in range(13):
+        a = 0.5 * math.pi * i / 12
+        profile.append((radius + bend * math.sin(a), bend * (1 - math.cos(a))))
+    profile.append((radius + bend, size * 0.4))
+    sides = 96
+    ring = [(math.cos(math.tau * i / sides), math.sin(math.tau * i / sides)) for i in range(sides)]
+    verts = [(r * x, r * y, h) for r, h in profile for x, y in ring]
+    polys = [tuple(range(sides))]
+    for j in range(len(profile) - 1):
+        for i in range(sides):
+            k = (i + 1) % sides
+            polys.append((j * sides + i, (j + 1) * sides + i, (j + 1) * sides + k, j * sides + k))
+    o = mesh_object("Ground", verts, polys, role="ground")
+    o.location = (center_xy[0], center_xy[1], z)
     m, b = new_principled("ground")
     set_input(b, ("Base Color",), rgba(albedo))
     set_input(b, ("Roughness",), 0.85)
@@ -317,7 +432,7 @@ def make_ground(z, size=40.0, albedo=(0.35, 0.35, 0.36)):
     return o
 
 
-def make_world(color=(0.30, 0.32, 0.37), strength=0.45):
+def make_world(color=(0.30, 0.32, 0.37), strength=0.25):
     sc = bpy.context.scene
     w = sc.world if sc.world is not None else bpy.data.worlds.new("fa_world")
     sc.world = w
@@ -335,41 +450,35 @@ def aim(obj, target):
 
 
 def add_lights(center, height, gain=1.0):
-    """Key / fill / rim (three-point) plus a soft top light that gives the figure a contact shadow.  Azimuth 0 is the camera
-    side (-Y); +x is the camera's right.  Energies are first guesses scaled by distance squared (4.5 m, 1.7 m figure)."""
-    sc = bpy.context.scene
+    """Three softboxes. The high backlight falls toward the soles, the off-axis key models the face,
+    and the broad fill lifts the unlit eye. Scale power with distance squared when the subject changes."""
     dist = 2.7 * height
     k = (dist / 4.5) ** 2 * gain
     cx, cy, cz = center
-    rig = (("key", -42.0, 38.0, 1.0, 450.0, 2.4, (1.0, 0.94, 0.88)),
-           ("fill", 58.0, 14.0, 1.0, 180.0, 2.6, (0.86, 0.91, 1.0)),
-           ("rim", 150.0, 34.0, 1.0, 450.0, 1.2, (0.92, 0.96, 1.0)))
+    rig = (("key", -38.0, 44.0, 390.0, 2.1, (1.0, 0.91, 0.81)),
+           ("fill", 42.0, 22.0, 120.0, 3.0, (0.82, 0.89, 1.0)),
+           ("rim", 180.0, 77.0, 850.0, 2.3, (0.88, 0.94, 1.0)))
     made = {}
-    for name, az, el, rr, energy, size, col in rig:
+    for name, az, el, energy, size, col in rig:
         a, e = math.radians(az), math.radians(el)
-        pos = (cx + dist * rr * math.sin(a) * math.cos(e), cy - dist * rr * math.cos(a) * math.cos(e), cz + dist * rr * math.sin(e))
+        pos = (cx + dist * math.sin(a) * math.cos(e), cy - dist * math.cos(a) * math.cos(e), cz + dist * math.sin(e))
         ld = bpy.data.lights.new(name, "AREA")
+        ld.shape = "DISK"
         ld.energy = energy * k
         ld.size = size * height / 1.7
         ld.color = col
-        try:
-            ld.use_shadow = True
-        except Exception:  # noqa: BLE001
-            pass
+        if name == "rim":
+            # The overhead box defines the silhouette and floor shadow. Its reflection
+            # spans several long01 cards at once and reads as a silver band across the part.
+            ld.specular_factor = 0.0
+        ld.use_shadow = True
+        if hasattr(ld, "use_shadow_jitter"):
+            ld.use_shadow_jitter = True
         o = bpy.data.objects.new(name, ld)
         link(o)
         o.location = pos
         aim(o, (cx, cy, cz + 0.1 * height))
         made[name] = o
-    top = bpy.data.lights.new("top_soft", "AREA")
-    top.energy = 140.0 * k
-    top.size = 1.6 * height / 1.7
-    top.color = (1.0, 1.0, 1.0)
-    to = bpy.data.objects.new("top_soft", top)
-    link(to)
-    to.location = (cx, cy, cz + 1.9 * height)
-    aim(to, (cx, cy, cz - 0.5 * height))
-    made["top_soft"] = to
     return made
 
 
@@ -399,11 +508,11 @@ def attach_label_to_camera(label, cam_obj, lens):
 # =========================================================================== cameras
 
 KINDS = {
-    "front": {"az": 0.0, "el": 4.0},
-    "side": {"az": 90.0, "el": 4.0},
-    "three_quarter": {"az": 35.0, "el": 6.0},
-    "back": {"az": 180.0, "el": 4.0},
-    "face_closeup": {"az": 8.0, "el": 2.0, "target": "face", "lens": 85.0, "fill": 0.70},
+    "front": {"az": 0.0, "el": 5.0},
+    "side": {"az": 90.0, "el": 5.0},
+    "three_quarter": {"az": 35.0, "el": 5.0},
+    "back": {"az": 180.0, "el": 5.0},
+    "face_closeup": {"az": 5.0, "el": 0.0, "target": "face", "lens": 85.0, "fill": 0.74},
     "turntable": {"az": 0.0, "el": 5.0},
     "tracking": {"az": 22.0, "el": 4.0, "track": True},
 }
@@ -423,10 +532,19 @@ def place_camera(cam, target, az_deg, el_deg, dist):
 
 def project(cam, pts):
     sc = bpy.context.scene
+    # Compute the physical camera projection once per mesh, including sensor fit,
+    # shift and pixel aspect; subdivided silhouettes have tens of thousands of points.
+    projection = cam.calc_matrix_camera(bpy.context.evaluated_depsgraph_get(),
+                                        x=sc.render.resolution_x, y=sc.render.resolution_y,
+                                        scale_x=sc.render.pixel_aspect_x, scale_y=sc.render.pixel_aspect_y)
+    world_to_clip = projection @ cam.matrix_world.normalized().inverted()
     out = []
     for p in pts:
-        c = world_to_camera_view(sc, cam, Vector(p))
-        out.append((c.x, c.y))
+        c = world_to_clip @ Vector((*p, 1.0))
+        if c.w == 0.0:
+            out.append((0.5, 0.5))
+        else:
+            out.append((0.5 + 0.5 * c.x / c.w, 0.5 + 0.5 * c.y / c.w))
     return out
 
 
@@ -447,9 +565,9 @@ def fit_camera(name, spec, ctx, res):
     bounds=(lo,hi) from the bounds routine in force, mutant=bool).  Returns a record with the placement parameters."""
     base = dict(KINDS[spec.get("kind", "front")])
     base.update({k: v for k, v in spec.items() if k != "kind"})
-    lens = float(base.get("lens", 50.0))
+    lens = float(base.get("lens", 60.0))
     az, el = float(base["az"]), float(base["el"])
-    fill = float(base.get("fill", 0.80))
+    fill = float(base.get("fill", 0.82))
     sc = bpy.context.scene
     sc.render.resolution_x, sc.render.resolution_y = res
     sc.render.resolution_percentage = 100
@@ -481,9 +599,11 @@ def fit_camera(name, spec, ctx, res):
         target = Vector(ctx["center"])
         pts = ctx["points"]
         dist = (ctx["height"] / fill * 0.5) / math.tan(vfov(lens) / 2.0)
-        mode = "points_fit"
+        # Every full-body view uses the same target, lens, elevation and orbit
+        # radius. Refitting to each azimuth makes side/front comparison drift.
+        mode = "matched_orbit"
     place_camera(cam, target, az, el, dist)
-    if mode in ("points_fit", "face_analytic+fit"):
+    if mode == "face_analytic+fit":
         for _ in range(6):
             ndc = project(cam, pts)
             ys = [p[1] for p in ndc]
@@ -622,12 +742,13 @@ def set_engine(name, spp, threads):
                 last = exc
                 continue
             notes = []
-            for attr, val in (("taa_render_samples", int(spp)), ("use_shadows", True), ("use_raytracing", False), ("use_gtao", True)):
+            sc.eevee.taa_render_samples = int(spp)
+            for attr, val in (("use_shadows", True), ("use_raytracing", False), ("use_gtao", True)):
                 try:
                     setattr(sc.eevee, attr, val)
                 except Exception:  # noqa: BLE001
                     notes.append(attr)
-            return {"engine": "EEVEE_NEXT" if ident.endswith("NEXT") else "EEVEE", "samples": int(spp), "unsupported_settings": notes}
+            return {"engine": "EEVEE_NEXT" if ident.endswith("NEXT") else "EEVEE", "samples": sc.eevee.taa_render_samples, "unsupported_settings": notes}
         raise RuntimeError("no EEVEE engine id accepted: %s" % last)
     sc.render.engine = "CYCLES"
     cy = sc.cycles
@@ -733,11 +854,16 @@ def attach_object(export_dir, name, role, mat, S, arm, names, post=None):
     rec = read_att(export_dir, name)
     if rec is None:
         return None
+    if mat.get("fa_texture_id") and not rec["uv_polys"]:
+        raise ValueError(f"{name} has a material map but no exported face UVs")
     pos = fc.fit_binding(rec["bind"], rec["offset_spec"], S)
     info = {}
     if post is not None:
         pos, info = post(pos)
-    o = mesh_object(name, pos, rec["polys"], rec["uvs"], rec["uv_polys"], role=role)
+    faces, uv_faces = rec["polys"], rec["uv_polys"]
+    if name == "long01":
+        faces, uv_faces = fa_hair.long01_quads(faces), fa_hair.long01_quads(uv_faces)
+    o = mesh_object(name, pos, faces, rec["uvs"], uv_faces, role=role)
     place_like(o, arm)
     set_weights(o, [[names[i] for i in row] for row in rec["skin_idx"]], rec["skin_w"])
     add_armature_modifier(o, arm)
@@ -745,12 +871,19 @@ def attach_object(export_dir, name, role, mat, S, arm, names, post=None):
     return o, rec, pos, info
 
 
-def dress(export_dir, S, landmarks, arm, names, body, rd, slots, garments, fit_status, hide_under, arm_mask, eye_l, eye_r, notes):
+def dress(export_dir, S, landmarks, arm, names, body, rd, slots, garments, fit_status, hide_under, arm_mask, eye_l, eye_r, notes,
+          fitted_positions=None, baked_hair=False):
     """Skin, hair (parted away from the eyes), eyes, brows, lashes, the garments whose verdict is Fitted, the skirt, and a visible
     label for every garment that is NOT drawn.  -> dict with objs / labels / report / skirt / diagnostics."""
     out = {"objs": {"body": [body], "hair": [], "garment": [], "eyes": [], "brow": [], "lash": [], "skirt": []}, "labels": [], "report": {}, "skirt": None}
     bind = rd.get("bindings", {"garment": "base", "skirt": "panel"})
-    skin_mat, sss = skin_material(rd.get("skin", {}))
+    pack = None
+    if rd.get("texture_set") == "makehuman_system":
+        from export_mpfb import Blender
+        pack = fa_materials.PackTextures(Blender().user_data)
+        if not body.data.uv_layers.active:
+            raise ValueError("The skin texture requires the exported body UV map")
+    skin_mat, sss = skin_material(rd.get("skin", {}), pack)
     out["sss_inputs"] = sss
     body.data.materials.clear()
     body.data.materials.append(skin_mat)
@@ -763,17 +896,33 @@ def dress(export_dir, S, landmarks, arm, names, body, rd, slots, garments, fit_s
     out["hair_rgb"], out["brow_rgb"] = hair_rgb, brow_rgb
     hid = hair_cfg.get("id")
     if hid:
-        r = attach_object(export_dir, hid, "hair", hair_material(hair_rgb), S, arm, names, lambda p: fa_hair.part_hair(p, eye_l, eye_r))
+        mat = hair_material(hair_rgb, pack=pack if hid == "long01" else None)
+        # Long01 already has a centre part. Applying the bob fringe remap
+        # stretches triangles spanning that part into a shelf above the brow.
+        post = None if hid == "long01" else lambda p: fa_hair.part_hair(p, eye_l, eye_r)
+        r = attach_object(export_dir, hid, "hair", mat, S, arm, names, post)
         if r is None:
             notes.append("hair %s is not in the export attachments (export with this preset)" % hid)
             out["report"]["hair:" + hid] = "NOT DRAWN: not in export"
         else:
+            if hid == "long01":
+                if baked_hair:
+                    # The physics track addresses source cage indices. Subdivide after playback.
+                    smooth = r[0].modifiers.new("Smooth realized hair", "SUBSURF")
+                    smooth.levels = smooth.render_levels = 2
+                else:
+                    fa_hair.finish_long01(r[0], body)
             out["objs"]["hair"].append(r[0])
-            out["hair_part"] = r[3]
+            out["hair_part"] = r[3] if post else {"method": "native centre part", "moved_vertices": 0}
             out["hair_violations"] = fa_hair.clearance_violations(r[2], eye_l, eye_r)
-    for kind, key, mat in (("eyes", "eyes", eye_material(iris_rgb)), ("eyebrows", "brow", brow_material(brow_rgb, "brow")),
-                           ("eyelashes", "lash", brow_material([0.012, 0.01, 0.01], "lash"))):
-        nm = rd.get(kind, {}).get("id") or {"eyes": "low-poly", "eyebrows": "eyebrow001", "eyelashes": "eyelashes01"}[kind]
+    for kind, key, default_id in (("eyes", "eyes", "low-poly"), ("eyebrows", "brow", "eyebrow001"),
+                                  ("eyelashes", "lash", "eyelashes01")):
+        nm = rd.get(kind, {}).get("id") or default_id
+        maps = pack if nm == default_id else None
+        if key == "eyes":
+            mat = eye_material(iris_rgb, maps)
+        else:
+            mat = brow_material(brow_rgb if key == "brow" else [0.012, 0.01, 0.01], key, maps)
         r = attach_object(export_dir, nm, key, mat, S, arm, names)
         if r is None:
             notes.append("%s %s is not in the export attachments" % (kind, nm))
@@ -783,6 +932,7 @@ def dress(export_dir, S, landmarks, arm, names, body, rd, slots, garments, fit_s
         if key == "eyes":
             out["iris_verts"] = add_iris_attribute(o, pos)
     hide = set()
+    inner_layers = []
     for gid in garments:
         fitted, why = verdict_of(fit_status.get(gid, "MissingVerdict"))
         if gid not in fit_status:
@@ -794,14 +944,21 @@ def dress(export_dir, S, landmarks, arm, names, body, rd, slots, garments, fit_s
         else:
             slot = bind.get("garment:" + gid, bind.get("garment", "base"))
             spec = slots.get(slot, {"albedo": [0.20, 0.38, 0.42], "roughness": 0.7})
-            r = attach_object(export_dir, gid, "garment", slot_material(slot, spec), S, arm, names)
+            cloth = fa_surface.garment_material(slot_material(slot, spec), gid, pack)
+            r = attach_object(export_dir, gid, "garment", cloth, S, arm, names)
             if r is None:
                 out["report"][gid] = "NOT DRAWN: not in the export attachments (export it with this preset)"
             else:
-                out["objs"]["garment"].append(r[0])
+                obj, rec, pos, _ = r
+                fit = fa_surface.supplied_fit(gid, len(obj.data.vertices), fitted_positions)
+                if fit is not None:
+                    set_vertex_positions(obj, fit)
+                    pos = fit
+                inner_layers.append((obj, pos, fa_skirt.arm_mask(names, rec["skin_idx"], rec["skin_w"])))
+                out["objs"]["garment"].append(obj)
                 out["report"][gid] = "DRAWN (fit %s, slot %s)" % (why, slot)
                 if hide_under:
-                    hide.update(r[1]["delete_verts"])
+                    hide.update(rec["delete_verts"])
     if hide:
         vg = body.vertex_groups.new(name="fa_under_garment")
         vg.add(sorted(hide), 1.0, "REPLACE")
@@ -810,24 +967,19 @@ def dress(export_dir, S, landmarks, arm, names, body, rd, slots, garments, fit_s
         md.invert_vertex_group = True
         md.show_viewport = False        # the depsgraph (bounds, ray casts, oracle) sees the whole body; the render hides it
     out["hidden_body_vertices"] = len(hide)
+    fa_surface.smooth_surface(body, render_only=True)
     if out["report"].get(SKIRT_ID, "").startswith("DRAWN"):
-        sk = fa_skirt.make_skirt(S, landmarks["joints"], exclude=arm_mask)
+        sk = fa_surface.fit_skirt(S, landmarks["joints"], arm_mask, inner_layers, fitted_positions)
         o = mesh_object("Skirt", sk["positions"], sk["quads"], sk["uvs"], sk["quad_uv"], role="skirt")
         place_like(o, arm)
         slot = bind.get("skirt", "panel")
-        o.data.materials.append(slot_material(slot, slots.get(slot, {"albedo": [0.55, 0.18, 0.24], "roughness": 0.75})))
-        so = o.modifiers.new("Solidify", "SOLIDIFY")
-        so.thickness = 0.006
-        so.offset = -1.0
-        bv = o.modifiers.new("Bevel", "BEVEL")          # soft waistband and hem edges
-        bv.width = 0.004
-        bv.segments = 3
-        bv.limit_method = "ANGLE"
-        sd = o.modifiers.new("Subsurf", "SUBSURF")
-        sd.levels = 1
-        sd.render_levels = 2
+        skirt_mat = slot_material(slot, slots.get(slot, {"albedo": [0.55, 0.18, 0.24], "roughness": 0.75}))
+        o.data.materials.append(fa_surface.fabric_material(skirt_mat))
+        fa_surface.finish_skirt(o)
         out["objs"]["skirt"].append(o)
         out["skirt"] = {"obj": o, "data": sk, "cache": {}}
+    for obj in out["objs"]["garment"]:
+        fa_surface.smooth_surface(obj)
     for gid, txt in sorted(out["report"].items()):
         if txt.startswith("NOT DRAWN"):
             out["labels"].append(build_label("%s: %s" % (gid, txt)))
@@ -876,11 +1028,13 @@ def brow_lash_visibility(cam, brow_objs, lash_objs):
     return ck.visibility_check(vis, total, 0.6, "brows_lashes_visible")
 
 
-def check_contact_shadow(checks, body, foot_idx, ground, cam_rec, res, out_dir, figure_objs, labels):
-    """CONTACT: min z of the evaluated foot vertices (rest pose) within 5 mm of the ground OBJECT's z.
+def check_contact_shadow(checks, body, foot_idx, ground, cam_rec, res, out_dir, figure_objs, labels, foot_points=None):
+    """CONTACT: min z of the evaluated foot vertices in the reference pose within 5 mm of the ground OBJECT's z.
     SHADOW: coverage of shadowed pixels on the ground around the feet in a check render of `cam_rec` (beauty + figure mask)."""
-    pts = eval_positions(body)
-    foot = [pts[i] for i in foot_idx]
+    if foot_points is None:
+        pts = eval_positions(body)
+        foot_points = [pts[i] for i in foot_idx]
+    foot = foot_points
     checks.add(ck.contact_check(min(p[2] for p in foot), ground.location.z))
     sc = bpy.context.scene
     cam = cam_rec["obj"]

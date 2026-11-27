@@ -371,6 +371,29 @@ pub enum Beat {
         /// Target value.
         value: f32,
     },
+    /// Ease a face target with an authored transition duration. Takes no script time.
+    ExpressTimed {
+        /// Morph channel name.
+        channel: String,
+        /// Target value.
+        value: f32,
+        /// Transition duration in milliseconds.
+        ease_ms: u32,
+    },
+}
+
+impl Beat {
+    fn expression(&self, default_ms: u32) -> Option<(&str, f32, u32)> {
+        match self {
+            Beat::Express { channel, value } => Some((channel, *value, default_ms)),
+            Beat::ExpressTimed {
+                channel,
+                value,
+                ease_ms,
+            } => Some((channel, *value, *ease_ms)),
+            _ => None,
+        }
+    }
 }
 
 /// A list of beats and a style.
@@ -562,6 +585,7 @@ pub struct Rig {
     fwd64: V,
     right64: V,
     arm_pole: [Vec3; 2],
+    rest_wrists: [Vec3; 2],
 }
 
 impl Rig {
@@ -645,6 +669,7 @@ impl Rig {
             let out = if side == 0 { right.neg() } else { right };
             arm_pole[side] = pole.unwrap_or_else(|| fwd.scale(-0.8).add(out.scale(0.6)));
         }
+        let rest_wrists = [rest_pos[map.arms[0][2]], rest_pos[map.arms[1][2]]];
         Ok(Rig {
             skeleton,
             map,
@@ -659,6 +684,7 @@ impl Rig {
             fwd64: v64(fwd),
             right64: v64(right),
             arm_pole,
+            rest_wrists,
         })
     }
 
@@ -670,6 +696,17 @@ impl Rig {
     /// The role map.
     pub fn map(&self) -> &RigMap {
         &self.map
+    }
+
+    /// Override the two neutral wrist IK targets in rest model coordinates, left then right.
+    /// Their frame follows the pelvis translation and heading. Limb lengths and reach limits
+    /// still come from the skeleton. By default each target is its bind-pose wrist position.
+    pub fn with_rest_wrist_targets(mut self, wrists: [Vec3; 2]) -> Result<Self, PerformError> {
+        if wrists.iter().any(|p| !p.is_finite()) {
+            return Err(PerformError::NonFinite);
+        }
+        self.rest_wrists = wrists;
+        Ok(self)
     }
 
     /// Rest world position of joint `j` (model space, before any root translation).
@@ -962,7 +999,7 @@ fn solve_pass(
                 } else {
                     let s = l;
                     let base = D_ARM + s * 8;
-                    let hand_rest = rig.rest_pos[c[2]];
+                    let hand_rest = rig.rest_wrists[s];
                     let hang = yawq.rotate(hand_rest).add(pel_off);
                     let swing = hf
                         .scale(g(base))
@@ -1718,7 +1755,7 @@ fn plan_beat(cx: &Ctx<'_>, c: &Carry, beat: &Beat) -> Result<Option<BeatPlan>, P
         } => plan_sit(cx, c, *seat_height, *seat_pos)?,
         Beat::Stand => plan_stand(cx, c),
         Beat::Idle { secs } => plan_idle(cx, c, *secs),
-        Beat::Express { .. } => return Ok(None),
+        Beat::Express { .. } | Beat::ExpressTimed { .. } => return Ok(None),
     };
     Ok(Some(plan))
 }
@@ -1941,27 +1978,27 @@ impl Performance {
         let root0 = root_of(&carry.d);
         let mut face_names: Vec<String> = Vec::new();
         for b in &script.beats {
-            if let Beat::Express { channel, .. } = b {
-                if !face_names.contains(channel) {
-                    face_names.push(channel.clone());
+            if let Some((channel, _, _)) = b.expression(style.settle_ms) {
+                if !face_names.iter().any(|n| n == channel) {
+                    face_names.push(channel.to_owned());
                 }
             }
         }
         let mut plans: Vec<(f64, BeatPlan)> = Vec::new();
-        let mut face_events: Vec<(f64, usize, f64)> = Vec::new();
+        let mut face_events: Vec<(f64, usize, f64, u32)> = Vec::new();
         let mut events: Vec<TimelineEvent> = Vec::new();
         let mut walks: Vec<WalkSummary> = Vec::new();
         let mut swings_global: [Vec<(f64, f64)>; 2] = [Vec::new(), Vec::new()];
         let mut moving_global: Vec<(f64, f64)> = Vec::new();
         let mut cursor = 0.0f64;
         for (i, beat) in script.beats.iter().enumerate() {
-            if let Beat::Express { channel, value } = beat {
+            if let Some((channel, value, ease_ms)) = beat.expression(style.settle_ms) {
                 let idx = face_names.iter().position(|n| n == channel).unwrap_or(0);
-                face_events.push((cursor, idx, f64::from(*value)));
+                face_events.push((cursor, idx, f64::from(value), ease_ms));
                 events.push(TimelineEvent {
                     time: cursor,
                     kind: "express",
-                    label: channel.clone(),
+                    label: channel.to_owned(),
                 });
                 continue;
             }
@@ -1990,7 +2027,7 @@ impl Performance {
                 Beat::Sit { .. } => "sit",
                 Beat::Stand => "stand",
                 Beat::Idle { .. } => "idle",
-                Beat::Express { .. } => "express",
+                Beat::Express { .. } | Beat::ExpressTimed { .. } => "express",
             };
             events.push(TimelineEvent {
                 time: cursor,
@@ -2070,14 +2107,18 @@ impl Performance {
                 names: fnames.clone(),
                 values: vals.clone(),
             });
-            let face_ease = Duration::from_millis(u64::from(style.settle_ms));
-            for (t, ch, v) in face_events {
+            for (t, ch, v, ease_ms) in face_events {
                 vals[ch] = v;
                 let next = ConstMotion {
                     names: fnames.clone(),
                     values: vals.clone(),
                 };
-                chain = Box::new(Preempt::new(chain, Box::new(next), secs(t), face_ease));
+                chain = Box::new(Preempt::new(
+                    chain,
+                    Box::new(next),
+                    secs(t),
+                    Duration::from_millis(u64::from(ease_ms)),
+                ));
             }
             Some(chain)
         };

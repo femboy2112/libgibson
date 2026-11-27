@@ -1,0 +1,190 @@
+{
+  "name": "generic_trouser_suit",
+  "note": "Generic adult alternate with a trouser silhouette and an expressive movement style.",
+  "rig": "game_engine",
+  "macro": {
+    "gender": 0.1,
+    "age": 0.5,
+    "muscle": 0.5,
+    "weight": 0.5,
+    "proportions": 0.5,
+    "height": 0.5,
+    "cupsize": 0.5,
+    "firmness": 0.5,
+    "race": {
+      "asian": 0.333,
+      "caucasian": 0.334,
+      "african": 0.333
+    }
+  },
+  "controls": {
+    "stature": 0.17,
+    "leg_length": 0.12,
+    "torso_length": 0.0,
+    "shoulder_breadth": 0.18,
+    "ribcage": 0.0,
+    "bust_projection": 0.0,
+    "bust_fullness": 0.0,
+    "waist": 0.08,
+    "hip_breadth": -0.12,
+    "glute_projection": 0.0,
+    "thigh_fullness": 0.0,
+    "jaw_width": 0.0,
+    "posture_lean": 0.0
+  },
+  "export_attachments": [
+    "clothes:female_casualsuit01",
+    "skirt_a_line",
+    "hair:long01",
+    "eyes:low-poly",
+    "eyebrows:eyebrow001",
+    "eyelashes:eyelashes01",
+    "teeth:teeth_base"
+  ],
+  "gltf_attachments": [
+    "clothes:female_casualsuit01",
+    "skirt_a_line",
+    "hair:long01",
+    "eyes:low-poly",
+    "eyebrows:eyebrow001",
+    "eyelashes:eyelashes01"
+  ],
+  "hide_body_under_garment": true,
+  "render": {
+    "texture_set": "makehuman_system",
+    "skin": {
+      "albedo": [
+        0.68,
+        0.46,
+        0.34
+      ],
+      "roughness": 0.49,
+      "specular": 0.33,
+      "subsurface": 0.22,
+      "subsurface_radius": [
+        1.0,
+        0.35,
+        0.2
+      ],
+      "subsurface_scale": 0.003
+    },
+    "hair": {
+      "id": "long01",
+      "color": [
+        0.055,
+        0.033,
+        0.023
+      ]
+    },
+    "brows": {
+      "color": [
+        0.03,
+        0.018,
+        0.012
+      ]
+    },
+    "eyes": {
+      "id": "low-poly",
+      "iris": [
+        0.2,
+        0.3,
+        0.42
+      ]
+    },
+    "garments": [
+      "female_casualsuit01"
+    ],
+    "bindings": {
+      "garment": "base",
+      "skirt": "panel"
+    },
+    "materials": {
+      "base": {
+        "albedo": [
+          0.39,
+          0.12,
+          0.065
+        ],
+        "roughness": 0.8,
+        "metalness": 0.0
+      },
+      "panel": {
+        "albedo": [
+          0.2,
+          0.21,
+          0.27
+        ],
+        "roughness": 0.85,
+        "metalness": 0.0
+      },
+      "trim": {
+        "albedo": [
+          0.62,
+          0.55,
+          0.4
+        ],
+        "roughness": 0.35,
+        "metalness": 0.9
+      },
+      "ornament": {
+        "albedo": [
+          0.8,
+          0.62,
+          0.3
+        ],
+        "roughness": 0.3,
+        "metalness": 1.0
+      },
+      "gem_emissive": {
+        "albedo": [
+          0.05,
+          0.3,
+          0.3
+        ],
+        "roughness": 0.2,
+        "metalness": 0.0,
+        "emissive": [
+          0.1,
+          0.9,
+          0.8
+        ],
+        "emissive_intensity": 4.0
+      },
+      "mask": {
+        "albedo": [
+          0.85,
+          0.84,
+          0.8
+        ],
+        "roughness": 0.5,
+        "metalness": 0.0
+      },
+      "iris": {
+        "albedo": [
+          0.2,
+          0.3,
+          0.42
+        ],
+        "roughness": 0.12,
+        "metalness": 0.0
+      },
+      "accessory_emissive": {
+        "albedo": [
+          0.2,
+          0.2,
+          0.2
+        ],
+        "roughness": 0.4,
+        "metalness": 0.0,
+        "emissive": [
+          1.0,
+          0.5,
+          0.2
+        ],
+        "emissive_intensity": 3.0
+      }
+    },
+    "note": "The Blender adapter verifies the local CC0 texture hashes against LICENCE_MANIFEST.json. The tape header supplies the authoritative materials, garments, fit verdicts and controls.",
+    "movement_style": "expressive"
+  }
+}

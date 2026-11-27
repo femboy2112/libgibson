@@ -34,6 +34,7 @@
   },
   "export_attachments": [
     "clothes:female_casualsuit01",
+    "skirt_a_line",
     "hair:long01",
     "eyes:low-poly",
     "eyebrows:eyebrow001",
@@ -41,6 +42,8 @@
     "teeth:teeth_base"
   ],
   "gltf_attachments": [
+    "clothes:female_casualsuit01",
+    "skirt_a_line",
     "hair:long01",
     "eyes:low-poly",
     "eyebrows:eyebrow001",
@@ -48,21 +51,22 @@
   ],
   "hide_body_under_garment": true,
   "render": {
+    "texture_set": "makehuman_system",
     "skin": {
       "albedo": [
         0.68,
         0.46,
         0.34
       ],
-      "roughness": 0.55,
-      "specular": 0.22,
-      "subsurface": 0.15,
+      "roughness": 0.49,
+      "specular": 0.33,
+      "subsurface": 0.22,
       "subsurface_radius": [
         1.0,
         0.35,
         0.2
       ],
-      "subsurface_scale": 0.01
+      "subsurface_scale": 0.003
     },
     "hair": {
       "id": "long01",
@@ -181,6 +185,6 @@
         "emissive_intensity": 3.0
       }
     },
-    "note": "Render-only fields. The tape header (materials, garments, fit_status, controls) is authoritative at render time. Hair long01 is a long CC0 pack style (hangs to the waist); the pack hair meshes are alpha-card shells, so without their textures they render as a solid shell: judge by viewing."
+    "note": "The Blender adapter verifies the local CC0 texture hashes against LICENCE_MANIFEST.json. The tape header supplies the authoritative materials, garments, fit verdicts and controls."
   }
 }

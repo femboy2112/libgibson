@@ -2449,10 +2449,20 @@ impl Compiled {
         camera: Option<&super::preview::PreviewCamera>,
         opts: super::preview::PreviewOptions,
     ) -> Result<super::preview::PreviewImage, PoseError> {
+        let meshes = self.render_meshes(frame)?;
+        Ok(self.preview_meshes(&meshes, camera, opts))
+    }
+
+    /// Draw realized or kinematic meshes in the same material slots, camera and lighting.
+    pub fn preview_meshes(
+        &self,
+        meshes: &[RenderMesh],
+        camera: Option<&super::preview::PreviewCamera>,
+        opts: super::preview::PreviewOptions,
+    ) -> super::preview::PreviewImage {
         use super::preview::{
             bounds_of, frame_bounds, render_preview, PreviewLight, PreviewMaterial, PreviewMesh,
         };
-        let meshes = self.render_meshes(frame)?;
         let hair_slot = SLOT_HAIR;
         let mut materials: Vec<PreviewMaterial> = (0..MATERIAL_SLOTS.len())
             .map(|i| match self.material(i as u8) {
@@ -2512,13 +2522,7 @@ impl Compiled {
                 frame_bounds(b, aspect, PREVIEW_FILL)
             }
         };
-        Ok(render_preview(
-            &pm,
-            &materials,
-            &cam,
-            &PreviewLight::default_rig(),
-            opts,
-        ))
+        render_preview(&pm, &materials, &cam, &PreviewLight::default_rig(), opts)
     }
 
     /// The drawable meshes for one tape frame (same set and order as
@@ -2562,6 +2566,72 @@ impl Compiled {
             out.push(face_mesh(f, p.positions, p.normals));
         }
         Ok(out)
+    }
+
+    /// Add authored rest-space shape offsets to a posed or physically realized mesh. The caller
+    /// authenticates the shape basis against its source asset and revision before sampling it.
+    /// Errors leave the mesh untouched. Offsets may share a vertex across expression channels.
+    pub fn apply_rest_offsets(
+        &self,
+        frame: &TapeFrame,
+        mesh: &mut RenderMesh,
+        offsets: &[(usize, Vec3)],
+    ) -> Result<(), &'static str> {
+        let weights = match mesh.role {
+            MeshRole::Body if mesh.id == "body" => Some(&self.skin),
+            MeshRole::Face => self.face.iter().find(|x| x.id == mesh.id).map(|x| &x.skin),
+            MeshRole::Garment => self
+                .garments
+                .iter()
+                .find(|x| x.id == mesh.id)
+                .map(|x| &x.skin),
+            MeshRole::Hair => self
+                .hair
+                .as_ref()
+                .filter(|x| x.id == mesh.id)
+                .map(|x| &x.skin),
+            _ => None,
+        }
+        .ok_or("unknown shape target")?;
+        if mesh.positions.len() != weights.vertex_count()
+            || mesh.normals.len() != mesh.positions.len()
+            || mesh
+                .triangles
+                .iter()
+                .flatten()
+                .any(|&i| i as usize >= mesh.positions.len())
+        {
+            return Err("shape target topology mismatch");
+        }
+        let world = self
+            .skeleton
+            .world_from_locals(&frame.locals)
+            .map_err(|_| "invalid shape pose")?;
+        let transformed = weights
+            .skin_offsets(self.mode, offsets, &world, &self.inverse_binds)
+            .map_err(|_| "invalid shape offsets or pose")?;
+        let mut positions = mesh.positions.clone();
+        for (&(i, _), d) in offsets.iter().zip(transformed) {
+            positions[i] = positions[i].add(d);
+            if !positions[i].is_finite() {
+                return Err("nonfinite combined shape");
+            }
+        }
+        mesh.positions = positions;
+        mesh.normals.fill(Vec3::ZERO);
+        for &[a, b, c] in &mesh.triangles {
+            let [a, b, c] = [a, b, c].map(|v| v as usize);
+            let n = mesh.positions[b]
+                .sub(mesh.positions[a])
+                .cross(mesh.positions[c].sub(mesh.positions[a]));
+            for i in [a, b, c] {
+                mesh.normals[i] = mesh.normals[i].add(n);
+            }
+        }
+        for n in &mut mesh.normals {
+            *n = n.try_normalize().unwrap_or(Vec3::new(0., 0., 1.));
+        }
+        Ok(())
     }
 
     /// Skin the body, every drawable garment, the hair and the face parts for one tape frame, with the body's

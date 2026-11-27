@@ -15,6 +15,7 @@
 
 pub mod clip;
 pub mod ik;
+pub mod living_matter;
 pub mod math;
 pub mod morph;
 pub mod motion;

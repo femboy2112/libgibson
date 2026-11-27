@@ -59,6 +59,56 @@ def clearance_violations(positions, eye_l, eye_r, below=0.025, above=0.055, clea
     return sum(1 for (x, y, z) in positions if abs(x) < gap - tol and ez - below <= z <= ez + above and y < ey + forward)
 
 
+def long01_quads(tris):
+    """Undo fa_common.triangulate's ordered fan for the all-quad long01 OBJ (also for loop UVs)."""
+    if len(tris) % 2:
+        raise ValueError("long01 has an incomplete pair of source triangles")
+    quads = []
+    for first, second in zip(tris[::2], tris[1::2]):
+        if (first[0], first[2]) != tuple(second[:2]):
+            raise ValueError("long01 triangle pair differs from its source quad")
+        quads.append((*first, second[2]))
+    return quads
+
+
+def finish_long01(obj, body):
+    """Round the original card edges, then keep the crown above its fitted scalp.
+
+    Bake before the armature so rig weights subdivide with the mesh in Blender and glTF.
+    The crown's disconnected ribbon normals are blended with the nearby scalp normal.
+    Lower locks retain their authored sheet directions.
+    """
+    import bpy
+    from mathutils.bvhtree import BVHTree
+
+    # Body and hair share the fitted armature's local metre coordinates.
+    scalp = BVHTree.FromPolygons([v.co for v in body.data.vertices],
+                                 [p.vertices[:] for p in body.data.polygons])
+    bpy.context.view_layer.objects.active = obj
+    smooth = obj.modifiers.new("Smooth long01 cards", 'SUBSURF')
+    smooth.levels = smooth.render_levels = 2
+    bpy.ops.object.modifier_move_to_index(modifier=smooth.name, index=0)
+    bpy.ops.object.modifier_apply(modifier=smooth.name)
+    mesh = obj.data
+    crown = max(v.co.z for v in mesh.vertices)
+    near_scalp = {}
+    for v in mesh.vertices:
+        blend = _ramp(v.co.z, crown - 0.125, crown - 0.065)
+        if blend == 0:
+            continue
+        point, normal, _, _ = scalp.find_nearest(v.co)
+        # Lift a card only if rounding its rest edge would put it under skin.
+        clearance = (v.co - point).dot(normal)
+        if clearance < 0.001:
+            v.co += normal * (0.001 - clearance) * blend
+        near_scalp[v.index] = (normal, blend)
+    mesh.update()
+    normals = [v.normal.copy() for v in mesh.vertices]
+    for i, (normal, blend) in near_scalp.items():
+        normals[i] = normals[i].lerp(normal, 0.88 * blend).normalized()
+    mesh.normals_split_custom_set_from_vertices(normals)
+
+
 def _selftest():
     fails = []
 

@@ -13,8 +13,8 @@
   }
  ],
  "not_used": [
-  "all textures (*.png) and material files (*.mhmat, *.thumb) of the pack: the runtime has its own shading; no pack texture is read, hashed or shipped",
-  "skins, tongue, high-poly eyes, other hair/clothes/eyebrow variants"
+  "All other pack textures and material/node definitions. The Blender adapter builds its own Principled materials.",
+  "Tongue, high-poly eyes, other skin/hair/clothes/eyebrow variants."
  ],
  "rows": [
   {
@@ -3389,6 +3389,30 @@
    "files": [
     {
      "evidence": [
+      "pack index packs/makehuman_system_assets.json[\"female_casualsuit01\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
+     ],
+     "path": "clothes/female_casualsuit01/female_casualsuit01_diffuse.png",
+     "sha256": "414d46afa55fba09ad0913484d57df2ba6b597dc8193595a13a12436137dc21b",
+     "size": 3019656,
+     "status": "CC0-PACKINDEX"
+    }
+   ],
+   "id": "garment_casualsuit_diffuse",
+   "n_files": 1,
+   "role": "offline adapter suit UV atlas, named as diffuseTexture in female_casualsuit01.mhmat",
+   "root": "user",
+   "sha256": "414d46afa55fba09ad0913484d57df2ba6b597dc8193595a13a12436137dc21b",
+   "sha256_kind": "file",
+   "size": 3019656,
+   "source": "pack",
+   "source_url": "https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html",
+   "status": "CC0-PACKINDEX"
+  },
+  {
+   "evidence_only": false,
+   "files": [
+    {
+     "evidence": [
       "file header lines 3-6: \"This asset was explicitly released as CC0 in september 2020. The license text for CC0 can be found in the root of this repository. The copyright holders at the point of the release to CC0 were:\"",
       "pack index packs/makehuman_system_assets.json[\"bob01\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
      ],
@@ -3733,6 +3757,126 @@
    "source": "pack",
    "source_url": "https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html",
    "status": "CC0-HEADER"
+  },
+  {
+   "evidence_only": false,
+   "files": [
+    {
+     "evidence": [
+      "pack index packs/makehuman_system_assets.json[\"young_caucasian_female\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
+     ],
+     "path": "skins/young_caucasian_female/young_lightskinned_female_diffuse.png",
+     "sha256": "b2a6ac8cd4f9febdb447368e29c76cd68410bb66e46d9dcfa2d5f75126eea8fc",
+     "size": 4391156,
+     "status": "CC0-PACKINDEX"
+    }
+   ],
+   "id": "skin_diffuse",
+   "n_files": 1,
+   "role": "offline adapter skin albedo",
+   "root": "user",
+   "sha256": "b2a6ac8cd4f9febdb447368e29c76cd68410bb66e46d9dcfa2d5f75126eea8fc",
+   "sha256_kind": "file",
+   "size": 4391156,
+   "source": "pack",
+   "source_url": "https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html",
+   "status": "CC0-PACKINDEX"
+  },
+  {
+   "evidence_only": false,
+   "files": [
+    {
+     "evidence": [
+      "pack index packs/makehuman_system_assets.json[\"blue\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
+     ],
+     "path": "eyes/materials/blue_eye.png",
+     "sha256": "572ddc93ab3e177100619ec7c00b2574540cfb382805afc2e450788117f6140c",
+     "size": 666029,
+     "status": "CC0-PACKINDEX"
+    }
+   ],
+   "id": "eyes_blue_diffuse",
+   "n_files": 1,
+   "role": "offline adapter iris, pupil and sclera albedo",
+   "root": "user",
+   "sha256": "572ddc93ab3e177100619ec7c00b2574540cfb382805afc2e450788117f6140c",
+   "sha256_kind": "file",
+   "size": 666029,
+   "source": "pack",
+   "source_url": "https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html",
+   "status": "CC0-PACKINDEX"
+  },
+  {
+   "evidence_only": false,
+   "files": [
+    {
+     "evidence": [
+      "pack index packs/makehuman_system_assets.json[\"long01\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
+     ],
+     "path": "hair/long01/long01_diffuse.png",
+     "sha256": "e8dc25d90f8f62467e8630420e1240a400d070054fb7c3f1d3f7bf3e457d6c2c",
+     "size": 2915253,
+     "status": "CC0-PACKINDEX"
+    }
+   ],
+   "id": "hair_long01_diffuse",
+   "n_files": 1,
+   "role": "offline adapter long01 strand colour and alpha",
+   "root": "user",
+   "sha256": "e8dc25d90f8f62467e8630420e1240a400d070054fb7c3f1d3f7bf3e457d6c2c",
+   "sha256_kind": "file",
+   "size": 2915253,
+   "source": "pack",
+   "source_url": "https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html",
+   "status": "CC0-PACKINDEX"
+  },
+  {
+   "evidence_only": false,
+   "files": [
+    {
+     "evidence": [
+      "pack index packs/makehuman_system_assets.json[\"eyebrow001\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
+     ],
+     "path": "eyebrows/eyebrow001/eyebrow001.png",
+     "sha256": "9940f7d0b1b223709a19b05156ba6f6e9e4dbdbced02d7574f4d51d72c58967b",
+     "size": 89619,
+     "status": "CC0-PACKINDEX"
+    }
+   ],
+   "id": "eyebrow001_diffuse",
+   "n_files": 1,
+   "role": "offline adapter eyebrow strand opacity",
+   "root": "user",
+   "sha256": "9940f7d0b1b223709a19b05156ba6f6e9e4dbdbced02d7574f4d51d72c58967b",
+   "sha256_kind": "file",
+   "size": 89619,
+   "source": "pack",
+   "source_url": "https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html",
+   "status": "CC0-PACKINDEX"
+  },
+  {
+   "evidence_only": false,
+   "files": [
+    {
+     "evidence": [
+      "pack index packs/makehuman_system_assets.json[\"eyelashes01\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
+     ],
+     "path": "eyelashes/eyelashes01/eyelashes01.png",
+     "sha256": "4b69c0fff2648874460e9caf80c31413c444218a5c50afebc425aeaa65484a35",
+     "size": 91600,
+     "status": "CC0-PACKINDEX"
+    }
+   ],
+   "id": "eyelashes01_diffuse",
+   "n_files": 1,
+   "role": "offline adapter eyelash strand opacity",
+   "root": "user",
+   "sha256": "4b69c0fff2648874460e9caf80c31413c444218a5c50afebc425aeaa65484a35",
+   "sha256_kind": "file",
+   "size": 91600,
+   "source": "pack",
+   "source_url": "https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html",
+   "status": "CC0-PACKINDEX"
   },
   {
    "evidence_only": true,
@@ -4436,6 +4580,11 @@
    "id": "skirt_procedural",
    "licence": "self-authored, repo licence",
    "role": "loose skirt (the pack has no skirt/dress); generated by fa_common.make_skirt from the neutral body, own geometry"
+  },
+  {
+   "id": "part.skirt_a_line.gfa",
+   "licence": "CC0-1.0 (generated geometry)",
+   "role": "new generated gathered skirt mesh for the generic offline still; fa_skirt.make_skirt on CC0 body and suit measurements"
   }
  ]
 }

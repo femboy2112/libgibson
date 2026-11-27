@@ -671,7 +671,10 @@ fn the_fit_id_and_presentation_id_are_rebuilt_by_hand() {
     fit.extend_from_slice(&sha256::digest(TUNIC));
     put_str(&mut fit, "tabard");
     fit.extend_from_slice(&sha256::digest(TABARD));
-    put_str(&mut fit, "gibson.fit.vertex-normal-penetration.v2");
+    put_str(
+        &mut fit,
+        "gibson.fit.vertex-normal-penetration.v2+layers.v1",
+    );
     put_u32(&mut fit, 2);
     put_str(&mut fit, "tolerance_m");
     fit.extend_from_slice(&0.002f32.to_le_bytes());
@@ -1422,6 +1425,139 @@ fn a_covered_lower_face_reports_driven_jaw_and_mouth_channels() {
 
 fn rot_z90(p: [f64; 3]) -> [f64; 3] {
     [-p[1], p[0], p[2]]
+}
+
+/// An independent GFA part. Each vertex is bound to fixture vertex 16 with its
+/// specified offset and to the root bone with unit weight.
+fn bound_patch(id: &str, kind: &str, offsets: &[[f32; 3]], triangles: &[u32]) -> Vec<u8> {
+    let mut out = b"gibson.figure.asset.part.v1\0".to_vec();
+    put_str(&mut out, id);
+    put_str(&mut out, kind);
+    put_u32(&mut out, offsets.len() as u32);
+    for p in offsets.iter().flatten() {
+        out.extend_from_slice(&p.to_le_bytes());
+    }
+    put_u32(&mut out, triangles.len() as u32);
+    for &i in triangles {
+        put_u32(&mut out, i);
+    }
+    for p in offsets {
+        for _ in 0..3 {
+            put_u32(&mut out, 16);
+        }
+        for f in [1.0_f32, 0.0, 0.0].iter().chain(p) {
+            out.extend_from_slice(&f.to_le_bytes());
+        }
+    }
+    put_u32(&mut out, 0);
+    for _ in offsets {
+        out.push(1);
+        put_u32(&mut out, 0);
+        out.extend_from_slice(&1.0_f32.to_le_bytes());
+    }
+    put_u32(&mut out, 0);
+    out
+}
+
+#[test]
+fn forward_eye_regions_and_face_materials_follow_the_posed_triangles() {
+    // The first three triangles have centroid directions 0°, 23° and >90°
+    // relative to the forward axis. Shared edges connect them into one eye.
+    let points = [
+        [0.0, -1.0, -0.05],
+        [0.04, -1.0, 0.04],
+        [-0.04, -1.0, 0.04],
+        [0.4, -1.0, 0.0],
+        [0.48, -1.0, 0.02],
+        [0.42, -1.0, 0.05],
+        [0.0, 1.0, 0.0],
+        [-0.5, 0.0, 0.0],
+        [0.5, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+        [0.0, 0.0, 1.0],
+    ]
+    .map(|p| p.map(|v| v * 0.01));
+    let triangles = [
+        0, 1, 2, 3, 4, 5, 6, 8, 10, 0, 2, 3, 2, 3, 4, 5, 6, 8, 0, 9, 7, 6, 7, 9, 3, 5, 6,
+    ];
+    let eyes = bound_patch("eye", "eyes", &points, &triangles);
+    let brow = bound_patch("brow", "eyebrows", &points[..3], &[0, 1, 2]);
+    let lash = bound_patch("lash", "eyelashes", &points[..3], &[0, 1, 2]);
+    let teeth = bound_patch("teeth", "teeth", &points[..3], &[0, 1, 2]);
+    let a = AssetSet::from_bytes(BODY, &[&eyes, &brow, &lash, &teeth]).unwrap();
+    let c = compile(&recipe(&[]), &a).unwrap();
+    let rest = c.rest_render_meshes();
+    let mut frame = c.rest_frame();
+    frame.locals[0].rotation =
+        Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), std::f32::consts::FRAC_PI_2);
+    let posed = c.render_meshes(&frame).unwrap();
+    for meshes in [&rest, &posed] {
+        for (id, expected) in [
+            ("eye", &[9, 6, 8][..]),
+            ("brow", &[10]),
+            ("lash", &[10]),
+            ("teeth", &[11]),
+        ] {
+            let m = meshes.iter().find(|m| m.id == id).unwrap();
+            assert_eq!(m.role, MeshRole::Face);
+            assert_eq!(&m.slot_per_triangle[..expected.len()], expected, "{id}");
+        }
+    }
+    let before = rest.iter().find(|m| m.id == "eye").unwrap();
+    let after = posed.iter().find(|m| m.id == "eye").unwrap();
+    assert_ne!(before.positions, after.positions);
+    assert_eq!(before.slot_per_triangle, after.slot_per_triangle);
+}
+
+#[test]
+fn the_face_selection_and_source_bytes_change_only_presentation_identity() {
+    let points = [[0.0, -0.02, 0.0], [0.01, 0.0, 0.0], [0.0, 0.0, 0.01]];
+    let original = bound_patch("brow", "eyebrows", &points, &[0, 1, 2]);
+    let edited = bound_patch("brow", "eyebrows", &points, &[0, 2, 1]);
+    let mut r = recipe(&[]);
+    let a = AssetSet::from_bytes(BODY, &[&original]).unwrap();
+    let b = AssetSet::from_bytes(BODY, &[&edited]).unwrap();
+    let on = compile(&r, &a).unwrap();
+    let changed = compile(&r, &b).unwrap();
+    r.face_parts = gibson::figure::studio::FacePartsV1::Off;
+    let off = compile(&r, &a).unwrap();
+    assert_eq!(on.face_parts().len(), 1);
+    assert!(off.face_parts().is_empty());
+    for other in [changed, off] {
+        assert_eq!(on.body_rev_id(), other.body_rev_id());
+        assert_eq!(on.fit_id(), other.fit_id());
+        assert_ne!(on.present_id(), other.present_id());
+    }
+}
+
+#[test]
+fn the_outer_garment_is_measured_against_the_fitted_inner_garment() {
+    let patch = |id: &str, x| {
+        bound_patch(
+            id,
+            "clothes",
+            &[[x, -0.001, -0.001], [x, 0.001, -0.001], [x, 0.0, 0.001]],
+            &[0, 1, 2],
+        )
+    };
+    let deeper = patch("deeper", 0.025);
+    let shallower = patch("shallower", 0.030);
+    let a = AssetSet::from_bytes(BODY, &[&deeper, &shallower]).unwrap();
+    let outward = compile(&with_garments(recipe(&[]), &["deeper", "shallower"]), &a).unwrap();
+    assert_eq!(status_of(&outward, "deeper"), FitStatus::Fitted);
+    assert_eq!(status_of(&outward, "shallower"), FitStatus::Fitted);
+    let inward = compile(&with_garments(recipe(&[]), &["shallower", "deeper"]), &a).unwrap();
+    assert_eq!(status_of(&inward, "shallower"), FitStatus::Fitted);
+    assert!(matches!(
+        status_of(&inward, "deeper"),
+        FitStatus::NeedsAdaptation(_)
+    ));
+    assert_near(
+        "independent panel depth",
+        depth_of(&inward, "deeper"),
+        0.005,
+        1e-6,
+    );
 }
 
 /// At rest the posed body equals the shaped body and the posed garments equal their fits (the

@@ -54,6 +54,10 @@ def open_text(path):
 
 
 def header_lines(path):
+    # PNG bytes have no text header. The material's entry in the pack index
+    # supplies the licensing evidence for its texture.
+    if path.lower().endswith(".png"):
+        return []
     out = []
     try:
         with open_text(path) as f:
@@ -269,7 +273,7 @@ def render_md(res):
         L.append("| %s | %s | %s | %s | **%s**%s | %s | %s |" % (
             esc(r["id"]), esc(path), r["sha256"] or "MISSING", r["size"], r["status"], tag, esc(ev), esc(r["source_url"])))
     L.append("")
-    L.append("## Self-authored (our own geometry, repo licence)")
+    L.append("## Self-authored geometry")
     L.append("")
     for s in res["self_authored"]:
         L.append("- `%s`: %s. Licence: **%s**. No third-party bytes." % (s["id"], s["role"], s["licence"]))

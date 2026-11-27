@@ -333,6 +333,49 @@ impl SkinWeights {
         }
     }
 
+    /// Transport sparse rest-space shape vectors with the same vertex influences as posed points.
+    pub(crate) fn skin_offsets(
+        &self,
+        mode: SkinningMode,
+        offsets: &[(usize, Vec3)],
+        world: &[Mat4],
+        inverse_binds: &[Mat4],
+    ) -> Result<Vec<Vec3>, SkinError> {
+        if offsets
+            .iter()
+            .any(|(i, d)| *i >= self.vertices.len() || !d.is_finite())
+        {
+            return Err(SkinError::NonFiniteInput {
+                what: "invalid sparse offset or vertex",
+            });
+        }
+        if mode == SkinningMode::DualQuat && !cfg!(figure_mutant = "dqs_as_lbs") {
+            let joints = self.joint_dual_quats(world, inverse_binds)?;
+            return offsets
+                .iter()
+                .map(|&(i, d)| {
+                    let q = Self::blend_vertex(&self.vertices[i], &joints)
+                        .ok_or(SkinError::DegenerateBlend { vertex: i })?;
+                    Ok(q.transform_vector(d))
+                })
+                .collect();
+        }
+        let matrices = self.skin_matrices(world, inverse_binds)?;
+        Ok(offsets
+            .iter()
+            .map(|&(i, d)| {
+                let v = &self.vertices[i];
+                (0..usize::from(v.count)).fold(Vec3::ZERO, |a, k| {
+                    a.add(
+                        matrices[v.joints[k] as usize]
+                            .transform_vector(d)
+                            .scale(v.weights[k]),
+                    )
+                })
+            })
+            .collect())
+    }
+
     /// Skin per-vertex normals (directions) with an explicit [`SkinningMode`].
     ///
     /// `DualQuat`: the normal is rotated by the vertex's blended rotation (a unit input stays

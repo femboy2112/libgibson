@@ -49,6 +49,7 @@ import fa_checks as ck  # noqa: E402
 import fa_common as fc  # noqa: E402
 import fa_hair  # noqa: E402
 import fa_skirt  # noqa: E402
+import fa_surface  # noqa: E402
 import fa_stage as st  # noqa: E402
 import fa_tape as ft  # noqa: E402
 
@@ -63,6 +64,10 @@ def parse_args(argv):
     ap.add_argument("--preset", default=None, help="preset JSON: macro/controls/materials/garments/hair")
     ap.add_argument("--shots", default=None, help="shots JSON (tools/figure_assets/shots/*.json)")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--matter", help="versioned Living Matter world-space bake manifest")
+    ap.add_argument("--scene", help="versioned scene and prop manifest")
+    ap.add_argument("--fitted", help="rest garment positions from the same compiled recipe as the tape")
+    ap.add_argument("--still", action="append", help="render just this named still (repeatable); check every camera")
     ap.add_argument("--spp", type=int, default=32)
     ap.add_argument("--engine", default="auto", choices=("auto", "eevee", "cycles"))
     ap.add_argument("--threads", type=int, default=4)
@@ -70,6 +75,7 @@ def parse_args(argv):
     ap.add_argument("--checks-only", action="store_true", help="build, run the self-checks, write render.json; no stills/clips")
     ap.add_argument("--no-stills", action="store_true")
     ap.add_argument("--no-clips", action="store_true")
+    ap.add_argument("--batch-clips", action="store_true", help="render each requested clip slice as a single timed Blender animation")
     ap.add_argument("--clip-frames", type=int, default=0, help="render only N frames of every clip (smoke runs, split leases); 0 = all")
     ap.add_argument("--clip-from", type=int, default=0, help="first clip frame index to render (with --clip-frames, to split a clip over leases)")
     ap.add_argument("--oracle-every", type=int, default=30)
@@ -82,6 +88,25 @@ def parse_args(argv):
 def load_json(p):
     with open(p, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_fitted(path, tape, export_dir):
+    """Refuse fitted geometry from another recipe or another version of the body export."""
+    if path is None:
+        return None
+    fit = load_json(path)
+    manifest_sha = fc.sha256_file(os.path.join(export_dir, "manifest.json"))
+    if manifest_sha != tape.header["asset_manifest_sha256"]:
+        raise ValueError("the tape was compiled against a different body export")
+    for key in ("asset_manifest_sha256", "fit_id", "body_rev_id", "present_id"):
+        if fit[key] != tape.header[key]:
+            raise ValueError(f"fitted garment {key} differs from tape")
+    if fit["tape_bin_sha256"] != tape.header["bin_sha256"]:
+        raise ValueError("fitted geometry receipt refers to another tape")
+    permitted = {g for g in tape.header["garments"] if st.verdict_of(tape.header["fit_status"].get(g))[0]}
+    if set(fit["positions"]) != permitted:
+        raise ValueError("garment positions do not match the tape's Fitted set")
+    return fit["positions"]
 
 
 class Fig:
@@ -98,7 +123,6 @@ def build_figure(a, tape, preset, mutant, notes):
     fig = Fig()
     fig.names, fig.skel, fig.hdr = names, skel, hdr
     controls = dict(tape.header["controls"])
-    hp = hdr["preset"].get("controls", {})
     S, shift, warns = ft.shape_positions(export_dir, controls)
     for w in warns:
         notes.append(w)
@@ -185,7 +209,8 @@ def build_figure(a, tape, preset, mutant, notes):
         slots[k] = v
     fig.slot_specs = slots
     D = st.dress(export_dir, S, landmarks, arm, names, obj, rd, slots, tape.header.get("garments", []), tape.header.get("fit_status", {}),
-                 preset.get("hide_body_under_garment", True), fig.arm_mask, fig.eye_l, fig.eye_r, notes)
+                 preset.get("hide_body_under_garment", True), fig.arm_mask, fig.eye_l, fig.eye_r, notes,
+                 fitted_positions=load_fitted(a.fitted, tape, export_dir), baked_hair=bool(getattr(a, "matter", None)))
     fig.objs, fig.labels, fig.garment_report, fig.skirt = D["objs"], D["labels"], D["report"], D["skirt"]
     fig.sss_inputs, fig.skin_rgb, fig.hair_rgb, fig.brow_rgb = D["sss_inputs"], D["skin_rgb"], D["hair_rgb"], D["brow_rgb"]
     fig.hair_part, fig.hair_pos_violations = D.get("hair_part"), D.get("hair_violations")
@@ -214,6 +239,8 @@ def skin_for(fig, tape, f):
 
 
 def set_rest_pose(fig):
+    if getattr(fig, "matter", None):
+        fig.matter.restore()
     for pb in fig.arm.pose.bones:
         pb.matrix_basis = Matrix.Identity(4)
     if fig.skirt is not None:
@@ -221,7 +248,10 @@ def set_rest_pose(fig):
     bpy.context.view_layer.update()
 
 
-def set_pose(fig, tape, f):
+def set_pose(fig, tape, f, realized=True):
+    matter = getattr(fig, "matter", None)
+    if matter and not realized:
+        matter.restore()
     Sm = skin_for(fig, tape, f)
     for i, name in enumerate(fig.names):
         par = fig.skel["bones"][i]["parent"]
@@ -229,7 +259,7 @@ def set_pose(fig, tape, f):
         Sp = Matrix(Sm[par]) if par >= 0 else Matrix.Identity(4)
         M = fig.rest_M[name]
         fig.arm.pose.bones[name].matrix_basis = M.inverted() @ Sp.inverted() @ Sb @ M
-    if fig.skirt is not None:
+    if fig.skirt is not None and not (realized and matter):
         hist = []
         for k in range(LAG_FRAMES + 1):
             g = max(0, f - LAG_FRAMES + k)
@@ -241,6 +271,10 @@ def set_pose(fig, tape, f):
                     fig.skirt["cache"].pop(min(fig.skirt["cache"]))
             hist.append(fig.skirt["cache"][g])
         st.set_vertex_positions(fig.skirt["obj"], fa_skirt.swing(hist, fig.skirt["data"]["t"]))
+    if realized and matter:
+        matter.apply(f)
+    if realized and getattr(fig, "frame_update", None):
+        fig.frame_update(fig, tape, f)
     bpy.context.view_layer.update()
 
 
@@ -259,20 +293,26 @@ def body_ndc(cam, fig, pts=None):
 
 def run_checks(a, fig, tape, cams, stage, checks, front_rec, res_check, info, out_dir):
     ground = stage["ground"]
-    set_rest_pose(fig)
-    st.check_contact_shadow(checks, fig.body, fig.foot_idx, ground, front_rec, res_check, out_dir, figure_objects(fig), fig.labels)
+    set_pose(fig, tape, stage["reference_frame"])
+    ctx = stage["ctx"]
+    eye_l, eye_r = ctx["eye_centers"] or (fig.eye_l, fig.eye_r)
+    st.check_contact_shadow(checks, fig.body, fig.foot_idx, ground, front_rec, res_check, out_dir, figure_objects(fig), fig.labels, foot_points=ctx["foot_points"])
     checks.add(ck.contrast_check(st.luminance_linear(fig.brow_rgb), st.luminance_linear(fig.skin_rgb), name="brow_vs_skin_contrast"))
-    checks.add(st.eye_clearance(front_rec["obj"], fig.eye_l, fig.eye_r, "eye_clearance:front"))
+    checks.add(st.eye_clearance(front_rec["obj"], eye_l, eye_r, "eye_clearance:front"))
     face = info.get("face_cam")
     if face is not None:
-        checks.add(st.eye_clearance(face["obj"], fig.eye_l, fig.eye_r, "eye_clearance:face_closeup"))
+        checks.add(st.eye_clearance(face["obj"], eye_l, eye_r, "eye_clearance:face_closeup"))
         checks.add(st.brow_lash_visibility(face["obj"], fig.objs["brow"], fig.objs["lash"]))
+    if fig.skirt and fig.objs["garment"]:
+        overlaps = fa_surface.layer_intersections(fig.skirt["obj"], fig.objs["garment"])
+        checks.add({"name": "skirt_suit_clear", "ok": not any(overlaps.values()), "face_pairs": overlaps,
+                    "frame": stage["reference_frame"]})
     # pose math: Blender evaluated skinning vs pure LBS of the exported top-4 weights, on up to 3 frames
     P_all = fig.S
     worst, mean_acc, n_acc = 0.0, 0.0, 0
     frames = sorted({0, tape.frame_count // 2, tape.frame_count - 1})
     for f in frames:
-        set_pose(fig, tape, f)
+        set_pose(fig, tape, f, realized=False)
         bl = st.eval_positions(fig.body)
         ref = ft.lbs_positions(P_all[:fc.N_BODY], fig.skin_idx, fig.skin_w, skin_for(fig, tape, f))
         errs = [math.dist(x, y) for x, y in zip(bl, ref)]
@@ -288,7 +328,7 @@ def run_checks(a, fig, tape, cams, stage, checks, front_rec, res_check, info, ou
 
 # =========================================================================== main
 
-def main():
+def main(figure_setup=None, frame_update=None, stage_setup=None):
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     a = parse_args(argv)
     if a.child_smoke:
@@ -314,47 +354,58 @@ def main():
 
     want = a.engine
     engine_note = ""
-    if want in ("auto", "eevee"):
+    if want == "auto":
         ok, why = st.eevee_usable(__file__)
         engine_note = "eevee smoke: " + why
-        want = "EEVEE" if ok else ("CYCLES" if a.engine == "auto" else "EEVEE")
+        want = "EEVEE" if ok else "CYCLES"
+    elif want == "eevee":
+        want = "EEVEE"
+        engine_note = "explicit EEVEE"
     else:
         want = "CYCLES"
 
     t = time.time()
     fig = build_figure(a, tape, preset, mutant, notes)
+    if figure_setup:
+        figure_setup(fig, preset, tape)
+    fig.frame_update = frame_update
+    if a.matter:
+        import fa_matter
+        fig.matter = fa_matter.MatterPlayback(a.matter, tape, fig, a.export)
+    if a.scene:
+        import fa_scene
+        fa_scene.stage_scene(fig, tape, a.scene)
     timings["build_figure_s"] = time.time() - t
     say("RT_STEP figure built neutral_match_err_m=%.3g rig_head_err_m=%.3g foot_vertices=%d hidden_under_garment=%d" % (
         fig.neutral_match_err_m, fig.rig_head_err_m, len(fig.foot_idx), fig.hidden_body_vertices))
 
-    # ---- bounds (the probe bug lives here) and stage
-    set_rest_pose(fig)
-    rest_pts = st.eval_positions(fig.body)
-    lo_t = Vector((min(p[0] for p in rest_pts), min(p[1] for p in rest_pts), min(p[2] for p in rest_pts)))
-    hi_t = Vector((max(p[0] for p in rest_pts), max(p[1] for p in rest_pts), max(p[2] for p in rest_pts)))
-    if mutant:
-        st.add_hidden_helper_proxy(lo_t.z)
-        lo, hi = st.mesh_bounds_all(include_hidden=True)
-        notes.append("MUTANT bad_bounds: bounds taken over every mesh object including a hidden helper proxy (%.2f..%.2f m)" % (lo.z, hi.z))
-    else:
-        lo, hi = lo_t, hi_t
-    height = hi.z - lo.z
-    center = (0.5 * (lo.x + hi.x), 0.5 * (lo.y + hi.y), 0.5 * (lo.z + hi.z))
-    ground = st.make_ground(lo.z, albedo=(0.95, 0.95, 0.95) if over else (0.35, 0.35, 0.36))
+    # Fix the stage at the first requested reference pose so every camera sees the same floor and lighting.
+    reference_frame = int(shots.get("reference_frame", 0))
+    if not 0 <= reference_frame < tape.frame_count:
+        raise ValueError("stage reference_frame is outside the tape")
+    set_pose(fig, tape, reference_frame)
+    ctx, ground_z = st.reference_stage(fig.body, fig.objs["eyes"], fig.foot_idx,
+                                       figure_objs=figure_objects(fig), mutant=mutant)
+    lo, hi = ctx["bounds"]
+    lo_t, hi_t = ctx["body_bounds"]
+    ground = st.make_ground(ground_z, albedo=(0.95, 0.95, 0.95) if over else (0.35, 0.35, 0.36),
+                            center_xy=ctx["center"][:2])
     st.make_world()
-    lights = st.add_lights((0.0, 0.0, 0.5 * (lo.z + hi.z)), hi.z - lo.z if not mutant else (hi_t.z - lo_t.z), gain=12.0 if over else 1.0)
-    stage = {"ground": ground, "lights": lights}
-    info = engine_info = st.set_engine(want, a.spp, a.threads)
+    lights = st.add_lights(ctx["center"], ctx["height"], gain=12.0 if over else 1.0)
+    stage = {"ground": ground, "lights": lights, "reference_frame": reference_frame, "ctx": ctx}
+    light_setup = stage_setup(stage, preset) if stage_setup else None
+    engine_info = st.set_engine(want, a.spp, a.threads)
     sc = bpy.context.scene
-    ctx = {"points": rest_pts[::5], "center": (0.5 * (lo_t.x + hi_t.x), 0.5 * (lo_t.y + hi_t.y), 0.5 * (lo_t.z + hi_t.z)), "height": hi_t.z - lo_t.z,
-           "bounds": (lo, hi), "mutant": mutant}
-    ez = 0.5 * (fig.eye_l[2] + fig.eye_r[2])
-    ctx["face_center"] = (0.0, 0.5 * (fig.eye_l[1] + fig.eye_r[1]), ez - 0.02)
-    ctx["face_points"] = [p for p in rest_pts if p[2] > ez - 0.14 and abs(p[0]) < 0.14]
 
     # ---- cameras from the shots file
     cams = {}
     still_specs = [] if a.no_stills else shots.get("stills", [])
+    if a.still:
+        requested = set(a.still)
+        unknown = requested - {s["name"] for s in still_specs}
+        if unknown:
+            raise ValueError("unknown or disabled stills: " + ", ".join(sorted(unknown)))
+        still_specs = [s for s in still_specs if s["name"] in requested]
     clip_specs = [] if a.no_clips else shots.get("clips", [])
     res_default = tuple(shots.get("still_res", [1920, 1080]))
     for s in shots.get("stills", []):
@@ -386,7 +437,9 @@ def main():
         if rec["target_kind"] == "face":
             r = ck.framing_check(st.project(rec["obj"], ctx["face_points"]), min_frac=0.45)
         else:
-            r = ck.framing_check(st.project(rec["obj"], st.eval_positions(fig.body)))
+            points = (ctx["points"] if rec["tape_frame"] == reference_frame
+                      else st.visible_figure_points(figure_objects(fig)))
+            r = ck.framing_check(st.project(rec["obj"], points))
         r["name"] = "framing:" + key
         checks.add(r)
     set_rest_pose(fig)
@@ -401,6 +454,8 @@ def main():
             set_pose(fig, tape, f)
             sc.camera = rec["obj"]
             st.cam_pose_at(rec, 0, 1)
+            if a.scene:
+                fa_scene.track_close(fig, rec)
             for lab in fig.labels:
                 st.attach_label_to_camera(lab, rec["obj"], rec["lens"])
             path = os.path.join(out, "stills", "%s_%s_%dx%d.png" % (shots.get("id", "shots"), s["name"], r[0], r[1]))
@@ -427,9 +482,7 @@ def main():
             cuts = list(c.get("cuts", []))
             fdir = os.path.join(out, "frames", c["name"])
             os.makedirs(fdir, exist_ok=True)
-            times, used = [], []
-            ema = None
-            for i in range(lo_i, hi_i):
+            def apply_clip_frame(i):
                 f = start if hold else min(tape.frame_count - 1, start + int(round(i * tape.fps / fps)))
                 cid = tape.camera_id_at(f) if c.get("use_tape_camera_cuts", True) else None
                 for cut in sorted(cuts, key=lambda q: q["frame"]):
@@ -451,15 +504,30 @@ def main():
                         wsum += w
                     pw = (acc[0] / wsum, acc[1] / wsum)
                 st.cam_pose_at(rec, i, n_total, pw)
+                if a.scene:
+                    fa_scene.track_close(fig, rec)
                 sc.camera = rec["obj"]
                 for lab in fig.labels:
                     st.attach_label_to_camera(lab, rec["obj"], rec["lens"])
-                path = os.path.join(fdir, "frame_%05d.png" % i)
-                dt = st.render_to(path, r)
-                times.append(dt)
-                used.append(cid)
-                if i % 10 == 0:
-                    say("RT_FRAME %s %d/%d tape_frame=%d camera=%s %.2fs" % (c["name"], i, n_total, f, cid, dt))
+                return f, cid
+
+            times, used = [], []
+            if a.batch_clips:
+                import fa_batch
+                records = fa_batch.render_frames(sc, fdir, r, lo_i, hi_i, apply_clip_frame)
+                for i, f, cid, dt in records:
+                    times.append(dt)
+                    used.append(cid)
+                    say("RT_BATCH_FRAME %s %d/%d tape_frame=%d camera=%s %.2fs" % (c["name"], i, n_total, f, cid, dt))
+            else:
+                for i in range(lo_i, hi_i):
+                    f, cid = apply_clip_frame(i)
+                    path = os.path.join(fdir, "frame_%05d.png" % i)
+                    dt = st.render_to(path, r)
+                    times.append(dt)
+                    used.append(cid)
+                    if i % 10 == 0:
+                        say("RT_FRAME %s %d/%d tape_frame=%d camera=%s %.2fs" % (c["name"], i, n_total, f, cid, dt))
             switches = sum(1 for x, y in zip(used, used[1:]) if x != y)
             results["clips"].append({"name": c["name"], "frames": hi_i - lo_i, "frames_total": n_total, "first_index": lo_i, "fps": fps, "res": list(r), "dir": os.path.relpath(fdir, out), "seconds_total": sum(times),
                                      "seconds_mean": sum(times) / len(times) if times else 0.0, "camera_switches": switches, "cameras_used": sorted(set(used)),
@@ -497,15 +565,26 @@ def main():
     timings["total_s"] = time.time() - t_all
     failed = checks.failed()
     rj = {"format": "figure-render/1", "engine": engine_info, "engine_note": engine_note, "mutant": a.mutant, "spp": a.spp, "joint_frame": a.joint_frame,
-          "tape": {"path_name": os.path.basename(a.tape), "frame_count": tape.frame_count, "fps": tape.fps, "present_id": tape.header.get("present_id"),
+          "tape": {"path_name": os.path.basename(a.tape), "bin_sha256": tape.header.get("bin_sha256"),
+                   "asset_manifest_sha256": tape.header.get("asset_manifest_sha256"),
+                   "fitted_file_sha256": fc.sha256_file(a.fitted) if a.fitted else None, "frame_count": tape.frame_count, "fps": tape.fps, "present_id": tape.header.get("present_id"),
                    "body_rev_id": tape.header.get("body_rev_id"), "fit_id": tape.header.get("fit_id"), "controls": tape.header.get("controls"),
                    "fit_status": tape.header.get("fit_status"), "style": tape.header.get("style")},
           "preset": preset.get("name"), "shots": shots.get("id"), "timings": timings, "checks": checks.items, "failed_checks": failed,
-          "garments": fig.garment_report, "stage": {"ground_z": ground.location.z, "bounds_lo": list(lo), "bounds_hi": list(hi), "body_height_m": hi_t.z - lo_t.z},
+          "garments": fig.garment_report, "stage": {"reference_frame": reference_frame, "ground_z": ground.location.z,
+                       "cameras": {k: {p: v[p] for p in ("target", "lens", "az", "el", "dist", "mode", "tape_frame")}
+                                   for k, v in cams.items()}, "bounds_lo": list(lo), "bounds_hi": list(hi), "body_height_m": hi_t.z - lo_t.z},
           "figure": {"neutral_match_err_m": fig.neutral_match_err_m, "rig_head_err_m": fig.rig_head_err_m, "hidden_body_vertices": fig.hidden_body_vertices,
-                     "sss_inputs": fig.sss_inputs, "hair_part": getattr(fig, "hair_part", None), "hair_violations_in_eye_box": getattr(fig, "hair_pos_violations", None),
+                     "sss_inputs": fig.sss_inputs,
+                     "textures": {m["fa_texture_id"]: m["fa_texture_sha256"] for obj in figure_objects(fig)
+                                  for m in obj.data.materials if m and "fa_texture_id" in m},
+                     "skirt": fig.skirt["data"]["params"] if fig.skirt else None, "hair_part": getattr(fig, "hair_part", None), "hair_violations_in_eye_box": getattr(fig, "hair_pos_violations", None),
                      "iris_vertices": getattr(fig, "iris_verts", None)},
           "results": results, "notes": notes}
+    if light_setup is not None:
+        rj["stage"]["light_setup"] = light_setup
+    if a.matter:
+        rj["living_matter"] = {k: fig.matter.header[k] for k in ("format", "backend", "sim_config_id", "bin_sha256", "preroll_frames")}
     with open(os.path.join(out, "render.json"), "w", encoding="utf-8") as fh:
         json.dump(rj, fh, indent=1, sort_keys=True, default=str)
         fh.write("\n")
