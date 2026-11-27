@@ -10,9 +10,11 @@
 #![forbid(unsafe_code)]
 
 pub mod clip;
+pub mod ik;
 pub mod math;
 pub mod morph;
 pub mod motion;
+pub mod perform;
 pub mod refit;
 pub mod revision;
 pub mod sha256;
@@ -21,6 +23,11 @@ pub mod skin;
 
 pub use math::{DualQuat, Mat4, Quat, Transform, Vec3};
 pub use morph::MorphTarget;
+pub use perform::{
+    perform, perform_with, Beat, GestureKind, Intent, IntentKind, Live, PerformError,
+    PerformOptions, Performance, PerformanceScript, Pose, Rig, RigGeometry, RigMap, RigRoles,
+    Style, Tape, TapeFiles, TapeIdentity,
+};
 pub use refit::{refit_skeleton, JointAnchor, Refit, RefitError};
 pub use revision::{
     compile, BodyFamily, BodyRecipe, CharacterRevision, CompileError, EvalError, FamilyRef,
