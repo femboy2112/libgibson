@@ -248,7 +248,7 @@ unchanged inputs, which means a minor release and a changelog note.
   that will be a semantics or layout change under a new prefix version (`v1`). M5-C must not treat
   the v0 control semantics as settled.
 
-### Resolved spec ambiguities A1–A8 (from the independent hand-bytes test; DRAFT until coordinator ratification)
+### Resolved spec ambiguities A1–A8 (from the independent hand-bytes test; RATIFIED by ruling #70, A4 amended)
 
 Each resolution states what the Slice-1 implementation does (src/figure/revision.rs @956ae1e) and
 what tests/figure_canonical_bytes.rs assumed; they agree (gate A: 3/3).
@@ -261,9 +261,13 @@ what tests/figure_canonical_bytes.rs assumed; they agree (gate A: 3/3).
   world position still moves with its joint.
 - **A3, morph deltas.** The raw declared delta is written, unscaled by any compile-time or pose-time
   weight. Weights affect only the shaped vertex positions (layout item 3).
-- **A4, strings.** Any UTF-8 string that validation accepts is written as its UTF-8 bytes, with no
-  normalization. Non-ASCII family ids are accepted in v0. A stricter id alphabet would be a v1
-  layout or validation change.
+- **A4, strings (AMENDED, coordinator ruling #70).** Family, joint, landmark, control and
+  morph-target ids use the v0 ASCII alphabet: 1..=64 (`MAX_ID_LEN`) bytes, each in
+  `[a-z0-9._-]`. `compile` enforces this with `CompileError::InvalidId { kind, id }`. This
+  closes content-address aliasing: NFC and NFD spellings of one visible id would otherwise give
+  different `rev_id`s. Morph-target names are included because they are serialized the same
+  way. Ids are written as their bytes, which are ASCII. Free-text display strings, if any are
+  added later, stay verbatim UTF-8. Test: `non_ascii_and_out_of_alphabet_ids_are_rejected`.
 - **A5, unset controls.** An unset control takes its default, and the default flows through its
   effects exactly like a set value. A non-zero default therefore changes the shaped content.
 - **A6, accumulation order.** Effects are applied in family control order, then each control's
