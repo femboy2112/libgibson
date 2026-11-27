@@ -82,6 +82,7 @@ The names for v0.1.0 through v0.7.0 were assigned after the fact and live only i
 | v0.8.1 | clear SIGFPE 1 |
 | v0.9.0 | clear SIGKILL 0 |
 | v0.9.1 | clear SIGKILL 1 |
+| v0.9.2 | clear SIGKILL 2 |
 
 The pre-releases `v0.7.0-alpha.1` through `v0.7.0-alpha.6` have no name.
 
