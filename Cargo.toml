@@ -57,7 +57,7 @@ embedded-media = []
 figure = []
 
 [dependencies]
-taffy = "0.15"
+taffy = "0.16"
 crossterm = "0.29"
 unicode-segmentation = "1.12"
 unicode-width = "0.2"
