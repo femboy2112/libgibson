@@ -1,0 +1,64 @@
+{
+  "id": "ex1_character",
+  "mandate": "Ex1 character: front, side, three-quarter, back, face close-up, turntable (mandate section 8)",
+  "still_res": [
+    1920,
+    1080
+  ],
+  "stills": [
+    {
+      "name": "front",
+      "camera": {
+        "kind": "front"
+      },
+      "tape_frame": 0
+    },
+    {
+      "name": "side",
+      "camera": {
+        "kind": "side"
+      },
+      "tape_frame": 0
+    },
+    {
+      "name": "three_quarter",
+      "camera": {
+        "kind": "three_quarter"
+      },
+      "tape_frame": 0
+    },
+    {
+      "name": "back",
+      "camera": {
+        "kind": "back"
+      },
+      "tape_frame": 0
+    },
+    {
+      "name": "face_closeup",
+      "camera": {
+        "kind": "face_closeup"
+      },
+      "tape_frame": 0
+    }
+  ],
+  "clips": [
+    {
+      "name": "turntable",
+      "res": [
+        1280,
+        720
+      ],
+      "fps": 30,
+      "frames": 240,
+      "hold": true,
+      "tape_start": 0,
+      "use_tape_camera_cuts": false,
+      "camera": {
+        "kind": "turntable",
+        "orbit_deg": 360.0
+      },
+      "note": "8 s at 30 fps = 240 frames. Measured cost ~6 s/frame at 64 spp: render at --spp 32 and split with --clip-from/--clip-frames over leases."
+    }
+  ]
+}

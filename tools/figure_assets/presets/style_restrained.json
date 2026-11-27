@@ -1,0 +1,8 @@
+{
+  "format": "figure-style/1",
+  "preset": "restrained",
+  "amplitude": 0.55,
+  "tempo": 0.85,
+  "settle_ms": 320,
+  "note": "Default restrained motion style: small amplitudes, slower tempo, long settle. Values feed RecipeV1.style; they are not tuned by ear yet (UNVERIFIED)."
+}

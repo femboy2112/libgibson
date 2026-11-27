@@ -3440,6 +3440,106 @@
     {
      "evidence": [
       "file header lines 3-6: \"This asset was explicitly released as CC0 in september 2020. The license text for CC0 can be found in the root of this repository. The copyright holders at the point of the release to CC0 were:\"",
+      "pack index packs/makehuman_system_assets.json[\"ponytail01\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
+     ],
+     "path": "hair/ponytail01/ponytail01.mhclo",
+     "sha256": "97fc50b12bcb3b1c7b33edddd8d427a2604ffb06fe79b31132bf47f82d7afbac",
+     "size": 252080,
+     "status": "CC0-HEADER"
+    }
+   ],
+   "id": "hair_ponytail01_mhclo",
+   "n_files": 1,
+   "role": "hair binding (ponytail01)",
+   "root": "user",
+   "sha256": "97fc50b12bcb3b1c7b33edddd8d427a2604ffb06fe79b31132bf47f82d7afbac",
+   "sha256_kind": "file",
+   "size": 252080,
+   "source": "pack",
+   "source_url": "https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html",
+   "status": "CC0-HEADER"
+  },
+  {
+   "evidence_only": false,
+   "files": [
+    {
+     "evidence": [
+      "file header lines 3-6: \"This asset was explicitly released as CC0 in september 2020. The license text for CC0 can be found in the root of this repository. The copyright holders at the point of the release to CC0 were:\"",
+      "pack index packs/makehuman_system_assets.json[\"ponytail01\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
+     ],
+     "path": "hair/ponytail01/ponytail01.obj",
+     "sha256": "d9f5fe96fbedbc8006220d87aad0e4a33d15286eb6b21f5929661cdc490ebf5a",
+     "size": 264384,
+     "status": "CC0-HEADER"
+    }
+   ],
+   "id": "hair_ponytail01_obj",
+   "n_files": 1,
+   "role": "hair mesh (ponytail01)",
+   "root": "user",
+   "sha256": "d9f5fe96fbedbc8006220d87aad0e4a33d15286eb6b21f5929661cdc490ebf5a",
+   "sha256_kind": "file",
+   "size": 264384,
+   "source": "pack",
+   "source_url": "https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html",
+   "status": "CC0-HEADER"
+  },
+  {
+   "evidence_only": false,
+   "files": [
+    {
+     "evidence": [
+      "file header lines 3-6: \"This asset was explicitly released as CC0 in september 2020. The license text for CC0 can be found in the root of this repository. The copyright holders at the point of the release to CC0 were:\"",
+      "pack index packs/makehuman_system_assets.json[\"long01\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
+     ],
+     "path": "hair/long01/long01.mhclo",
+     "sha256": "94ecbebfd834da2cbee2ce90b730972590eb22a252ecd9592038ea736e063646",
+     "size": 220891,
+     "status": "CC0-HEADER"
+    }
+   ],
+   "id": "hair_long01_mhclo",
+   "n_files": 1,
+   "role": "hair binding (long01)",
+   "root": "user",
+   "sha256": "94ecbebfd834da2cbee2ce90b730972590eb22a252ecd9592038ea736e063646",
+   "sha256_kind": "file",
+   "size": 220891,
+   "source": "pack",
+   "source_url": "https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html",
+   "status": "CC0-HEADER"
+  },
+  {
+   "evidence_only": false,
+   "files": [
+    {
+     "evidence": [
+      "file header lines 3-6: \"This asset was explicitly released as CC0 in september 2020. The license text for CC0 can be found in the root of this repository. The copyright holders at the point of the release to CC0 were:\"",
+      "pack index packs/makehuman_system_assets.json[\"long01\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
+     ],
+     "path": "hair/long01/long01.obj",
+     "sha256": "7f1d6dadbdf9e96435251955d6657e77ea5433c9bc7c85a5c5f5e4eae0cb9a8c",
+     "size": 215324,
+     "status": "CC0-HEADER"
+    }
+   ],
+   "id": "hair_long01_obj",
+   "n_files": 1,
+   "role": "hair mesh (long01)",
+   "root": "user",
+   "sha256": "7f1d6dadbdf9e96435251955d6657e77ea5433c9bc7c85a5c5f5e4eae0cb9a8c",
+   "sha256_kind": "file",
+   "size": 215324,
+   "source": "pack",
+   "source_url": "https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html",
+   "status": "CC0-HEADER"
+  },
+  {
+   "evidence_only": false,
+   "files": [
+    {
+     "evidence": [
+      "file header lines 3-6: \"This asset was explicitly released as CC0 in september 2020. The license text for CC0 can be found in the root of this repository. The copyright holders at the point of the release to CC0 were:\"",
       "pack index packs/makehuman_system_assets.json[\"low-poly\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
      ],
      "path": "eyes/low-poly/low-poly.mhclo",

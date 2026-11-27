@@ -1,0 +1,8 @@
+{
+  "format": "figure-style/1",
+  "preset": "expressive",
+  "amplitude": 1.0,
+  "tempo": 1.15,
+  "settle_ms": 180,
+  "note": "Default expressive motion style: full amplitudes, faster tempo, short settle. Values feed RecipeV1.style; they are not tuned by ear yet (UNVERIFIED)."
+}
