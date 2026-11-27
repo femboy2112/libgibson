@@ -528,7 +528,9 @@ def main():
     timings["total_s"] = time.time() - t_all
     failed = checks.failed()
     rj = {"format": "figure-render/1", "engine": engine_info, "engine_note": engine_note, "mutant": a.mutant, "spp": a.spp, "joint_frame": a.joint_frame,
-          "tape": {"path_name": os.path.basename(a.tape), "frame_count": tape.frame_count, "fps": tape.fps, "present_id": tape.header.get("present_id"),
+          "tape": {"path_name": os.path.basename(a.tape), "bin_sha256": tape.header.get("bin_sha256"),
+                   "asset_manifest_sha256": tape.header.get("asset_manifest_sha256"),
+                   "fitted_file_sha256": fc.sha256_file(a.fitted) if a.fitted else None, "frame_count": tape.frame_count, "fps": tape.fps, "present_id": tape.header.get("present_id"),
                    "body_rev_id": tape.header.get("body_rev_id"), "fit_id": tape.header.get("fit_id"), "controls": tape.header.get("controls"),
                    "fit_status": tape.header.get("fit_status"), "style": tape.header.get("style")},
           "preset": preset.get("name"), "shots": shots.get("id"), "timings": timings, "checks": checks.items, "failed_checks": failed,
