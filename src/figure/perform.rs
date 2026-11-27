@@ -1039,6 +1039,8 @@ struct WalkPlan {
     arm_sw: f64,
     lean: f64,
     toe: f64,
+    /// Per arm: forward and up components of the rest shoulder-to-hand vector.
+    arm_fz: [[f64; 2]; 2],
 }
 
 #[derive(Clone, Debug)]
@@ -1226,7 +1228,13 @@ impl BeatPlan {
                 d[D_NOD] = s[D_NOD] * gz;
                 for side in 0..2 {
                     let sgn = if side == 0 { -1.0 } else { 1.0 };
-                    d[D_ARM + side * 8] = s[D_ARM + side * 8] + sgn * w.arm_sw * env * sp;
+                    let sw = sgn * w.arm_sw * env * sp;
+                    // The hand swings on a circle about the shoulder, so it rises as it swings.
+                    let [f0, z0] = w.arm_fz[side];
+                    let q = f0 * f0 + z0 * z0;
+                    let lift = z0.abs() - (q - (f0 + sw) * (f0 + sw)).max(1.0e-9).sqrt();
+                    d[D_ARM + side * 8] = s[D_ARM + side * 8] + sw;
+                    d[D_ARM + side * 8 + 2] = s[D_ARM + side * 8 + 2] + lift;
                 }
                 for f in 0..2 {
                     let (p, yaw, toe) = w.foot_at(f, t);
@@ -1433,6 +1441,14 @@ fn plan_walk(
         last_yaw[f] = ps;
     }
     let amp = cx.amp;
+    let mut arm_fz = [[0.0; 2]; 2];
+    for side in 0..2 {
+        let rel = vsub(
+            v64(rig.rest_pos[rig.limb[side][2]]),
+            v64(rig.rest_pos[rig.limb[side][0]]),
+        );
+        arm_fz[side] = [vdot(rel, fw0), vdot(rel, up)];
+    }
     let extra = (rig.walk_crouch(step) - rig.stand_crouch()).max(0.0);
     let plan = WalkPlan {
         p0,
@@ -1455,6 +1471,7 @@ fn plan_walk(
         arm_sw: 0.08 + 0.12 * amp,
         lean: 0.02 + 0.03 * amp,
         toe: 0.30 * amp,
+        arm_fz,
     };
     Ok(BeatPlan {
         dur: total,
