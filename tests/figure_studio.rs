@@ -2276,3 +2276,18 @@ fn the_studio_preview_shows_a_control_change() {
         "a control change must change the preview: {changed} pixels"
     );
 }
+
+#[test]
+fn body_skin_accessor_exposes_the_stored_body_weights() {
+    let a = assets();
+    let skin = a.body_skin();
+    assert_eq!(skin.vertex_count(), a.body_vertex_count(), "one skin entry per body vertex");
+    assert_eq!(skin.joint_count(), a.joint_count());
+    for v in 0..skin.vertex_count() {
+        let inf = skin.influences(v).expect("every body vertex is skinned");
+        let sum: f32 = inf.iter().map(|&(_, w)| w).sum();
+        assert!((sum - 1.0).abs() < 1e-4, "vertex {v} weights sum {sum}");
+        assert!(inf.iter().all(|&(j, _)| j < a.joint_count()));
+    }
+    assert!(skin.influences(skin.vertex_count()).is_none(), "helpers are unskinned");
+}

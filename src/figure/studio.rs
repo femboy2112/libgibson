@@ -981,6 +981,12 @@ impl AssetSet {
         self.body.declared.joints().get(i).map(|j| j.name.as_str())
     }
 
+    /// The body's validated skin weights, as stored in the body file (body vertices only;
+    /// helpers are unskinned). Read-only; for consumers that must cross-check a skin copy.
+    pub fn body_skin(&self) -> &SkinWeights {
+        &self.body.skin
+    }
+
     /// The anchor group of joint `i` (empty: unanchored).
     pub fn joint_anchor(&self, i: usize) -> Option<&[u32]> {
         self.body.joints.get(i).map(|j| j.anchor.as_slice())
