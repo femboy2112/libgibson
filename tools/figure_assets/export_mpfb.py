@@ -661,8 +661,9 @@ def assemble(args, B, say=say):
             say("ERROR: preset control '%s' is not defined in controls.json" % cname)
             return 2
         if not -1.0 <= val <= 1.0:
-            say("ERROR: preset control %s=%s outside [-1,1]" % (cname, val))
-            return 2
+            # No silent clamp and no rejection (studio API section 1; owner bust rule): out-of-domain
+            # values extrapolate the target delta linearly and are reported as a diagnostic.
+            say("DIAG ControlOutOfDomain %s=%s (documented domain [-1,1]; applied unclamped)" % (cname, val))
         side = "pos" if val > 0 else "neg"
         for i, d in deltas[cname][side].items():
             a = abs(val)
