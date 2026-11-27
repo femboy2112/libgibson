@@ -507,9 +507,10 @@ def synthetic_fixture():
       bulge     (dx, dy) = +0.2 (x, y) / -0.1 (x, y)         on ring 2 (indices 16..23)
       lean      dy = +0.1 z / -0.1 z                          on every non-fixed vertex
       sink      dz = -0.05 (pos) / +0.05 (neg)                on every non-fixed vertex
-    Parts: tunic (clothes, bound to ring 2 + ring 1, offset 0.05 outward, const scales), shell
+    Parts: tunic (clothes, bound to ring 2 with weights 0.8/0.1/0.1, offset 0.05 outward, const scales), shell
     (clothes, bound to the 8 fixed helpers at radius 0.172 on z = 1.0: it does NOT follow the
-    body, so a bulge pushes the body through it), tabard (clothes, bound 1:1 to ring 1, offset
+    body, so a bulge pushes the body through it; a stature change moves ring 2 away from it too, so use
+    it in bulge-only recipes), tabard (clothes, bound 1:1 to ring 1, offset
     0.05 outward scaled by the hip breadth), cap (hair, bound to ring 3, offset +0.03 up scaled by
     the stature).
     """
@@ -631,11 +632,13 @@ def synthetic_fixture():
                              for i, (o, s) in enumerate(((ox, sx), (oy, sy), (oz, sz)))))
         return out
 
-    # tunic: 8 vertices on ring 2 mid-edges, bound to ring2[k], ring2[k+1], ring1[k]
+    # tunic: 8 vertices bound to ring2[k] (0.8), ring2[k+1] (0.1), ring2[k-1] (0.1), offset 0.05
+    # along the ring direction of k (the neighbours' tangential parts cancel by symmetry)
     tun_bind = []
     for k in range(SEG):
-        dx, dy = ring_dir(k, True)
-        tun_bind.append((16 + k, 16 + (k + 1) % SEG, 8 + k, 0.5, 0.5, 0.0, 0.05 * dx, 0.05 * dy, 0.0))
+        dx, dy = ring_dir(k, False)
+        tun_bind.append((16 + k, 16 + (k + 1) % SEG, 16 + (k - 1) % SEG, 0.8, 0.1, 0.1,
+                         0.05 * dx, 0.05 * dy, 0.0))
     spec1 = [("const", 1.0), ("const", 1.0), ("const", 1.0)]
     tun_tris = []
     for k in range(1, SEG - 1):
