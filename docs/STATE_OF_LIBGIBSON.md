@@ -12,6 +12,18 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**v0.9.2 "clear SIGKILL 2" released (2026-11-27):**
+- tag `v0.9.2` → `dd1bac0` on `main`, with `bindings/go/v0.9.2` on the same commit;
+- a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.2).
+
+It is a patch that adds the experimental `stage::motion` module (#461: `FrameSequence`,
+`LayerSlots`, `CueSchedule` and a hidden-quiescence contract test) plus the `stage_motion_kit`
+example, additive and Rust-only. The C ABI is unchanged (v1, 67 symbols) and MSRV stays 1.85.
+Continuous in-betweens and live capture are deferred to a later 0.9.x, `figure` (#462) is not
+qualified, and #444 waits for 0.10.0. The consumer gate was substituted as for 0.9.1. The 4
+release assets were built from `dd1bac0` with rustc 1.98.1 using the #429 path remap; after
+download all 4 are byte-identical to the build.
+
 **v0.9.1 "clear SIGKILL 1" released (2026-11-26):**
 - tag `v0.9.1` → `57e9abc` on `main`, with `bindings/go/v0.9.1` on the same commit;
 - a regular [GitHub release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.1).

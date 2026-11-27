@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-26): v0.9.1 "clear SIGKILL 1" (v0.9.2 "clear SIGKILL 2" prepared in source)
+## Current release (updated 2026-11-26): v0.9.2 "clear SIGKILL 2"
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -103,11 +103,24 @@ paths (the only scan hit is the public sponsor link in the bundled README, as in
 - the Python wheel, 18168 B, sha256 `4914413745cd101f782cfd02d0acc1d3ccfecb6ee9f0a92410ae656b2a29ed9b`;
 - the Python sdist, 18561 B, sha256 `c4e03a89303a0edede226d00261a0b31d8491e9e4636c8209472fe01b3f75719`.
 
-**v0.9.2 "clear SIGKILL 2" is prepared in source** (state 1). It is not tagged or released yet.
+**v0.9.2 "clear SIGKILL 2" was released on 2026-11-27** (state 2):
+- annotated tag `v0.9.2` → `dd1bac0` on `main` (`dd1bac021db19b5e5077b395a59d3be17f958ce9`), with
+  `bindings/go/v0.9.2` on the same commit;
+- a regular GitHub [release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.2), not a
+  prerelease, marked Latest, and not on any registry.
+
 It is a patch: the experimental `stage::motion` module (#461), additive and Rust-only. The name
 follows [decision 0004](docs/decisions/0004-release-naming.md) (minor 9 = SIGKILL, patch 2) and is
 confirmed by the release coordinator. The full audit is
-[`docs/V0_9_2_COMPLETION_AUDIT.md`](docs/V0_9_2_COMPLETION_AUDIT.md).
+[`docs/V0_9_2_COMPLETION_AUDIT.md`](docs/V0_9_2_COMPLETION_AUDIT.md). The C ABI is unchanged (v1,
+67 symbols). Merged `main` `dd1bac0` CI run 45918225196 11/11.
+The release has 4 assets, built from `dd1bac0` with rustc 1.98.1 using the #429 path remap. After
+download, all 4 are byte-identical to the build, and the native libraries contain no build-host
+paths (the only scan hit is the public sponsor link in the bundled README, as in v0.9.0):
+- `libgibson-0.9.2-linux-x86_64.tar.gz`, 5881292 B, sha256 `157b27f19ef6431c8bef7efe929b3460644ae3c0d5c62d0be7a9ccfceb77b5c4`;
+- its `.sha256` file, 102 B, sha256 `d6b56e0ebe4075d74edd7c35b1200131e3911ac69d09285d208055151680acea`;
+- the Python wheel, 18168 B, sha256 `bc97b3a502049d3047831d098e7ef13fa3b1aa932642d5e581cd59d1d9dda542`;
+- the Python sdist, 18553 B, sha256 `22bc3c5162d7baa04932e19cd1d3378c366df7133d506131769dbd60c2b90f5a`.
 
 #### v0.9.2 completion status (2026-11-26)
 
@@ -120,7 +133,7 @@ confirmed by the release coordinator. The full audit is
 | M5-B `figure` (#462) | **Not in 0.9.2** | Own branch, off-by-default `figure` feature; Slice 1 not qualified. |
 | #444 multi-line text area (EXPERIMENTAL) | **Deferred to 0.10.0** (unchanged) | Breaks `ui::Interaction` literals (Release Contract §1). |
 | `max_frame_bytes` for the kitty frame plan; prompt editor | **Not in 0.9.2** (unchanged) | Not scheduled. |
-| Release gates (exact-head CI incl. Release preflight and the `stage_motion_kit` example build) | **Pending** | To be observed on the final prep head. `git diff v0.9.1 <rc> -- abi include bindings` must show only the Python package version. |
+| Release gates (exact-head CI incl. Release preflight and the `stage_motion_kit` example build) | **Met** | Merged `main` `dd1bac0` CI run 45918225196 11/11 success. `git diff v0.9.1 v0.9.2 -- abi include bindings` shows only `bindings/python/pyproject.toml` (1 line: the Python package version). |
 | Consumer gate | **Substituted**, as for 0.9.0 and 0.9.1 | Additive module that GHOST does not consume yet. Hosted CI on the exact candidate plus the abi/include/bindings diff. GHOST's pin bump to 0.9.2 is gated at its next integration candidate. |
 
 #### v0.9.1 completion status (2026-11-26)

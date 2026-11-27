@@ -103,14 +103,19 @@ surface is versioned as a minor to signal its scope — not because anything bro
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
 - **0.9.2** "clear SIGKILL 2" ([decision 0004](decisions/0004-release-naming.md): minor 9 =
-  SIGKILL, patch 2; the name is confirmed by the release coordinator) is **prepared in source**
-  (state 1). It is a patch: the experimental `stage::motion` module (#461) is additive and
-  Rust-only and changes no existing API or default. It is to be tagged `v0.9.2` (with
-  `bindings/go/v0.9.2`) on a `main` commit as a regular GitHub release. The C ABI is unchanged
+  SIGKILL, patch 2; the name is confirmed by the release coordinator) is the latest such
+  milestone and is **tagged and released on GitHub** (state 2):
+  - tag `v0.9.2` → `dd1bac0` on `main`, with `bindings/go/v0.9.2` on the same commit;
+  - a regular GitHub release of 2026-11-27
+    ([release](https://github.com/femboy2112/libgibson/releases/tag/v0.9.2)) with the native SDK
+    archive, its checksum and the Python wheel/sdist, not published to any registry.
+
+  It is a patch: the experimental `stage::motion` module (#461) is additive and
+  Rust-only and changes no existing API or default. The C ABI is unchanged
   (`GIBSON_ABI_VERSION` 1, 67 symbols); MSRV 1.85 and Linux x86_64 are unchanged.
 
 - **0.9.1** "clear SIGKILL 1" ([decision 0004](decisions/0004-release-naming.md): minor 9 =
-  SIGKILL, patch 1) is the latest such milestone and is **tagged and released on GitHub**
+  SIGKILL, patch 1) is **tagged and released on GitHub**
   (state 2):
   - tag `v0.9.1` → `57e9abc` on `main`, with `bindings/go/v0.9.1` on the same commit;
   - a regular GitHub release of 2026-11-26
