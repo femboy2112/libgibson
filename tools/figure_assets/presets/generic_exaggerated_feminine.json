@@ -34,14 +34,14 @@
   },
   "export_attachments": [
     "clothes:female_casualsuit01",
-    "hair:long01",
+    "hair:ponytail01",
     "eyes:low-poly",
     "eyebrows:eyebrow001",
     "eyelashes:eyelashes01",
     "teeth:teeth_base"
   ],
   "gltf_attachments": [
-    "hair:long01",
+    "hair:ponytail01",
     "eyes:low-poly",
     "eyebrows:eyebrow001",
     "eyelashes:eyelashes01"
@@ -50,21 +50,22 @@
   "render": {
     "skin": {
       "albedo": [
-        0.5,
-        0.33,
-        0.26
+        0.6,
+        0.39,
+        0.29
       ],
-      "roughness": 0.42,
-      "subsurface": 0.35,
+      "roughness": 0.55,
+      "specular": 0.22,
+      "subsurface": 0.15,
       "subsurface_radius": [
         1.0,
         0.35,
         0.2
       ],
-      "subsurface_scale": 0.02
+      "subsurface_scale": 0.01
     },
     "hair": {
-      "id": "long01",
+      "id": "ponytail01",
       "color": [
         0.05,
         0.03,
@@ -97,20 +98,20 @@
     "materials": {
       "base": {
         "albedo": [
-          0.45,
-          0.05,
-          0.12
+          0.3,
+          0.09,
+          0.13
         ],
-        "roughness": 0.72,
+        "roughness": 0.8,
         "metalness": 0.0
       },
       "panel": {
         "albedo": [
-          0.08,
-          0.06,
-          0.18
+          0.14,
+          0.13,
+          0.19
         ],
-        "roughness": 0.75,
+        "roughness": 0.85,
         "metalness": 0.0
       },
       "trim": {
@@ -180,6 +181,6 @@
         "emissive_intensity": 3.0
       }
     },
-    "note": "Render-only fields. The tape header (materials, garments, fit_status, controls) is authoritative at render time; this section supplies the skin, hair, brow and eye looks the tape does not carry and the defaults make_test_tape.py writes into a test tape. Hair: ponytail01 is pulled back (a CC0 pack style with no fringe over the eyes); fa_hair.py parts any fringe and render_tape.py ray-casts the eyes anyway. Long01 is the long CC0 style; same eye-clearance handling."
+    "note": "See generic_neutral. Exaggerated body unchanged; hair ponytail01 (pulled back, hangs mid-back)."
   }
 }

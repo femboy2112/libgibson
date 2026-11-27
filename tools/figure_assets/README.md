@@ -230,3 +230,8 @@ Tape conventions the format section does not state (assumptions, see `fa_tape.py
 
 Smoke lease: `BLENDER=$BLENDER heavy run --class s --max-min 12 -- bash tools/figure_assets/lease_m5c_adapter_smoke.sh OUT` (10 minute budget).
 `SMOKE_PROBE=1` also runs `render_probe.py --checks-only`, normal and mutant.
+
+Exposure and look fixes after the first smoke lease (viewed: white ground hid the shadow, blank eyes, hot skin): AgX view transform, mid-grey ground (albedo 0.35),
+lower light energies with a larger key; new check `ground_not_clipped` (unmasked ground pixels: median < 0.9, < 25% at >= 250) and the must-FAIL mutant
+`--mutant overexposed` (12x light, near-white ground); eyes map pupil/iris/sclera from the MPFB low-poly eye UVs; lower skin specular and subsurface; muted garment colours,
+bevelled skirt edges, looser flare. `generic_neutral` is now an adult female baseline (MakeHuman gender 0 = female, 1 = male; it uses 0.1) with `long01` hair.

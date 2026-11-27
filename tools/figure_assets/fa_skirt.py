@@ -42,7 +42,7 @@ def _smoothstep(x):
     return x * x * (3.0 - 2.0 * x)
 
 
-def make_skirt(P, joints, exclude=None, n_seg=48, n_ring=14, hem_below_knee_frac=0.03, margin_m=0.012, flare_m=0.05,
+def make_skirt(P, joints, exclude=None, n_seg=48, n_ring=14, hem_below_knee_frac=0.03, margin_m=0.012, flare_m=0.09,
                waist_above_pelvis_frac=0.06, left_is_plus_x=None):
     """P: shaped positions (full index space).  joints: {"joint-pelvis": [idx...], "joint-l-knee": ..., "joint-r-knee",
     "joint-l-upper-leg"}.  exclude: optional list[bool] per body vertex (True = ignore, e.g. arms/hands by skin weight).

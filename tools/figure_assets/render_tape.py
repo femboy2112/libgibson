@@ -66,7 +66,7 @@ def parse_args(argv):
     ap.add_argument("--spp", type=int, default=32)
     ap.add_argument("--engine", default="auto", choices=("auto", "eevee", "cycles"))
     ap.add_argument("--threads", type=int, default=4)
-    ap.add_argument("--mutant", default=None, choices=(None, "bad_bounds"))
+    ap.add_argument("--mutant", default=None, choices=(None, "bad_bounds", "overexposed"))
     ap.add_argument("--checks-only", action="store_true", help="build, run the self-checks, write render.json; no stills/clips")
     ap.add_argument("--no-stills", action="store_true")
     ap.add_argument("--no-clips", action="store_true")
@@ -309,6 +309,7 @@ def main():
     preset = load_json(a.preset)
     shots = load_json(a.shots)
     mutant = a.mutant == "bad_bounds"
+    over = a.mutant == "overexposed"
     timings = {}
 
     want = a.engine
@@ -339,9 +340,9 @@ def main():
         lo, hi = lo_t, hi_t
     height = hi.z - lo.z
     center = (0.5 * (lo.x + hi.x), 0.5 * (lo.y + hi.y), 0.5 * (lo.z + hi.z))
-    ground = st.make_ground(lo.z)
+    ground = st.make_ground(lo.z, albedo=(0.95, 0.95, 0.95) if over else (0.35, 0.35, 0.36))
     st.make_world()
-    lights = st.add_lights((0.0, 0.0, 0.5 * (lo.z + hi.z)), hi.z - lo.z if not mutant else (hi_t.z - lo_t.z))
+    lights = st.add_lights((0.0, 0.0, 0.5 * (lo.z + hi.z)), hi.z - lo.z if not mutant else (hi_t.z - lo_t.z), gain=12.0 if over else 1.0)
     stage = {"ground": ground, "lights": lights}
     info = engine_info = st.set_engine(want, a.spp, a.threads)
     sc = bpy.context.scene

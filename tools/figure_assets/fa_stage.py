@@ -105,12 +105,12 @@ def skin_material(spec):
     m, b = new_principled("skin")
     alb = spec.get("albedo", [0.62, 0.40, 0.31])
     set_input(b, ("Base Color",), rgba(alb))
-    set_input(b, ("Roughness",), float(spec.get("roughness", 0.42)))
+    set_input(b, ("Roughness",), float(spec.get("roughness", 0.55)))
     got = {}
-    got["sss_weight"] = set_input(b, ("Subsurface Weight", "Subsurface"), float(spec.get("subsurface", 0.35)))
+    got["sss_weight"] = set_input(b, ("Subsurface Weight", "Subsurface"), float(spec.get("subsurface", 0.15)))
     got["sss_radius"] = set_input(b, ("Subsurface Radius",), tuple(spec.get("subsurface_radius", [1.0, 0.35, 0.2])))
-    got["sss_scale"] = set_input(b, ("Subsurface Scale",), float(spec.get("subsurface_scale", 0.02)))
-    set_input(b, ("Specular IOR Level", "Specular"), 0.45)
+    got["sss_scale"] = set_input(b, ("Subsurface Scale",), float(spec.get("subsurface_scale", 0.01)))
+    set_input(b, ("Specular IOR Level", "Specular"), float(spec.get("specular", 0.22)))
     m.diffuse_color = rgba(alb)
     m["fa_sss_inputs"] = str(got)
     return m, got
@@ -134,24 +134,36 @@ def brow_material(color, name="brow"):
 
 
 def eye_material(iris_rgb):
-    """Sclera / iris / pupil from a per-vertex float attribute `iris_mask` (0 sclera, 0.6 iris, 1.0 pupil), so it follows the
-    deformation and does not depend on the eye mesh UV layout."""
+    """Pupil / iris / sclera from the MPFB low-poly eye UVs: the left eyeball (x > 0) is mapped around UV (0.705, 0.70) and the right one
+    around (0.30, 0.30) (measured from the pack's low-poly.obj: the front vertex rings at 20 and 38 degrees sit 0.05 and 0.10 from those
+    centres).  Distance to the nearer centre drives a constant colour ramp; the cornea is a glossy coat."""
     m, b = new_principled("eye")
     nt = m.node_tree
-    attr = nt.nodes.new("ShaderNodeAttribute")
-    attr.attribute_name = "iris_mask"
-    attr.attribute_type = "GEOMETRY"
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    dists = []
+    for cx, cy in ((0.705, 0.70), (0.30, 0.30)):
+        vm = nt.nodes.new("ShaderNodeVectorMath")
+        vm.operation = "DISTANCE"
+        vm.inputs[1].default_value = (cx, cy, 0.0)
+        nt.links.new(tc.outputs["UV"], vm.inputs[0])
+        dists.append(vm)
+    mn = nt.nodes.new("ShaderNodeMath")
+    mn.operation = "MINIMUM"
+    nt.links.new(dists[0].outputs["Value"], mn.inputs[0])
+    nt.links.new(dists[1].outputs["Value"], mn.inputs[1])
     ramp = nt.nodes.new("ShaderNodeValToRGB")
     ramp.color_ramp.interpolation = "CONSTANT"
     els = ramp.color_ramp.elements
-    els[0].position, els[0].color = 0.0, (0.88, 0.86, 0.82, 1.0)
-    els[1].position, els[1].color = 0.30, rgba(iris_rgb)
-    e3 = els.new(0.80)
-    e3.color = (0.01, 0.01, 0.012, 1.0)
-    nt.links.new(attr.outputs.get("Fac") or attr.outputs[2], ramp.inputs[0])
+    els[0].position, els[0].color = 0.0, (0.008, 0.008, 0.010, 1.0)           # pupil
+    els[1].position, els[1].color = 0.058, rgba(iris_rgb)                      # iris
+    e3 = els.new(0.112)
+    e3.color = (0.80, 0.78, 0.74, 1.0)                                         # sclera (slightly off-white)
+    nt.links.new(mn.outputs[0], ramp.inputs[0])
     nt.links.new(ramp.outputs[0], b.inputs["Base Color"])
-    set_input(b, ("Roughness",), 0.12)
-    set_input(b, ("Coat Weight", "Clearcoat"), 0.6)
+    set_input(b, ("Roughness",), 0.28)
+    set_input(b, ("Specular IOR Level", "Specular"), 0.5)
+    set_input(b, ("Coat Weight", "Clearcoat"), 1.0)
+    set_input(b, ("Coat Roughness", "Clearcoat Roughness"), 0.03)
     m.diffuse_color = rgba(iris_rgb)
     return m
 
@@ -293,13 +305,13 @@ def add_hidden_helper_proxy(body_lo_z, height=2.80, drop=0.40):
     return o
 
 
-def make_ground(z, size=40.0, albedo=(0.46, 0.46, 0.48)):
+def make_ground(z, size=40.0, albedo=(0.35, 0.35, 0.36)):
     h = 0.5 * size
     o = mesh_object("Ground", [(-h, -h, 0.0), (h, -h, 0.0), (h, h, 0.0), (-h, h, 0.0)], [(0, 1, 2, 3)], role="ground", smooth=False)
     o.location = (0.0, 0.0, z)
     m, b = new_principled("ground")
     set_input(b, ("Base Color",), rgba(albedo))
-    set_input(b, ("Roughness",), 0.9)
+    set_input(b, ("Roughness",), 0.85)
     set_input(b, ("Specular IOR Level", "Specular"), 0.1)
     o.data.materials.append(m)
     return o
@@ -322,16 +334,16 @@ def aim(obj, target):
     obj.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
 
 
-def add_lights(center, height):
+def add_lights(center, height, gain=1.0):
     """Key / fill / rim (three-point) plus a soft top light that gives the figure a contact shadow.  Azimuth 0 is the camera
     side (-Y); +x is the camera's right.  Energies are first guesses scaled by distance squared (4.5 m, 1.7 m figure)."""
     sc = bpy.context.scene
     dist = 2.7 * height
-    k = (dist / 4.5) ** 2
+    k = (dist / 4.5) ** 2 * gain
     cx, cy, cz = center
-    rig = (("key", -42.0, 38.0, 1.0, 1100.0, 1.7, (1.0, 0.94, 0.88)),
-           ("fill", 58.0, 14.0, 1.0, 380.0, 2.6, (0.86, 0.91, 1.0)),
-           ("rim", 150.0, 34.0, 1.0, 900.0, 1.2, (0.92, 0.96, 1.0)))
+    rig = (("key", -42.0, 38.0, 1.0, 450.0, 2.4, (1.0, 0.94, 0.88)),
+           ("fill", 58.0, 14.0, 1.0, 180.0, 2.6, (0.86, 0.91, 1.0)),
+           ("rim", 150.0, 34.0, 1.0, 450.0, 1.2, (0.92, 0.96, 1.0)))
     made = {}
     for name, az, el, rr, energy, size, col in rig:
         a, e = math.radians(az), math.radians(el)
@@ -350,7 +362,7 @@ def add_lights(center, height):
         aim(o, (cx, cy, cz + 0.1 * height))
         made[name] = o
     top = bpy.data.lights.new("top_soft", "AREA")
-    top.energy = 380.0 * k
+    top.energy = 140.0 * k
     top.size = 1.6 * height / 1.7
     top.color = (1.0, 1.0, 1.0)
     to = bpy.data.objects.new("top_soft", top)
@@ -593,7 +605,10 @@ def set_engine(name, spp, threads):
     sc = bpy.context.scene
     sc.render.threads_mode = "FIXED"
     sc.render.threads = threads
-    sc.view_settings.view_transform = "Standard"
+    try:
+        sc.view_settings.view_transform = "AgX"          # honest exposure: highlights roll off instead of clipping to white
+    except TypeError:
+        sc.view_settings.view_transform = "Standard"
     try:
         sc.view_settings.look = "None"
     except Exception:  # noqa: BLE001
@@ -802,8 +817,12 @@ def dress(export_dir, S, landmarks, arm, names, body, rd, slots, garments, fit_s
         slot = bind.get("skirt", "panel")
         o.data.materials.append(slot_material(slot, slots.get(slot, {"albedo": [0.55, 0.18, 0.24], "roughness": 0.75})))
         so = o.modifiers.new("Solidify", "SOLIDIFY")
-        so.thickness = 0.004
+        so.thickness = 0.006
         so.offset = -1.0
+        bv = o.modifiers.new("Bevel", "BEVEL")          # soft waistband and hem edges
+        bv.width = 0.004
+        bv.segments = 3
+        bv.limit_method = "ANGLE"
         sd = o.modifiers.new("Subsurf", "SUBSURF")
         sd.levels = 1
         sd.render_levels = 2
@@ -885,4 +904,5 @@ def check_contact_shadow(checks, body, foot_idx, ground, cam_rec, res, out_dir, 
     r = ck.shadow_check_files(fpath, mpath, inner, outer)
     r["inner_rect"], r["outer_rect"] = list(inner), list(outer)
     checks.add(r)
+    checks.add(ck.ground_clip_check_files(fpath, mpath, outer))
     return foot

@@ -1,9 +1,9 @@
 {
   "name": "generic_neutral",
-  "note": "Synthetic generic neutral body: every MakeHuman macro at its mid value, every control at 0. Not an average of anything: a named baseline.",
+  "note": "Synthetic generic adult feminine reference body: MakeHuman gender 0.1 (0 = female, 1 = male), every other macro at its mid value, every control at 0. Not an average of anything: a named baseline.",
   "rig": "game_engine",
   "macro": {
-    "gender": 0.5,
+    "gender": 0.1,
     "age": 0.5,
     "muscle": 0.5,
     "weight": 0.5,
@@ -34,14 +34,14 @@
   },
   "export_attachments": [
     "clothes:female_casualsuit01",
-    "hair:ponytail01",
+    "hair:long01",
     "eyes:low-poly",
     "eyebrows:eyebrow001",
     "eyelashes:eyelashes01",
     "teeth:teeth_base"
   ],
   "gltf_attachments": [
-    "hair:ponytail01",
+    "hair:long01",
     "eyes:low-poly",
     "eyebrows:eyebrow001",
     "eyelashes:eyelashes01"
@@ -50,21 +50,22 @@
   "render": {
     "skin": {
       "albedo": [
-        0.6,
-        0.42,
-        0.33
+        0.68,
+        0.46,
+        0.34
       ],
-      "roughness": 0.42,
-      "subsurface": 0.35,
+      "roughness": 0.55,
+      "specular": 0.22,
+      "subsurface": 0.15,
       "subsurface_radius": [
         1.0,
         0.35,
         0.2
       ],
-      "subsurface_scale": 0.02
+      "subsurface_scale": 0.01
     },
     "hair": {
-      "id": "ponytail01",
+      "id": "long01",
       "color": [
         0.1,
         0.06,
@@ -87,7 +88,8 @@
       ]
     },
     "garments": [
-      "female_casualsuit01"
+      "female_casualsuit01",
+      "skirt_a_line"
     ],
     "bindings": {
       "garment": "base",
@@ -97,19 +99,19 @@
       "base": {
         "albedo": [
           0.1,
-          0.2,
-          0.24
+          0.21,
+          0.25
         ],
-        "roughness": 0.72,
+        "roughness": 0.8,
         "metalness": 0.0
       },
       "panel": {
         "albedo": [
-          0.3,
-          0.12,
-          0.15
+          0.2,
+          0.21,
+          0.27
         ],
-        "roughness": 0.75,
+        "roughness": 0.85,
         "metalness": 0.0
       },
       "trim": {
@@ -179,6 +181,6 @@
         "emissive_intensity": 3.0
       }
     },
-    "note": "Render-only fields. The tape header (materials, garments, fit_status, controls) is authoritative at render time; this section supplies the skin, hair, brow and eye looks the tape does not carry and the defaults make_test_tape.py writes into a test tape. Hair: ponytail01 is pulled back (a CC0 pack style with no fringe over the eyes); fa_hair.py parts any fringe and render_tape.py ray-casts the eyes anyway."
+    "note": "Render-only fields. The tape header (materials, garments, fit_status, controls) is authoritative at render time. Hair long01 is a long CC0 pack style (hangs to the waist); the pack hair meshes are alpha-card shells, so without their textures they render as a solid shell: judge by viewing."
   }
 }

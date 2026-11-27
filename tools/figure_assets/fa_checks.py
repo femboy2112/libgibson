@@ -94,6 +94,27 @@ def shadow_check_files(beauty_png, mask_png, inner, outer, **kw):
     return shadow_check(lum, mk, inner, outer, **kw)
 
 
+def ground_clip_check(lum, mask, rect, max_median=0.90, max_clipped_frac=0.25):
+    """Exposure check: the ground pixels AWAY from the figure (unmasked, inside `rect`) must not be blown out.
+    median luminance < max_median * 255 and fewer than max_clipped_frac of the pixels >= 250 (a white ground hides every shadow)."""
+    h, w = len(lum), len(lum[0])
+    x0, y0, x1, y1 = max(0, rect[0]), max(0, rect[1]), min(w, rect[2]), min(h, rect[3])
+    v = [lum[y][x] for y in range(y0, y1) for x in range(x0, x1) if mask[y][x] <= 128]
+    if len(v) < 50:
+        return {"name": "ground_not_clipped", "ok": False, "reason": "too few ground pixels (%d)" % len(v), "n": len(v)}
+    med = _median(v) / 255.0
+    clipped = sum(1 for p in v if p >= 250.0) / float(len(v))
+    return {"name": "ground_not_clipped", "ok": med < max_median and clipped < max_clipped_frac, "median": med, "clipped_fraction": clipped,
+            "max_median": max_median, "max_clipped_fraction": max_clipped_frac, "n": len(v)}
+
+
+def ground_clip_check_files(beauty_png, mask_png, rect, **kw):
+    w, h, c, rows = fa_png.read(beauty_png)
+    lum = fa_png.luminance_rows(w, h, c, rows)
+    w2, h2, c2, rows2 = fa_png.read(mask_png)
+    return ground_clip_check(lum, fa_png.luminance_rows(w2, h2, c2, rows2), rect, **kw)
+
+
 def clearance_check(blocked, total, name="eye_clearance"):
     """blocked: number of probe rays whose first hit is NOT the intended surface (e.g. hair in front of an eye)."""
     return {"name": name, "ok": blocked == 0, "blocked": blocked, "rays": total}
@@ -159,6 +180,10 @@ def _selftest():
     for fn in os.listdir(d):
         os.remove(os.path.join(d, fn))
     os.rmdir(d)
+    lum, mask = _synthetic(100, 100, True)
+    check(ground_clip_check(lum, mask, outer)["ok"], "ground at luminance 150 is not clipped")
+    white = [[255.0] * 100 for _ in range(100)]
+    check(not ground_clip_check(white, mask, outer)["ok"], "a pure-white ground FAILS ground_not_clipped (the viewed blow-out)")
     check(contact_check(0.002, 0.0)["ok"], "contact 2 mm ok")
     check(not contact_check(0.40, 0.0)["ok"], "contact 0.4 m (the viewed floating bug) FAILS")
     check(not contact_check(0.0, 0.0057)["ok"], "contact 5.7 mm FAILS (tol 5 mm)")

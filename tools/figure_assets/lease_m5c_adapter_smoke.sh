@@ -110,6 +110,13 @@ if [ -f "$OUT/tape/test.tape.json" ]; then
     if grep -q "^RT_CHECK FAIL $c " "$OUT/logs/render_tape_mutant.log"; then echo "SMOKE_RESULT mutant_fails_$c ok"; else echo "SMOKE_RESULT mutant_fails_$c FAIL (the $c check did not fail on the bad_bounds mutant: it is blind)"; FAILS=$((FAILS + 1)); fi
     if grep -q "^RT_CHECK PASS $c " "$OUT/logs/render_tape.log"; then echo "SMOKE_RESULT normal_passes_$c ok"; else echo "SMOKE_RESULT normal_passes_$c FAIL"; FAILS=$((FAILS + 1)); fi
   done
+  # the exposure must-FAIL control: a blown-out ground
+  run_step render_tape_overexposed "$OUT/logs/render_tape_overexposed.log" RENDER_TAPE_RC \
+    "$BLENDER" -b --python "$HERE/render_tape.py" -- --export "$OUT/export" --tape "$OUT/tape/test.tape.json" --preset "$PRESET" \
+      --shots "$HERE/shots/smoke.json" --out "$OUT/overexposed" --spp "$SPP" --mutant overexposed --checks-only --no-oracle
+  if [ "$LAST_EFF" -ne 5 ]; then echo "SMOKE_RESULT overexposed_rc FAIL (expected 5, got $LAST_EFF)"; FAILS=$((FAILS + 1)); else echo "SMOKE_RESULT overexposed_rc ok (5)"; fi
+  if grep -q "^RT_CHECK FAIL ground_not_clipped " "$OUT/logs/render_tape_overexposed.log"; then echo "SMOKE_RESULT overexposed_fails_ground_not_clipped ok"; else echo "SMOKE_RESULT overexposed_fails_ground_not_clipped FAIL (the exposure check is blind)"; FAILS=$((FAILS + 1)); fi
+  if grep -q "^RT_CHECK PASS ground_not_clipped " "$OUT/logs/render_tape.log"; then echo "SMOKE_RESULT normal_passes_ground_not_clipped ok"; else echo "SMOKE_RESULT normal_passes_ground_not_clipped FAIL"; FAILS=$((FAILS + 1)); fi
   # outputs of the normal run
   NPNG="$(ls "$OUT"/render/frames/smoke/frame_*.png 2>/dev/null | wc -l)"
   NST="$(ls "$OUT"/render/stills/*.png 2>/dev/null | wc -l)"
@@ -117,7 +124,7 @@ if [ -f "$OUT/tape/test.tape.json" ]; then
   for f in render/render.json render/oracle_posed.json render/oracle_posed.f32.bin; do
     [ -s "$OUT/$f" ] || { echo "SMOKE_RESULT missing $f FAIL"; FAILS=$((FAILS + 1)); }
   done
-  grep -h '^RT_CHECK\|^RT_STEP\|^RT_DONE' "$OUT/logs/render_tape.log" "$OUT/logs/render_tape_mutant.log" 2>/dev/null
+  grep -h '^RT_CHECK\|^RT_STEP\|^RT_DONE' "$OUT/logs/render_tape.log" "$OUT/logs/render_tape_mutant.log" "$OUT/logs/render_tape_overexposed.log" 2>/dev/null
 else
   echo "STEP render_tape rc=98 (no tape)" | tee -a "$OUT/steps.txt"; FAILS=$((FAILS + 1))
 fi
