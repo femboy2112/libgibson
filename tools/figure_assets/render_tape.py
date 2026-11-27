@@ -327,7 +327,7 @@ def run_checks(a, fig, tape, cams, stage, checks, front_rec, res_check, info, ou
 
 # =========================================================================== main
 
-def main(figure_setup=None, frame_update=None):
+def main(figure_setup=None, frame_update=None, stage_setup=None):
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     a = parse_args(argv)
     if a.child_smoke:
@@ -392,6 +392,7 @@ def main(figure_setup=None, frame_update=None):
     st.make_world()
     lights = st.add_lights(ctx["center"], ctx["height"], gain=12.0 if over else 1.0)
     stage = {"ground": ground, "lights": lights, "reference_frame": reference_frame, "ctx": ctx}
+    light_setup = stage_setup(stage, preset) if stage_setup else None
     engine_info = st.set_engine(want, a.spp, a.threads)
     sc = bpy.context.scene
 
@@ -568,6 +569,8 @@ def main(figure_setup=None, frame_update=None):
                      "skirt": fig.skirt["data"]["params"] if fig.skirt else None, "hair_part": getattr(fig, "hair_part", None), "hair_violations_in_eye_box": getattr(fig, "hair_pos_violations", None),
                      "iris_vertices": getattr(fig, "iris_verts", None)},
           "results": results, "notes": notes}
+    if light_setup is not None:
+        rj["stage"]["light_setup"] = light_setup
     if a.matter:
         rj["living_matter"] = {k: fig.matter.header[k] for k in ("format", "backend", "sim_config_id", "bin_sha256", "preroll_frames")}
     with open(os.path.join(out, "render.json"), "w", encoding="utf-8") as fh:
