@@ -452,6 +452,8 @@ def main(figure_setup=None, frame_update=None):
             set_pose(fig, tape, f)
             sc.camera = rec["obj"]
             st.cam_pose_at(rec, 0, 1)
+            if a.scene:
+                fa_scene.track_close(fig, rec)
             for lab in fig.labels:
                 st.attach_label_to_camera(lab, rec["obj"], rec["lens"])
             path = os.path.join(out, "stills", "%s_%s_%dx%d.png" % (shots.get("id", "shots"), s["name"], r[0], r[1]))
@@ -502,6 +504,8 @@ def main(figure_setup=None, frame_update=None):
                         wsum += w
                     pw = (acc[0] / wsum, acc[1] / wsum)
                 st.cam_pose_at(rec, i, n_total, pw)
+                if a.scene:
+                    fa_scene.track_close(fig, rec)
                 sc.camera = rec["obj"]
                 for lab in fig.labels:
                     st.attach_label_to_camera(lab, rec["obj"], rec["lens"])

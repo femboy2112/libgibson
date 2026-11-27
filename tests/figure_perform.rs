@@ -2325,3 +2325,32 @@ fn loop_seam_matches_a_seamless_reference_and_the_velocity_gap_closes() {
         "the control must keep a constant velocity gap, ratio {s}"
     );
 }
+
+#[test]
+fn real_wrist_targets_change_the_held_pose_and_preserve_the_bind_skeleton() {
+    let rig = synthetic_rig();
+    let anim = script(Style::restrained(), vec![Beat::Idle { secs: 0.4 }]);
+    let base = compile(&rig, &anim, &PerformOptions::default()).pose_at(0.0);
+    let joints = rig.joint_world(&base);
+    let wrists = rig.map().arms.map(|c| c[2]);
+    let targets = [v3(-0.23, 0.10, 1.1), v3(0.23, 0.10, 1.1)];
+    let raised = rig.clone().with_rest_wrist_targets(targets).unwrap();
+    let pose = compile(&raised, &anim, &PerformOptions::default()).pose_at(0.0);
+    let world = raised.joint_world(&pose);
+    for s in 0..2 {
+        assert_eq!(
+            rig.rest_position(wrists[s]),
+            raised.rest_position(wrists[s])
+        );
+        let pelvis = rig.map().pelvis;
+        let offset = joints[pelvis].sub(rig.rest_position(pelvis));
+        assert!(dist(world[wrists[s]], targets[s].add(offset)) < 0.0002);
+        assert!(dist(world[wrists[s]], joints[wrists[s]]) > 0.07);
+        let leg = rig.map().legs[s][2];
+        assert_eq!(world[leg], joints[leg]);
+    }
+    assert!(matches!(
+        rig.with_rest_wrist_targets([v3(f32::NAN, 0.0, 0.0), targets[1]]),
+        Err(PerformError::NonFinite)
+    ));
+}

@@ -15,6 +15,7 @@ use super::Result;
 pub enum Sequence {
     Idle,
     Scene,
+    Reference,
 }
 
 pub struct Options {
@@ -48,7 +49,8 @@ impl Options {
                     sequence = Some(match v {
                         "idle" => Sequence::Idle,
                         "scene" => Sequence::Scene,
-                        _ => return Err("expected idle or scene".into()),
+                        "reference" => Sequence::Reference,
+                        _ => return Err("expected idle, scene or reference".into()),
                     })
                 }
                 "--fabric" => {
@@ -78,7 +80,7 @@ impl Options {
         config.validate()?;
         Ok(Some(Self {
             sequence: sequence
-                .ok_or("--performance idle|scene is required with physics options")?,
+                .ok_or("--performance idle|scene|reference is required with physics options")?,
             config,
             kinematic_only,
             preroll_frames,
@@ -101,6 +103,34 @@ fn blink(script: &mut PerformanceScript) {
     express(script, &[("blink_l", 0.0), ("blink_r", 0.0)]);
 }
 
+pub fn reference_rig(rig: Rig, compiled: &Compiled) -> Result<Rig> {
+    let pelvis = rig.rest_position(rig.map().pelvis);
+    let mut wrists = [Vec3::ZERO; 2];
+    for (i, &chain) in rig.map().arms.iter().enumerate() {
+        let [shoulder, elbow, wrist] = chain.map(|j| rig.rest_position(j));
+        let length = shoulder.sub(elbow).length() + elbow.sub(wrist).length();
+        let sign = (shoulder.x - pelvis.x).signum();
+        let z = shoulder.z - 0.89 * length;
+        let side = compiled.shaped_positions()[..compiled.body_vertex_count()]
+            .iter()
+            .filter(|p| {
+                (p.z - z).abs() < 0.045
+                    && (p.y - pelvis.y).abs() < 0.12
+                    && (p.x - pelvis.x).abs() < (shoulder.x - pelvis.x).abs() + 0.065
+            })
+            .map(|p| sign * (p.x - pelvis.x))
+            .fold(0.0_f32, f32::max);
+        wrists[i] = Vec3::new(pelvis.x + sign * (side + 0.032), shoulder.y - 0.035, z);
+    }
+    println!(
+        "reference_wrist_height_m={:.4},{:.4} reference_wrist_span_m={:.4}",
+        wrists[0].z,
+        wrists[1].z,
+        (wrists[0].x - wrists[1].x).abs()
+    );
+    Ok(rig.with_rest_wrist_targets(wrists)?)
+}
+
 pub fn performance(
     rig: &Rig,
     style: Style,
@@ -108,6 +138,9 @@ pub fn performance(
 ) -> Result<(PerformanceScript, Option<Vec3>)> {
     let pelvis = rig.rest_position(rig.map().pelvis);
     let mut script = PerformanceScript::new(style);
+    if sequence == Sequence::Reference {
+        return Ok((script.with(Beat::Idle { secs: 0.25 }), None));
+    }
     express(
         &mut script,
         &[
@@ -224,33 +257,63 @@ pub fn seated_chair(compiled: &Compiled, tape: &Tape, seat: Vec3) -> Result<(Val
         .find(|e| e.kind == "stop")
         .ok_or("missing stop event")?
         .frame;
-    let mut xmax = f32::NEG_INFINITY;
-    for f in 0..=stop as usize {
-        let mesh = compiled.pose_vertices(&frame(f))?;
-        for p in mesh
-            .body
-            .iter()
-            .chain(mesh.garments.iter().flat_map(|g| &g.positions))
-        {
-            if (p.y - seat.y).abs() < 0.28 && p.z > 0.0 && p.z < top + 0.48 {
-                xmax = xmax.max(p.x);
-            }
-        }
-    }
     let width = 0.43;
     let depth = 0.40;
     let thick = 0.035;
-    if !xmax.is_finite() {
+    let back_width = 0.26;
+    let back_height = 0.33;
+    let back_offset = 0.07;
+    let margin = 0.025;
+    let mut seat_max = f32::NEG_INFINITY;
+    let mut back_max = f32::NEG_INFINITY;
+    let back_y = seat.y + depth / 2.0 - 0.0175;
+    let check = |p: &[Vec3], indices: &[u32], seat_max: &mut f32, back_max: &mut f32| {
+        // A triangle must overlap both slab intervals before its maximum X can restrict
+        // the chair. Using its entire X extent overestimates possible collision.
+        for tri in indices.chunks_exact(3) {
+            let [a, b, c] = [p[tri[0] as usize], p[tri[1] as usize], p[tri[2] as usize]];
+            let ymin = a.y.min(b.y).min(c.y);
+            let ymax = a.y.max(b.y).max(c.y);
+            let zmin = a.z.min(b.z).min(c.z);
+            let zmax = a.z.max(b.z).max(c.z);
+            let xmax = a.x.max(b.x).max(c.x);
+            if ymin <= seat.y + depth / 2.0
+                && ymax >= seat.y - depth / 2.0
+                && zmin <= top
+                && zmax >= 0.0
+            {
+                *seat_max = seat_max.max(xmax);
+            }
+            if ymin <= back_y + 0.0175
+                && ymax >= back_y - 0.0175
+                && zmin <= top + back_height
+                && zmax >= top
+            {
+                *back_max = back_max.max(xmax);
+            }
+        }
+    };
+    for f in 0..=stop as usize {
+        let mesh = compiled.pose_vertices(&frame(f))?;
+        check(&mesh.body, compiled.indices(), &mut seat_max, &mut back_max);
+        for (g, source) in mesh.garments.iter().zip(compiled.drawable_garments()) {
+            check(&g.positions, &source.indices, &mut seat_max, &mut back_max);
+        }
+    }
+    if !seat_max.is_finite() {
         return Err("empty walking corridor sample".into());
     }
-    // Includes the back uprights and all four legs in the same horizontal envelope.
-    let x = seat.x.max(xmax + 0.025 + width / 2.0);
+    let x = seat
+        .x
+        .max(seat_max + margin + width / 2.0)
+        .max(back_max + margin + back_width / 2.0 - back_offset);
+    let gap = (x - width / 2.0 - seat_max).min(x + back_offset - back_width / 2.0 - back_max);
     let min_pelvis_x = x - width / 2.0 + 0.085;
     Ok((
         json!({"pelvis_target":[seat.x,seat.y,seat.z],
-        "walk_frames_measured":stop+1, "walk_to_chair_gap_m":x-width/2.0-xmax,
+        "walk_frames_measured":stop+1, "walk_to_chair_gap_m":gap,
         "contact_top_m":top, "seat":{"center":[x,seat.y,top-thick/2.0],"size":[width,depth,thick]},
-        "back":{"center":[x,seat.y+depth/2.0-0.0175,top+0.245],"size":[width,0.035,0.49]}}),
+        "back":{"center":[x+back_offset,back_y,top+back_height/2.0],"size":[back_width,0.035,back_height]}}),
         min_pelvis_x,
     ))
 }

@@ -95,7 +95,13 @@ fn run(
     if !reports.iter().all(|r| positions.contains_key(&r.id)) {
         return Err("compiled output is missing a fitted garment mesh".into());
     }
-    let rig = game_engine_rig(&compiled)?;
+    let mut rig = game_engine_rig(&compiled)?;
+    if options
+        .as_ref()
+        .is_some_and(|o| o.sequence == scene::Sequence::Reference)
+    {
+        rig = scene::reference_rig(rig, &compiled)?;
+    }
     let fps = 30;
     let (mut script, seat) = match options.as_ref() {
         Some(o) => scene::performance(&rig, style, o.sequence)?,
@@ -183,7 +189,7 @@ fn run(
 fn main() -> Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let [asset, preset, out, flags @ ..] = args.as_slice() else {
-        return Err("usage: gibson-still-recipe ASSET_DIR PRESET_JSON OUT_DIR [--performance idle|scene --kinematic-only | physics options]".into());
+        return Err("usage: gibson-still-recipe ASSET_DIR PRESET_JSON OUT_DIR [--performance idle|scene|reference --kinematic-only | physics options]".into());
     };
     run(
         Path::new(asset),

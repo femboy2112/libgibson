@@ -562,6 +562,7 @@ pub struct Rig {
     fwd64: V,
     right64: V,
     arm_pole: [Vec3; 2],
+    rest_wrists: [Vec3; 2],
 }
 
 impl Rig {
@@ -645,6 +646,7 @@ impl Rig {
             let out = if side == 0 { right.neg() } else { right };
             arm_pole[side] = pole.unwrap_or_else(|| fwd.scale(-0.8).add(out.scale(0.6)));
         }
+        let rest_wrists = [rest_pos[map.arms[0][2]], rest_pos[map.arms[1][2]]];
         Ok(Rig {
             skeleton,
             map,
@@ -659,6 +661,7 @@ impl Rig {
             fwd64: v64(fwd),
             right64: v64(right),
             arm_pole,
+            rest_wrists,
         })
     }
 
@@ -670,6 +673,17 @@ impl Rig {
     /// The role map.
     pub fn map(&self) -> &RigMap {
         &self.map
+    }
+
+    /// Override the two neutral wrist IK targets in rest model coordinates, left then right.
+    /// Their frame follows the pelvis translation and heading. Limb lengths and reach limits
+    /// still come from the skeleton. By default each target is its bind-pose wrist position.
+    pub fn with_rest_wrist_targets(mut self, wrists: [Vec3; 2]) -> Result<Self, PerformError> {
+        if wrists.iter().any(|p| !p.is_finite()) {
+            return Err(PerformError::NonFinite);
+        }
+        self.rest_wrists = wrists;
+        Ok(self)
     }
 
     /// Rest world position of joint `j` (model space, before any root translation).
@@ -962,7 +976,7 @@ fn solve_pass(
                 } else {
                     let s = l;
                     let base = D_ARM + s * 8;
-                    let hand_rest = rig.rest_pos[c[2]];
+                    let hand_rest = rig.rest_wrists[s];
                     let hang = yawq.rotate(hand_rest).add(pel_off);
                     let swing = hf
                         .scale(g(base))
