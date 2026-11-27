@@ -42,10 +42,50 @@ def _smoothstep(x):
     return x * x * (3.0 - 2.0 * x)
 
 
-def make_skirt(P, joints, exclude=None, n_seg=48, n_ring=14, hem_below_knee_frac=0.03, margin_m=0.012, flare_m=0.09,
-               waist_above_pelvis_frac=0.06, left_is_plus_x=None):
+def _fold_amp(th):
+    """Deterministic low-frequency modulation of the fold depth around the skirt (so the folds are not machine-regular)."""
+    return 1.0 + 0.20 * math.sin(3.0 * th + 0.7) + 0.12 * math.sin(5.0 * th + 2.1)
+
+
+def _pleat(x):
+    """Rounded fold profile in [0, 1] (soft crests, wider troughs): (0.5 + 0.5 sin x) ** 0.8."""
+    return (0.5 + 0.5 * math.sin(x)) ** 0.8
+
+
+def natural_waist(P, torso, z_lo, z_hi, steps=40, half_band=0.012):
+    """Height of the narrowest torso band in [z_lo, z_hi] (width proxy: max |x| + half the y extent of the band), or None when the
+    narrowest band sits on the window edge (no interior minimum: the caller falls back to the pelvis-relative formula)."""
+    zs, ws = [], []
+    for k in range(steps + 1):
+        z = z_lo + (z_hi - z_lo) * k / float(steps)
+        sel = [i for i in torso if abs(P[i][2] - z) <= half_band]
+        if len(sel) < 8:
+            continue
+        ys = [P[i][1] for i in sel]
+        zs.append(z)
+        ws.append(max(abs(P[i][0]) for i in sel) + 0.5 * (max(ys) - min(ys)))
+    if len(ws) < 5:
+        return None, {"reason": "too few bands", "n": len(ws)}
+    ws = _smooth3(ws, 3)
+    k = min(range(len(ws)), key=lambda j: ws[j])
+    if k <= 1 or k >= len(ws) - 2:
+        return None, {"reason": "narrowest band on the window edge", "z": zs[k]}
+    return zs[k], {"width_proxy_m": ws[k], "window": [z_lo, z_hi]}
+
+
+def make_skirt(P, joints, exclude=None, n_seg=192, n_ring=18, hem_below_knee_frac=0.03, margin_m=0.012, flare_m=0.17,
+               waist="natural", waist_above_pelvis_frac=0.06, folds=12, fold_amp_m=0.03, gathers_per_fold=2, gather_amp_m=0.004,
+               hem_wave_m=0.010, extra=None, contain=True, left_is_plus_x=None):
     """P: shaped positions (full index space).  joints: {"joint-pelvis": [idx...], "joint-l-knee": ..., "joint-r-knee",
     "joint-l-upper-leg"}.  exclude: optional list[bool] per body vertex (True = ignore, e.g. arms/hands by skin weight).
+    extra: optional [(positions, exclude_mask_or_None)] of fitted garments the skirt must also contain (the suit under it).
+    contain=False skips the containment scale (the `skirt_tight` must-FAIL mutant only).
+
+    Silhouette: the top ring sits at the NATURAL WAIST (narrowest torso band between pelvis + 2% and + 16% of stature; fallback
+    pelvis + waist_above_pelvis_frac * stature), a super-ellipse fitted round each height band, flared toward the hem by
+    flare_m * t^1.3.  Fullness: `folds` rounded folds whose depth grows from 0 at the waist to fold_amp_m at the hem (t^1.2),
+    plus folds * gathers_per_fold small gathers at the waist (gather_amp_m, fading by (1 - t)^2), plus a hem wave (the hem dips by up
+    to hem_wave_m on fold crests).  Every fold/gather offset is OUTWARD only, so containment of the body holds by construction.
     -> dict(positions, quads, uvs, quad_uv, t (per vertex 0 waist..1 hem), weights {bone: [per vertex]}, params)."""
     cen = lambda n: fc.centroid(P, joints[n])
     pel = cen("joint-pelvis")
@@ -58,42 +98,64 @@ def make_skirt(P, joints, exclude=None, n_seg=48, n_ring=14, hem_below_knee_frac
     stature = max(zs) - min(zs)
     hipx = abs(lup[0])
     lim = min(max(2.6 * hipx, 0.20), 0.34)
+    torso = [i for i in body if abs(P[i][0]) <= lim]
+    waist_info = {"mode": "pelvis_relative"}
     z_top = pel[2] + waist_above_pelvis_frac * stature
+    if waist == "natural":
+        zw, info = natural_waist(P, torso, pel[2] + 0.02 * stature, pel[2] + 0.16 * stature)
+        waist_info = dict(info, mode="natural" if zw is not None else "pelvis_relative (natural waist not found)")
+        if zw is not None:
+            z_top = zw
     z_hem = 0.5 * (kl[2] + kr[2]) - hem_below_knee_frac * stature
     zk = [z_top + (z_hem - z_top) * k / (n_ring - 1.0) for k in range(n_ring)]
-    torso = [i for i in body if abs(P[i][0]) <= lim]
+    xpts = []
+    for pos_e, ex_e in (extra or []):
+        xpts.extend(p for j, p in enumerate(pos_e) if not (ex_e and ex_e[j]) and abs(p[0]) <= lim)
 
     def band(z):
         w = 0.012
         for _ in range(7):
             sel = [i for i in torso if abs(P[i][2] - z) <= w]
             if len(sel) >= 8:
-                return sel
+                return sel, w
             w *= 2.0
         raise ValueError("skirt: no body vertices near z=%.3f" % z)
 
     bands = [band(z) for z in zk]
-    cy = [0.5 * (min(P[i][1] for i in b) + max(P[i][1] for i in b)) for b in bands]
-    a0 = [max(abs(P[i][0]) for i in b) for b in bands]
-    b0 = [max(abs(P[i][1] - cy[k]) for i in b) for k, b in enumerate(bands)]
+    cy = [0.5 * (min(P[i][1] for i in b) + max(P[i][1] for i in b)) for b, _w in bands]
+    a0 = [max(abs(P[i][0]) for i in b) for b, _w in bands]
+    b0 = [max(abs(P[i][1] - cy[k]) for i in b) for k, (b, _w) in enumerate(bands)]
     cy, a0, b0 = _smooth3(cy), _smooth3(a0), _smooth3(b0)
-    rings = []
-    for k, b in enumerate(bands):
+    scales = []
+    for k, (b, w) in enumerate(bands):
         s = 1.0
-        for i in b:
-            u = (abs(P[i][0]) / a0[k]) ** POWER + (abs(P[i][1] - cy[k]) / b0[k]) ** POWER
-            s = max(s, u ** (1.0 / POWER))
-        t = k / (n_ring - 1.0)
-        rings.append((a0[k] * s + margin_m + flare_m * t ** 1.5, b0[k] * s + margin_m + flare_m * t ** 1.5, cy[k]))
+        if contain:
+            pts = [P[i] for i in b] + [p for p in xpts if abs(p[2] - zk[k]) <= w]
+            for p in pts:
+                u = (abs(p[0]) / a0[k]) ** POWER + (abs(p[1] - cy[k]) / b0[k]) ** POWER
+                s = max(s, u ** (1.0 / POWER))
+        scales.append(s)
+    scales = [max(a, b) for a, b in zip(scales, _smooth3(scales))]      # smooth over height, never below a band's own need
     two_pi = 2.0 * math.pi
-    pos, tt = [], []
-    for k, (a, b, c) in enumerate(rings):
+    n_g = folds * gathers_per_fold
+    pos, tt, base_r = [], [], []
+    for k in range(n_ring):
+        t = k / (n_ring - 1.0)
+        a, b, c = a0[k] * scales[k], b0[k] * scales[k], cy[k]
+        a_f = fold_amp_m * t ** 1.2
+        a_g = gather_amp_m * (1.0 - t) ** 2
+        phase = 0.35 * t
         for j in range(n_seg):
             th = two_pi * j / n_seg
             ca, sa = math.cos(th), math.sin(th)
-            r = (abs(ca / a) ** POWER + abs(sa / b) ** POWER) ** (-1.0 / POWER)
-            pos.append((r * ca, c + r * sa, zk[k]))
-            tt.append(k / (n_ring - 1.0))
+            r0 = (abs(ca / a) ** POWER + abs(sa / b) ** POWER) ** (-1.0 / POWER)
+            pl = _pleat(folds * th + phase) if folds else 0.0
+            off = margin_m + flare_m * t ** 1.3 + a_f * _fold_amp(th) * pl + (a_g * (0.5 + 0.5 * math.sin(n_g * th)) if n_g else 0.0)
+            r = r0 + off
+            dz = -hem_wave_m * t ** 4 * pl
+            pos.append((r * ca, c + r * sa, zk[k] + dz))
+            tt.append(t)
+            base_r.append(r0 + margin_m + flare_m * t ** 1.3)
     quads, quv = [], []
     uvs = [(j / float(n_seg), 1.0 - k / (n_ring - 1.0)) for k in range(n_ring) for j in range(n_seg + 1)]
     for k in range(n_ring - 1):
@@ -130,9 +192,18 @@ def make_skirt(P, joints, exclude=None, n_seg=48, n_ring=14, hem_below_knee_frac
         s = sum(W[bn][v] for bn in BONES)
         for bn in BONES:
             W[bn][v] /= s
-    return {"positions": pos, "quads": quads, "quad_uv": quv, "uvs": uvs, "t": tt, "weights": W,
+    return {"positions": pos, "quads": quads, "quad_uv": quv, "uvs": uvs, "t": tt, "weights": W, "base_r": base_r,
             "params": {"n_seg": n_seg, "n_ring": n_ring, "z_top": z_top, "z_hem": z_hem, "stature": stature, "lateral_limit": lim,
-                       "flare_m": flare_m, "margin_m": margin_m, "power": POWER, "left_is_plus_x": left_is_plus_x}}
+                       "flare_m": flare_m, "margin_m": margin_m, "power": POWER, "left_is_plus_x": left_is_plus_x, "waist": waist_info,
+                       "folds": folds, "fold_amp_m": fold_amp_m, "gathers": n_g, "gather_amp_m": gather_amp_m, "hem_wave_m": hem_wave_m,
+                       "contain": contain, "extra_points": len(xpts), "containment_scale_max": max(scales)}}
+
+
+def under_skirt_hide(positions, exclude, z_top, z_hem, waist_keep_m=0.03, hem_keep_m=0.05):
+    """Indices of garment vertices to HIDE under the skirt: strictly between z_hem + hem_keep_m and z_top - waist_keep_m (rest
+    positions), excluding masked vertices (arms/hands).  The kept strips stay inside the skirt so no gap opens at the waistband or the hem."""
+    lo, hi = z_hem + hem_keep_m, z_top - waist_keep_m
+    return [i for i, p in enumerate(positions) if lo < p[2] < hi and not (exclude and exclude[i])]
 
 
 def pose(rest, W, S):
@@ -198,7 +269,7 @@ def _selftest():
         P[i] = P[i % n]
     J = {"joint-pelvis": [0], "joint-l-knee": [1], "joint-r-knee": [2], "joint-l-upper-leg": [3]}
     P[0], P[1], P[2], P[3] = (0, 0, 0.95), (0.1, 0, 0.50), (-0.1, 0, 0.50), (0.1, 0, 0.9)
-    sk = make_skirt(P, J, n_seg=32, n_ring=10)
+    sk = make_skirt(P, J, n_seg=32, n_ring=10, flare_m=0.09, folds=0, waist="pelvis")   # the pre-#118 silhouette: old invariants
     pos = sk["positions"]
     check(len(pos) == 320 and len(sk["quads"]) == 32 * 9, "320 vertices, 288 quads")
     # containment: every body vertex in the skirt height range lies inside the ring at its height
