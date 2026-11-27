@@ -417,11 +417,19 @@ def make_skirt(P, groups, body_w=None, n_seg=40, n_ring=12):
             tuv.append((uvi(k, j), uvi(k + 1, j), uvi(k, j + 1)))
             tris.append((vi(k, j + 1), vi(k + 1, j), vi(k + 1, j + 1)))
             tuv.append((uvi(k, j + 1), uvi(k + 1, j), uvi(k + 1, j + 1)))
-    # binding: 3 nearest body vertices in the hip/waist band, inverse-distance weights
-    cz0, cz1 = pel[2] - 0.08 * stature, z_top + 0.06 * stature
+    bind, spec = skirt_binding(P, pos, pel[2], z_top, stature, lim)
+    return {"name": "skirt", "positions": pos, "tris": tris, "tri_uv": tuv, "uvs": uvs, "bind": bind,
+            "offset_spec": spec, "delete_verts": [],
+            "params": {"n_seg": n_seg, "n_ring": n_ring, "z_top": z_top, "z_hem": z_hem, "stature": stature,
+                       "lateral_limit": lim, "flare_m": 0.12, "margin_m": 0.010}}
+
+
+def skirt_binding(P, positions, pelvis_z, z_top, stature, lim):
+    """Bind each skirt vertex to the nearest three body vertices in the hip/waist band."""
+    cz0, cz1 = pelvis_z - 0.08 * stature, z_top + 0.06 * stature
     cand = [i for i in range(N_BODY) if abs(P[i][0]) <= lim * 1.15 and cz0 <= P[i][2] <= cz1]
     bind = []
-    for p in pos:
+    for p in positions:
         near = heapq.nsmallest(3, ((math.dist(P[i], p), i) for i in cand))
         ws = [1.0 / (d + 1e-3) for d, _ in near]
         s = sum(ws)
@@ -429,7 +437,7 @@ def make_skirt(P, groups, body_w=None, n_seg=40, n_ring=12):
         ids = [i for _, i in near]
         base = [sum(ws[m] * P[ids[m]][a] for m in range(3)) for a in range(3)]
         bind.append((ids[0], ids[1], ids[2], ws[0], ws[1], ws[2], p[0] - base[0], p[1] - base[1], p[2] - base[2]))
-    hipband = [i for i in range(N_BODY) if abs(P[i][2] - pel[2]) < 0.02 * stature]
+    hipband = [i for i in range(N_BODY) if abs(P[i][2] - pelvis_z) < 0.02 * stature]
     xa = max(hipband, key=lambda i: (P[i][0], -i))
     xb = min(hipband, key=lambda i: (P[i][0], i))
     ya = min(hipband, key=lambda i: (P[i][1], i))
@@ -439,10 +447,7 @@ def make_skirt(P, groups, body_w=None, n_seg=40, n_ring=12):
     spec = [{"a": xa, "b": xb, "axis": 0, "ref": abs(P[xa][0] - P[xb][0])},
             {"a": ya, "b": yb, "axis": 1, "ref": abs(P[ya][1] - P[yb][1])},
             {"a": za, "b": zb, "axis": 2, "ref": abs(P[za][2] - P[zb][2])}]
-    return {"name": "skirt", "positions": pos, "tris": tris, "tri_uv": tuv, "uvs": uvs, "bind": bind,
-            "offset_spec": spec, "delete_verts": [],
-            "params": {"n_seg": n_seg, "n_ring": n_ring, "z_top": z_top, "z_hem": z_hem, "stature": stature,
-                       "lateral_limit": lim, "flare_m": 0.12, "margin_m": 0.010}}
+    return bind, spec
 
 
 def transfer_weights(bind, body_idx, body_w, P, n_body=N_BODY):

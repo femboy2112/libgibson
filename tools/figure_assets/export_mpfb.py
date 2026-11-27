@@ -35,6 +35,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import fa_common as fc  # noqa: E402
+import fa_skirt  # noqa: E402
 
 try:
     import bpy  # noqa: E402
@@ -211,7 +212,7 @@ class Blender:
         return {"bones": bones, "weights": weights}
 
     # ---- glTF of the shaped, rigged body (+ attachments)
-    def build_and_export_gltf(self, macro, S_all, rig_name, attachments, hide_idx, out_path, n_body):
+    def build_and_export_gltf(self, macro, S_all, rig_name, attachments, hide_idx, out_path, n_body, render=None):
         self.clear_scene()
         obj = self.build_human(macro)
         me = obj.data
@@ -235,11 +236,35 @@ class Blender:
         for p in me.polygons:
             p.use_smooth = True
         obj.data.materials.clear()
-        obj.data.materials.append(self._material("body_skin", (0.78, 0.56, 0.46), 0.55))
+        # Use the same audited image maps in the optional interchange export.
+        pack = None
+        if render and render.get("texture_set") == "makehuman_system":
+            import fa_materials
+            import fa_stage as stage
+            pack = fa_materials.PackTextures(self.user_data)
+            skin, _ = stage.skin_material(render["skin"], pack)
+        else:
+            skin = self._material("body_skin", (0.78, 0.56, 0.46), 0.55)
+        obj.data.materials.append(skin)
         obj.name = "Body"
         made = [obj]
         for a in attachments:
-            made.append(self._attachment_object(a, arm))
+            material = None
+            if pack is not None:
+                slots = render.get("materials", {})
+                if a["name"] == "long01":
+                    material = stage.hair_material(render["hair"]["color"], pack=pack)
+                elif a["name"] == "low-poly":
+                    material = stage.eye_material(slots.get("iris", {}).get("albedo", render["eyes"]["iris"]), pack)
+                elif a["name"] == "eyebrow001":
+                    material = stage.brow_material(render["brows"]["color"], "brow", pack)
+                elif a["name"] == "eyelashes01":
+                    material = stage.brow_material([0.012, 0.01, 0.01], "lash", pack)
+                elif a["kind"] in ("clothes", "skirt"):
+                    key, default = ("skirt", "panel") if a["kind"] == "skirt" else ("garment", "base")
+                    slot = render.get("bindings", {}).get(key, default)
+                    material = stage.slot_material(slot, slots.get(slot, {}))
+            made.append(self._attachment_object(a, arm, material))
         bpy.ops.object.select_all(action="DESELECT")
         for o in [arm] + made:
             o.select_set(True)
@@ -250,7 +275,12 @@ class Blender:
         except TypeError as exc:
             say("NOTE: glTF exporter rejected an argument (%s); retrying with minimal arguments" % exc)
             bpy.ops.export_scene.gltf(filepath=out_path, export_format="GLB", use_selection=True)
-        return {"objects": [o.name for o in [arm] + made], "n_body_vertices": len(me.vertices)}
+        info = {"objects": [o.name for o in [arm] + made], "n_body_vertices": len(me.vertices)}
+        if pack is not None:
+            info["texture_sources"] = {
+                m["fa_texture_id"]: pack.rows[m["fa_texture_id"]]["files"][0]["path"]
+                for o in made for m in o.data.materials if m and "fa_texture_id" in m}
+        return info
 
     def _material(self, name, rgb, rough):
         m = bpy.data.materials.new(name)
@@ -262,7 +292,9 @@ class Blender:
         m.diffuse_color = (rgb[0], rgb[1], rgb[2], 1.0)
         return m
 
-    def _attachment_object(self, a, arm):
+    def _attachment_object(self, a, arm, material=None):
+        if material and material.get("fa_texture_id") and not a.get("uv_polys"):
+            raise ValueError(f"{a['name']} has a material map but no exported face UVs")
         me = bpy.data.meshes.new(a["name"])
         me.from_pydata([tuple(p) for p in a["positions"]], [], [tuple(f) for f in a["polys"]])
         me.update()
@@ -275,7 +307,7 @@ class Blender:
                     li += 1
         for p in me.polygons:
             p.use_smooth = True
-        me.materials.append(self._material(a["name"], a["color"], a.get("rough", 0.6)))
+        me.materials.append(material or self._material(a["name"], a["color"], a.get("rough", 0.6)))
         o = bpy.data.objects.new(a["name"], me)
         bpy.context.scene.collection.objects.link(o)
         groups = {}
@@ -366,17 +398,30 @@ ATTACH_COLORS = {"clothes": ((0.20, 0.38, 0.42), 0.7), "hair": ((0.18, 0.11, 0.0
                  "skirt": ((0.55, 0.20, 0.25), 0.8)}
 
 
-def load_attachment(spec, user_data, P, groups, body_idx, body_w, sources, bone_names):
+def load_attachment(spec, user_data, P, groups, body_idx, body_w, sources, bone_names, inner_layers=()):
     """spec like 'clothes:female_casualsuit01' or 'skirt'.  Returns (record, blender_view_dict)."""
     kind, _, name = spec.partition(":")
-    if kind == "skirt":
-        sk = fc.make_skirt(P, groups)
-        rec = {"name": "skirt", "kind": "skirt", "source": "self-authored", "licence": "self-authored, repo licence",
+    panel_weights = None
+    if kind in ("skirt", "skirt_a_line"):
+        if kind == "skirt":
+            sk = fc.make_skirt(P, groups)
+            polys, uv_polys = sk["tris"], sk["tri_uv"]
+        else:
+            body_mask = fa_skirt.arm_mask(bone_names, body_idx, body_w)
+            layers = [(g["positions"], fa_skirt.arm_mask(bone_names, g["skin_idx"], g["skin_w"]))
+                      for g in inner_layers if g["kind"] == "clothes"]
+            sk = fa_skirt.make_skirt(P, groups, exclude=body_mask, extra=layers)
+            polys, uv_polys = sk["quads"], sk["quad_uv"]
+            sk["tris"], sk["tri_uv"], _ = fc.triangulate((v, uv, None) for v, uv in zip(polys, uv_polys))
+            params = sk["params"]
+            sk["bind"], sk["offset_spec"] = fc.skirt_binding(
+                P, sk["positions"], fc.centroid(P, groups["joint-pelvis"])[2],
+                params["z_top"], params["stature"], params["lateral_limit"])
+            panel_weights = sk["weights"]
+        rec = {"name": kind, "kind": "skirt", "source": "self-authored", "licence": "self-authored, repo licence",
                "positions": sk["positions"], "tris": sk["tris"], "tri_uv": sk["tri_uv"], "uvs": sk["uvs"],
                "bind": sk["bind"], "offset_spec": sk["offset_spec"], "delete_verts": [], "params": sk["params"],
-               "polys": None, "uv_polys": None}
-        rec["polys"] = [list(t) for t in sk["tris"]]
-        rec["uv_polys"] = [list(t) for t in sk["tri_uv"]]
+               "polys": polys, "uv_polys": uv_polys}
     else:
         if kind not in ATTACH_DIRS:
             raise ValueError("unknown attachment kind '%s' in '%s'" % (kind, spec))
@@ -401,10 +446,16 @@ def load_attachment(spec, user_data, P, groups, body_idx, body_w, sources, bone_
                "polys": [f[0] for f in obj["faces"]],
                "uv_polys": [f[1] for f in obj["faces"]] if all(f[1] is not None for f in obj["faces"]) else None}
         rec["positions"] = fc.fit_binding(rec["bind"], spec_off, P)
-    si, sw, bad = fc.transfer_weights(rec["bind"], body_idx, body_w, P)
+    if panel_weights is None:
+        si, sw, bad = fc.transfer_weights(rec["bind"], body_idx, body_w, P)
+    else:
+        indices = [bone_names.index(b) for b in fa_skirt.BONES] + [0]
+        si = [indices for _ in rec["positions"]]
+        sw = [[panel_weights[b][i] for b in fa_skirt.BONES] + [0.0] for i in range(len(si))]
+        bad = 0
     rec["skin_idx"], rec["skin_w"], rec["n_unweighted"] = si, sw, bad
     rec["skin_names"] = [[bone_names[i] for i in row] for row in si]
-    c, r = ATTACH_COLORS[kind]
+    c, r = ATTACH_COLORS[rec["kind"]]
     rec["color"], rec["rough"] = c, r
     return rec
 
@@ -648,7 +699,7 @@ def assemble(args, B, say=say):
     att_files = []
     bone_names = order
     for s in att_specs:
-        rec = load_attachment(s, user_data, P, groups, wi, ww, sources, bone_names)
+        rec = load_attachment(s, user_data, P, groups, wi, ww, sources, bone_names, atts)
         atts.append(rec)
         att_files.append(write_attachment(out, rec))
     tm.lap("attachments")
@@ -681,14 +732,20 @@ def assemble(args, B, say=say):
         gl_atts = []
         hide = set()
         for s in gl_specs:
-            rec = load_attachment(s, user_data, P, groups, wi, ww, sources, bone_names)
+            rec = load_attachment(s, user_data, P, groups, wi, ww, sources, bone_names, gl_atts)
             # refit to the shaped body S (binding is the same code the runtime uses)
             rec["positions"] = fc.fit_binding(rec["bind"], rec["offset_spec"], S)
+            if rec["name"] == "long01" and preset.get("render", {}).get("texture_set") == "makehuman_system":
+                import fa_hair
+                eyes = [fc.centroid(S, landmarks["joints"][n]) for n in ("joint-l-eye", "joint-r-eye")]
+                rec["positions"], _ = fa_hair.part_hair(rec["positions"], *eyes)
             if preset.get("hide_body_under_garment", True) and rec["kind"] == "clothes":
                 hide.update(i for i in rec["delete_verts"] if i < fc.N_BODY)
             gl_atts.append(rec)
         glb = os.path.join(args.out, "body_shaped.glb")
-        gltf_info = B.build_and_export_gltf(macro, S, rig_name, gl_atts, hide, glb, fc.N_BODY)
+        gltf_info = B.build_and_export_gltf(macro, S, rig_name, gl_atts, hide, glb, fc.N_BODY, preset.get("render"))
+        for asset_id, relpath in gltf_info.get("texture_sources", {}).items():
+            sources.add(asset_id, "user", relpath, os.path.join(user_data, relpath))
         gltf_info["hidden_body_vertices"] = len(hide)
         gltf_info["attachments"] = gl_specs
         if not os.path.isfile(glb) or os.path.getsize(glb) < 1000:
