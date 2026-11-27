@@ -468,6 +468,138 @@ assets:
 
 ---
 
+## Continuous clips and transitions (C-1) (DRAFT, EXPERIMENTAL)
+
+**Status: DRAFT.** Nothing in this section is frozen or normative, and it changes none of the
+sections above: finite clips (`Clip::sample`) and their tests are untouched, and the I-3 shapes
+are not edited. The code was drafted without a compiler: it is **not compiled, not run and not
+measured**. The predicted results are in `docs/evidence/m5b/c1/KILL_MATRIX_PREDICTED.md` and the
+numeric model is `docs/evidence/m5b/c1/model_c1.py`. Claim label: **C-1** (this packet), not
+SLICE 1.
+
+**Why.** Owner ruling 17: "make sure we model continuous motion and not just jarring stop
+motion". A finite clip that interpolates linearly has a velocity jump at every key, and a
+transition that snaps or freezes the old pose has one at its start. This section adds, in the
+new module `figure::motion`:
+- smooth (C1) key interpolation and loops without a seam;
+- transitions between motions that are functions of time and blend over an explicit `ease`;
+- preemption that preserves the old velocity (inertialization);
+- a generic aim layer whose retargets are inertialized too.
+
+**Laws.**
+1. **Pure function of explicit time.** `Motion::sample(t: Duration) -> MotionPose`. There is no
+   clock and no state that a call advances: the same inputs give bit-identical output, in any
+   order of calls. All state is in the objects: the clip, the start times, the preemption
+   instant, the `ease`, the retarget schedule.
+2. **C1 at least.** Velocity is continuous across keys, across a loop seam, through a crossfade
+   and across a preemption, within the f32 and finite-difference bounds the tests derive.
+3. **Blend, never snap.** A transition blends over `ease` (the `Settle.ease` of I-3, a BLEND
+   duration, not a delay). `ease == 0` is the one exception and is the designed static
+   realization (reduced motion): it switches at once.
+4. **No knowledge of the consumer.** The module sees named joints and morphs, durations and
+   vectors. It knows nothing of Beings, personalities or the consumer's types, and it does not
+   interpret `LookTarget` or any affect: the host maps those to directions and clips.
+
+**Surface** (`gibson::figure::motion`, feature `figure`; all EXPERIMENTAL):
+```rust
+pub enum Interpolation { Linear, Smooth }
+pub enum Repeat { Once, Loop }
+pub enum Sample {
+    Vec3 { value: Vec3, rate: Vec3 },
+    Rotation { value: Quat, omega: Vec3 },   // omega: rad/s, parent frame, q' = 1/2 omega q
+    Scalar { value: f32, rate: f32 },
+}
+pub struct MotionPose { /* tracks: (ChannelTarget, Sample) */ }
+impl MotionPose { pub fn new(..); pub fn tracks(&self); pub fn get(&self, &ChannelTarget); pub fn overlay(&self, &MotionPose) -> MotionPose; }
+#[non_exhaustive] pub enum MotionError { UnknownChannel { channel }, BadDirection, RetargetNotIncreasing, TooManyRetargets }
+pub trait Motion { fn sample(&self, t: Duration) -> MotionPose; }
+
+pub struct MotionClip;   // a Clip + per-channel Interpolation + Repeat
+impl MotionClip {
+    pub fn new(clip: Clip) -> MotionClip;                                  // Smooth, Once
+    pub fn with_interpolation(self, channel: usize, mode: Interpolation) -> Result<MotionClip, MotionError>;
+    pub fn with_repeat(self, repeat: Repeat) -> MotionClip;
+    pub fn sample_at(&self, t: Duration) -> MotionPose;                    // local time
+}
+pub struct Playing;      // Playing::new(clip: MotionClip, start: Duration)
+pub struct Crossfade<A, B>;  // new(from, to, start, ease); with_rest(MotionPose)
+pub struct Preempt<A, B>;    // new(old, new, at, ease);    with_rest(MotionPose)
+pub struct Look;         // new(joint, forward, initial, ease) -> Result; retarget(self, at, direction) -> Result
+```
+`Channel` and `Keys` are unchanged (the interpolation mode lives in `MotionClip`, not in
+`Channel`, so no existing struct literal breaks).
+
+**Smooth keys.** Catmull-Rom in the **time-parameterized, uniform-tension** form: a cubic Hermite
+per segment with tangent `m_i = (p_{i+1} - p_{i-1}) / (t_{i+1} - t_{i-1})`, one value per key
+shared by both segments. The centripetal form is **not** used: it picks the parameter by chord
+length to avoid cusps of a *spatial* curve, and here the parameter is explicit time and each
+channel is an independent scalar function of it. The tangent is a weighted mean of the two chord
+slopes, which gives the bound `|p'| <= 3.5 S` and `|p''| <= 14 S / h_min` the tests use.
+- One-shot clips clamp the end tangents to zero, which is the velocity of the hold, so the hold
+  joins C1 (before the first key and after the last, value held, rate 0).
+- Translations, scales and morph weights are interpolated per component.
+- Rotations are interpolated **component-wise on hemisphere-aligned quaternions, then
+  renormalized**. This is **not exactly constant angular speed**. Alignment is relative to the
+  segment's start key, so authored neighbours more than 180 degrees apart flip the output sign
+  between segments (the rotation stays continuous). Values at keys are returned as authored.
+- Loops wrap time exactly (integer nanoseconds) with period `Clip::duration` and use wrap
+  tangents. A first key at 0 and a last key at the duration are one instant; the last is dropped
+  from the cycle and the first key's value wins.
+
+**Crossfade.** `out = (1 - w) A + w B`, `w = 6x^5 - 15x^4 + 10x^3`, `x = (t - start) / ease`
+(C2 at both ends). Rates include `w' (B - A)`. Rotations: nlerp with the hemisphere fix and an
+analytic angular velocity. Before `start` it is `A`, from `start + ease` exactly `B`.
+
+**Preempt (inertialization).** At the instant `t0` the offset `old(t0) - new(t0)` (rotations: the
+shortest-arc delta `q_old q_new^-1`, as a rotation vector `r0`) and its velocity
+`old'(t0) - new'(t0)` are captured. The offset then follows the quintic
+`offset(x) = x0 h0(x) + v0 T h1(x)`, `x = (t - t0) / T`, with
+`h0 = 1 - 10x^3 + 15x^4 - 6x^5` and `h1 = x - 6x^3 + 8x^4 - 3x^5`: it starts at `(x0, v0)` and
+ends at zero value, velocity and acceleration. The old pose is **not frozen**: that makes the
+velocity drop to zero at `t0`, a visible hitch (coordinator correction). The rotation offset's
+rate is `J^-1(r0) (omega_old - R(q_off) omega_new)`, the SO(3) left Jacobian inverse, so angular
+velocity is preserved too. Before `t0` the pose is `old`; from `t0 + ease` it is `new`, bit for
+bit. A preemption may itself be preempted (the type nests).
+- The quintic does not clamp: a large `v0` against `x0` can overshoot. It is a profile, not a
+  limit.
+- A target only one side names blends to or from the `rest` pose supplied with `with_rest`
+  (default: translation 0, rotation identity, scale 1, weight 0). When the blend ends, targets
+  the new motion does not name leave the pose; they equal `rest` at that instant, so there is no
+  snap provided `rest` is what the consumer applies to an absent target.
+
+**Look.** `Look::new(joint, forward, initial, ease)` aims the joint's `forward` axis (in the
+joint's parent space) along a direction by the shortest-arc rotation; `retarget(at, direction)`
+adds a command. Each retarget is a preemption between constant rotations, so a retarget in the
+middle of an earlier blend preserves angular velocity as well. An antipodal command uses a fixed
+perpendicular axis (deterministic). It owns the joint's rotation track: apply it with
+`MotionPose::overlay`. Mapping the symbolic `LookTarget` to a direction is the host's data table
+(see I-3); a scene-local point stays LATER. At most `MAX_RETARGETS` (4096) retargets.
+
+**Verification obligations (C-1).**
+- Tests: `tests/figure_motion.rs`. Every continuity assertion is a finite-difference velocity
+  jump on a 1 ms grid, against a bound derived from the fixture's key data (largest chord slope
+  `S`, shortest chord `h_min`, the quintic's fixed extrema) plus the roundoff term `4 u P / dt`.
+  The derivation is the module comment of that file. Tolerances are declared before any
+  comparison and never tuned. Where a mutant would only be detected if the motion is fast, the
+  test asserts that premise (the old speed is above four times the bound).
+- Mutation controls (`RUSTFLAGS='--cfg figure_mutant="..."'`, listed in `Cargo.toml`):
+  `snap_transition` (no blend), `freeze_on_preempt` (old pose held, velocity lost),
+  `linear_keys` (Smooth falls back to linear). Each is killed by at least one assertion.
+  Predicted matrix: `docs/evidence/m5b/c1/KILL_MATRIX_PREDICTED.md`.
+- **Not yet verified:** nothing here has been compiled or run. The model is f64 and shares the
+  design with the Rust; it is not an independent bearing on the Rust.
+
+**Known limits and LATER.**
+- No `MotionPose` to `PoseInput` conversion (joint index binding and composing T, R and S over
+  the rest locals) yet.
+- Rotation offsets assume unit rotations; a raw key whose length is within the 1e-3 tolerance
+  but not 1 gives a value step of that size when preempted exactly at the key.
+- `Look` does not know the joint hierarchy or limits and does not constrain the neck; it is an
+  aim, not an IK solver.
+- Corrective shapes, IK, contacts and secondary motion remain LATER (see Evaluation order).
+
+---
+
 ## Placement and release
 
 - Everything is new types in a new feature-gated experimental module, so it is additive under
