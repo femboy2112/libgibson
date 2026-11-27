@@ -805,6 +805,107 @@ delta cap, the id alphabet and length) carry over unchanged.
   `ignored_refit` (the derivation is skipped) and `stale_fit` (a verdict reused across body ids),
   each killed by a non-golden assertion.
 
+### rev.v1 asset input format (`gibson.figure.asset.v1`) and the studio compile (SLICE 4, DRAFT)
+
+*Implemented in Slice 4 (UNCOMPILED until a heavy lease) as `figure::studio` (`src/figure/studio.rs`):
+`RecipeV1`, `AssetSet`, `compile(&RecipeV1, &AssetSet) -> Result<Compiled, CompileError>`,
+`Compiled::pose_vertices(&TapeFrame)`. Evidence: `tests/figure_studio.rs` (synthetic fixture
+`tests/fixtures/figure_studio`, written by `tools/figure_assets/convert_to_gibson.py fixture`),
+mutants `ignore_skeleton_update_v1`, `ignore_surface_update`, `stale_fit`,
+`docs/evidence/m5c/KILL_MATRIX_STUDIO_PREDICTED.md`, `gate_studio.sh`, and the independent f64
+`docs/evidence/m5c/oracle_shape.py`. It follows the sections above where they are decided and
+records here every place where the data forced a choice. v0 is untouched.*
+
+**Files.** `convert_to_gibson.py convert` turns the `figure-asset/1` export into `index.txt`
+(`format`, `body <file> <sha256>`, `part <id> <kind> <file> <sha256>`), `body.gfa` and
+`part.<id>.gfa`. All integers little-endian, `str` = `u32` length + UTF-8, `f32` = IEEE bits. The
+file sha256s are verified on load. The converter is a pure function of the export bytes.
+
+`body.gfa`: prefix `gibson.figure.asset.body.v1\0`; `str` asset id; `u32` version; `u8` grounded;
+`u32` n_vertices (the full index space, helpers included); `u32` n_body (indices below it are the
+body, skinned and in triangles; the rest are helper vertices); the neutral positions; the triangle
+indices (body vertices only); the joints (`str` name, `i32` parent, declared rest translation in
+the parent frame, rest rotation xyzw in the parent frame, rest scale, the anchor group as `u32`
+count + indices); the skin of the n_body vertices (`u8` count 1..4, then `u32` joint + `f32` weight,
+descending, zero weights dropped, as exported: top 4); the controls (`str` name, `f32` min, max,
+default, then a negative and a positive sparse delta list `u32` vertex + 3 `f32`); the surface
+landmark groups (`str` name, `u32` count, indices).
+
+`part.<id>.gfa` (a garment, hair, eyes, brows, lashes, teeth, skirt): prefix
+`gibson.figure.asset.part.v1\0`; `str` id and kind; the neutral fit (reference); the triangles;
+per vertex a binding `u32 v0, v1, v2`, `f32 w0, w1, w2`, `f32 ox, oy, oz`; the offset spec (0 or 3
+entries: a constant, or a pair `a, b, axis, ref`); per vertex a skin entry (transferred from the
+bound body vertices by the export); the body vertices hidden under the part.
+
+**Decisions the data forced (each is a deviation from, or an addition to, the text above).**
+
+1. **Bipolar controls.** A control value `c` lies in `[min, max]` (the export: `[-1, 1]`, default
+   0) and applies `|c| * delta[side(c)]`, the positive side for `c > 0`, the negative for `c < 0`,
+   neither for 0. The two sides are two morph targets (`<name>.neg`, `<name>.pos`) per control,
+   both hashed (v0 item 9), so the effect is still `MorphWeight`; the weights are `|c|` and 0. A
+   value outside the domain is NOT clamped: it scales the side linearly and compile reports
+   `Diagnostic::ControlOutOfDomain`. The geometry check is a finite surface and a successful refit.
+2. **Garment binding is the MakeHuman `.mhclo` rule, not an offset along an interpolated normal.**
+   Most garments of the real asset bind to HELPER vertices (no triangles, hence no normals), and
+   the offset is scaled per axis by the distance between two body vertices. Fit:
+   `w0 P[v0] + w1 P[v1] + w2 P[v2] + (ox sx, oy sy, oz sz)`, `s_k` a constant or
+   `|P[a][axis] - P[b][axis]| / ref`, `P` the SHAPED positions in the full index space, `f32` left
+   to right. This is exactly what the export's Blender-side fit does, so the two can be compared.
+   Garments are skinned by the export's own per-vertex weights (copied from the bound body
+   vertices), so they follow the pose; hair is fitted the same way but has no verdict.
+3. **Ground lift.** The export's controls are translation-free and the shaped body is re-grounded
+   (`oracle_shaped.json`). When the asset says `grounded`, compile adds `-min z (body vertices)` to
+   every vertex (helpers included) AFTER shaping and BEFORE the refit, so the lowest body vertex is at
+   `z = 0` and the skeleton is derived from the lifted surface. On the real asset this reproduces
+   Blender's `oracle.shaped_positions` to 1.2e-7 m (`oracle_shape.py --blender-oracle`).
+4. **Body id additions.** `BodyRevId` hashes, in the contract's layout (the v1 prefix, the mode byte,
+   the family `str id` + `u32 version`), also the 32-byte sha256 of the body file straight after the
+   version ("neutral asset sha", docs/design/m5c-studio-api.md section 2), then the SHAPED positions
+   of all vertices (helpers included), the indices, the joints (with the anchor group and the DERIVED
+   rest translation), zero v0-style landmarks, the surface landmark groups, the inverse binds, the
+   skin of the body vertices, the morph targets (both sides of every control) and, last, the two
+   footwear floats (heel height, toe pitch). The footwear is hashed because the studio API puts it
+   in the body id; it has no geometric effect in v1.
+5. **Fit id.** As specified: the body id, `u32` garment count, per garment `str id` + the sha256 of
+   the garment FILE, then `str "gibson.fit.vertex-normal-penetration.v1"`, `u32 2`, the parameters
+   `tolerance_m` and `adapt_depth_m` (`str` name + `f32`). The verdict and the geometry are not
+   hashed.
+6. **Presentation id.** The fit id, then in order: the material bindings (`str` slot, `str` material
+   id, the 32-byte texture sha, `u32 10`, albedo x3, roughness, metalness, then an emissive block of
+   a 1.0/0.0 flag, colour x3, intensity), the garments' slot bindings (`u32` garment count; per
+   garment `str` id, `u32` count, pairs of `str`), the hair (`u8` present, `str` style id and the
+   32-byte sha of the hair file if present, then the colour x3 always), the attachments (`u32` count;
+   per attachment `str` id, `u8` anchor kind 0 landmark / 1 bone, `str` anchor, `u8` emissive flag and
+   colour x3), then the style parameters (`u32` count; `str` name + `f32`), the last of which is always
+   `lower_face_covered` (1.0 or 0.0). `motion_style` and the provenance passthrough are in none of the
+   three ids (the studio API lists "style" under the presentation id; this text and ruling D3 say
+   the motion style is in none, and the code follows this text).
+7. **FitStatus.** `figure::studio::FitStatus` is `Fitted`, `NeedsAdaptation(FitReason)` or
+   `Rejected(FitReason)` (a different type from `figure::revision::FitStatus`, whose v0 enum stays
+   as it is). The measure: the body's area-weighted vertex normals of the SHAPED triangles; for
+   each garment vertex the nearest body vertex (ties to the lowest index) and the signed distance
+   along that normal; negative is inside. `penetrating` counts the vertices deeper than
+   `tolerance_m` (default 0.002), `max_depth_m` is the deepest. None penetrating: `Fitted`. The
+   deepest at most `adapt_depth_m` (default 0.01): `NeedsAdaptation`. Deeper: `Rejected`. Only
+   `Fitted` garments are in `Compiled::drawable_garments()` and in `pose_vertices`; every verdict is
+   in `Compiled::fit_status()`, and each undrawn garment has a `Diagnostic::GarmentNotDrawn`. The
+   thresholds are NOT calibrated: on the real asset at the neutral body the oracle reports 157 of
+   2197 `female_casualsuit01` vertices deeper than 2 mm (deepest 9.7 mm). They are fit parameters and
+   change the fit id.
+8. **Pose input.** `TapeFrame { root_t: Vec3, locals: Vec<Transform> }`: one local transform per
+   joint in skeleton order, REPLACING the rest locals (the tape's `local_t3`, `local_r4`, `local_s3`),
+   plus a translation of the whole figure after skinning (`root_t3`). It is a studio-local type; the
+   tape module owns the file format.
+9. **Orientation is carried.** The asset's per-bone world rotations come from the export's
+   `rest_matrix`; the converter stores the local rotation `conj(q_parent_world) * q_world` and
+   the declared local translation `R_parent^T (head - head_parent)`. Compile re-derives only the
+   translations (the Limits section above).
+10. **Body and fit in one call.** Invariant 4 above says `compile_v1` returns the body only and
+    fitting is a separate step. `studio::compile` is the studio's one entry point and does both, in
+    that order, but the two never share state: the body id is computed before any garment is read, the
+    fit is a pure function of the shaped body and the garment set, and the three ids are returned
+    separately. A host that wants the split can call `compile` with an empty garment list.
+
 ---
 
 ## Placement and release

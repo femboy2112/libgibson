@@ -1,0 +1,60 @@
+# Predicted kill matrix, M5-C `figure::studio` (PREDICTION, not a measurement)
+
+Status: **predicted, not run.** `src/figure/studio.rs` and `tests/figure_studio.rs` were written
+without a compiler or a test process (rustfmt only), so none of the Rust has been compiled or
+executed. The fixture numbers the tests assert were cross-checked in f64 against
+`docs/evidence/m5c/oracle_shape.py` (an independent reader of the same fixture files; the check
+printed, for the tabard, tunic and cap vertices of the garment-geometry test, a worst deviation of
+1.3e-8 from the closed forms), and the gating verdicts (shell Fitted at bulge 0.2, NeedsAdaptation
+at 0.5 with depth 0.00398, Rejected at 1.0 with depth 0.0199) were read off the same oracle. Both
+are f64 restatements of the design, not the Rust. The first heavy run decides; replace this file
+with a measured matrix from `docs/evidence/m5c/gate_studio.sh`.
+
+Mutants (`RUSTFLAGS='--cfg figure_mutant="..."'`, all three listed in `Cargo.toml`):
+**I** = `ignore_skeleton_update_v1` (the refit is skipped: the declared skeleton and its inverse
+binds are kept), **S** = `ignore_surface_update` (the control deltas are skipped: the neutral
+surface is kept, the refit then follows the neutral surface), **F** = `stale_fit` (garments and
+hair are fitted and gated against the NEUTRAL body, as if a fit from before the body edit were
+carried over). `K` = predicted to fail (killed), `-` = predicted to pass. There is no golden id
+in `tests/figure_studio.rs`; every killer below is a closed-form or relational assertion.
+
+| Test (`tests/figure_studio.rs`) | I | S | F | Basis |
+|---|---|---|---|---|
+| `each_control_moves_its_measurement_monotonically_by_the_designed_amount` | - | K | - | S: every landmark measure stays at its neutral value, so the strict increase and the designed `0.4 (1 + 0.5 c)` (and the other three) fail |
+| `a_control_does_not_move_the_other_controls_measurements` | - | - | - | holds when nothing moves; pins the no-compensation rule only |
+| `an_out_of_domain_control_is_applied_unclamped_and_reported` | - | K | - | S: height stays 1.5, not 2.0625 / 0.9 |
+| `bad_control_input_is_a_typed_error` | - | - | - | validation precedes derivation |
+| `the_lowest_body_vertex_is_grounded` | - | K | - | S: no `sink` delta, so the lift is 0 where 0.05 c is designed |
+| `refit_joints_are_the_anchor_centroids_of_the_shaped_mesh` | K | K | - | I: the declared neck is at z 1.4, designed 1.61, and no joint equals its shaped centroid; S: the joints equal the (unshaped) centroids but not the designed shaped positions |
+| `bone_lengths_are_outputs_of_the_surface` | K | K | - | I: the declared 0.5 never changes; S: the same |
+| `the_rest_orientation_chain_survives_the_refit` | - | - | - | rotations are carried in every variant |
+| `revision_isolation` | - | K | - | S: the control edit (`stature 0.31`) leaves the body id unchanged, so `assert_ne` fails; I and F do not change what the ids hash |
+| `resolved_content_not_recipe_text_is_identified` | - | K | - | S: `plain != ab` fails (no deltas, equal ids) |
+| `the_body_bytes_follow_the_contract_layout` | - | - | - | the probed fields (prefix, mode, asset sha, first vertex at z = 0, footwear tail) do not depend on the three mutants |
+| `the_fit_id_and_presentation_id_are_rebuilt_by_hand` | - | - | - | rebuilt from the live body id, so S and F cannot disturb it |
+| `compile_is_deterministic` | - | - | - | every variant is deterministic |
+| `a_garment_the_body_bulges_through_is_not_drawn` | - | K | K | S: the shell stays Fitted at bulge 0.5 / 1.0; F: gated against the neutral body, so it stays Fitted |
+| `a_verdict_is_never_carried_across_a_body_edit` | - | K | K | S: the two bodies have one id; F: the bulged shell is Fitted, not Rejected |
+| `garments_follow_the_shaped_body_with_per_axis_offset_scales` | - | K | K | S and F: the tabard, tunic and cap stay at their neutral positions, e.g. tabard v0.x 0.25 where `0.25 (1 + 0.5 c)` is designed |
+| `bad_garment_hair_and_slot_input_is_a_typed_error` | - | - | - | |
+| `a_covered_lower_face_reports_driven_jaw_and_mouth_channels` | - | - | - | |
+| `garments_follow_the_pose_and_only_drawn_garments_are_posed` | - | K | K | S and F: the shell is Fitted and drawn where Rejected is designed (`assert!(!drawn(shell))`). I is not killed here: the declared root is at the origin like the shaped one |
+| `a_bad_frame_is_a_typed_error` | - | - | - | |
+| `hostile_asset_bytes_are_typed_errors` | - | - | - | |
+| `the_asset_set_loads_from_disk_and_verifies_the_index` | - | - | - | |
+
+Kill counts: **I** 2 tests (`refit_joints...`, `bone_lengths...`), **S** 11 tests, **F** 4 tests
+(`a_garment_the_body_bulges...`, `a_verdict_is_never...`, `garments_follow_the_shaped_body...`,
+`garments_follow_the_pose...`). `gate_studio.sh` hard-requires, per mutant, the killers named in
+its `check_mutant` calls (the first four S rows, both I rows, the first three F rows).
+
+What this does not establish. That any of it compiles or passes (the predictions use closed forms
+and the oracle, not a run); that the nearest-vertex normal-distance penetration metric is a good
+garment-fit measure on real clothes (on the real converted asset the oracle, at the default
+tolerance 0.002 m, reports 157 of 2197 `female_casualsuit01` vertices below the surface at the
+NEUTRAL body, deepest 9.7 mm, so the default thresholds would not mark that suit Fitted: they are
+fit parameters and are hashed, and the first real-body lease must calibrate them); and the
+fused-multiply-add and reassociation freedom of the optimiser, which the scalar code forbids by
+construction but a run alone confirms. The bearing on I is thin (2 tests, both through joint
+positions); a posed-vertex test about a non-root joint, whose expected value needs the DQS blend
+in closed form, is not in this slice.
