@@ -13,6 +13,7 @@ pub mod clip;
 pub mod math;
 pub mod morph;
 pub mod motion;
+pub mod refit;
 pub mod revision;
 pub mod sha256;
 pub mod skeleton;
@@ -20,6 +21,7 @@ pub mod skin;
 
 pub use math::{DualQuat, Mat4, Quat, Transform, Vec3};
 pub use morph::MorphTarget;
+pub use refit::{refit_skeleton, JointAnchor, Refit, RefitError};
 pub use revision::{
     compile, BodyFamily, BodyRecipe, CharacterRevision, CompileError, EvalError, FamilyRef,
     PoseInput, PosedMesh, RevisionId, SupportClass,

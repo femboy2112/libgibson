@@ -660,6 +660,11 @@ After the v0 validation steps for mesh, morphs, skin and controls:
    - an unanchored joint keeps its declared local translation, so it rides with its parent;
    - the rest rotation and rest scale are the declared values. **Orientation and scale are not
      re-derived** (see Limits).
+   *Implemented in Slice 3 (UNCOMPILED until a heavy lease) as `figure::refit`:
+   `refit_skeleton(&Skeleton, &[JointAnchor], &[Vec3]) -> Result<Refit, RefitError>`, where the
+   positions are the SHAPED vertices and `Refit { skeleton, inverse_binds }`; it is not yet called
+   by `compile`. Limits `MAX_GROUP_VERTICES` 4096 and `MAX_GROUP_TOTAL` 65536 are enforced.
+   Evidence: `tests/figure_refit.rs`, mutant `ignored_refit`.*
 4. **Bone lengths follow the surface**: the length of a bone is the length of its child's derived
    local translation. It is an output, never an input.
 5. Recompute the world bind matrices and the **inverse binds** from the derived skeleton

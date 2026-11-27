@@ -32,11 +32,11 @@ extraction's sign branches and cannot be predicted from the model.
 | `a_non_rigid_skin_matrix_is_rejected_not_dropped` | K | - | A: `skin_with` returns the linear result instead of `NonRigid { joint: 1 }` |
 | `dual_quat_helpers_match_hand_values` | - | - | helper algebra only |
 
-Every mutant has at least one deterministic killer, and none depends on the cfg:
-A is killed by 5 tests (3 oracle tests, the elbow test, the sweep, the non-rigid test: 6 counting
-the sweep) and B by 2 certain tests (the sign-invariance test and the sweep) plus up to 3
-`?` ones. `gate_dqs.sh` hard-requires the predicted killers named in its two `check_mutant` calls
-(for B only the two certain ones).
+Every mutant has at least one deterministic killer, and none depends on the cfg. A is killed
+by 6 tests (the two oracle fixtures, the normals test, the elbow test, the sweep and the
+non-rigid test). B is killed by 2 certain tests (the sign-invariance test and the sweep) plus up
+to 3 `?` ones. `gate_dqs.sh` hard-requires the predicted killers named in its two
+`check_mutant` calls (for B only the two certain ones).
 
 ## Normal-build predictions (the same checks without a mutant)
 
