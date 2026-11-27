@@ -2449,10 +2449,20 @@ impl Compiled {
         camera: Option<&super::preview::PreviewCamera>,
         opts: super::preview::PreviewOptions,
     ) -> Result<super::preview::PreviewImage, PoseError> {
+        let meshes = self.render_meshes(frame)?;
+        Ok(self.preview_meshes(&meshes, camera, opts))
+    }
+
+    /// Draw realized or kinematic meshes in the same material slots, camera and lighting.
+    pub fn preview_meshes(
+        &self,
+        meshes: &[RenderMesh],
+        camera: Option<&super::preview::PreviewCamera>,
+        opts: super::preview::PreviewOptions,
+    ) -> super::preview::PreviewImage {
         use super::preview::{
             bounds_of, frame_bounds, render_preview, PreviewLight, PreviewMaterial, PreviewMesh,
         };
-        let meshes = self.render_meshes(frame)?;
         let hair_slot = SLOT_HAIR;
         let mut materials: Vec<PreviewMaterial> = (0..MATERIAL_SLOTS.len())
             .map(|i| match self.material(i as u8) {
@@ -2512,13 +2522,13 @@ impl Compiled {
                 frame_bounds(b, aspect, PREVIEW_FILL)
             }
         };
-        Ok(render_preview(
+        render_preview(
             &pm,
             &materials,
             &cam,
             &PreviewLight::default_rig(),
             opts,
-        ))
+        )
     }
 
     /// The drawable meshes for one tape frame (same set and order as

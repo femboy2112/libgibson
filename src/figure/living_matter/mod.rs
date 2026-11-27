@@ -1,6 +1,11 @@
 //! Experimental Living Matter. Metres, seconds, kilograms and Z-up world forces.
 //! State is separate from compiled morphology, garment fit and presentation identity.
 //! A presentation frame is driven by a fixed-rate sequence of admitted poses.
+mod actor;
+mod cloth;
+mod contact;
+mod hair;
+pub use actor::{FigureDynamics, MatterCheckpoint};
 pub mod particles;
 pub mod region;
 use super::math::Vec3;
