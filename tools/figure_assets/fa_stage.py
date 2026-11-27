@@ -18,9 +18,22 @@ import subprocess
 import sys
 import time
 
+import json
+
 import bpy
 from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Matrix, Vector
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import fa_checks as ck  # noqa: E402
+import fa_common as fc  # noqa: E402
+import fa_hair  # noqa: E402
+import fa_skirt  # noqa: E402
+import fa_tape as ft  # noqa: E402
+
+SKIRT_ID = "skirt_a_line"
 
 SLOTS = ("base", "panel", "trim", "ornament", "gem_emissive", "mask", "iris", "accessory_emissive")
 SENSOR_H = 24.0
@@ -30,6 +43,21 @@ ARM_RE = r"(clavicle|upperarm|lowerarm|hand|thumb|index|middle|ring|pinky)"
 
 def say(*a):
     print(*a, flush=True)
+
+
+def load_json(p):
+    with open(p, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def verdict_of(v):
+    """fit_status values may be a string or a one-key object; -> (is_fitted, text)."""
+    if isinstance(v, dict) and v:
+        k = sorted(v)[0]
+        txt = "%s %s" % (k, json.dumps(v[k], sort_keys=True)[:60]) if v[k] not in (None, {}, []) else k
+    else:
+        txt = str(v)
+    return txt.strip().lower().startswith("fitted"), txt
 
 
 # =========================================================================== materials
@@ -648,3 +676,213 @@ def eevee_usable(script_path):
         say("NOTE eevee smoke child rc=%d tail: %s" % (r.returncode, tail[:400]))
         return False, "child rc=%d" % r.returncode
     return True, "child ok"
+
+
+# =========================================================================== attachments, garments, skirt (shared by render_tape and render_probe)
+
+def read_att(export_dir, name):
+    p = os.path.join(export_dir, "attachments", name + ".json")
+    if not os.path.isfile(p):
+        return None
+    h = load_json(p)
+    b = h["blobs"]
+    rd = lambda key, dt: ft.read_blob(export_dir, b[key], dt)
+    rec = {"hdr": h, "name": name, "kind": h["kind"]}
+    n = h["n_vertices"]
+    bi, bw, bo = rd("bind_idx", "u32"), rd("bind_w", "f32"), rd("bind_off", "f32")
+    rec["bind"] = [(bi[3 * i], bi[3 * i + 1], bi[3 * i + 2], bw[3 * i], bw[3 * i + 1], bw[3 * i + 2], bo[3 * i], bo[3 * i + 1], bo[3 * i + 2]) for i in range(n)]
+    tr = rd("tris", "u32")
+    rec["polys"] = [(tr[3 * i], tr[3 * i + 1], tr[3 * i + 2]) for i in range(len(tr) // 3)]
+    if "tri_uv" in b:
+        tu, uv = rd("tri_uv", "u32"), rd("uv", "f32")
+        rec["uv_polys"] = [(tu[3 * i], tu[3 * i + 1], tu[3 * i + 2]) for i in range(len(tu) // 3)]
+        rec["uvs"] = [(uv[2 * i], uv[2 * i + 1]) for i in range(len(uv) // 2)]
+    else:
+        rec["uv_polys"], rec["uvs"] = None, None
+    si, sw = rd("skin_idx", "u16"), rd("skin_w", "f32")
+    rec["skin_idx"] = [(si[4 * i], si[4 * i + 1], si[4 * i + 2], si[4 * i + 3]) for i in range(n)]
+    rec["skin_w"] = [(sw[4 * i], sw[4 * i + 1], sw[4 * i + 2], sw[4 * i + 3]) for i in range(n)]
+    dv = rd("delete_verts", "u32")
+    rec["delete_verts"] = [i for i in dv if i < fc.N_BODY]
+    rec["offset_spec"] = h["offset_spec"]
+    return rec
+
+
+def place_like(o, arm):
+    """New objects live in ARMATURE space: give them the armature's world matrix (identity for MPFB rigs, possibly not for a glTF import)."""
+    o.matrix_world = arm.matrix_world.copy()
+    return o
+
+
+def attach_object(export_dir, name, role, mat, S, arm, names, post=None):
+    rec = read_att(export_dir, name)
+    if rec is None:
+        return None
+    pos = fc.fit_binding(rec["bind"], rec["offset_spec"], S)
+    info = {}
+    if post is not None:
+        pos, info = post(pos)
+    o = mesh_object(name, pos, rec["polys"], rec["uvs"], rec["uv_polys"], role=role)
+    place_like(o, arm)
+    set_weights(o, [[names[i] for i in row] for row in rec["skin_idx"]], rec["skin_w"])
+    add_armature_modifier(o, arm)
+    o.data.materials.append(mat)
+    return o, rec, pos, info
+
+
+def dress(export_dir, S, landmarks, arm, names, body, rd, slots, garments, fit_status, hide_under, arm_mask, eye_l, eye_r, notes):
+    """Skin, hair (parted away from the eyes), eyes, brows, lashes, the garments whose verdict is Fitted, the skirt, and a visible
+    label for every garment that is NOT drawn.  -> dict with objs / labels / report / skirt / diagnostics."""
+    out = {"objs": {"body": [body], "hair": [], "garment": [], "eyes": [], "brow": [], "lash": [], "skirt": []}, "labels": [], "report": {}, "skirt": None}
+    bind = rd.get("bindings", {"garment": "base", "skirt": "panel"})
+    skin_mat, sss = skin_material(rd.get("skin", {}))
+    out["sss_inputs"] = sss
+    body.data.materials.clear()
+    body.data.materials.append(skin_mat)
+    out["skin_rgb"] = rd.get("skin", {}).get("albedo", [0.62, 0.40, 0.31])
+    hair_cfg = rd.get("hair", {})
+    hair_rgb = hair_cfg.get("color", [0.09, 0.05, 0.03])
+    brow_rgb = rd.get("brows", {}).get("color", [0.025, 0.015, 0.01])
+    iris_spec = slots.get("iris", {})
+    iris_rgb = iris_spec.get("albedo") or iris_spec.get("color") or rd.get("eyes", {}).get("iris", [0.20, 0.30, 0.42])
+    out["hair_rgb"], out["brow_rgb"] = hair_rgb, brow_rgb
+    hid = hair_cfg.get("id")
+    if hid:
+        r = attach_object(export_dir, hid, "hair", hair_material(hair_rgb), S, arm, names, lambda p: fa_hair.part_hair(p, eye_l, eye_r))
+        if r is None:
+            notes.append("hair %s is not in the export attachments (export with this preset)" % hid)
+            out["report"]["hair:" + hid] = "NOT DRAWN: not in export"
+        else:
+            out["objs"]["hair"].append(r[0])
+            out["hair_part"] = r[3]
+            out["hair_violations"] = fa_hair.clearance_violations(r[2], eye_l, eye_r)
+    for kind, key, mat in (("eyes", "eyes", eye_material(iris_rgb)), ("eyebrows", "brow", brow_material(brow_rgb, "brow")),
+                           ("eyelashes", "lash", brow_material([0.012, 0.01, 0.01], "lash"))):
+        nm = rd.get(kind, {}).get("id") or {"eyes": "low-poly", "eyebrows": "eyebrow001", "eyelashes": "eyelashes01"}[kind]
+        r = attach_object(export_dir, nm, key, mat, S, arm, names)
+        if r is None:
+            notes.append("%s %s is not in the export attachments" % (kind, nm))
+            continue
+        o, rec, pos, _ = r
+        out["objs"][key].append(o)
+        if key == "eyes":
+            out["iris_verts"] = add_iris_attribute(o, pos)
+    hide = set()
+    for gid in garments:
+        fitted, why = verdict_of(fit_status.get(gid, "MissingVerdict"))
+        if gid not in fit_status:
+            out["report"][gid] = "NOT DRAWN: no fit_status verdict in the tape (a missing verdict means not drawn)"
+        elif not fitted:
+            out["report"][gid] = "NOT DRAWN: FitStatus %s" % why
+        elif gid == SKIRT_ID:
+            out["report"][gid] = "DRAWN (self-authored skirt)"
+        else:
+            slot = bind.get("garment:" + gid, bind.get("garment", "base"))
+            spec = slots.get(slot, {"albedo": [0.20, 0.38, 0.42], "roughness": 0.7})
+            r = attach_object(export_dir, gid, "garment", slot_material(slot, spec), S, arm, names)
+            if r is None:
+                out["report"][gid] = "NOT DRAWN: not in the export attachments (export it with this preset)"
+            else:
+                out["objs"]["garment"].append(r[0])
+                out["report"][gid] = "DRAWN (fit %s, slot %s)" % (why, slot)
+                if hide_under:
+                    hide.update(r[1]["delete_verts"])
+    if hide:
+        vg = body.vertex_groups.new(name="fa_under_garment")
+        vg.add(sorted(hide), 1.0, "REPLACE")
+        md = body.modifiers.new("HideUnderGarment", "MASK")
+        md.vertex_group = "fa_under_garment"
+        md.invert_vertex_group = True
+        md.show_viewport = False        # the depsgraph (bounds, ray casts, oracle) sees the whole body; the render hides it
+    out["hidden_body_vertices"] = len(hide)
+    if out["report"].get(SKIRT_ID, "").startswith("DRAWN"):
+        sk = fa_skirt.make_skirt(S, landmarks["joints"], exclude=arm_mask)
+        o = mesh_object("Skirt", sk["positions"], sk["quads"], sk["uvs"], sk["quad_uv"], role="skirt")
+        place_like(o, arm)
+        slot = bind.get("skirt", "panel")
+        o.data.materials.append(slot_material(slot, slots.get(slot, {"albedo": [0.55, 0.18, 0.24], "roughness": 0.75})))
+        so = o.modifiers.new("Solidify", "SOLIDIFY")
+        so.thickness = 0.004
+        so.offset = -1.0
+        sd = o.modifiers.new("Subsurf", "SUBSURF")
+        sd.levels = 1
+        sd.render_levels = 2
+        out["objs"]["skirt"].append(o)
+        out["skirt"] = {"obj": o, "data": sk, "cache": {}}
+    for gid, txt in sorted(out["report"].items()):
+        if txt.startswith("NOT DRAWN"):
+            out["labels"].append(build_label("%s: %s" % (gid, txt)))
+    return out
+
+
+# =========================================================================== shared self-checks
+
+class Checks:
+    def __init__(self):
+        self.items = []
+
+    def add(self, r, detail=""):
+        self.items.append(r)
+        say("RT_CHECK %s %s %s %s" % ("PASS" if r["ok"] else "FAIL", r["name"],
+                                      " ".join("%s=%s" % (k, ("%.4g" % v) if isinstance(v, float) else v) for k, v in sorted(r.items())
+                                               if k not in ("name", "ok") and not isinstance(v, (list, dict))), detail))
+        return r["ok"]
+
+    def failed(self):
+        return [r["name"] for r in self.items if not r["ok"]]
+
+
+def eye_clearance(cam, eye_l, eye_r, name="eye_clearance"):
+    """Rays from the camera to each eye (centre and three offsets); a hair / garment / skirt hit in front of the eye blocks it."""
+    blocked, total = 0, 0
+    for e in (eye_l, eye_r):
+        for dx, dz in ((0, 0), (0.008, 0.0), (-0.008, 0.0), (0.0, 0.006)):
+            total += 1
+            role, hitd, d = ray_first_hit(cam.location, (e[0] + dx, e[1] - 0.012, e[2] + dz))
+            if role in ("hair", "garment", "skirt"):
+                blocked += 1
+    return ck.clearance_check(blocked, total, name)
+
+
+def brow_lash_visibility(cam, brow_objs, lash_objs):
+    vis, total = 0, 0
+    for objs in (brow_objs, lash_objs):
+        for o in objs:
+            pts = eval_positions(o)
+            for i in range(0, len(pts), max(1, len(pts) // 24)):
+                total += 1
+                role, hitd, d = ray_first_hit(cam.location, pts[i])
+                if role in (None, "brow", "lash") or hitd >= d - 0.004:
+                    vis += 1
+    return ck.visibility_check(vis, total, 0.6, "brows_lashes_visible")
+
+
+def check_contact_shadow(checks, body, foot_idx, ground, cam_rec, res, out_dir, figure_objs, labels):
+    """CONTACT: min z of the evaluated foot vertices (rest pose) within 5 mm of the ground OBJECT's z.
+    SHADOW: coverage of shadowed pixels on the ground around the feet in a check render of `cam_rec` (beauty + figure mask)."""
+    pts = eval_positions(body)
+    foot = [pts[i] for i in foot_idx]
+    checks.add(ck.contact_check(min(p[2] for p in foot), ground.location.z))
+    sc = bpy.context.scene
+    cam = cam_rec["obj"]
+    sc.camera = cam
+    for lab in labels:
+        attach_label_to_camera(lab, cam, cam_rec["lens"])
+    fpath = os.path.join(out_dir, "check_front_beauty.png")
+    mpath = os.path.join(out_dir, "check_front_mask.png")
+    spp_old = None
+    try:
+        spp_old = sc.eevee.taa_render_samples
+        sc.eevee.taa_render_samples = min(spp_old, 16)
+    except Exception:  # noqa: BLE001
+        spp_old = None
+    render_to(fpath, res)
+    if spp_old is not None:
+        sc.eevee.taa_render_samples = spp_old
+    render_mask(mpath, res, figure_objs)
+    sc.render.resolution_x, sc.render.resolution_y = res
+    inner, outer = ground_rects(cam, [(p[0], p[1]) for p in foot], ground.location.z)
+    r = ck.shadow_check_files(fpath, mpath, inner, outer)
+    r["inner_rect"], r["outer_rect"] = list(inner), list(outer)
+    checks.add(r)
+    return foot

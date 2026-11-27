@@ -67,8 +67,10 @@ def synth_export(root, rig):
     w32(os.path.join(root, "blobs/d.xyz.bin"), "f", [0.02, 0.0, 0.0])
     w32(os.path.join(root, "blobs/z.idx.bin"), "I", [])
     w32(os.path.join(root, "blobs/z.xyz.bin"), "f", [])
-    json.dump({"controls": [{"name": "waist", "pos": {"idx": "blobs/d.idx.bin", "xyz": "blobs/d.xyz.bin"}, "neg": {"idx": "blobs/z.idx.bin", "xyz": "blobs/z.xyz.bin"}}]},
-              open(os.path.join(root, "controls_export.json"), "w"))
+    empty = {"idx": "blobs/z.idx.bin", "xyz": "blobs/z.xyz.bin"}
+    names = [c["name"] for c in json.load(open(os.path.join(HERE, "controls.json")))["controls"]]
+    ctl = [{"name": n, "pos": ({"idx": "blobs/d.idx.bin", "xyz": "blobs/d.xyz.bin"} if n == "waist" else empty), "neg": empty} for n in names]
+    json.dump({"controls": ctl}, open(os.path.join(root, "controls_export.json"), "w"))
     json.dump({"blobs": {"base.positions": {"file": "blobs/base.positions.f32.bin"}}, "rig": {"name": "game_engine"}, "preset": {}, "ground_shift_z_neutral": 0.0},
               open(os.path.join(root, "figure_asset.json"), "w"))
     return order, idx

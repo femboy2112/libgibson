@@ -10,7 +10,10 @@ Status of every script in this directory when it was committed:
 |---|---|
 | `licence_audit.py`, `fa_common.py` (`--selftest`) | run with `python3 -I`, passing |
 | `export_mpfb.py` | **never run in Blender.** Its pure-python assembly path was run with a stub Blender layer. |
-| `render_probe.py` | **never run in Blender.** |
+| `render_probe.py` | first version ran in the MEASURE lease (defects 1-5 viewed); the defect fixes + self-checks of this revision are **UNRUN** |
+| `render_tape.py`, `fa_stage.py` | **never run in Blender** (the offline render adapter, see below) |
+| `fa_tape.py`, `fa_png.py`, `fa_checks.py`, `fa_skirt.py`, `fa_hair.py`, `make_test_tape.py`, `fa_selftest.py` | pure python, `--selftest` passing under `python3 -I` |
+| `make_kit.sh`, `lease_m5c_adapter_smoke.sh` | `bash -n` clean; `make_kit.sh` run on synthetic 64x36 PNGs; the smoke lease control flow run with a fake `BLENDER` stub only |
 | `lease_m5c_measure.sh` | `bash -n` clean; control flow exercised with a fake `BLENDER` stub only |
 
 Do not read any of the Blender-side output claims below as observed; the first lease is the observation.
@@ -183,3 +186,47 @@ are never committed: only this directory and the manifests live in the repo; reg
 * `render_probe.py` frames the body from its bounding box and uses an opaque ground plane that receives the key
   light shadow; light powers are first guesses. Its arm-raise converts armature-space rotations to bone-local
   quaternions, so it does not depend on the bone roll; the result still has to be viewed.
+
+## Offline render adapter (`render_tape.py`)
+
+Renders a runtime-evaluated performance tape (`gibson.figure.tape.v1`, `docs/design/m5c-studio-api.md` section 5) with the exported body.
+It is labelled "offline reference render of a runtime-evaluated performance"; no Blender-authored animation stands in for the tape.
+
+```
+"$BLENDER" -b --python tools/figure_assets/render_tape.py -- --export OUT/export --tape T.tape.json \
+    --preset tools/figure_assets/presets/generic_neutral.json --shots tools/figure_assets/shots/ex1_character.json --out OUT/render \
+    [--spp 32] [--engine auto|eevee|cycles] [--checks-only] [--mutant bad_bounds] [--clip-from A --clip-frames N] [--joint-frame world_aligned|bone]
+bash tools/figure_assets/make_kit.sh OUT/render <kit id>          # MP4 (H.264 yuv420p crf 18) + contact sheet per clip, frame sha256 in MANIFEST.md
+```
+
+The export must be made with the SAME preset (`export_mpfb.py --preset presets/generic_neutral.json`): the preset's macro and its attachment lists
+(hair, garment) define what the export holds. Presets: `generic_neutral.json`, `generic_exaggerated_feminine.json` (control values at the +/-1 ends,
+never clamped or averaged by the adapter; a tape may carry values beyond +/-1, they are applied as given and reported as `ControlOutOfDomain`),
+`style_restrained.json`, `style_expressive.json`. The preset `render` section holds only what the tape does not carry (skin, hair, brows, eyes) and the
+defaults `make_test_tape.py` writes into a test tape; **the tape header wins** for controls, garments, fit_status and materials.
+
+What the adapter does: (1) rebuilds the MPFB human (same macro as the export) and puts the shaped positions on it (export neutral + the tape's control
+values through the export's sparse deltas, unclamped, re-grounded), adds the rig exactly like `export_mpfb.py`, deletes the helper geometry; (2) draws a
+garment only when `fit_status[id]` starts with `Fitted`, otherwise a yellow label bottom-left on every image says `<id>: NOT DRAWN: <why>` (missing verdict, failed
+fit, not in the export); (3) skirt `skirt_a_line`: smooth super-ellipse panels (Solidify + Subsurf), skinned to pelvis/thigh bones with smoothed weights, plus a
+bounded deterministic lag toward the previous 6 frames (`fa_skirt.swing`, a pure function of tape frames f-6..f; no cloth simulation); (4) sets every pose bone
+from the tape locals with `matrix_basis = M^-1 S_parent^-1 S M` (no keyframes); (5) materials: Principled BSDF slots `base panel trim ornament gem_emissive mask iris
+accessory_emissive` (api section 1; garment -> `base`, skirt -> `panel`, eyes -> `iris`), skin with subsurface, key/fill/rim area lights plus a soft top light.
+
+Self-checks (printed as `RT_CHECK PASS|FAIL <name> ...`, recorded in `render.json`, exit 5 when any fails; thresholds are FIRST GUESSES in `fa_checks.py`):
+`contact` (min foot-vertex z within 5 mm of the ground OBJECT, rest pose), `shadow` (shadowed share of visible ground pixels around the feet in a check render
+vs a Workbench figure mask, read back with `fa_png.py`), `framing:*` (body spans 60..98% of the frame height and is inside it; face close-up >= 45% for the face),
+`eye_clearance:*` (rays from the camera to each eye hit no hair/garment/skirt), `brows_lashes_visible`, `brow_vs_skin_contrast`, `pose_math` (Blender skinning vs a
+pure top-4 LBS from the same skin matrices on 3 frames), `garments_drawn_or_labelled`, `camera_cuts:*`, `duration:*`.
+`--mutant bad_bounds` reproduces the probe bug (bounds over every mesh object including a hidden 2.80 m helper box 0.40 m below the feet, camera from that
+height): `contact`, `shadow` and `framing` must then FAIL. `lease_m5c_adapter_smoke.sh` requires exactly that.
+
+Outputs: `stills/<shots id>_<name>_<w>x<h>.png`, `frames/<clip>/frame_<NNNNN>.png`, `render.json`, `oracle_posed.json` + `oracle_posed.f32.bin` (body vertices
+0..13379, f32 [frames][vertex][xyz], every `--oracle-every` frames, Blender frame, for the Blender-vs-libgibson oracle).
+
+Tape conventions the format section does not state (assumptions, see `fa_tape.py`): a joint's tape local is its FULL local transform relative to the parent
+(replaces the rest local; `W[i] = W[parent] * L[i]`), `root_t3` is an extra model-space translation on every root joint, joint frames at bind are world-aligned
+(`--joint-frame bone` uses the exported bone rotations). The oracle is what can falsify them.
+
+Smoke lease: `BLENDER=$BLENDER heavy run --class s --max-min 12 -- bash tools/figure_assets/lease_m5c_adapter_smoke.sh OUT` (10 minute budget).
+`SMOKE_PROBE=1` also runs `render_probe.py --checks-only`, normal and mutant.
