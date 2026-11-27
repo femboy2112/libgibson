@@ -92,9 +92,9 @@
 //!     "Zero deltas are kept" and "family's declared order" imply the raw family
 //!     data. Chosen reading: raw declared delta, unscaled by any weight.
 //! A4. The `str` encoding of non-ASCII text: spec says UTF-8, u32 byte length,
-//!     "no normalization". Test 3 deliberately uses a 2-byte character in the
-//!     family id; if `compile` refuses a non-ASCII id, that is a finding (the
-//!     spec does not forbid it).
+//!     "no normalization". RESOLVED by coordinator ruling #70: ids use the v0
+//!     ASCII alphabet [a-z0-9._-], 1..=64 bytes, so test 3 now uses "fam.7" and
+//!     test 4 checks that non-ASCII ids are rejected.
 //! A5. Whether a control left at its default is "applied" when unset: spec says
 //!     "A control that is not set takes its default"; chosen reading is that the
 //!     default value then flows through its effects exactly like a set value
@@ -114,8 +114,8 @@
 use gibson::figure::math::{Quat, Transform, Vec3};
 use gibson::figure::morph::MorphTarget;
 use gibson::figure::revision::{
-    compile, BodyFamily, BodyRecipe, CharacterRevision, ControlDef, ControlEffect, FamilyRef,
-    NeutralMesh,
+    compile, BodyFamily, BodyRecipe, CharacterRevision, CompileError, ControlDef, ControlEffect,
+    FamilyRef, NeutralMesh, MAX_ID_LEN,
 };
 use gibson::figure::skeleton::{Joint, Landmark};
 use sha2::{Digest as _, Sha256};
@@ -554,17 +554,18 @@ fn rev_id_ignores_recipe_order_and_explicit_defaults() {
 
 #[test]
 fn landmark_order_changes_bytes_and_rev_id() {
-    // A different family from the main fixture: id with a 2-byte UTF-8 character
-    // (A4), version 7, two landmarks. Only the landmark list order differs.
+    // A different family from the main fixture: a 5-byte ASCII id (A4 as amended by
+    // ruling #70: ids are [a-z0-9._-]), version 7, two landmarks. Only the landmark list
+    // order differs.
     let a: (&'static str, u32, [f32; 3]) = ("a", 0, [0.0, 0.0, 0.5]);
     let b: (&'static str, u32, [f32; 3]) = ("b", 1, [0.25, 0.0, 0.0]);
     let fx_ab = Fixture {
-        family_id: "fam\u{e9}",
+        family_id: "fam.7",
         family_version: 7,
         landmarks: vec![a, b],
     };
     let fx_ba = Fixture {
-        family_id: "fam\u{e9}",
+        family_id: "fam.7",
         family_version: 7,
         landmarks: vec![b, a],
     };
@@ -575,8 +576,6 @@ fn landmark_order_changes_bytes_and_rev_id() {
     // Each order matches its own spec-derived bytes and hash.
     let rec_ab = expected_bytes(&fx_ab);
     let rec_ba = expected_bytes(&fx_ba);
-    // The UTF-8 length prefix is the BYTE length: f, a, m, then 0xC3 0xA9 = 5.
-    assert_eq!("fam\u{e9}".len(), 5);
     assert_bytes_match(&rev_ab.canonical_bytes(), &rec_ab, "landmarks [a, b]");
     assert_bytes_match(&rev_ba.canonical_bytes(), &rec_ba, "landmarks [b, a]");
     assert_rev_id_is_sha256_of(&rev_ab, &rec_ab.bytes);
@@ -591,4 +590,55 @@ fn landmark_order_changes_bytes_and_rev_id() {
         rev_ba.canonical_bytes().len()
     );
     assert_ne!(rec_ab.bytes, rec_ba.bytes);
+}
+
+// ---------------------------------------------------------------------------
+// Test 4: the v0 id alphabet (A4 as amended by coordinator ruling #70).
+// ---------------------------------------------------------------------------
+
+fn compile_id(
+    family_id: &'static str,
+    landmark: &'static str,
+) -> Result<CharacterRevision, CompileError> {
+    let fx = Fixture {
+        family_id,
+        family_version: 3,
+        landmarks: vec![(landmark, 1, [0.25, 0.5, 0.0])],
+    };
+    let family = build_family(&fx);
+    let recipe = BodyRecipe::new(
+        FamilyRef::new(fx.family_id, fx.family_version),
+        MAIN_VALUES
+            .iter()
+            .map(|(k, v)| (k.to_string(), *v))
+            .collect(),
+    );
+    compile(&recipe, &family)
+}
+
+#[test]
+fn non_ascii_and_out_of_alphabet_ids_are_rejected() {
+    // NFC and NFD spellings of the same visible id would otherwise hash to different rev_ids.
+    let nfc: &'static str = "fam\u{e9}";
+    let nfd: &'static str = "fame\u{301}";
+    const LONG_OK: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const LONG_BAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    assert_eq!(LONG_OK.len(), MAX_ID_LEN);
+    assert_eq!(LONG_BAD.len(), MAX_ID_LEN + 1);
+    for bad in [nfc, nfd, "Fam", "fam id", "", LONG_BAD, "fam\n"] {
+        match compile_id(bad, "tip") {
+            Err(CompileError::InvalidId { kind, id }) => {
+                assert_eq!(kind, "family");
+                assert_eq!(id, bad);
+            }
+            other => panic!("family id {bad:?} must be InvalidId, got {other:?}"),
+        }
+    }
+    match compile_id("test.fam", "t\u{ee}p") {
+        Err(CompileError::InvalidId { kind, .. }) => assert_eq!(kind, "landmark"),
+        other => panic!("non-ASCII landmark must be InvalidId, got {other:?}"),
+    }
+    // Positive controls: the whole alphabet and the length limit are accepted.
+    assert!(compile_id("a-z.0_9", "tip").is_ok());
+    assert!(compile_id(LONG_OK, "tip").is_ok());
 }
