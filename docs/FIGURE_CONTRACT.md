@@ -696,9 +696,11 @@ pub enum SkinningMode { Linear /* default */, DualQuat }
   and never applies it "separately". Reason: a separate scale pass has to choose an order (before
   or after the blend) and a pivot, and no choice is right for non-uniform scale in a hierarchy; a
   silent drop would make the mode's own acceptance check pass on a body it deforms wrongly. A
-  rigid skin matrix is the norm: a joint whose rest scale is not 1 still gives `M_j = I` at the
-  bind pose, and stays rigid in any pose that only rotates and translates it. Squash and stretch
-  is not a v1 feature and would be a new mode.
+  Rigid skin matrices are the norm: every joint gives `M_j = I` at the bind pose, whatever its
+  rest scale. A pose that keeps each local scale at its rest value and rotates only joints whose
+  ancestors have uniform scale stays rigid. A non-uniformly scaled ancestor whose rotation changes
+  gives its descendants a sheared skin matrix, and that is exactly the rejected case. Squash and
+  stretch is not a v1 feature and would be a new mode.
 - **Where the mode lives.** In v1 it is a field of the revision and part of the neutral-body
   `rev_id`, because it decides which deformation the body was validated against. For a v0
   revision, which cannot gain a hashed field, it is an evaluation argument:
