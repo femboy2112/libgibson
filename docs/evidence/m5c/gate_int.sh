@@ -18,7 +18,7 @@ git fetch -q origin feat/m5c-integrate
 [ -d "$W" ] || git worktree add -q --detach "$W" "$HEAD_SHA"
 cd "$W"
 echo "== box at start $(date -u +%H:%M:%SZ)"; cat /proc/pressure/memory; free -m | sed -n "1,3p"
-export CARGO_TARGET_DIR=$W/target
+export CARGO_TARGET_DIR=${GATE_TARGET:-$W/target}
 T="cargo +1.98.1"
 FAILS=0
 fail() { echo "GATE_FAIL: $*"; FAILS=$((FAILS+1)); }
@@ -53,7 +53,7 @@ if grep -rqs 'cfg(test)' src/figure src/figure.rs; then fail "src/figure gained 
 check_mutant() {
   local mu=$1 target=$2; shift 2
   local name="mut_$mu"
-  run "$name" env CARGO_TARGET_DIR=$W/target-mutant RUSTFLAGS="--cfg figure_mutant=\"$mu\"" \
+  run "$name" env CARGO_TARGET_DIR=${GATE_TARGET:-$W/target}-mutant RUSTFLAGS="--cfg figure_mutant=\"$mu\"" \
     $T test --features figure --test "$target" --no-fail-fast
   if compile_err "$name"; then fail "mutant $mu did not compile"; echo "KILL[$mu]=COMPILE_ERROR"; return; fi
   local nn; nn=$(ran "$name"); [ "$nn" -gt 0 ] || fail "mutant $mu ran 0 tests"
