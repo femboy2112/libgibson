@@ -51,6 +51,10 @@ audio-cpal = ["dep:cpal", "dep:rtrb"]
 # default. Real reaction footage is never embedded — supply it locally with `--clip=PATH`
 # (see examples/libgibson_intro_reaction/MEDIA_PROVENANCE.md).
 embedded-media = []
+# Experimental generic character mechanics (`gibson::figure`, M5-B). Pure Rust, scalar f32,
+# no unsafe and NO dependency (coordinator ruling #39). `figure-gltf` / `figure-vrm` are
+# reserved for later slices and need their own dependency ruling.
+figure = []
 
 [dependencies]
 taffy = "0.15"
@@ -74,6 +78,9 @@ signal-hook = "0.3"
 [dev-dependencies]
 portable-pty = "0.9"
 vt100 = "0.18"
+# Differential oracle for figure's hand-written SHA-256 only (ruling #39). Dev-only, so it
+# never reaches consumers; exact pin because sha2 0.11.1+ needs rustc 1.88.
+sha2 = "=0.11.0"
 
 [[example]]
 name = "agent_chat"
@@ -126,3 +133,8 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = "unwind"
+
+# Fault-injection points for the figure module's mutation controls (tests must FAIL when
+# any is enabled via RUSTFLAGS='--cfg figure_mutant="..."'). Never set in normal builds.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(figure_mutant, values("ignored_skeleton_update", "stale_bind", "noop_morph"))'] }

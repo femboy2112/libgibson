@@ -390,6 +390,10 @@ breaking them in a pure patch:
 - `event_source` — injectable, recordable and replayable input sources (Rust-only).
 - `hold` — held-key inference on a simulation timebase (`HoldTracker`; 0.7.0, execution-graph
   node D). An explicit model; it never synthesizes a key release.
+- `figure` — the experimental skeletal figure core behind the off-by-default `figure` feature
+  (M5-B: compiled body revisions, skinning, morphs, clips and continuous motion). Rust-only, zero
+  runtime dependencies, not exposed through the C ABI. Its rev.v0 contract is
+  [FIGURE_CONTRACT.md](FIGURE_CONTRACT.md).
 
 **Unlisted modules.** A public module that this section does not list has no stability
 promise and counts as EXPERIMENTAL until it is listed. `tests/doc_release_contract_tiers.rs`
