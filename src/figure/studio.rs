@@ -1159,6 +1159,9 @@ impl Default for FitParamsV1 {
 /// garment keeps its unadapted positions and its unadapted verdict (`NeedsAdaptation` or
 /// `Rejected`), and the refusal is reported ([`Diagnostic::GarmentAdaptationRefused`]). A garment
 /// is never silently warped past the cap. No threshold of the verdict is loosened by adaptation.
+/// A garment that is already `Rejected` before adaptation is never adapted: its adaptation is
+/// reported as refused (with the cap of the parameters) and it stays `Rejected`. Adaptation only
+/// repairs `NeedsAdaptation`, so it cannot widen the `adapt_depth_m` bound.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct AdaptationV1 {
@@ -2667,7 +2670,32 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
                     candidates: &candidates,
                     masked: &masked,
                 };
-                let (adapted, rep) = adapt_garment(&pos, &part.indices, &surface, a);
+                // A garment that is `Rejected` before adaptation stays rejected: adaptation only
+                // repairs `NeedsAdaptation`, so it can never loosen the `adapt_depth_m` bound.
+                let (c0, d0) = penetration(
+                    &pos,
+                    fit_src,
+                    &normals,
+                    &candidates,
+                    &masked,
+                    fp.tolerance_m,
+                );
+                let pre = verdict(
+                    &FitMetrics {
+                        vertices: pos.len() as u32,
+                        penetrating: c0,
+                        max_depth_m: d0,
+                    },
+                    fp,
+                );
+                let (adapted, mut rep) = adapt_garment(&pos, &part.indices, &surface, a);
+                // Fault injection (mutation control `adapt_rejected`): the guard is skipped.
+                if matches!(pre, FitStatus::Rejected(_))
+                    && rep.pushed > 0
+                    && !cfg!(figure_mutant = "adapt_rejected")
+                {
+                    rep.applied = false;
+                }
                 if rep.applied {
                     if rep.pushed > 0 {
                         diagnostics.push(Diagnostic::GarmentAdapted {
@@ -2686,7 +2714,9 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
                         cap_m: a.max_displacement_m,
                     });
                 }
-                pos = adapted;
+                if rep.applied {
+                    pos = adapted;
+                }
                 adaptation = Some(rep);
             }
             let (count, max_depth) = penetration(

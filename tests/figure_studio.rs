@@ -1224,6 +1224,41 @@ fn an_adaptation_over_the_cap_is_refused_and_the_unadapted_verdict_stands() {
     }
 }
 
+/// A garment that is `Rejected` before adaptation stays `Rejected` even when its adaptation would
+/// fit under the cap: `bulge 1.0` needs about 22 mm, under a 50 mm cap, yet the verdict, metrics and
+/// positions are the unadapted ones, the refusal is reported and the garment is not drawn.
+/// Adaptation therefore never widens the `adapt_depth_m` bound. Kills `adapt_rejected`.
+#[test]
+fn a_rejected_garment_is_never_adapted_even_under_the_cap() {
+    let a = assets();
+    let mut wide = AdaptationV1::default();
+    wide.max_displacement_m = 0.05;
+    let plain = compile(&shell_recipe(1.0, 0.0, None), &a).expect("compiles");
+    assert!(
+        matches!(status_of(&plain, "shell"), FitStatus::Rejected(_)),
+        "{:?}",
+        status_of(&plain, "shell")
+    );
+    let c = compile(&shell_recipe(1.0, 0.0, Some(wide)), &a).expect("compiles");
+    assert_eq!(status_of(&c, "shell"), status_of(&plain, "shell"));
+    assert!(!drawn(&c, "shell"));
+    assert_eq!(c.fit_status()[0].metrics, plain.fit_status()[0].metrics);
+    let ar = c.fit_status()[0].adaptation.clone().expect("report");
+    assert!(!ar.applied, "{ar:?}");
+    assert!(
+        ar.max_displacement_m <= 0.05,
+        "the cap alone would have applied it: {ar:?}"
+    );
+    assert!(c.diagnostics().iter().any(|d| matches!(
+        d,
+        Diagnostic::GarmentAdaptationRefused { id, .. } if id == "shell"
+    )));
+    assert!(!c
+        .diagnostics()
+        .iter()
+        .any(|d| matches!(d, Diagnostic::GarmentAdapted { .. })));
+}
+
 /// The fit id covers the adaptation parameters. Without adaptation the id is the v2 id of old (the
 /// hand-rebuilt test above); with it the algorithm id is `...v2+adapt.v1`, the parameter count is 5
 /// and the three adaptation parameters follow in order. Each parameter moves the id. Invalid

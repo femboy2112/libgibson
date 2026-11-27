@@ -102,3 +102,10 @@ signed distance per ring-2 vertex 2.60, -0.98, -2.59, -1.28, 2.18, 5.75, 7.36, 6
 vertices 1..3 are pushed (3 of 8), the 1-ring is {0, 4}, vertices 5..8 are untouched, the largest
 displacement is 4.59 mm; at bulge 0.5 all 8 vertices are pushed by about 6.0 to 6.3 mm; at bulge 1.0 by
 22.0 to 23.2 mm (over the 20 mm default cap, refused).
+
+## Addendum (Rejected-guard): one more test, a sixth mutant
+
+**R** = `adapt_rejected` (the guard that keeps a garment `Rejected` before adaptation from being
+adapted is skipped). `a_rejected_garment_is_never_adapted_even_under_the_cap` (32 tests in all):
+bulge 1.0 with a 50 mm cap; under R the shell is adapted (about 22 mm) and becomes `Fitted`, so the
+verdict equality fails. Predicted: **R** killed by 1 test. PREDICTION, not a measurement.
