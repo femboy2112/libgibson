@@ -1,0 +1,130 @@
+# Excerpt of the M5-A gate 3 output (heavy s, 2026-11-26 22:16:46-22:19:48Z, rustc 1.98.1)
+# Tree: tests and src @e7d2896, with exactly one patch from this directory applied. red_todo is tests @e7d2896 over src @93b10b6.
+# Machine paths are removed. The per-test lines are verbatim cargo output.
+
+== red_todo
+test g1_half_open_boundaries ... FAILED
+test g1_is_deterministic_and_late_sampling_coalesces ... FAILED
+test g1_reduced_and_none_rest_immediately ... FAILED
+test g1_refusals ... FAILED
+test g1_rest_after_total_has_no_deadline ... FAILED
+test g1_sum_of_holds_overflow_is_refused ... FAILED
+test g2_composite_equals_hand_composite_and_unfilled_equals_base ... FAILED
+test g2_new_refusals ... FAILED
+test g2_plane_order_and_offsets ... FAILED
+test g2_planes_refusals ... FAILED
+test g2_slot_index_not_fill_rank_sets_z ... FAILED
+test g3_constructor_refusals ... FAILED
+test g3_hash_golden_table ... FAILED
+test g3_next_after_before_origin_is_k0 ... FAILED
+test g3_next_after_consistent_with_nth_at_boundaries ... FAILED
+test g3_next_after_is_constant_time_for_huge_t ... FAILED
+test g3_nth_matches_reference_and_differs_across_cues ... FAILED
+test g3_overflow_is_none ... FAILED
+test g3_seed0_cue0_k0_jitter_nonzero ... FAILED
+test g3_seeded_property_gap_bounds_over_1e5_occurrences ... FAILED
+test g4_hidden_means_zero_scheduled_work ... FAILED
+test result: FAILED. 0 passed; 21 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+panic sites: tests/stage_motion.rs=0 src/=21
+
+== sample_frame0
+test g1_half_open_boundaries ... FAILED
+test g1_is_deterministic_and_late_sampling_coalesces ... FAILED
+test g1_reduced_and_none_rest_immediately ... FAILED
+test g1_refusals ... ok
+test g1_rest_after_total_has_no_deadline ... FAILED
+test g1_sum_of_holds_overflow_is_refused ... FAILED
+test g2_composite_equals_hand_composite_and_unfilled_equals_base ... ok
+test g2_new_refusals ... ok
+test g2_plane_order_and_offsets ... ok
+test g2_planes_refusals ... ok
+test g2_slot_index_not_fill_rank_sets_z ... ok
+test g3_constructor_refusals ... ok
+test g3_hash_golden_table ... ok
+test g3_next_after_before_origin_is_k0 ... ok
+test g3_next_after_consistent_with_nth_at_boundaries ... ok
+test g3_next_after_is_constant_time_for_huge_t ... ok
+test g3_nth_matches_reference_and_differs_across_cues ... ok
+test g3_overflow_is_none ... ok
+test g3_seed0_cue0_k0_jitter_nonzero ... ok
+test g3_seeded_property_gap_bounds_over_1e5_occurrences ... ok
+test g4_hidden_means_zero_scheduled_work ... FAILED
+test result: FAILED. 15 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+panic sites: tests/stage_motion.rs=6 src/=0
+
+== hash_zero
+test g1_half_open_boundaries ... ok
+test g1_is_deterministic_and_late_sampling_coalesces ... ok
+test g1_reduced_and_none_rest_immediately ... ok
+test g1_refusals ... ok
+test g1_rest_after_total_has_no_deadline ... ok
+test g1_sum_of_holds_overflow_is_refused ... ok
+test g2_composite_equals_hand_composite_and_unfilled_equals_base ... ok
+test g2_new_refusals ... ok
+test g2_plane_order_and_offsets ... ok
+test g2_planes_refusals ... ok
+test g2_slot_index_not_fill_rank_sets_z ... ok
+test g3_constructor_refusals ... FAILED
+test g3_hash_golden_table ... FAILED
+test g3_next_after_before_origin_is_k0 ... ok
+test g3_next_after_consistent_with_nth_at_boundaries ... ok
+test g3_next_after_is_constant_time_for_huge_t ... ok
+test g3_nth_matches_reference_and_differs_across_cues ... FAILED
+test g3_overflow_is_none ... ok
+test g3_seed0_cue0_k0_jitter_nonzero ... FAILED
+test g3_seeded_property_gap_bounds_over_1e5_occurrences ... ok
+test g4_hidden_means_zero_scheduled_work ... ok
+test result: FAILED. 17 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+panic sites: tests/stage_motion.rs=4 src/=0
+
+== nth_origin
+test g1_half_open_boundaries ... ok
+test g1_is_deterministic_and_late_sampling_coalesces ... ok
+test g1_reduced_and_none_rest_immediately ... ok
+test g1_refusals ... ok
+test g1_rest_after_total_has_no_deadline ... ok
+test g1_sum_of_holds_overflow_is_refused ... ok
+test g2_composite_equals_hand_composite_and_unfilled_equals_base ... ok
+test g2_new_refusals ... ok
+test g2_plane_order_and_offsets ... ok
+test g2_planes_refusals ... ok
+test g2_slot_index_not_fill_rank_sets_z ... ok
+test g3_constructor_refusals ... FAILED
+test g3_hash_golden_table ... FAILED
+test g3_next_after_before_origin_is_k0 ... FAILED
+test g3_next_after_consistent_with_nth_at_boundaries ... FAILED
+test g3_next_after_is_constant_time_for_huge_t ... FAILED
+test g3_nth_matches_reference_and_differs_across_cues ... FAILED
+test g3_overflow_is_none ... FAILED
+test g3_seed0_cue0_k0_jitter_nonzero ... FAILED
+test g3_seeded_property_gap_bounds_over_1e5_occurrences ... FAILED
+test g4_hidden_means_zero_scheduled_work ... ok
+test result: FAILED. 12 passed; 9 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+panic sites: tests/stage_motion.rs=9 src/=0
+
+== GREEN @e7d2896: fmt 0, stage_motion 0 (21/21), lib stage 0 (3/3), clippy -D warnings 0, +1.85 check --lib 0
+
+== planes_flat (G2 run, heavy s 2026-11-26 22:32:11-22:32:23Z, tests+src @85efbad + planes_flat.patch)
+test g1_half_open_boundaries ... ok
+test g1_is_deterministic_and_late_sampling_coalesces ... ok
+test g1_reduced_and_none_rest_immediately ... ok
+test g1_refusals ... ok
+test g1_rest_after_total_has_no_deadline ... ok
+test g1_sum_of_holds_overflow_is_refused ... ok
+test g2_composite_equals_hand_composite_and_unfilled_equals_base ... FAILED
+test g2_new_refusals ... ok
+test g2_plane_order_and_offsets ... FAILED
+test g2_planes_refusals ... ok
+test g2_slot_index_not_fill_rank_sets_z ... FAILED
+test g3_constructor_refusals ... ok
+test g3_hash_golden_table ... ok
+test g3_next_after_before_origin_is_k0 ... ok
+test g3_next_after_consistent_with_nth_at_boundaries ... ok
+test g3_next_after_is_constant_time_for_huge_t ... ok
+test g3_nth_matches_reference_and_differs_across_cues ... ok
+test g3_overflow_is_none ... ok
+test g3_seed0_cue0_k0_jitter_nonzero ... ok
+test g3_seeded_property_gap_bounds_over_1e5_occurrences ... ok
+test g4_hidden_means_zero_scheduled_work ... ok
+test result: FAILED. 18 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+panic sites: tests/stage_motion.rs=3 src/=0

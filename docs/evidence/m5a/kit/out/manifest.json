@@ -1,0 +1,690 @@
+{
+ "cue": {
+  "cue": 1,
+  "min_gap_ms": 500,
+  "origin_ms": 300,
+  "period_ms": 1200
+ },
+ "cues_ms_python": [
+  577,
+  2105,
+  3046,
+  3983,
+  5494,
+  6579,
+  7720,
+  8844
+ ],
+ "determinism": {
+  "identical": true,
+  "sha_a": "53334b2a3503eba293db547d6a5098062127fcef58f84f9a4823109f20e815ff",
+  "sha_b": "53334b2a3503eba293db547d6a5098062127fcef58f84f9a4823109f20e815ff",
+  "shot": "g1-0420-start-f2"
+ },
+ "g4_bytes_evidence": "PROXY: idle_bytes/next_deadline in g4-hidden are measured on a headless twin Context, not on the real alt-screen sink; the screenshot is the direct evidence of no stale frame",
+ "git_sha": "e424e09f79e4db3d686b107399422f7d3b7127df",
+ "seed": 24301,
+ "seq_holds_ms": [
+  300,
+  120,
+  500,
+  200
+ ],
+ "seq_starts_ms": [
+  0,
+  300,
+  420,
+  920
+ ],
+ "still_png_total_bytes": 155227,
+ "still_png_total_kb": 151.6,
+ "stills": [
+  {
+   "bytes": 7662,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=0 --hold-ms=3000",
+   "expect_frame": 0,
+   "frame_ok": true,
+   "json": [
+    {
+     "at_ms": 0,
+     "frame": 0,
+     "next_deadline": 300,
+     "next_in": 300,
+     "scenario": "g1"
+    }
+   ],
+   "name": "g1-0000-start-f0",
+   "png": "stills/g1-0000-start-f0.png",
+   "sha256": "454385164e4c908c27df592c6f4aa374eb74e8dabba0a213c9dcddeceddd09e6",
+   "stderr": [
+    "{\"scenario\":\"g1\",\"at_ms\":0,\"frame\":0,\"next_in\":300,\"next_deadline\":300}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 7922,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=300 --hold-ms=3000",
+   "expect_frame": 1,
+   "frame_ok": true,
+   "json": [
+    {
+     "at_ms": 300,
+     "frame": 1,
+     "next_deadline": 420,
+     "next_in": 120,
+     "scenario": "g1"
+    }
+   ],
+   "name": "g1-0300-start-f1",
+   "png": "stills/g1-0300-start-f1.png",
+   "sha256": "96b0d3a31bf7b2a9ad09359942a3421e545f300901b6971a5f8cd2ebc2622009",
+   "stderr": [
+    "{\"scenario\":\"g1\",\"at_ms\":300,\"frame\":1,\"next_in\":120,\"next_deadline\":420}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 8230,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=420 --hold-ms=3000",
+   "expect_frame": 2,
+   "frame_ok": true,
+   "json": [
+    {
+     "at_ms": 420,
+     "frame": 2,
+     "next_deadline": 920,
+     "next_in": 500,
+     "scenario": "g1"
+    }
+   ],
+   "name": "g1-0420-start-f2",
+   "png": "stills/g1-0420-start-f2.png",
+   "sha256": "53334b2a3503eba293db547d6a5098062127fcef58f84f9a4823109f20e815ff",
+   "stderr": [
+    "{\"scenario\":\"g1\",\"at_ms\":420,\"frame\":2,\"next_in\":500,\"next_deadline\":920}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 8347,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=920 --hold-ms=3000",
+   "expect_frame": 3,
+   "frame_ok": true,
+   "json": [
+    {
+     "at_ms": 920,
+     "frame": 3,
+     "next_deadline": 1120,
+     "next_in": 200,
+     "scenario": "g1"
+    }
+   ],
+   "name": "g1-0920-start-f3",
+   "png": "stills/g1-0920-start-f3.png",
+   "sha256": "6ff80f23e757f18fe9fb6c6f78801aaa840a209c7d65f79d10b69bf01ec812cd",
+   "stderr": [
+    "{\"scenario\":\"g1\",\"at_ms\":920,\"frame\":3,\"next_in\":200,\"next_deadline\":1120}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 8466,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=650 --hold-ms=3000",
+   "expect_frame": 2,
+   "frame_ok": true,
+   "json": [
+    {
+     "at_ms": 650,
+     "frame": 2,
+     "next_deadline": 920,
+     "next_in": 270,
+     "scenario": "g1"
+    }
+   ],
+   "name": "g1-0650-mid-hold-f2",
+   "png": "stills/g1-0650-mid-hold-f2.png",
+   "sha256": "c78b0bec2653212064d9017a11ac96a862345b6b223ea2786184704ae71b0ea1",
+   "stderr": [
+    "{\"scenario\":\"g1\",\"at_ms\":650,\"frame\":2,\"next_in\":270,\"next_deadline\":920}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 8120,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=1120 --hold-ms=3000",
+   "expect_frame": 0,
+   "frame_ok": true,
+   "json": [
+    {
+     "at_ms": 1120,
+     "frame": 0,
+     "next_deadline": null,
+     "next_in": null,
+     "scenario": "g1"
+    }
+   ],
+   "name": "g1-1120-past-total",
+   "png": "stills/g1-1120-past-total.png",
+   "sha256": "ad5beff267deeb1a10185a0cbfab971814192bb555d6b5b8573456f945e35938",
+   "stderr": [
+    "{\"scenario\":\"g1\",\"at_ms\":1120,\"frame\":0,\"next_in\":null,\"next_deadline\":null}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 7900,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=1500 --hold-ms=3000",
+   "expect_frame": 0,
+   "frame_ok": true,
+   "json": [
+    {
+     "at_ms": 1500,
+     "frame": 0,
+     "next_deadline": null,
+     "next_in": null,
+     "scenario": "g1"
+    }
+   ],
+   "name": "g1-1500-late",
+   "png": "stills/g1-1500-late.png",
+   "sha256": "e400f8d5f061cdc79d23c8191b010c6d5f762771f70c7633e70979e152cab480",
+   "stderr": [
+    "{\"scenario\":\"g1\",\"at_ms\":1500,\"frame\":0,\"next_in\":null,\"next_deadline\":null}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 8667,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g1-reduced --at-ms=420 --hold-ms=3000",
+   "expect_frame": 0,
+   "frame_ok": true,
+   "json": [
+    {
+     "at_ms": 420,
+     "frame": 0,
+     "next_deadline": null,
+     "next_in": null,
+     "scenario": "g1-reduced"
+    }
+   ],
+   "name": "g1-reduced-0420",
+   "png": "stills/g1-reduced-0420.png",
+   "sha256": "a562183945d16ef69239ff274848830b2b6e1169f50e01270e298776df402440",
+   "stderr": [
+    "{\"scenario\":\"g1-reduced\",\"at_ms\":420,\"frame\":0,\"next_in\":null,\"next_deadline\":null}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 6654,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g2-slots --hold-ms=3000",
+   "json": [
+    {
+     "at_ms": 0,
+     "frame": null,
+     "next_deadline": null,
+     "next_in": null,
+     "scenario": "g2-slots"
+    }
+   ],
+   "name": "g2-slots",
+   "png": "stills/g2-slots.png",
+   "sha256": "5ac00205117bb0dfffc80749e6b9814bc7dc4d2b63e313cec4bd43e29c758388",
+   "stderr": [
+    "{\"scenario\":\"g2-slots\",\"at_ms\":0,\"frame\":null,\"next_in\":null,\"next_deadline\":null}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 7267,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g2-unfilled --hold-ms=3000",
+   "json": [
+    {
+     "at_ms": 0,
+     "frame": null,
+     "next_deadline": null,
+     "next_in": null,
+     "scenario": "g2-unfilled"
+    }
+   ],
+   "name": "g2-unfilled",
+   "png": "stills/g2-unfilled.png",
+   "sha256": "1caefe4b0b02c184923ffa9b715a29e889ec80116f764d88374c96e8df88ac54",
+   "stderr": [
+    "{\"scenario\":\"g2-unfilled\",\"at_ms\":0,\"frame\":null,\"next_in\":null,\"next_deadline\":null}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 21846,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g3-timeline --at-ms=3046 --hold-ms=3000",
+   "cues_match_python": true,
+   "json": [
+    {
+     "at_ms": 3046,
+     "frame": null,
+     "next_deadline": 3046,
+     "next_in": 0,
+     "scenario": "g3-timeline"
+    },
+    {
+     "blinking": true,
+     "cues_ms": [
+      577,
+      2105,
+      3046,
+      3983,
+      5494,
+      6579,
+      7720,
+      8844
+     ],
+     "nearest": 2,
+     "seed": 24301
+    }
+   ],
+   "name": "g3-03046-at-cue2-blink",
+   "png": "stills/g3-03046-at-cue2-blink.png",
+   "sha256": "8f4862a0ac25508f5a3d832dbc5bca7ff30a75da2e0f499570607d65f35cf891",
+   "stderr": [
+    "{\"scenario\":\"g3-timeline\",\"at_ms\":3046,\"frame\":null,\"next_in\":0,\"next_deadline\":3046}",
+    "{\"cues_ms\":[577, 2105, 3046, 3983, 5494, 6579, 7720, 8844],\"seed\":24301,\"nearest\":2,\"blinking\":true}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 22092,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g3-timeline --at-ms=3446 --hold-ms=3000",
+   "cues_match_python": true,
+   "json": [
+    {
+     "at_ms": 3446,
+     "frame": null,
+     "next_deadline": 3983,
+     "next_in": 537,
+     "scenario": "g3-timeline"
+    },
+    {
+     "blinking": false,
+     "cues_ms": [
+      577,
+      2105,
+      3046,
+      3983,
+      5494,
+      6579,
+      7720,
+      8844
+     ],
+     "nearest": 2,
+     "seed": 24301
+    }
+   ],
+   "name": "g3-03446-cue2-plus-400-open",
+   "png": "stills/g3-03446-cue2-plus-400-open.png",
+   "sha256": "2f6a0701e63b2a101a3b359a11a909a9fc62914774f6ca4741f3319eb452f577",
+   "stderr": [
+    "{\"scenario\":\"g3-timeline\",\"at_ms\":3446,\"frame\":null,\"next_in\":537,\"next_deadline\":3983}",
+    "{\"cues_ms\":[577, 2105, 3046, 3983, 5494, 6579, 7720, 8844],\"seed\":24301,\"nearest\":2,\"blinking\":false}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 21563,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g3-timeline --at-ms=0 --hold-ms=3000",
+   "cues_match_python": true,
+   "json": [
+    {
+     "at_ms": 0,
+     "frame": null,
+     "next_deadline": 577,
+     "next_in": 577,
+     "scenario": "g3-timeline"
+    },
+    {
+     "blinking": false,
+     "cues_ms": [
+      577,
+      2105,
+      3046,
+      3983,
+      5494,
+      6579,
+      7720,
+      8844
+     ],
+     "nearest": 0,
+     "seed": 24301
+    }
+   ],
+   "name": "g3-00000-origin",
+   "png": "stills/g3-00000-origin.png",
+   "sha256": "f84ce46b709342c1ed4f4b1d35ae951b82b96787f7329993af37e0dfee29e3f7",
+   "stderr": [
+    "{\"scenario\":\"g3-timeline\",\"at_ms\":0,\"frame\":null,\"next_in\":577,\"next_deadline\":577}",
+    "{\"cues_ms\":[577, 2105, 3046, 3983, 5494, 6579, 7720, 8844],\"seed\":24301,\"nearest\":0,\"blinking\":false}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 7101,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g4-hidden --at-ms=500 --hold-ms=3000",
+   "json": [
+    {
+     "at_ms": 500,
+     "frame": 0,
+     "hidden_bytes": 1540,
+     "idle_bytes": 0,
+     "next_deadline": null,
+     "next_in": 300,
+     "scenario": "g4-hidden"
+    }
+   ],
+   "name": "g4-hidden",
+   "png": "stills/g4-hidden.png",
+   "sha256": "3088c2503616515c8fe091eb2e7e6caaa4f7ccb5ad26379324e67af094cfd17b",
+   "stderr": [
+    "g4: visible_bytes=9728 next_deadline_visible=300 hidden_bytes=1540 next_deadline_hidden=null idle_run_once_none=true idle_bytes=0",
+    "{\"scenario\":\"g4-hidden\",\"at_ms\":500,\"frame\":0,\"next_in\":300,\"next_deadline\":null,\"hidden_bytes\":1540,\"idle_bytes\":0}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  },
+  {
+   "bytes": 3390,
+   "command": "target/debug/examples/stage_motion_kit --scenario=g2-slots --hold-ms=300",
+   "json": [
+    {
+     "at_ms": 0,
+     "frame": null,
+     "next_deadline": null,
+     "next_in": null,
+     "scenario": "g2-slots"
+    }
+   ],
+   "name": "after-exit",
+   "png": "stills/after-exit.png",
+   "sha256": "7f47d048f802496669f734e3f36a5c93990ddb8dadbe845e21509b408873118f",
+   "stderr": [
+    "{\"scenario\":\"g2-slots\",\"at_ms\":0,\"frame\":null,\"next_in\":null,\"next_deadline\":null}"
+   ],
+   "xterm": "xterm -display :97 -geometry 80x30+0+0 -fa DejaVu Sans Mono -fs 12 -bg black"
+  }
+ ],
+ "strip": {
+  "contact_sheet": "g1_contact_sheet.png",
+  "contact_sheet_sha256": "54f224397487b9f5db4594e36f2ca71d359702175d610714939831be054ba013",
+  "ffmpeg_stderr": "",
+  "fps": 20,
+  "mp4": "g1_strip.mp4",
+  "shots": [
+   {
+    "at_ms": 0,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=0 --hold-ms=2500",
+    "expect_frame": 0,
+    "frame_ok": true,
+    "png": "strip/strip_000.png",
+    "sha256": "b4873cdd8cbe0102b96d409cd7e72e14b854f21d78136899e69ee67473fbd099"
+   },
+   {
+    "at_ms": 50,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=50 --hold-ms=2500",
+    "expect_frame": 0,
+    "frame_ok": true,
+    "png": "strip/strip_001.png",
+    "sha256": "80d9eac44783a91c3297d4e5bf4fa146fc5f28cac788b8be2c42d816f3c8ce98"
+   },
+   {
+    "at_ms": 100,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=100 --hold-ms=2500",
+    "expect_frame": 0,
+    "frame_ok": true,
+    "png": "strip/strip_002.png",
+    "sha256": "6ea2b7a11c9ad0942a15b79e8532c882062f6e017f45d543274982b85fddbc08"
+   },
+   {
+    "at_ms": 150,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=150 --hold-ms=2500",
+    "expect_frame": 0,
+    "frame_ok": true,
+    "png": "strip/strip_003.png",
+    "sha256": "a21ca1e2d315730d3ea8b397a88332b0d2e1b6c18d9f003884c7ebca0b5267dd"
+   },
+   {
+    "at_ms": 200,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=200 --hold-ms=2500",
+    "expect_frame": 0,
+    "frame_ok": true,
+    "png": "strip/strip_004.png",
+    "sha256": "3e510aa6b848a05970efc9d45379db2a13601069974bec638a84b10fe7a14336"
+   },
+   {
+    "at_ms": 250,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=250 --hold-ms=2500",
+    "expect_frame": 0,
+    "frame_ok": true,
+    "png": "strip/strip_005.png",
+    "sha256": "6f564a87fdcc55fd4833d60c9feff7df7befc1ed886538a48256b0a69f642eb2"
+   },
+   {
+    "at_ms": 300,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=300 --hold-ms=2500",
+    "expect_frame": 1,
+    "frame_ok": true,
+    "png": "strip/strip_006.png",
+    "sha256": "234108169160b682b14969ebf1f5d3dc6af30f5ed7bd84bed8891e09ba7f418a"
+   },
+   {
+    "at_ms": 350,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=350 --hold-ms=2500",
+    "expect_frame": 1,
+    "frame_ok": true,
+    "png": "strip/strip_007.png",
+    "sha256": "1b5818a01ea04a6d5bb222248a133e8af7d4aac846da3840b65e0247a1137f60"
+   },
+   {
+    "at_ms": 400,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=400 --hold-ms=2500",
+    "expect_frame": 1,
+    "frame_ok": true,
+    "png": "strip/strip_008.png",
+    "sha256": "5c41766537322996d5ddaca1cd578ec994b32b877cca8f9578da32427cdcde8a"
+   },
+   {
+    "at_ms": 450,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=450 --hold-ms=2500",
+    "expect_frame": 2,
+    "frame_ok": true,
+    "png": "strip/strip_009.png",
+    "sha256": "ee44edc754d95c70ba40b96f6230f4e79e369f20671d38d4037cb7d328853cdf"
+   },
+   {
+    "at_ms": 500,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=500 --hold-ms=2500",
+    "expect_frame": 2,
+    "frame_ok": true,
+    "png": "strip/strip_010.png",
+    "sha256": "43134ae1092ca3cd4660d491494705eab4395305e4929c9a349bba524f10354b"
+   },
+   {
+    "at_ms": 550,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=550 --hold-ms=2500",
+    "expect_frame": 2,
+    "frame_ok": true,
+    "png": "strip/strip_011.png",
+    "sha256": "4d0c08992a6b9fb463449b6423f347f1866252dbb96be02636e9be0fd13251f4"
+   },
+   {
+    "at_ms": 600,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=600 --hold-ms=2500",
+    "expect_frame": 2,
+    "frame_ok": true,
+    "png": "strip/strip_012.png",
+    "sha256": "98c19e5d82b0ab3fbb7a6da4b92d8d66657ef9148b0c461d7cebd20d34e43906"
+   },
+   {
+    "at_ms": 650,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=650 --hold-ms=2500",
+    "expect_frame": 2,
+    "frame_ok": true,
+    "png": "strip/strip_013.png",
+    "sha256": "e47ff502b23603de9b66a9c42d6bb75f4c79502e5c679704dcd195b7ee6f345d"
+   },
+   {
+    "at_ms": 700,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=700 --hold-ms=2500",
+    "expect_frame": 2,
+    "frame_ok": true,
+    "png": "strip/strip_014.png",
+    "sha256": "1d858585de5c8c8aa1dd74b894dc20c120ac48ec03af12fcee96dd967621c956"
+   },
+   {
+    "at_ms": 750,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=750 --hold-ms=2500",
+    "expect_frame": 2,
+    "frame_ok": true,
+    "png": "strip/strip_015.png",
+    "sha256": "a8e08f5e224013a07dbebdb391aa5c7c8bf6c5921dc516c943257d8bb9dee28c"
+   },
+   {
+    "at_ms": 800,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=800 --hold-ms=2500",
+    "expect_frame": 2,
+    "frame_ok": true,
+    "png": "strip/strip_016.png",
+    "sha256": "489d6bf891d169c61ad324d5f83f986ed3201d0dd2afc6cc9128be9cd4460d4c"
+   },
+   {
+    "at_ms": 850,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=850 --hold-ms=2500",
+    "expect_frame": 2,
+    "frame_ok": true,
+    "png": "strip/strip_017.png",
+    "sha256": "def8d78915a886b4738f7e5319ddd03b01c9516fd5ac68c52c49bd4fb1e224f9"
+   },
+   {
+    "at_ms": 900,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=900 --hold-ms=2500",
+    "expect_frame": 2,
+    "frame_ok": true,
+    "png": "strip/strip_018.png",
+    "sha256": "23a39fc463ba1b2778928ce9e2bd43e1e2e9f92b6839a9c2ce85b64ff8d7f38d"
+   },
+   {
+    "at_ms": 950,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=950 --hold-ms=2500",
+    "expect_frame": 3,
+    "frame_ok": true,
+    "png": "strip/strip_019.png",
+    "sha256": "c7fd015d2a7ae38485b3ef71322ed360fe67834e93a9627756b877a1cc860501"
+   },
+   {
+    "at_ms": 1000,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=1000 --hold-ms=2500",
+    "expect_frame": 3,
+    "frame_ok": true,
+    "png": "strip/strip_020.png",
+    "sha256": "5eb42d3dd72f173b55c3d7c08ca85640dae54b17014928eb524e397874c27d62"
+   },
+   {
+    "at_ms": 1050,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=1050 --hold-ms=2500",
+    "expect_frame": 3,
+    "frame_ok": true,
+    "png": "strip/strip_021.png",
+    "sha256": "e4b197b94fb3f89dee442e3307bc0c25e4fe46b91e1c8ba2e60631bbb9498984"
+   },
+   {
+    "at_ms": 1100,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=1100 --hold-ms=2500",
+    "expect_frame": 3,
+    "frame_ok": true,
+    "png": "strip/strip_022.png",
+    "sha256": "ed2987bbcaf9ce5d7b00405ad7d2c077e97420fcfb862e3637dbd75bd4b5b969"
+   },
+   {
+    "at_ms": 1150,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=1150 --hold-ms=2500",
+    "expect_frame": 0,
+    "frame_ok": true,
+    "png": "strip/strip_023.png",
+    "sha256": "6f76602a537e808652962956efe02ffa79115136fcbd5584e31b071adcb501fb"
+   },
+   {
+    "at_ms": 1200,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=1200 --hold-ms=2500",
+    "expect_frame": 0,
+    "frame_ok": true,
+    "png": "strip/strip_024.png",
+    "sha256": "485b11de2b205ded9dba223a4a01d7a5af91570634060931d27709b83da8ff76"
+   },
+   {
+    "at_ms": 1250,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=1250 --hold-ms=2500",
+    "expect_frame": 0,
+    "frame_ok": true,
+    "png": "strip/strip_025.png",
+    "sha256": "667c34726d992c068346090ed29f374490571ba79fda396b758615019dd964c1"
+   },
+   {
+    "at_ms": 1300,
+    "command": "target/debug/examples/stage_motion_kit --scenario=g1 --at-ms=1300 --hold-ms=2500",
+    "expect_frame": 0,
+    "frame_ok": true,
+    "png": "strip/strip_026.png",
+    "sha256": "0c77d6c59094a62140c0af84ceb4b6d57a2407fac71c9a995795f95db7f2cde0"
+   }
+  ],
+  "step_ms": 50,
+  "strip_png_total_bytes": 215404,
+  "times_ms": [
+   0,
+   50,
+   100,
+   150,
+   200,
+   250,
+   300,
+   350,
+   400,
+   450,
+   500,
+   550,
+   600,
+   650,
+   700,
+   750,
+   800,
+   850,
+   900,
+   950,
+   1000,
+   1050,
+   1100,
+   1150,
+   1200,
+   1250,
+   1300
+  ]
+ },
+ "tools": {
+  "ffmpeg": [
+   "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers"
+  ],
+  "import": [
+   "Version: ImageMagick 6.9.12-98 Q16 x86_64 18038 https://legacy.imagemagick.org"
+  ],
+  "xterm": [
+   "XTerm(390)"
+  ]
+ },
+ "wall_seconds_last_run": 52.2,
+ "xterm": {
+  "colorterm": "truecolor",
+  "font": "DejaVu Sans Mono",
+  "geometry": "80x30+0+0",
+  "hold_ms": 3000,
+  "settle_s": 1.2,
+  "size": "12",
+  "term": "xterm-256color"
+ }
+}

@@ -1,0 +1,10 @@
+--- a/src/stage/motion.rs
++++ b/src/stage/motion.rs
+@@ -149,6 +149,7 @@
+     /// Samples at `elapsed` since the cue's origin. Late sampling jumps to the current
+     /// frame and never replays. `Reduced` and `None` return the rest frame with no deadline.
+     pub fn sample(&self, elapsed: Duration, motion: MotionPreference) -> SequenceSample {
++        if true { let _ = (elapsed, motion); return SequenceSample { index: 0, source: Arc::clone(&self.frames[0].source), next_in: None }; }
+         let at_rest = || SequenceSample {
+             index: self.rest,
+             source: Arc::clone(&self.frames[self.rest].source),

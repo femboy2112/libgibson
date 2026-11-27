@@ -3,7 +3,7 @@
 This document outlines completed work and the planned future milestones for LibGibson.
 
 
-## Current release (updated 2026-11-26): v0.9.1 "clear SIGKILL 1"
+## Current release (updated 2026-11-26): v0.9.1 "clear SIGKILL 1" (v0.9.2 "clear SIGKILL 2" prepared in source)
 
 **v0.7.0 was released on 2026-11-13** (Release Contract §1, state 2):
 - annotated tag `v0.7.0` → `1df9690` on `main`, with the Go module tag `bindings/go/v0.7.0` on the
@@ -102,6 +102,26 @@ paths (the only scan hit is the public sponsor link in the bundled README, as in
 - its `.sha256` file, 102 B, sha256 `c33d9cc4c1b85b4cba56101615f21a7f8c2ddca3a5e6e54ccfd9d9b3014f08de`;
 - the Python wheel, 18168 B, sha256 `4914413745cd101f782cfd02d0acc1d3ccfecb6ee9f0a92410ae656b2a29ed9b`;
 - the Python sdist, 18561 B, sha256 `c4e03a89303a0edede226d00261a0b31d8491e9e4636c8209472fe01b3f75719`.
+
+**v0.9.2 "clear SIGKILL 2" is prepared in source** (state 1). It is not tagged or released yet.
+It is a patch: the experimental `stage::motion` module (#461), additive and Rust-only. The name
+follows [decision 0004](docs/decisions/0004-release-naming.md) (minor 9 = SIGKILL, patch 2) and is
+confirmed by the release coordinator. The full audit is
+[`docs/V0_9_2_COMPLETION_AUDIT.md`](docs/V0_9_2_COMPLETION_AUDIT.md).
+
+#### v0.9.2 completion status (2026-11-26)
+
+| Item | Status | Evidence |
+|---|---|---|
+| #461 feat(stage): `stage::motion` M5-A G1 `FrameSequence`, G2 `LayerSlots`, G3 `CueSchedule`, G4 hidden-quiescence contract test (EXPERIMENTAL, additive, Rust-only) | **Done** | Merged as `4a86232` (head `5999b7f`: hosted CI run 45907340425 9/9 including the `stage_motion_kit` example build, Release preflight run 45907340415). Narrow gate GREEN at `3234d48` and `e7d2896` (fmt, `stage_motion` 21/21, lib `stage` 3/3, clippy `-D warnings`, `+1.85` check). Assertion-level wrong-value REDs under `docs/evidence/m5a/mutants/` (6/4/9/3 failures, all in `tests/`). Independent review: 0 blockers, fixes in `e7d2896`. Visual checkpoint: kit at `e424e09`, owner verdict "Pass, add live capture" (`docs/evidence/m5a/kit/out/VIEWED.md`). |
+| Continuous motion: sprite in-betweens (sub-cell offsets, crossfade) | **Deferred to a later 0.9.x** | `FrameSequence` is documented as the keyframe layer (module docs and CHANGELOG, `5999b7f`). Starts after M5-B Slice 1 qualifies. |
+| Live-playback capture with frame-timing metrics | **Deferred to the next motion checkpoint** | Owner verdict, binding on the next checkpoint. |
+| #294 resize | **Not in 0.9.2** | Spec #458 has the probe plan only. |
+| M5-B `figure` (#462) | **Not in 0.9.2** | Own branch, off-by-default `figure` feature; Slice 1 not qualified. |
+| #444 multi-line text area (EXPERIMENTAL) | **Deferred to 0.10.0** (unchanged) | Breaks `ui::Interaction` literals (Release Contract §1). |
+| `max_frame_bytes` for the kitty frame plan; prompt editor | **Not in 0.9.2** (unchanged) | Not scheduled. |
+| Release gates (exact-head CI incl. Release preflight and the `stage_motion_kit` example build) | **Pending** | To be observed on the final prep head. `git diff v0.9.1 <rc> -- abi include bindings` must show only the Python package version. |
+| Consumer gate | **Substituted**, as for 0.9.0 and 0.9.1 | Additive module that GHOST does not consume yet. Hosted CI on the exact candidate plus the abi/include/bindings diff. GHOST's pin bump to 0.9.2 is gated at its next integration candidate. |
 
 #### v0.9.1 completion status (2026-11-26)
 

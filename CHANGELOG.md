@@ -15,6 +15,17 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+## [0.9.2] — unreleased (prepared in source) · "clear SIGKILL 2"
+
+A patch release that adds the experimental `stage::motion` module (#461, M5-A G1–G4). It is additive and Rust-only. No existing type or signature changes, and existing output is unchanged when the new module is not used.
+- **What changed:** `stage::motion` (`FrameSequence`, `LayerSlots`, `CueSchedule`) plus a public hidden-quiescence contract test, and the `stage_motion_kit` example (#461).
+- **Unchanged:** `include/`, `abi/` and `bindings/` (except the Python package version). `GIBSON_ABI_VERSION` stays 1 (67 symbols). MSRV stays 1.85.
+- **Not in 0.9.2:** continuous in-betweens (sub-cell offsets and crossfade) and live-playback capture are deferred to a later 0.9.x; the `figure` skeletal module (#462) is not qualified yet; #444 still waits for 0.10.0.
+- **Platforms and distribution:** Linux x86_64 only. GitHub-only: no crates.io, PyPI or Go module proxy upload. The Go module tag `bindings/go/v0.9.2` names the same commit as `v0.9.2`.
+
+### Added (Rust-only, experimental)
+- New experimental module `stage::motion` (M5 G1-G4): `FrameSequence` (a finite authored flipbook with a rest frame, sampled at explicit caller time), `LayerSlots` (registered overlay geometry that validates and builds ordinary `RasterPlane`s), `CueSchedule` (a seeded, deadline-driven jittered cue; its SplitMix64 jitter hash is contract, so a change needs a minor release), and a public contract test that a hidden avatar means zero scheduled work (no new API). Purely additive: no existing type or signature changes, and no C ABI change. `FrameSequence` is the **keyframe layer**: frame switches are hard cuts. Continuous in-betweens (sub-cell offsets and crossfade) are deferred to a later 0.9.x. There is also a new example, `stage_motion_kit`, which is the synthetic-sprite visual checkpoint used by `docs/evidence/m5a/kit/`.
+
 ## [0.9.1] — 2026-11-26 · GitHub release from `main` · "clear SIGKILL 1"
 
 A patch release that adds the Settings form primitives (#433). It is additive, opt-in and Rust-only. No existing API changes shape, every default is unchanged, and existing elements render byte-identically when the new calls are not used.
