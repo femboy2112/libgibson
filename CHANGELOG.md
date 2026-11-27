@@ -15,7 +15,7 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-## [0.9.2] — unreleased (prepared in source) · "clear SIGKILL 2"
+## [0.9.2] — 2026-11-27 · GitHub release from `main` · "clear SIGKILL 2"
 
 A patch release that adds the experimental `stage::motion` module (#461, M5-A G1–G4). It is additive and Rust-only. No existing type or signature changes, and existing output is unchanged when the new module is not used.
 - **What changed:** `stage::motion` (`FrameSequence`, `LayerSlots`, `CueSchedule`) plus a public hidden-quiescence contract test, and the `stage_motion_kit` example (#461).
