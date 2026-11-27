@@ -1,0 +1,5 @@
+{
+  "format": "figure-licence-external-evidence/1",
+  "note": "Coordinator-supplied evidence for files with no on-disk licence statement. Each entry: id (a row id from LICENCE_MANIFEST, e.g. 'rig_game_engine', 'target:legs/measure-thigh-circ', 'macro_targets', 'vertex_groups', 'macro_json'), url (the page actually read), quote (the exact text that shows CC0 for that file or its whole directory), retrieved (date and who). The audit accepts an entry only if url is non-empty and quote contains CC0. Never put an unread or paraphrased quote here.",
+  "entries": []
+}
