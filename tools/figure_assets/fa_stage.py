@@ -467,6 +467,10 @@ def add_lights(center, height, gain=1.0):
         ld.energy = energy * k
         ld.size = size * height / 1.7
         ld.color = col
+        if name == "rim":
+            # The overhead box defines the silhouette and floor shadow. Its reflection
+            # spans several long01 cards at once and reads as a silver band across the part.
+            ld.specular_factor = 0.0
         ld.use_shadow = True
         if hasattr(ld, "use_shadow_jitter"):
             ld.use_shadow_jitter = True
