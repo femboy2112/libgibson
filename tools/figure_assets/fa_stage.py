@@ -151,9 +151,10 @@ def eye_material(iris_rgb, pack=None):
     if pack is not None:
         tex = pack.node(m, "eyes_blue_diffuse")
         fa_materials.tinted_albedo(m, tex, iris_rgb, (0.2, 0.3, 0.42), iris_only=True)
-        set_input(b, ("Roughness",), 0.28)
-        set_input(b, ("Coat Weight",), 0.75)
-        set_input(b, ("Coat Roughness",), 0.09)
+        set_input(b, ("Roughness",), 0.24)
+        set_input(b, ("Coat Weight",), 1.0)
+        set_input(b, ("Coat IOR",), 1.376)
+        set_input(b, ("Coat Roughness",), 0.035)
         m.diffuse_color = rgba(iris_rgb)
         return m
     nt = m.node_tree
@@ -445,9 +446,9 @@ def add_lights(center, height, gain=1.0):
     dist = 2.7 * height
     k = (dist / 4.5) ** 2 * gain
     cx, cy, cz = center
-    rig = (("key", -28.0, 47.0, 440.0, 2.1, (1.0, 0.91, 0.81)),
-           ("fill", 42.0, 22.0, 180.0, 3.0, (0.82, 0.89, 1.0)),
-           ("rim", 165.0, 72.0, 600.0, 1.6, (0.88, 0.94, 1.0)))
+    rig = (("key", -38.0, 44.0, 390.0, 2.1, (1.0, 0.91, 0.81)),
+           ("fill", 42.0, 22.0, 120.0, 3.0, (0.82, 0.89, 1.0)),
+           ("rim", 180.0, 77.0, 850.0, 2.3, (0.88, 0.94, 1.0)))
     made = {}
     for name, az, el, energy, size, col in rig:
         a, e = math.radians(az), math.radians(el)
@@ -880,13 +881,16 @@ def dress(export_dir, S, landmarks, arm, names, body, rd, slots, garments, fit_s
     hid = hair_cfg.get("id")
     if hid:
         mat = hair_material(hair_rgb, pack=pack if hid == "long01" else None)
-        r = attach_object(export_dir, hid, "hair", mat, S, arm, names, lambda p: fa_hair.part_hair(p, eye_l, eye_r))
+        # Long01 already has a centre part. Applying the bob fringe remap
+        # stretches triangles spanning that part into a shelf above the brow.
+        post = None if hid == "long01" else lambda p: fa_hair.part_hair(p, eye_l, eye_r)
+        r = attach_object(export_dir, hid, "hair", mat, S, arm, names, post)
         if r is None:
             notes.append("hair %s is not in the export attachments (export with this preset)" % hid)
             out["report"]["hair:" + hid] = "NOT DRAWN: not in export"
         else:
             out["objs"]["hair"].append(r[0])
-            out["hair_part"] = r[3]
+            out["hair_part"] = r[3] if post else {"method": "native centre part", "moved_vertices": 0}
             out["hair_violations"] = fa_hair.clearance_violations(r[2], eye_l, eye_r)
     for kind, key, default_id in (("eyes", "eyes", "low-poly"), ("eyebrows", "brow", "eyebrow001"),
                                   ("eyelashes", "lash", "eyelashes01")):
@@ -917,7 +921,7 @@ def dress(export_dir, S, landmarks, arm, names, body, rd, slots, garments, fit_s
         else:
             slot = bind.get("garment:" + gid, bind.get("garment", "base"))
             spec = slots.get(slot, {"albedo": [0.20, 0.38, 0.42], "roughness": 0.7})
-            cloth = fa_surface.fabric_material(slot_material(slot, spec))
+            cloth = fa_surface.garment_material(slot_material(slot, spec), gid, pack)
             r = attach_object(export_dir, gid, "garment", cloth, S, arm, names)
             if r is None:
                 out["report"][gid] = "NOT DRAWN: not in the export attachments (export it with this preset)"

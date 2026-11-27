@@ -264,6 +264,8 @@ class Blender:
                     key, default = ("skirt", "panel") if a["kind"] == "skirt" else ("garment", "base")
                     slot = render.get("bindings", {}).get(key, default)
                     material = stage.slot_material(slot, slots.get(slot, {}))
+                    if a["kind"] == "clothes":
+                        material = stage.fa_surface.garment_material(material, a["name"], pack)
             made.append(self._attachment_object(a, arm, material))
         bpy.ops.object.select_all(action="DESELECT")
         for o in [arm] + made:
@@ -736,10 +738,6 @@ def assemble(args, B, say=say):
             rec = load_attachment(s, user_data, P, groups, wi, ww, sources, bone_names, gl_atts)
             # refit to the shaped body S (binding is the same code the runtime uses)
             rec["positions"] = fc.fit_binding(rec["bind"], rec["offset_spec"], S)
-            if rec["name"] == "long01" and preset.get("render", {}).get("texture_set") == "makehuman_system":
-                import fa_hair
-                eyes = [fc.centroid(S, landmarks["joints"][n]) for n in ("joint-l-eye", "joint-r-eye")]
-                rec["positions"], _ = fa_hair.part_hair(rec["positions"], *eyes)
             if preset.get("hide_body_under_garment", True) and rec["kind"] == "clothes":
                 hide.update(i for i in rec["delete_verts"] if i < fc.N_BODY)
             gl_atts.append(rec)
