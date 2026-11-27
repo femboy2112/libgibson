@@ -6,13 +6,13 @@ set -euo pipefail
 [[ ${HEAVY_CLASS:-} == s ]] || { echo 'Run inside heavy run --class s.' >&2; exit 2; }
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(git -C "$here" rev-parse --show-toplevel)
-out="$HOME/.local/state/first-performance/codex-fp"
+out="${FP_OUTPUT_ROOT:-$HOME/.local/state/first-performance/codex-fp}"
 blender=${BLENDER:-/home/leah/opt/blender/blender}
 preset="$here/presets/generic_neutral.json"
 licence="$repo/docs/evidence/m5c/LICENCE_MANIFEST.json"
 export MPFB_DATA="${MPFB_DATA:-$HOME/.config/blender/4.5/extensions/user_default/mpfb/data}"
 export MPFB_USER_DATA="${MPFB_USER_DATA:-$HOME/.config/blender/4.5/extensions/.user/user_default/mpfb/data}"
-export CARGO_TARGET_DIR="$out/cargo-target"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$out/cargo-target}"
 export TMPDIR="$out/tmp"
 mkdir -p "$out/logs" "$TMPDIR"
 cd "$repo"
