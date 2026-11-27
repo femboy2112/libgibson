@@ -40,8 +40,17 @@ A kit below this bar is reported as "plumbing", never as an avatar checkpoint.
 - **Fixture (Q3).**
   - Committed only if it is ≤2 MB and verified CC0.
   - Otherwise it stays local with its sha256 pinned, and a fetch-and-verify script is committed instead.
-- **Blender / MPFB (Q2): LATER.** It goes to the owner as a question when the ~12 parametric
-  controls start. Nothing is installed now.
+- **Blender / MPFB (Q2): AUTHORIZED by the owner (ruling #84 amends #82).**
+  - The tools are Blender 4.5.17 LTS and the MPFB 2.0.18 extension, with the MakeHuman system
+    assets in MPFB user data.
+  - They are installed outside this repo, and their hashes are recorded by the coordinator.
+  - Blender is a GPL tool: its outputs are not encumbered, and no Blender or MPFB code enters this repo.
+  - Blender runs headless only, and only under the heavy `s` slot.
+  - The asset-pack zip hash is trust-on-first-use, and the asset files carry no per-file licence
+    fields. The per-file check above therefore still applies: each file's pack page gives its
+    licence, and anything not provably CC0 (newer packs may be CC-BY) is dropped.
+  - Our exporter, which drives MPFB inside Blender, is our own script and is committed. The
+    converter from the export to the gibson fixture stays MakeHuman-code-free.
 
 ## 2. Library work (generic, behind `figure`, zero runtime deps per ruling #39)
 | Item | API sketch | Oracle / control |
