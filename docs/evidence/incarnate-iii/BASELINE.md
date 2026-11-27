@@ -90,3 +90,11 @@ still measured zero. Raw native Blender outputs are `qual/unmasked.log` and
 `qual/injected-unmasked.log`. The incoming suit crosses the underlying body even
 after the compiler's Fitted verdict. The baseline qualifies the reference replay
 and the suit/skirt measurement. Whole-body contact remains open.
+
+Each of the three new studio tests also rejected its predicted defect on the
+retained implementation. The isolated mutation run replaced only the named
+`cfg!` expression with true, saved its one-line source diff, and required the
+single corresponding test to build and fail its assertion. The three raw diffs
+and logs are in `baseline/qual` under `face_iris_backward`, `face_unhashed` and
+`no_layers`. The full integration runner also registers the ordinary Rust cfg
+mutants for all three.
