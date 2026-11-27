@@ -54,6 +54,10 @@ def open_text(path):
 
 
 def header_lines(path):
+    # PNG bytes have no text header. The material's entry in the pack index
+    # supplies the licensing evidence for its texture.
+    if path.lower().endswith(".png"):
+        return []
     out = []
     try:
         with open_text(path) as f:
