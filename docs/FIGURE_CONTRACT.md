@@ -952,3 +952,35 @@ bound body vertices by the export); the body vertices hidden under the part.
 - No existing all-public struct or exhaustive enum gains a field or variant.
 - No C ABI change.
 - Release timing is the coordinator's decision.
+
+---
+
+## Body family layer (`figure::family`, EXPERIMENTAL, DRAFT)
+
+A generic authored-body layer beside the v0 `compile` path (it shares no state with it and does
+not change `rev.v0`). No character data lives in libgibson: families are authored elsewhere and
+handed in as a `FamilySpec`; tests use a synthetic stacked-ellipse mannequin only.
+
+- **Origin and identity.** A `BodyFamily` is an authored neutral surface with fixed topology
+  plus region-scoped controls (id, min/max/default, sparse per-side deltas, optional mirror
+  partner), combo correctives keyed on a control pair, region locks and a vertex mirror map.
+  `FamilyId` is the SHA-256 of all of it (name, revision, origin, controls ...); `OriginId`
+  hashes the origin alone. Two different authored origins never share an id.
+- **Evaluation.** `P = origin + sum |c|*delta[c][side] + sum |ca|*|cb|*corrective`, declared
+  order, no clamp. Same law as the studio asset controls (`{name}.neg/.pos` morphs weighted by
+  `|c|`). Locked vertices are bit-identical to the origin. `BodyRevId` hashes family id plus
+  shaped positions, so a no-op edit has the same revision.
+- **Authoring refusals** (typed errors): control touches a locked vertex; delta outside the
+  control's region (wrong-region morph); control with no effect (ignored parameter) or a
+  reachable side with no effect; bad vertices/duplicates/non-finite; non-involutive mirror map;
+  mirror partners that are not mirror images. `REQUIRED_CONTROLS` is the schema check for the
+  18 required controls (ribcage w/d, bust x4, waist w/d, pelvis, hip flare, glute x2, thigh
+  upper/lower, shoulder, upper arm, calf, posture). `coupling` flags near-duplicate controls.
+- **Rebind.** `BodyFamily::rebind(shaped, RigSpec)` derives from the SHAPED surface: joint
+  bind positions (mean of each anchor ring), inverse binds, one capsule per bone from its
+  dominantly bound vertices, compliant-region tags (centroid, radius, half-extents, dominant
+  joint); skin weights carry over unchanged. The `BoundRig` is stamped with the `BodyRevId`;
+  every accessor and `skin_positions` refuses a different body revision
+  (`RebindError::StaleSkeleton`), and `verify` re-derives to catch edited contents.
+- **Not done here:** wiring into studio asset loading (`studio.rs`), garment fit, qualification
+  of stand/turn/walk/sit/reach/settle. Tests: `tests/figure_family.rs`.

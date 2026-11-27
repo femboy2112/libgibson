@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 pub mod clip;
+pub mod family;
 pub mod ik;
 pub mod living_matter;
 pub mod math;
