@@ -26,6 +26,7 @@ struct Weight {
 pub struct FigureDynamics {
     config: DynamicsConfig,
     id: [u8; 32],
+    props: Vec<(Vec3, Vec3)>,
     present: [u8; 32],
     tick: u64,
     chest: usize,
@@ -89,7 +90,24 @@ fn digest(cfg: DynamicsConfig, c: &Compiled, meshes: &[RenderMesh]) -> [u8; 32] 
 
 impl FigureDynamics {
     pub fn new(c: &Compiled, config: DynamicsConfig) -> Result<Self, &'static str> {
+        Self::with_props(c, config, &[])
+    }
+
+    /// Stationary scene-local boxes (centre and full dimensions in world metres).
+    pub fn with_props(
+        c: &Compiled,
+        config: DynamicsConfig,
+        props: &[(Vec3, Vec3)],
+    ) -> Result<Self, &'static str> {
         config.validate()?;
+        if props.len() > 16
+            || props.iter().any(|(p, s)| {
+                !p.is_finite() || !s.is_finite() || s.x <= 0. || s.y <= 0. || s.z <= 0.
+            })
+        {
+            return Err("invalid scene collider");
+        }
+
         let meshes = c.rest_render_meshes();
         let body = meshes
             .first()
@@ -196,7 +214,17 @@ impl FigureDynamics {
         });
         Ok(Self {
             config,
-            id: digest(config, c, &meshes),
+            id: {
+                let mut h = sha256::Sha256::new();
+                h.update(&digest(config, c, &meshes));
+                for (p, s) in props {
+                    for x in [p.x, p.y, p.z, s.x, s.y, s.z] {
+                        h.update(&x.to_le_bytes());
+                    }
+                }
+                h.finalize()
+            },
+            props: props.to_vec(),
             present: c.present_id().0,
             tick: 0,
             chest,
@@ -303,6 +331,21 @@ impl FigureDynamics {
         }
         let contact = |p: Vec3, _t: f32| {
             let mut q = collision.project(p, 0.004);
+            for &(center, size) in &self.props {
+                let d = q.sub(center);
+                let e = size.scale(0.5).add(Vec3::new(0.004, 0.004, 0.004));
+                let depth = [e.x - d.x.abs(), e.y - d.y.abs(), e.z - d.z.abs()];
+                if depth.iter().all(|x| *x > 0.) {
+                    let k = (0..3)
+                        .min_by(|&a, &b| depth[a].total_cmp(&depth[b]))
+                        .unwrap();
+                    match k {
+                        0 => q.x = center.x + e.x.copysign(d.x),
+                        1 => q.y = center.y + e.y.copysign(d.y),
+                        _ => q.z = center.z + e.z.copysign(d.z),
+                    }
+                }
+            }
             q.z = q.z.max(0.004);
             q
         };

@@ -872,7 +872,7 @@ def attach_object(export_dir, name, role, mat, S, arm, names, post=None):
 
 
 def dress(export_dir, S, landmarks, arm, names, body, rd, slots, garments, fit_status, hide_under, arm_mask, eye_l, eye_r, notes,
-          fitted_positions=None):
+          fitted_positions=None, baked_hair=False):
     """Skin, hair (parted away from the eyes), eyes, brows, lashes, the garments whose verdict is Fitted, the skirt, and a visible
     label for every garment that is NOT drawn.  -> dict with objs / labels / report / skirt / diagnostics."""
     out = {"objs": {"body": [body], "hair": [], "garment": [], "eyes": [], "brow": [], "lash": [], "skirt": []}, "labels": [], "report": {}, "skirt": None}
@@ -906,7 +906,12 @@ def dress(export_dir, S, landmarks, arm, names, body, rd, slots, garments, fit_s
             out["report"]["hair:" + hid] = "NOT DRAWN: not in export"
         else:
             if hid == "long01":
-                fa_hair.finish_long01(r[0], body)
+                if baked_hair:
+                    # The physics track addresses source cage indices. Subdivide after playback.
+                    smooth = r[0].modifiers.new("Smooth realized hair", "SUBSURF")
+                    smooth.levels = smooth.render_levels = 2
+                else:
+                    fa_hair.finish_long01(r[0], body)
             out["objs"]["hair"].append(r[0])
             out["hair_part"] = r[3] if post else {"method": "native centre part", "moved_vertices": 0}
             out["hair_violations"] = fa_hair.clearance_violations(r[2], eye_l, eye_r)

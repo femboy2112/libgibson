@@ -64,6 +64,8 @@ def parse_args(argv):
     ap.add_argument("--preset", default=None, help="preset JSON: macro/controls/materials/garments/hair")
     ap.add_argument("--shots", default=None, help="shots JSON (tools/figure_assets/shots/*.json)")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--matter", help="versioned Living Matter world-space bake manifest")
+    ap.add_argument("--scene", help="versioned scene and prop manifest")
     ap.add_argument("--fitted", help="rest garment positions from the same compiled recipe as the tape")
     ap.add_argument("--still", action="append", help="render just this named still (repeatable); check every camera")
     ap.add_argument("--spp", type=int, default=32)
@@ -207,7 +209,7 @@ def build_figure(a, tape, preset, mutant, notes):
     fig.slot_specs = slots
     D = st.dress(export_dir, S, landmarks, arm, names, obj, rd, slots, tape.header.get("garments", []), tape.header.get("fit_status", {}),
                  preset.get("hide_body_under_garment", True), fig.arm_mask, fig.eye_l, fig.eye_r, notes,
-                 fitted_positions=load_fitted(a.fitted, tape, export_dir))
+                 fitted_positions=load_fitted(a.fitted, tape, export_dir), baked_hair=bool(getattr(a, "matter", None)))
     fig.objs, fig.labels, fig.garment_report, fig.skirt = D["objs"], D["labels"], D["report"], D["skirt"]
     fig.sss_inputs, fig.skin_rgb, fig.hair_rgb, fig.brow_rgb = D["sss_inputs"], D["skin_rgb"], D["hair_rgb"], D["brow_rgb"]
     fig.hair_part, fig.hair_pos_violations = D.get("hair_part"), D.get("hair_violations")
@@ -236,6 +238,8 @@ def skin_for(fig, tape, f):
 
 
 def set_rest_pose(fig):
+    if getattr(fig, "matter", None):
+        fig.matter.restore()
     for pb in fig.arm.pose.bones:
         pb.matrix_basis = Matrix.Identity(4)
     if fig.skirt is not None:
@@ -243,7 +247,10 @@ def set_rest_pose(fig):
     bpy.context.view_layer.update()
 
 
-def set_pose(fig, tape, f):
+def set_pose(fig, tape, f, realized=True):
+    matter = getattr(fig, "matter", None)
+    if matter and not realized:
+        matter.restore()
     Sm = skin_for(fig, tape, f)
     for i, name in enumerate(fig.names):
         par = fig.skel["bones"][i]["parent"]
@@ -251,7 +258,7 @@ def set_pose(fig, tape, f):
         Sp = Matrix(Sm[par]) if par >= 0 else Matrix.Identity(4)
         M = fig.rest_M[name]
         fig.arm.pose.bones[name].matrix_basis = M.inverted() @ Sp.inverted() @ Sb @ M
-    if fig.skirt is not None:
+    if fig.skirt is not None and not (realized and matter):
         hist = []
         for k in range(LAG_FRAMES + 1):
             g = max(0, f - LAG_FRAMES + k)
@@ -263,6 +270,10 @@ def set_pose(fig, tape, f):
                     fig.skirt["cache"].pop(min(fig.skirt["cache"]))
             hist.append(fig.skirt["cache"][g])
         st.set_vertex_positions(fig.skirt["obj"], fa_skirt.swing(hist, fig.skirt["data"]["t"]))
+    if realized and matter:
+        matter.apply(f)
+    if realized and getattr(fig, "frame_update", None):
+        fig.frame_update(fig, tape, f)
     bpy.context.view_layer.update()
 
 
@@ -300,7 +311,7 @@ def run_checks(a, fig, tape, cams, stage, checks, front_rec, res_check, info, ou
     worst, mean_acc, n_acc = 0.0, 0.0, 0
     frames = sorted({0, tape.frame_count // 2, tape.frame_count - 1})
     for f in frames:
-        set_pose(fig, tape, f)
+        set_pose(fig, tape, f, realized=False)
         bl = st.eval_positions(fig.body)
         ref = ft.lbs_positions(P_all[:fc.N_BODY], fig.skin_idx, fig.skin_w, skin_for(fig, tape, f))
         errs = [math.dist(x, y) for x, y in zip(bl, ref)]
@@ -316,7 +327,7 @@ def run_checks(a, fig, tape, cams, stage, checks, front_rec, res_check, info, ou
 
 # =========================================================================== main
 
-def main():
+def main(figure_setup=None, frame_update=None):
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     a = parse_args(argv)
     if a.child_smoke:
@@ -354,6 +365,15 @@ def main():
 
     t = time.time()
     fig = build_figure(a, tape, preset, mutant, notes)
+    if figure_setup:
+        figure_setup(fig, preset, tape)
+    fig.frame_update = frame_update
+    if a.matter:
+        import fa_matter
+        fig.matter = fa_matter.MatterPlayback(a.matter, tape, fig, a.export)
+    if a.scene:
+        import fa_scene
+        fa_scene.stage_scene(fig, tape, a.scene)
     timings["build_figure_s"] = time.time() - t
     say("RT_STEP figure built neutral_match_err_m=%.3g rig_head_err_m=%.3g foot_vertices=%d hidden_under_garment=%d" % (
         fig.neutral_match_err_m, fig.rig_head_err_m, len(fig.foot_idx), fig.hidden_body_vertices))
@@ -544,6 +564,8 @@ def main():
                      "skirt": fig.skirt["data"]["params"] if fig.skirt else None, "hair_part": getattr(fig, "hair_part", None), "hair_violations_in_eye_box": getattr(fig, "hair_pos_violations", None),
                      "iris_vertices": getattr(fig, "iris_verts", None)},
           "results": results, "notes": notes}
+    if a.matter:
+        rj["living_matter"] = {k: fig.matter.header[k] for k in ("format", "backend", "sim_config_id", "bin_sha256", "preroll_frames")}
     with open(os.path.join(out, "render.json"), "w", encoding="utf-8") as fh:
         json.dump(rj, fh, indent=1, sort_keys=True, default=str)
         fh.write("\n")
