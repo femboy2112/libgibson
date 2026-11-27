@@ -93,6 +93,18 @@ HEAD_C_UP = .09; CLEAR = .20
 # perform.rs WAVE_FORWARD and the wave point resting at the hang (initial_drivers); the pre-fix
 # values (0.05, False) reproduce the two C-1 failures, see model_perform_cut.py.
 WAVE_FORWARD = 0.12; WAVE_REST_AT_HANG = True
+# perform.rs CLEARANCE_SOFT: the C1 soft floor of push_out; HARD_PUSH_OUT = mutant hard_push_out.
+CLEARANCE_SOFT = 0.03; HARD_PUSH_OUT = False
+WAVE_LATERAL = 0.12  # perform.rs WAVE_LATERAL (lateral margin of the wave beyond the clearance)
+def push_out(p, c, r):
+    v = sub(p, c); l = ln(v)
+    if HARD_PUSH_OUT:
+        if l >= r: return p
+        return add(c, sc(v, r/l)) if l > 1e-6 else add(c, [0, 0, r])
+    s = min(CLEARANCE_SOFT, r)
+    if l >= r+s: return p
+    lp = r+s*math.exp((l-r-s)/s)
+    return add(c, sc(v, lp/l)) if l > 1e-6 else add(c, [0, 0, lp])
 ROLE = {PEL: "pel", NECK: "neck", HEAD: "head"}
 for s in SPINE: ROLE[s] = "spine"
 for e in EYES: ROLE[e] = "eye"
@@ -174,8 +186,7 @@ def solve_pass(d, foot_lock=True, hc_in=None):
                 if hc_in is not None:
                     l1 = ln(lo); l2 = ln(en)
                     t1 = limit_reach(root_pos, tgt, l1, l2)
-                    v = sub(t1, hc_in); lv = ln(v)
-                    t2 = t1 if lv >= CLEAR else add(hc_in, sc(unit(v), CLEAR))
+                    t2 = push_out(t1, hc_in, CLEAR)
                     tgt = limit_reach(root_pos, t2, l1, l2)
                 out = sc(hr, -1) if s == 0 else hr
                 pole = add(qrot(yq, ARM_POLE[s]), sc(out, d[b+7]))
@@ -317,7 +328,7 @@ if __name__ == "__main__":
 # ---- wave / gaze / sit checks ----
 def wave_drivers(t, amp, tempo, intensity, start):
     k = intensity; hc = add(rest_pos[HEAD], sc(UP, HEAD_C_UP))
-    base = [dot(hc, FWD)+WAVE_FORWARD, dot(hc, RIGHT)+(CLEAR+.07), dot(hc, UP)-stand_crouch()+.04+.06*min(amp, 1.5)]
+    base = [dot(hc, FWD)+WAVE_FORWARD, dot(hc, RIGHT)+(CLEAR+WAVE_LATERAL), dot(hc, UP)-stand_crouch()+.04+.06*min(amp, 1.5)]
     freq = 2.4*tempo; t_r = .55/tempo; t_w = 3/freq; t_l = .6/tempo; dur = t_r+t_w+t_l
     t = min(max(t, 0), dur); d = list(start)
     w = ramp(t, 0, t_r)*(1-ramp(t, t_r+t_w, t_l)); o = .07*(.35+.65*amp)*k*w*math.sin(2*math.pi*freq*t)

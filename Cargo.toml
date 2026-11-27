@@ -152,4 +152,4 @@ panic = "unwind"
 # Fault-injection points for the figure module's mutation controls (tests must FAIL when
 # any is enabled via RUSTFLAGS='--cfg figure_mutant="..."'). Never set in normal builds.
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(figure_mutant, values("ignored_skeleton_update", "stale_bind", "noop_morph", "snap_transition", "freeze_on_preempt", "linear_keys", "dqs_as_lbs", "dqs_no_align", "ignored_refit", "ignore_skeleton_update_v1", "ignore_surface_update", "stale_fit", "stale_control", "no_adapt", "adapt_rejected", "preview_stale", "contact_ignored", "snap_beats", "no_root_motion"))'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(figure_mutant, values("ignored_skeleton_update", "stale_bind", "noop_morph", "snap_transition", "freeze_on_preempt", "linear_keys", "dqs_as_lbs", "dqs_no_align", "ignored_refit", "ignore_skeleton_update_v1", "ignore_surface_update", "stale_fit", "stale_control", "no_adapt", "adapt_rejected", "preview_stale", "contact_ignored", "snap_beats", "no_root_motion", "hard_push_out"))'] }

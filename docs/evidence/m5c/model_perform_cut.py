@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Pure-python reproduction of the two C-1 failures of tests/figure_perform.rs and of their fix.
-Run: python3 -I model_perform_cut.py [--phases]
+Run: python3 -I model_perform_cut.py [--phases] [--floor]
 
 Adds to model_perform_solver.py (loaded by path) the beat plans the continuity script uses (look,
 wave, nod, walk, settle, sit/stand, idle), BeatMotion's finite-difference rates, and the Preempt
@@ -240,6 +240,51 @@ def report(label):
     if "--phases" in sys.argv: phases()
 
 
+def poses_j(m, t0, n):
+    """J (hand_r, head) and min |hand - head centre| over n+1 poses at 1 ms from t0, each pose once."""
+    sol = [S.solve(m.sample(t0+i*H)[0]) for i in range(n+1)]
+    j = max(S.ln([sol[i-1][0][k][c]-2*sol[i][0][k][c]+sol[i+1][0][k][c] for c in range(3)])/H
+            for i in range(1, n) for k in (14, 6))
+    return j, min(S.ln(S.sub(w[14], hc)) for (w, _, hc) in sol)
+
+
+def phase_test():
+    """Mirror of tests/figure_perform.rs a_wave_cut_at_any_phase_and_the_clearance_floor_are_c1."""
+    out = []
+    for nm, amp, tempo, st in (("restrained", .45, .85, .45), ("expressive", 1.0, 1.15, .28)):
+        t_r = .55/tempo; per = 1/(2.4*tempo); d0 = S.init_drivers(); wv = plan_wave(d0, amp, tempo)
+        for mode in ("offline", "live"):
+            first = BeatMotion(wv, 0.0) if mode == "offline" else Preempt(Const(d0), BeatMotion(wv, 0.0), 0.0, st)
+            w = 0.0; dm = 9.0
+            for k in range(7):
+                c = round((t_r+.15+k*per/6)*1000)/1000
+                m = Preempt(first, BeatMotion(plan_nod(wv.eval(wv.dur), amp, tempo), c), c, st)
+                j, d = poses_j(m, c-.003, int(round(st*1000))+8); w = max(w, j); dm = min(dm, d)
+            out.append("%s/%s J %.4f (min hand-head %.4f)" % (nm, mode, w, dm))
+    # The clearance floor where a large slow wave meets it: amplitude 2.0, tempo 0.6, intensity 1.5.
+    wv = plan_wave(S.init_drivers(), 2.0, 0.6, 1.5); m = BeatMotion(wv, 0.0)
+    # its inner swing meets the clearance on the way down (3.21..3.36 s, 0.189 m with clearance off)
+    j, d = poses_j(m, 3.15, 250)
+    sol = [S.solve(m.sample(3.15+i*H)[0], True, False) for i in range(251)]
+    off = min(S.ln(S.sub(w[14], hc)) for (w, _, hc) in sol)
+    out.append("large wave J %.4f, min hand-head %.4f, clearance off %.4f" % (j, d, off))
+    return out
+
+
+def floor_report():
+    for hard in (False, True):
+        S.HARD_PUSH_OUT = hard
+        print("%s  (WAVE_LATERAL %.2f, CLEARANCE_SOFT %.2f)" % ("MUTANT hard_push_out" if hard else "SHIPPED soft floor",
+                                                               S.WAVE_LATERAL, S.CLEARANCE_SOFT))
+        for line in phase_test(): print("  " + line)
+    S.HARD_PUSH_OUT = False
+
+
 if __name__ == "__main__":
-    S.WAVE_FORWARD, S.WAVE_REST_AT_HANG = 0.05, False; report("PRE-FIX")
-    S.WAVE_FORWARD, S.WAVE_REST_AT_HANG = 0.12, True; report("SHIPPED")
+    S.WAVE_FORWARD, S.WAVE_REST_AT_HANG, S.WAVE_LATERAL, S.HARD_PUSH_OUT = 0.05, False, 0.07, True
+    report("PRE-FIX (2f3081c^)")
+    S.WAVE_FORWARD, S.WAVE_REST_AT_HANG = 0.12, True
+    report("2f3081c (fold + hang fixes, lateral 0.07, hard clearance)")
+    S.WAVE_LATERAL, S.HARD_PUSH_OUT = 0.12, False
+    report("SHIPPED (lateral 0.12, soft clearance floor)")
+    if "--floor" in sys.argv: floor_report()

@@ -23,7 +23,8 @@
 //! Mutation controls (`RUSTFLAGS='--cfg figure_mutant="..."'`) are caught by ordinary behavioural
 //! assertions (no golden, no cfg inspection): `contact_ignored` (feet never locked),
 //! `snap_beats` (no inertialization at beat boundaries), `no_root_motion` (the root never
-//! translates). The prediction is `docs/evidence/m5c/KILL_MATRIX_PERFORM_PREDICTED.md`.
+//! translates), `hard_push_out` (the hand clearance as a hard projection, a velocity step).
+//! The prediction is `docs/evidence/m5c/KILL_MATRIX_PERFORM_PREDICTED.md`.
 //!
 //! The synthetic rig is Z-up and faces +Y (so the character's right is +X), the opposite handedness
 //! of the exported MPFB rig on purpose, so a sign error in the basis handling cannot hide.
@@ -614,6 +615,116 @@ fn the_cut_blend_takes_the_settle_ease_and_lowers_the_hand_monotonically() {
         shoulder.z - late.z > 0.35,
         "after the ease the hand hangs below the shoulder"
     );
+}
+
+#[test]
+fn a_wave_cut_at_any_phase_and_the_clearance_floor_are_c1() {
+    // Owner ruling 17 at every phase, not only at the one the continuity script happens to cut:
+    // a wave preempted at seven phases spanning one full period of its oscillation, offline (a
+    // scripted cut) and live (a higher-priority nod), in both presets. The inherited swing must
+    // reach neither the IK fold limit at the shoulder nor the clearance sphere at the head; both
+    // are velocity steps when entered (python mirror: `docs/evidence/m5c/model_perform_cut.py`,
+    // worst 0.069 here, 1.2 before the wave path was moved clear of them).
+    let rig = synthetic_rig();
+    let gesture = |kind| Beat::Gesture {
+        kind,
+        intensity: 1.0,
+    };
+    for style in [Style::restrained(), Style::expressive()] {
+        let tempo = f64::from(style.tempo);
+        let t_r = 0.55 / tempo;
+        let period = 1.0 / (2.4 * tempo);
+        let ease_ms = u64::from(style.settle_ms);
+        for k in 0..=6u32 {
+            let cut_ms = ((t_r + 0.15 + f64::from(k) * period / 6.0) * 1000.0).round() as u64;
+            // Offline: the wave cut by the nod.
+            let s = script(
+                style.clone(),
+                vec![
+                    gesture(GestureKind::Wave),
+                    gesture(GestureKind::Acknowledge),
+                ],
+            )
+            .with_cut(0, cut_ms as f32 / 1000.0);
+            let perf = compile(&rig, &s, &PerformOptions::default());
+            let t_cut = event_time(&perf, "acknowledge");
+            let pts: Vec<(Vec3, Vec3)> = (0..=ease_ms + 8)
+                .map(|i| {
+                    let w = rig.joint_world(&perf.pose_at(t_cut - 0.003 + i as f64 * H));
+                    (w[HAND_R], w[HEAD])
+                })
+                .collect();
+            let j = j_of(&pts, 1, pts.len() - 2);
+            assert!(
+                j <= J_BOUND,
+                "{} wave cut at {cut_ms} ms (offline): J = {j}",
+                style.preset
+            );
+            // Live: the same instant as a preemption.
+            let mut l = Live::new(&rig, style.clone(), PerformOptions::default());
+            l.submit(intent(IntentKind::Wave), 0).unwrap();
+            let mut pts = Vec::new();
+            for ms in cut_ms - 3..cut_ms {
+                record(&rig, &mut l, &mut pts, ms);
+            }
+            let mut nod = intent(IntentKind::Acknowledge);
+            nod.priority = 5;
+            l.submit(nod, cut_ms).unwrap();
+            for ms in cut_ms..=cut_ms + ease_ms + 5 {
+                record(&rig, &mut l, &mut pts, ms);
+            }
+            let j = j_of(&pts, 1, pts.len() - 2);
+            assert!(
+                j <= J_BOUND,
+                "{} wave preempted at {cut_ms} ms (live): J = {j}",
+                style.preset
+            );
+        }
+    }
+    // Where the clearance does engage (a large, slow wave whose inner swing meets the sphere on
+    // the way down, 3.21 to 3.36 s), the soft floor keeps the hand out of the sphere without a
+    // velocity step: mirror J = 0.039; the hard projection (mutant `hard_push_out`) 0.44.
+    let large = Style {
+        preset: "large".into(),
+        amplitude: 2.0,
+        tempo: 0.6,
+        settle_ms: 450,
+    };
+    let perf = compile(
+        &rig,
+        &wave_script_i(large.clone(), 1.5),
+        &PerformOptions::default(),
+    );
+    let off = compile(
+        &rig,
+        &wave_script_i(large, 1.5),
+        &PerformOptions {
+            arm_clearance: false,
+            ..PerformOptions::default()
+        },
+    );
+    let mut pts = Vec::new();
+    let mut near = f64::INFINITY;
+    let mut near_off = f64::INFINITY;
+    for i in 0..=250 {
+        let t = 3.15 + f64::from(i) * H;
+        let p = perf.pose_at(t);
+        let w = rig.joint_world(&p);
+        near = near.min(dist(w[HAND_R], rig.head_center(&p)));
+        pts.push((w[HAND_R], w[HEAD]));
+        let q = off.pose_at(t);
+        near_off = near_off.min(dist(rig.joint_world(&q)[HAND_R], rig.head_center(&q)));
+    }
+    assert!(
+        near_off < 0.195,
+        "the large wave must meet the clearance (clearance off: {near_off})"
+    );
+    assert!(
+        near >= 0.2 - 1.0e-3,
+        "hand came within {near} of the head centre"
+    );
+    let j = j_of(&pts, 1, pts.len() - 2);
+    assert!(j <= J_BOUND, "J = {j} where the clearance floor engages");
 }
 
 // ---------------------------------------------------------------------------------------------

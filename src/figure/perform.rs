@@ -75,6 +75,17 @@ const MIN_WALK: f64 = 0.05;
 /// (`docs/evidence/m5c/model_perform_cut.py`). The forward offset is not touched by the lateral
 /// wave oscillation, so it keeps the chord clear of the fold for every cut phase.
 const WAVE_FORWARD: f64 = 0.12;
+/// How far beyond the hand clearance the waving hand is held to the side of the head centre
+/// (metres, heading frame), before the wave oscillation.
+///
+/// Clearance is a safety net, not a path: deflecting a hand that moves at walking-arm speed
+/// toward the head within a few centimetres takes more acceleration than the C-1 bound allows,
+/// hard or soft. At the former 0.07 m an expressive wave cut at an unlucky phase drove the hand
+/// onto the sphere (J = 0.24 hard, 0.19 with the soft floor); at 0.12 m no cut of a wave of
+/// intensity 1 in either preset reaches the soft band (closest 0.240 m).
+const WAVE_LATERAL: f64 = 0.12;
+/// Width of the soft band of the hand clearance (metres); see [`push_out`].
+const CLEARANCE_SOFT: f32 = 0.03;
 
 // ---------------------------------------------------------------------------------------------
 // Errors
@@ -808,15 +819,27 @@ fn nlerp(a: Quat, b: Quat, w: f32) -> Quat {
     a.scale(1.0 - w).add(b.scale(w)).normalize()
 }
 
+/// Keep `p` at least `r` from `c`. Points farther than `r + s` (`s` = [`CLEARANCE_SOFT`]) are
+/// unchanged; nearer ones are moved out along the ray from `c` to the distance
+/// `r + s exp((l - r - s) / s)`, which has value and slope 1 at `l = r + s` (C1, no velocity
+/// step) and stays above `r` for every `l`. A hard projection onto the sphere is continuous but a
+/// velocity step at the moment of contact (J = 0.44 m/s on a large slow wave, against 0.04 soft).
 fn push_out(p: Vec3, c: Vec3, r: f32) -> Vec3 {
     let v = p.sub(c);
     let l = v.length();
-    if l >= r {
+    // Fault injection (mutation control `hard_push_out`): the hard projection onto the sphere.
+    let (reach, band) = if cfg!(figure_mutant = "hard_push_out") {
+        (r, 0.0)
+    } else {
+        let s = CLEARANCE_SOFT.min(r).max(1.0e-4);
+        (r + s * ((l - r - s) / s).exp(), s)
+    };
+    if l >= r + band {
         return p;
     }
     match v.try_normalize() {
-        Some(u) if l > 1.0e-6 => c.add(u.scale(r)),
-        _ => c.add(Vec3::new(0.0, 0.0, r)),
+        Some(u) if l > 1.0e-6 => c.add(u.scale(reach)),
+        _ => c.add(Vec3::new(0.0, 0.0, reach)),
     }
 }
 
@@ -1570,7 +1593,7 @@ fn plan_gesture(cx: &Ctx<'_>, c: &Carry, kind: GestureKind, intensity: f32) -> B
             let clear = f64::from(rig.map.geometry.hand_clearance);
             let base = [
                 hf + WAVE_FORWARD,
-                hr + (clear + 0.07),
+                hr + (clear + WAVE_LATERAL),
                 hu - rig.stand_crouch() + 0.04 + 0.06 * cx.amp.min(1.5),
             ];
             let freq = 2.4 * cx.tempo;
