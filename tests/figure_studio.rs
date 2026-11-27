@@ -2069,3 +2069,74 @@ fn the_asset_set_loads_from_disk_and_verifies_the_index() {
     ));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The studio preview (ORDER #105): `Compiled::preview` renders the compiled figure offscreen at
+/// ≥960×540 with posed smooth normals and the ground shadow, deterministically, and a control
+/// change is visible. Control: the same compile renders byte-identically twice, so the difference
+/// below is caused by the edit. Must-FAIL: `preview_stale` (a preview that ignores the moved
+/// vertices) is killed by the pixel-difference assertion.
+#[test]
+fn the_studio_preview_shows_a_control_change() {
+    use gibson::figure::preview::{bounds_of, frame_bounds, PreviewMesh, PreviewOptions};
+    let a = assets();
+    let base = compile(&recipe(&[]), &a).expect("compiles");
+    let opts = PreviewOptions::default();
+    assert!(opts.width >= 960 && opts.height >= 540);
+    // one fixed camera for both renders, framed on the base figure
+    let rest = base.rest_render_meshes();
+    let flat: Vec<(Vec<[f32; 3]>, Vec<u8>)> = rest
+        .iter()
+        .map(|m| {
+            (
+                m.positions.iter().map(|v| [v.x, v.y, v.z]).collect(),
+                m.slot_per_triangle.clone(),
+            )
+        })
+        .collect();
+    let pm: Vec<PreviewMesh<'_>> = rest
+        .iter()
+        .zip(flat.iter())
+        .map(|(m, (p, s))| PreviewMesh {
+            positions: p,
+            normals: None,
+            triangles: &m.triangles,
+            slot_per_triangle: s,
+        })
+        .collect();
+    let cam = frame_bounds(
+        bounds_of(&pm).expect("bounds"),
+        opts.width as f32 / opts.height as f32,
+        0.6,
+    );
+    let img = base
+        .preview(&base.rest_frame(), Some(&cam), opts)
+        .expect("preview");
+    assert_eq!((img.width, img.height), (opts.width, opts.height));
+    assert_eq!(img.rgb8.len(), (opts.width * opts.height * 3) as usize);
+    let again = base
+        .preview(&base.rest_frame(), Some(&cam), opts)
+        .expect("preview");
+    assert_eq!(img.rgb8, again.rgb8, "the preview is deterministic");
+    // the auto-framed preview renders too and is not blank
+    let auto = base.preview(&base.rest_frame(), None, opts).expect("auto");
+    let first = &auto.rgb8[..3];
+    assert!(
+        auto.rgb8.chunks(3).any(|p| p != first),
+        "auto preview is blank"
+    );
+
+    let edited = base.with_control("stature", 1.0).expect("edit");
+    let moved = edited
+        .preview(&edited.rest_frame(), Some(&cam), opts)
+        .expect("preview");
+    let changed = img
+        .rgb8
+        .chunks(3)
+        .zip(moved.rgb8.chunks(3))
+        .filter(|(p, q)| p != q)
+        .count();
+    assert!(
+        changed > 2000,
+        "a control change must change the preview: {changed} pixels"
+    );
+}

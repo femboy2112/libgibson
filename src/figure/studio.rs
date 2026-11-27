@@ -63,6 +63,9 @@ pub const FIT_ADAPT_ALGORITHM_ID: &str = "gibson.fit.vertex-normal-penetration.v
 pub const MAX_ADAPT_ITERATIONS: u32 = 16;
 
 /// The closed set of material slot names.
+/// Fraction of the frame height the auto-framed [`Compiled::preview`] figure fills.
+pub const PREVIEW_FILL: f32 = 0.8;
+
 pub const MATERIAL_SLOTS: [&str; 8] = [
     "base",
     "panel",
@@ -2172,6 +2175,84 @@ impl Compiled {
             ));
         }
         out
+    }
+
+    /// The offscreen software preview of one tape frame: [`Compiled::render_meshes`] drawn by
+    /// [`super::preview::render_preview`] with smooth (posed) normals, the default three-light rig
+    /// and the ground shadow. Materials are the recipe's slots (a slot the recipe does not name is
+    /// neutral grey); hair is drawn in `recipe().hair.color`. With no camera the figure is framed
+    /// from the front so it fills `PREVIEW_FILL` of the frame height. Deterministic: the same
+    /// compile, frame, camera and options give byte-identical pixels, and any control change that
+    /// moves a vertex changes the pixels it covers (the preview never caches).
+    pub fn preview(
+        &self,
+        frame: &TapeFrame,
+        camera: Option<&super::preview::PreviewCamera>,
+        opts: super::preview::PreviewOptions,
+    ) -> Result<super::preview::PreviewImage, PoseError> {
+        use super::preview::{
+            bounds_of, frame_bounds, render_preview, PreviewLight, PreviewMaterial, PreviewMesh,
+        };
+        let meshes = self.render_meshes(frame)?;
+        let hair_slot = MATERIAL_SLOTS.len() as u8;
+        let mut materials: Vec<PreviewMaterial> = (0..MATERIAL_SLOTS.len())
+            .map(|i| match self.material(i as u8) {
+                Some(m) => PreviewMaterial {
+                    albedo_linear: m.albedo,
+                    roughness: m.roughness,
+                    metalness: m.metalness,
+                    emissive: match m.emissive {
+                        Some((c, k)) => [c[0] * k, c[1] * k, c[2] * k],
+                        None => [0.0; 3],
+                    },
+                },
+                None => PreviewMaterial::DEFAULT,
+            })
+            .collect();
+        materials.push(PreviewMaterial {
+            albedo_linear: self.recipe.hair.color,
+            roughness: 0.5,
+            metalness: 0.0,
+            emissive: [0.0; 3],
+        });
+        let flat: Vec<(Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<u8>)> = meshes
+            .iter()
+            .map(|m| {
+                let p = m.positions.iter().map(|v| [v.x, v.y, v.z]).collect();
+                let n = m.normals.iter().map(|v| [v.x, v.y, v.z]).collect();
+                let slots = if m.role == MeshRole::Hair {
+                    vec![hair_slot; m.triangles.len()]
+                } else {
+                    m.slot_per_triangle.clone()
+                };
+                (p, n, slots)
+            })
+            .collect();
+        let pm: Vec<PreviewMesh<'_>> = meshes
+            .iter()
+            .zip(flat.iter())
+            .map(|(m, (p, n, slots))| PreviewMesh {
+                positions: p,
+                normals: Some(n),
+                triangles: &m.triangles,
+                slot_per_triangle: slots,
+            })
+            .collect();
+        let cam = match camera {
+            Some(c) => *c,
+            None => {
+                let b = bounds_of(&pm).unwrap_or(([-0.5, -0.5, 0.0], [0.5, 0.5, 1.8]));
+                let aspect = opts.width.max(1) as f32 / opts.height.max(1) as f32;
+                frame_bounds(b, aspect, PREVIEW_FILL)
+            }
+        };
+        Ok(render_preview(
+            &pm,
+            &materials,
+            &cam,
+            &PreviewLight::default_rig(),
+            opts,
+        ))
     }
 
     /// The drawable meshes for one tape frame (same set and order as
