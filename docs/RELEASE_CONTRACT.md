@@ -102,6 +102,13 @@ surface is versioned as a minor to signal its scope — not because anything bro
   work required it (for example the instrument-telemetry `Stage` set gained a stage), which
   a `0.y` minor permits (§2). MSRV stays 1.85; Linux x86_64 only.
 
+- **0.9.2** "clear SIGKILL 2" ([decision 0004](decisions/0004-release-naming.md): minor 9 =
+  SIGKILL, patch 2; the name is confirmed by the release coordinator) is **prepared in source**
+  (state 1). It is a patch: the experimental `stage::motion` module (#461) is additive and
+  Rust-only and changes no existing API or default. It is to be tagged `v0.9.2` (with
+  `bindings/go/v0.9.2`) on a `main` commit as a regular GitHub release. The C ABI is unchanged
+  (`GIBSON_ABI_VERSION` 1, 67 symbols); MSRV 1.85 and Linux x86_64 are unchanged.
+
 - **0.9.1** "clear SIGKILL 1" ([decision 0004](decisions/0004-release-naming.md): minor 9 =
   SIGKILL, patch 1) is the latest such milestone and is **tagged and released on GitHub**
   (state 2):
@@ -373,6 +380,8 @@ breaking them in a pure patch:
   not CORE. See [UI_LAYER.md](UI_LAYER.md).
 - `stage` — experimental semantic composition, resolved RGB raster and explicit-time presentation helpers. Action adaptation preserves
   semantic subtrees for one host `UiRuntime`; no input dispatcher or terminal owner.
+  `stage::motion` (0.9.2) adds explicit-time keyframe sequences, overlay layer slots and a
+  seeded cue schedule; its SplitMix64 jitter hash is contract (a change needs a minor).
 - `audio` — the deterministic offline audio engine and HumanMusic scoring (0.4.0; the
   real-device backend is the optional `audio-cpal` feature). Not exposed through the C ABI.
 - `plot` and the v0.5.0 interactive-instrument surface — `shape`, `selection`, `hit_test`,
