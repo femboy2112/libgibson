@@ -418,7 +418,8 @@ def load_attachment(spec, user_data, P, groups, body_idx, body_w, sources, bone_
                 P, sk["positions"], fc.centroid(P, groups["joint-pelvis"])[2],
                 params["z_top"], params["stature"], params["lateral_limit"])
             panel_weights = sk["weights"]
-        rec = {"name": kind, "kind": "skirt", "source": "self-authored", "licence": "self-authored, repo licence",
+        licence = "CC0-1.0 (generated geometry)" if kind == "skirt_a_line" else "self-authored, repo licence"
+        rec = {"name": kind, "kind": "skirt", "source": "self-authored", "licence": licence,
                "positions": sk["positions"], "tris": sk["tris"], "tri_uv": sk["tri_uv"], "uvs": sk["uvs"],
                "bind": sk["bind"], "offset_spec": sk["offset_spec"], "delete_verts": [], "params": sk["params"],
                "polys": polys, "uv_polys": uv_polys}
