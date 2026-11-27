@@ -31,6 +31,7 @@
 use std::fmt;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 use super::math::{Mat4, Quat, Transform, Vec3};
 use super::morph::{self, MorphError, MorphTarget};
@@ -1616,6 +1617,70 @@ pub struct PosedFigure {
     pub joint_world: Vec<Mat4>,
 }
 
+/// What a mesh is, for a renderer that styles bodies, garments and hair differently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MeshRole {
+    Body,
+    Garment,
+    Hair,
+}
+
+/// One drawable mesh, ready for a renderer: positions and normals per vertex, triangles, and a
+/// material slot per triangle (an index into [`MATERIAL_SLOTS`]; resolve it with
+/// [`Compiled::material`]). Only drawable content appears: garments without a `Fitted` verdict
+/// are absent, and body triangles that use a vertex hidden under a drawn garment (its
+/// `delete_verts`) are dropped, so the body never shows through its clothes.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct RenderMesh {
+    pub id: String,
+    pub role: MeshRole,
+    pub positions: Vec<Vec3>,
+    pub normals: Vec<Vec3>,
+    pub triangles: Vec<[u32; 3]>,
+    /// One per triangle: index into [`MATERIAL_SLOTS`]. The body is `base` (0); a garment takes
+    /// the slot of its first slot binding, else `base`; hair is `base` (its colour is
+    /// `recipe().hair.color`).
+    pub slot_per_triangle: Vec<u8>,
+}
+
+fn slot_index(name: &str) -> u8 {
+    match MATERIAL_SLOTS.iter().position(|s| *s == name) {
+        Some(i) => i as u8,
+        None => 0,
+    }
+}
+
+fn mesh_of(
+    id: &str,
+    role: MeshRole,
+    positions: Vec<Vec3>,
+    normals: Vec<Vec3>,
+    indices: &[u32],
+    slot: u8,
+    hidden: Option<&[bool]>,
+) -> RenderMesh {
+    let mut triangles = Vec::with_capacity(indices.len() / 3);
+    for t in indices.chunks_exact(3) {
+        if let Some(mask) = hidden {
+            if mask[t[0] as usize] || mask[t[1] as usize] || mask[t[2] as usize] {
+                continue;
+            }
+        }
+        triangles.push([t[0], t[1], t[2]]);
+    }
+    let slot_per_triangle = vec![slot; triangles.len()];
+    RenderMesh {
+        id: id.to_string(),
+        role,
+        positions,
+        normals,
+        triangles,
+        slot_per_triangle,
+    }
+}
+
 /// The result of [`compile`]: the shaped body, the derived skeleton, the garment verdicts and the
 /// three identities.
 #[derive(Debug, Clone)]
@@ -1641,6 +1706,8 @@ pub struct Compiled {
     provenance: Option<ProvenanceV1>,
     lower_face_covered: bool,
     motion_style: MotionStyleV1,
+    recipe: RecipeV1,
+    assets: Arc<AssetSet>,
 }
 
 impl Compiled {
@@ -1783,6 +1850,138 @@ impl Compiled {
         out
     }
 
+    /// The recipe this was compiled from.
+    pub fn recipe(&self) -> &RecipeV1 {
+        &self.recipe
+    }
+
+    /// The shared asset set this was compiled against.
+    pub fn assets(&self) -> &Arc<AssetSet> {
+        &self.assets
+    }
+
+    /// The recipe's material for slot index `slot` (an index into [`MATERIAL_SLOTS`]), if the
+    /// recipe binds one.
+    pub fn material(&self, slot: u8) -> Option<&MaterialSlotV1> {
+        let name = MATERIAL_SLOTS.get(usize::from(slot))?;
+        self.recipe.materials.iter().find(|m| m.slot == *name)
+    }
+
+    /// Re-evaluate with ONE control changed. The result is bit-identical to
+    /// `compile(&edited_recipe, assets)`: the edit is applied to this compile's recipe and the
+    /// same deterministic pipeline runs on the shared assets (no intermediate is reused yet, so the
+    /// equality is by construction; `tests/figure_studio.rs` asserts it). An unknown name or a
+    /// non-finite value is the same typed error a full compile gives; an out-of-domain value is
+    /// applied and reported, as in `compile`.
+    pub fn with_control(&self, name: &str, value: f32) -> Result<Compiled, CompileError> {
+        // Fault injection (mutation control `stale_control`): the old shape is returned.
+        if cfg!(figure_mutant = "stale_control") {
+            return Ok(self.clone());
+        }
+        let mut r = self.recipe.clone();
+        r.set_control(name, value);
+        compile_shared(&r, &self.assets)
+    }
+
+    fn hidden_mask(&self) -> Vec<bool> {
+        let mut mask = vec![false; self.n_body];
+        for g in &self.garments {
+            for &h in &g.hidden_body_vertices {
+                mask[h as usize] = true;
+            }
+        }
+        mask
+    }
+
+    fn garment_slot(&self, id: &str) -> u8 {
+        match self.recipe.garments.iter().find(|g| g.id == id) {
+            Some(g) => match g.slot_bindings.first() {
+                Some((_, slot)) => slot_index(slot),
+                None => 0,
+            },
+            None => 0,
+        }
+    }
+
+    /// The drawable meshes at rest (the shaped body): the body, then every `Fitted` garment in
+    /// set order, then the hair.
+    pub fn rest_render_meshes(&self) -> Vec<RenderMesh> {
+        let mask = self.hidden_mask();
+        let mut out = Vec::with_capacity(self.garments.len() + 2);
+        out.push(mesh_of(
+            "body",
+            MeshRole::Body,
+            self.positions[..self.n_body].to_vec(),
+            self.body_normals.clone(),
+            &self.indices,
+            0,
+            Some(mask.as_slice()),
+        ));
+        for g in &self.garments {
+            out.push(mesh_of(
+                &g.id,
+                MeshRole::Garment,
+                g.positions.clone(),
+                g.normals.clone(),
+                &g.indices,
+                self.garment_slot(&g.id),
+                None,
+            ));
+        }
+        if let Some(h) = &self.hair {
+            out.push(mesh_of(
+                &h.id,
+                MeshRole::Hair,
+                h.positions.clone(),
+                h.normals.clone(),
+                &h.indices,
+                0,
+                None,
+            ));
+        }
+        out
+    }
+
+    /// The drawable meshes for one tape frame (same set and order as
+    /// [`Compiled::rest_render_meshes`]), skinned, with posed normals.
+    pub fn render_meshes(&self, frame: &TapeFrame) -> Result<Vec<RenderMesh>, PoseError> {
+        let posed = self.pose_vertices(frame)?;
+        let mask = self.hidden_mask();
+        let mut out = Vec::with_capacity(self.garments.len() + 2);
+        out.push(mesh_of(
+            "body",
+            MeshRole::Body,
+            posed.body,
+            posed.body_normals,
+            &self.indices,
+            0,
+            Some(mask.as_slice()),
+        ));
+        for (g, p) in self.garments.iter().zip(posed.garments) {
+            out.push(mesh_of(
+                &g.id,
+                MeshRole::Garment,
+                p.positions,
+                p.normals,
+                &g.indices,
+                self.garment_slot(&g.id),
+                None,
+            ));
+        }
+        if let (Some(h), Some(p)) = (&self.hair, posed.hair) {
+            out.push(mesh_of(
+                &h.id,
+                MeshRole::Hair,
+                p.positions,
+                p.normals,
+                &h.indices,
+                0,
+                None,
+            ));
+        }
+        Ok(out)
+    }
+
     /// Skin the body, every drawable garment and the hair for one tape frame, with the body's
     /// skinning mode. Garments are skinned by their own (body-transferred) weights, so they follow
     /// the pose. A garment without a `Fitted` verdict is not in the result.
@@ -1889,6 +2088,12 @@ fn mode_byte(m: SkinningMode) -> u8 {
 
 /// Compile `recipe` against `assets`. All or nothing; deterministic.
 pub fn compile(recipe: &RecipeV1, assets: &AssetSet) -> Result<Compiled, CompileError> {
+    compile_shared(recipe, &Arc::new(assets.clone()))
+}
+
+/// [`compile`] against a shared asset set: the result keeps the `Arc` (for
+/// [`Compiled::with_control`]) instead of copying the assets.
+pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compiled, CompileError> {
     let body = &assets.body;
 
     // 1. Limits.
@@ -2398,5 +2603,7 @@ pub fn compile(recipe: &RecipeV1, assets: &AssetSet) -> Result<Compiled, Compile
         provenance: recipe.provenance.clone(),
         lower_face_covered: recipe.lower_face_covered,
         motion_style: recipe.motion_style.clone(),
+        recipe: recipe.clone(),
+        assets: Arc::clone(assets),
     })
 }

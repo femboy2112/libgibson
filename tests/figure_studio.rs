@@ -34,8 +34,8 @@ use gibson::figure::sha256;
 use gibson::figure::skin::SkinningMode;
 use gibson::figure::studio::{
     compile, AnchorV1, AssetError, AssetSet, AttachmentV1, CompileError, Compiled, Diagnostic,
-    FitReason, FitStatus, GarmentV1, MaterialSlotV1, PoseError, ProvenanceV1, RecipeV1, TapeFrame,
-    BODY_MAGIC, FIT_PREFIX, PRESENT_PREFIX,
+    FitReason, FitStatus, GarmentV1, MaterialSlotV1, MeshRole, PoseError, ProvenanceV1, RecipeV1,
+    TapeFrame, BODY_MAGIC, FIT_PREFIX, PRESENT_PREFIX,
 };
 
 const BODY: &[u8] = include_bytes!("fixtures/figure_studio/body.gfa");
@@ -1228,6 +1228,201 @@ fn a_bad_frame_is_a_typed_error() {
     ));
     let ok = TapeFrame::new(Vec3::ZERO, c.skeleton().rest_locals());
     assert!(c.pose_vertices(&ok).is_ok());
+}
+
+// ---- incremental control edits and drawable meshes ----
+
+/// Everything observable of two compiles, compared bit for bit (floats by their `==`, which the
+/// same code path makes exact): ids, bytes, surface, normals, verdicts, drawable garments, hair,
+/// diagnostics and the rest pose.
+fn assert_same(label: &str, a: &Compiled, b: &Compiled) {
+    assert_eq!(a.body_rev_id(), b.body_rev_id(), "{label}: body id");
+    assert_eq!(a.fit_id(), b.fit_id(), "{label}: fit id");
+    assert_eq!(a.present_id(), b.present_id(), "{label}: presentation id");
+    assert_eq!(a.body_bytes(), b.body_bytes(), "{label}: body bytes");
+    assert_eq!(
+        a.shaped_positions(),
+        b.shaped_positions(),
+        "{label}: surface"
+    );
+    assert_eq!(a.body_normals(), b.body_normals(), "{label}: normals");
+    assert_eq!(a.fit_status(), b.fit_status(), "{label}: verdicts");
+    assert_eq!(
+        a.drawable_garments(),
+        b.drawable_garments(),
+        "{label}: garments"
+    );
+    assert_eq!(a.hair(), b.hair(), "{label}: hair");
+    assert_eq!(a.diagnostics(), b.diagnostics(), "{label}: diagnostics");
+    assert_eq!(a.ground_lift_m(), b.ground_lift_m(), "{label}: lift");
+    assert_eq!(
+        a.pose_vertices(&a.rest_frame()),
+        b.pose_vertices(&b.rest_frame()),
+        "{label}: rest pose"
+    );
+}
+
+/// `with_control` is bit-identical to a full compile of the edited recipe: one edit, a chain of
+/// edits, an out-of-domain edit (with its diagnostic), an edit that flips a garment verdict, and
+/// an edit back to the start (which returns the first compile's bytes). Its result also MOVES the
+/// control's landmark measurement (`hip_breadth` 1.0 gives a hip distance of 0.6, from 0.4); a
+/// `with_control` that returned the old shape fails here. Kills `stale_control` (and
+/// `ignore_surface_update`).
+#[test]
+fn with_control_is_bit_identical_to_a_full_compile_and_moves_the_measurement() {
+    let a = std::sync::Arc::new(assets());
+    let mut r = with_garments(recipe(&[("bulge", 0.3)]), &["tunic", "shell", "tabard"]);
+    r.hair.style_id = Some("cap".to_string());
+    r.materials.push(MaterialSlotV1::new("base"));
+    let base = gibson::figure::studio::compile_shared(&r, &a).expect("compiles");
+    assert_near("start hip", m_hip(&base) as f32, 0.4, 2.0e-5);
+
+    // one edit
+    let edited = base.with_control("hip_breadth", 1.0).expect("edit");
+    assert_near("edited hip", m_hip(&edited) as f32, 0.6, 2.0e-5);
+    assert_ne!(edited.body_rev_id(), base.body_rev_id());
+    let mut r1 = r.clone();
+    r1.set_control("hip_breadth", 1.0);
+    assert_same("one edit", &edited, &compile(&r1, &a).expect("compiles"));
+    assert_eq!(edited.recipe(), &r1);
+
+    // a chain
+    let chained = edited.with_control("stature", -0.5).expect("edit");
+    let mut r2 = r1.clone();
+    r2.set_control("stature", -0.5);
+    assert_same("chain", &chained, &compile(&r2, &a).expect("compiles"));
+    assert_near("chained height", m_height(&chained) as f32, 1.35, 2.0e-5);
+
+    // an edit that flips a verdict: the shell is NeedsAdaptation at 0.5 and drawn at 0.0
+    let flat = base.with_control("bulge", 0.0).expect("edit");
+    let bulged = flat.with_control("bulge", 0.5).expect("edit");
+    assert_eq!(status_of(&flat, "shell"), FitStatus::Fitted);
+    assert!(matches!(
+        status_of(&bulged, "shell"),
+        FitStatus::NeedsAdaptation(_)
+    ));
+    let mut r3 = r.clone();
+    r3.set_control("bulge", 0.5);
+    assert_same(
+        "verdict flip",
+        &bulged,
+        &compile(&r3, &a).expect("compiles"),
+    );
+
+    // out of domain: applied, reported, identical to the full compile
+    let wild = base.with_control("stature", 1.5).expect("edit");
+    let mut r4 = r.clone();
+    r4.set_control("stature", 1.5);
+    let full = compile(&r4, &a).expect("compiles");
+    assert_same("out of domain", &wild, &full);
+    assert!(wild
+        .diagnostics()
+        .iter()
+        .any(|d| matches!(d, Diagnostic::ControlOutOfDomain { .. })));
+
+    // back to the start: the first compile's bytes again
+    let back = edited.with_control("hip_breadth", 0.0).expect("edit");
+    assert_eq!(back.body_bytes(), base.body_bytes());
+    assert_eq!(back.body_rev_id(), base.body_rev_id());
+
+    // typed errors, as in a full compile
+    assert!(matches!(
+        base.with_control("no_such_control", 0.1),
+        Err(CompileError::UnknownControl { .. })
+    ));
+    assert!(matches!(
+        base.with_control("stature", f32::NAN),
+        Err(CompileError::NonFinite { .. })
+    ));
+}
+
+/// The drawable meshes. The body is drawn minus the triangles that touch a vertex a drawn garment
+/// hides (the plug hides ring 2, so the 32 triangles around it go and 16 remain); a garment with no
+/// `Fitted` verdict is absent; garments take the slot of their first slot binding (trim = 2) and
+/// the body and hair take `base` (0); normals are unit; the posed meshes have the rest meshes'
+/// shape and move with the pose.
+#[test]
+fn drawable_meshes_hide_deleted_body_triangles_and_carry_slots() {
+    let a = assets();
+    let plain = compile(&recipe(&[]), &a).expect("compiles");
+    let meshes = plain.rest_render_meshes();
+    assert_eq!(meshes.len(), 1);
+    assert_eq!(meshes[0].role, MeshRole::Body);
+    assert_eq!(meshes[0].triangles.len(), 48, "no garment hides anything");
+    assert_eq!(meshes[0].positions.len(), 32);
+    assert_eq!(meshes[0].normals.len(), 32);
+    assert_eq!(meshes[0].slot_per_triangle, vec![0u8; 48]);
+
+    let mut r = with_garments(recipe(&[("bulge", 1.0)]), &["plug", "shell", "tabard"]);
+    r.garments[0]
+        .slot_bindings
+        .push(("collar".to_string(), "trim".to_string()));
+    r.hair.style_id = Some("cap".to_string());
+    r.materials.push({
+        let mut m = MaterialSlotV1::new("trim");
+        m.albedo = [0.9, 0.1, 0.2];
+        m
+    });
+    let c = compile(&r, &a).expect("compiles");
+    let rest = c.rest_render_meshes();
+    let ids: Vec<&str> = rest.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        ["body", "plug", "tabard", "cap"],
+        "the rejected shell is absent"
+    );
+    let roles: Vec<MeshRole> = rest.iter().map(|m| m.role).collect();
+    assert_eq!(
+        roles,
+        [
+            MeshRole::Body,
+            MeshRole::Garment,
+            MeshRole::Garment,
+            MeshRole::Hair
+        ]
+    );
+    // the plug hides ring 2 (vertices 16..24): every body triangle touching it is gone
+    assert_eq!(rest[0].triangles.len(), 16);
+    assert!(rest[0]
+        .triangles
+        .iter()
+        .all(|t| t.iter().all(|&v| !(16..24).contains(&v))));
+    for m in &rest {
+        assert_eq!(m.slot_per_triangle.len(), m.triangles.len());
+        assert_eq!(m.positions.len(), m.normals.len());
+        for n in &m.normals {
+            assert_near("unit normal", n.length(), 1.0, 1.0e-4);
+        }
+    }
+    assert_eq!(rest[1].slot_per_triangle, vec![2u8; 6], "plug: trim");
+    assert_eq!(rest[2].slot_per_triangle, vec![0u8; 6], "tabard: base");
+    assert_eq!(rest[3].slot_per_triangle, vec![0u8; 6], "hair: base");
+    assert_eq!(c.material(2).expect("trim").albedo, [0.9, 0.1, 0.2]);
+    assert!(c.material(0).is_none(), "no base material was bound");
+    assert!(c.material(200).is_none());
+
+    // posed: same set and shape, positions move with the pose
+    let mut frame = c.rest_frame();
+    frame.root_t = Vec3::new(1.0, 0.0, 0.0);
+    let posed = c.render_meshes(&frame).expect("posed");
+    assert_eq!(posed.len(), rest.len());
+    for (p, q) in posed.iter().zip(rest.iter()) {
+        assert_eq!(p.id, q.id);
+        assert_eq!(p.triangles, q.triangles);
+        assert_eq!(p.slot_per_triangle, q.slot_per_triangle);
+        assert_eq!(p.positions.len(), q.positions.len());
+        for (a2, b2) in p.positions.iter().zip(q.positions.iter()) {
+            assert_near3(
+                "posed vertex",
+                *a2,
+                [f64::from(b2.x) + 1.0, f64::from(b2.y), f64::from(b2.z)],
+                2.0e-5,
+            );
+        }
+    }
+    let mut bad = c.rest_frame();
+    bad.locals.pop();
+    assert!(c.render_meshes(&bad).is_err());
 }
 
 // ---- the asset loader ----
