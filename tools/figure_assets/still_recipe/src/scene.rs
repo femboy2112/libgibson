@@ -98,9 +98,16 @@ fn express(script: &mut PerformanceScript, values: &[(&str, f32)]) {
 }
 
 fn blink(script: &mut PerformanceScript) {
-    express(script, &[("blink_l", 1.0), ("blink_r", 1.0)]);
-    script.beats.push(Beat::Idle { secs: 0.16 });
-    express(script, &[("blink_l", 0.0), ("blink_r", 0.0)]);
+    for (value, ease_ms, hold) in [(1.0, 55, 0.14), (0.0, 80, 0.10)] {
+        for eye in ["blink_l", "blink_r"] {
+            script.beats.push(Beat::ExpressTimed {
+                channel: eye.into(),
+                value,
+                ease_ms,
+            });
+        }
+        script.beats.push(Beat::Idle { secs: hold });
+    }
 }
 
 pub fn reference_rig(rig: Rig, compiled: &Compiled) -> Result<Rig> {
@@ -232,6 +239,43 @@ pub fn cuts(tape: &Tape) -> Vec<(u32, String)> {
         }
     }
     cuts
+}
+
+pub fn verify_blink(tape: &Tape) -> Result<()> {
+    let face_start = tape.stride() - tape.face.len();
+    for eye in ["blink_l", "blink_r"] {
+        let index = face_start
+            + tape
+                .face
+                .iter()
+                .position(|s| s == eye)
+                .ok_or("missing eyelid channel")?;
+        let samples: Vec<_> = (0..tape.frame_count)
+            .map(|i| tape.frame(i)[index])
+            .collect();
+        let (peak_frame, peak) = samples
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.total_cmp(b))
+            .unwrap();
+        let first = samples
+            .iter()
+            .position(|&v| v > 0.05)
+            .ok_or("blink never started")?;
+        let reopened = samples[peak_frame..]
+            .iter()
+            .position(|&v| v < 0.05)
+            .ok_or("eyelid stayed closed")?
+            + peak_frame;
+        println!(
+            "native_blink eye={eye} peak={peak:.4} peak_frame={peak_frame} active_ms={:.1}",
+            (reopened - first) as f64 * 1000.0 / f64::from(tape.fps)
+        );
+        if *peak < 0.9 || (reopened - first) as f64 / f64::from(tape.fps) > 0.25 {
+            return Err("native eyelid did not complete the authored close/open interval".into());
+        }
+    }
+    Ok(())
 }
 
 pub fn seated_chair(compiled: &Compiled, tape: &Tape, seat: Vec3) -> Result<(Value, f32)> {

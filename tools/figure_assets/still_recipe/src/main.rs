@@ -138,6 +138,12 @@ fn run(
     } else {
         None
     };
+    if options
+        .as_ref()
+        .is_some_and(|o| o.sequence != scene::Sequence::Reference)
+    {
+        scene::verify_blink(&tape)?;
+    }
     let id = TapeIdentity {
         body_rev_id: compiled.body_rev_id().to_hex(),
         fit_id: compiled.fit_id().to_hex(),

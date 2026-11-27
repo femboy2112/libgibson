@@ -2354,3 +2354,25 @@ fn real_wrist_targets_change_the_held_pose_and_preserve_the_bind_skeleton() {
         Err(PerformError::NonFinite)
     ));
 }
+
+#[test]
+fn authored_eyelid_timing_closes_and_opens_a_restrained_tape() {
+    let rig = synthetic_rig();
+    let mut s = PerformanceScript::new(Style::restrained()).with(Beat::Idle { secs: 0.25 });
+    for (value, ease_ms, secs) in [(1.0, 55, 0.14), (0.0, 80, 0.10)] {
+        for eye in ["blink_l", "blink_r"] {
+            s.beats.push(Beat::ExpressTimed {
+                channel: eye.into(),
+                value,
+                ease_ms,
+            });
+        }
+        s.beats.push(Beat::Idle { secs });
+    }
+    let tape = perform(&rig, &s, 30).unwrap();
+    let at = |frame, side| tape.frame(frame)[tape.stride() - 2 + side];
+    for side in 0..2 {
+        assert!(at(10, side) > 0.99);
+        assert!(at(15, side) < 0.01);
+    }
+}
