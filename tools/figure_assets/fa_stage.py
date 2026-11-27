@@ -728,12 +728,13 @@ def set_engine(name, spp, threads):
                 last = exc
                 continue
             notes = []
-            for attr, val in (("taa_render_samples", int(spp)), ("use_shadows", True), ("use_raytracing", False), ("use_gtao", True)):
+            sc.eevee.taa_render_samples = int(spp)
+            for attr, val in (("use_shadows", True), ("use_raytracing", False), ("use_gtao", True)):
                 try:
                     setattr(sc.eevee, attr, val)
                 except Exception:  # noqa: BLE001
                     notes.append(attr)
-            return {"engine": "EEVEE_NEXT" if ident.endswith("NEXT") else "EEVEE", "samples": int(spp), "unsupported_settings": notes}
+            return {"engine": "EEVEE_NEXT" if ident.endswith("NEXT") else "EEVEE", "samples": sc.eevee.taa_render_samples, "unsupported_settings": notes}
         raise RuntimeError("no EEVEE engine id accepted: %s" % last)
     sc.render.engine = "CYCLES"
     cy = sc.cycles

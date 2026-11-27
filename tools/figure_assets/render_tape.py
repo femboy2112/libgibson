@@ -49,6 +49,7 @@ import fa_checks as ck  # noqa: E402
 import fa_common as fc  # noqa: E402
 import fa_hair  # noqa: E402
 import fa_skirt  # noqa: E402
+import fa_surface  # noqa: E402
 import fa_stage as st  # noqa: E402
 import fa_tape as ft  # noqa: E402
 
@@ -63,6 +64,8 @@ def parse_args(argv):
     ap.add_argument("--preset", default=None, help="preset JSON: macro/controls/materials/garments/hair")
     ap.add_argument("--shots", default=None, help="shots JSON (tools/figure_assets/shots/*.json)")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--fitted", help="rest garment positions from the same compiled recipe as the tape")
+    ap.add_argument("--still", action="append", help="render just this named still (repeatable); check every camera")
     ap.add_argument("--spp", type=int, default=32)
     ap.add_argument("--engine", default="auto", choices=("auto", "eevee", "cycles"))
     ap.add_argument("--threads", type=int, default=4)
@@ -84,6 +87,25 @@ def load_json(p):
         return json.load(f)
 
 
+def load_fitted(path, tape, export_dir):
+    """Refuse fitted geometry from another recipe or another version of the body export."""
+    if path is None:
+        return None
+    fit = load_json(path)
+    manifest_sha = fc.sha256_file(os.path.join(export_dir, "manifest.json"))
+    if manifest_sha != tape.header["asset_manifest_sha256"]:
+        raise ValueError("the tape was compiled against a different body export")
+    for key in ("asset_manifest_sha256", "fit_id", "body_rev_id", "present_id"):
+        if fit[key] != tape.header[key]:
+            raise ValueError(f"fitted garment {key} differs from tape")
+    if fit["tape_bin_sha256"] != tape.header["bin_sha256"]:
+        raise ValueError("fitted geometry receipt refers to another tape")
+    permitted = {g for g in tape.header["garments"] if st.verdict_of(tape.header["fit_status"].get(g))[0]}
+    if set(fit["positions"]) != permitted:
+        raise ValueError("garment positions do not match the tape's Fitted set")
+    return fit["positions"]
+
+
 class Fig:
     pass
 
@@ -98,7 +120,6 @@ def build_figure(a, tape, preset, mutant, notes):
     fig = Fig()
     fig.names, fig.skel, fig.hdr = names, skel, hdr
     controls = dict(tape.header["controls"])
-    hp = hdr["preset"].get("controls", {})
     S, shift, warns = ft.shape_positions(export_dir, controls)
     for w in warns:
         notes.append(w)
@@ -185,7 +206,8 @@ def build_figure(a, tape, preset, mutant, notes):
         slots[k] = v
     fig.slot_specs = slots
     D = st.dress(export_dir, S, landmarks, arm, names, obj, rd, slots, tape.header.get("garments", []), tape.header.get("fit_status", {}),
-                 preset.get("hide_body_under_garment", True), fig.arm_mask, fig.eye_l, fig.eye_r, notes)
+                 preset.get("hide_body_under_garment", True), fig.arm_mask, fig.eye_l, fig.eye_r, notes,
+                 fitted_positions=load_fitted(a.fitted, tape, export_dir))
     fig.objs, fig.labels, fig.garment_report, fig.skirt = D["objs"], D["labels"], D["report"], D["skirt"]
     fig.sss_inputs, fig.skin_rgb, fig.hair_rgb, fig.brow_rgb = D["sss_inputs"], D["skin_rgb"], D["hair_rgb"], D["brow_rgb"]
     fig.hair_part, fig.hair_pos_violations = D.get("hair_part"), D.get("hair_violations")
@@ -259,14 +281,20 @@ def body_ndc(cam, fig, pts=None):
 
 def run_checks(a, fig, tape, cams, stage, checks, front_rec, res_check, info, out_dir):
     ground = stage["ground"]
-    set_rest_pose(fig)
-    st.check_contact_shadow(checks, fig.body, fig.foot_idx, ground, front_rec, res_check, out_dir, figure_objects(fig), fig.labels)
+    set_pose(fig, tape, stage["reference_frame"])
+    ctx = stage["ctx"]
+    eye_l, eye_r = ctx["eye_centers"] or (fig.eye_l, fig.eye_r)
+    st.check_contact_shadow(checks, fig.body, fig.foot_idx, ground, front_rec, res_check, out_dir, figure_objects(fig), fig.labels, foot_points=ctx["foot_points"])
     checks.add(ck.contrast_check(st.luminance_linear(fig.brow_rgb), st.luminance_linear(fig.skin_rgb), name="brow_vs_skin_contrast"))
-    checks.add(st.eye_clearance(front_rec["obj"], fig.eye_l, fig.eye_r, "eye_clearance:front"))
+    checks.add(st.eye_clearance(front_rec["obj"], eye_l, eye_r, "eye_clearance:front"))
     face = info.get("face_cam")
     if face is not None:
-        checks.add(st.eye_clearance(face["obj"], fig.eye_l, fig.eye_r, "eye_clearance:face_closeup"))
+        checks.add(st.eye_clearance(face["obj"], eye_l, eye_r, "eye_clearance:face_closeup"))
         checks.add(st.brow_lash_visibility(face["obj"], fig.objs["brow"], fig.objs["lash"]))
+    if fig.skirt and fig.objs["garment"]:
+        overlaps = fa_surface.layer_intersections(fig.skirt["obj"], fig.objs["garment"])
+        checks.add({"name": "skirt_suit_clear", "ok": not any(overlaps.values()), "face_pairs": overlaps,
+                    "frame": stage["reference_frame"]})
     # pose math: Blender evaluated skinning vs pure LBS of the exported top-4 weights, on up to 3 frames
     P_all = fig.S
     worst, mean_acc, n_acc = 0.0, 0.0, 0
@@ -314,10 +342,13 @@ def main():
 
     want = a.engine
     engine_note = ""
-    if want in ("auto", "eevee"):
+    if want == "auto":
         ok, why = st.eevee_usable(__file__)
         engine_note = "eevee smoke: " + why
-        want = "EEVEE" if ok else ("CYCLES" if a.engine == "auto" else "EEVEE")
+        want = "EEVEE" if ok else "CYCLES"
+    elif want == "eevee":
+        want = "EEVEE"
+        engine_note = "explicit EEVEE"
     else:
         want = "CYCLES"
 
@@ -327,34 +358,32 @@ def main():
     say("RT_STEP figure built neutral_match_err_m=%.3g rig_head_err_m=%.3g foot_vertices=%d hidden_under_garment=%d" % (
         fig.neutral_match_err_m, fig.rig_head_err_m, len(fig.foot_idx), fig.hidden_body_vertices))
 
-    # ---- bounds (the probe bug lives here) and stage
-    set_rest_pose(fig)
-    rest_pts = st.eval_positions(fig.body)
-    lo_t = Vector((min(p[0] for p in rest_pts), min(p[1] for p in rest_pts), min(p[2] for p in rest_pts)))
-    hi_t = Vector((max(p[0] for p in rest_pts), max(p[1] for p in rest_pts), max(p[2] for p in rest_pts)))
-    if mutant:
-        st.add_hidden_helper_proxy(lo_t.z)
-        lo, hi = st.mesh_bounds_all(include_hidden=True)
-        notes.append("MUTANT bad_bounds: bounds taken over every mesh object including a hidden helper proxy (%.2f..%.2f m)" % (lo.z, hi.z))
-    else:
-        lo, hi = lo_t, hi_t
-    height = hi.z - lo.z
-    center = (0.5 * (lo.x + hi.x), 0.5 * (lo.y + hi.y), 0.5 * (lo.z + hi.z))
-    ground = st.make_ground(lo.z, albedo=(0.95, 0.95, 0.95) if over else (0.35, 0.35, 0.36))
+    # Fix the stage at the first requested reference pose so every camera sees the same floor and lighting.
+    reference_frame = int(shots.get("reference_frame", 0))
+    if not 0 <= reference_frame < tape.frame_count:
+        raise ValueError("stage reference_frame is outside the tape")
+    set_pose(fig, tape, reference_frame)
+    ctx, ground_z = st.reference_stage(fig.body, fig.objs["eyes"], fig.foot_idx,
+                                       figure_objs=figure_objects(fig), mutant=mutant)
+    lo, hi = ctx["bounds"]
+    lo_t, hi_t = ctx["body_bounds"]
+    ground = st.make_ground(ground_z, albedo=(0.95, 0.95, 0.95) if over else (0.35, 0.35, 0.36),
+                            center_xy=ctx["center"][:2])
     st.make_world()
-    lights = st.add_lights((0.0, 0.0, 0.5 * (lo.z + hi.z)), hi.z - lo.z if not mutant else (hi_t.z - lo_t.z), gain=12.0 if over else 1.0)
-    stage = {"ground": ground, "lights": lights}
-    info = engine_info = st.set_engine(want, a.spp, a.threads)
+    lights = st.add_lights(ctx["center"], ctx["height"], gain=12.0 if over else 1.0)
+    stage = {"ground": ground, "lights": lights, "reference_frame": reference_frame, "ctx": ctx}
+    engine_info = st.set_engine(want, a.spp, a.threads)
     sc = bpy.context.scene
-    ctx = {"points": rest_pts[::5], "center": (0.5 * (lo_t.x + hi_t.x), 0.5 * (lo_t.y + hi_t.y), 0.5 * (lo_t.z + hi_t.z)), "height": hi_t.z - lo_t.z,
-           "bounds": (lo, hi), "mutant": mutant}
-    ez = 0.5 * (fig.eye_l[2] + fig.eye_r[2])
-    ctx["face_center"] = (0.0, 0.5 * (fig.eye_l[1] + fig.eye_r[1]), ez - 0.02)
-    ctx["face_points"] = [p for p in rest_pts if p[2] > ez - 0.14 and abs(p[0]) < 0.14]
 
     # ---- cameras from the shots file
     cams = {}
     still_specs = [] if a.no_stills else shots.get("stills", [])
+    if a.still:
+        requested = set(a.still)
+        unknown = requested - {s["name"] for s in still_specs}
+        if unknown:
+            raise ValueError("unknown or disabled stills: " + ", ".join(sorted(unknown)))
+        still_specs = [s for s in still_specs if s["name"] in requested]
     clip_specs = [] if a.no_clips else shots.get("clips", [])
     res_default = tuple(shots.get("still_res", [1920, 1080]))
     for s in shots.get("stills", []):
@@ -386,7 +415,9 @@ def main():
         if rec["target_kind"] == "face":
             r = ck.framing_check(st.project(rec["obj"], ctx["face_points"]), min_frac=0.45)
         else:
-            r = ck.framing_check(st.project(rec["obj"], st.eval_positions(fig.body)))
+            points = (ctx["points"] if rec["tape_frame"] == reference_frame
+                      else st.visible_figure_points(figure_objects(fig)))
+            r = ck.framing_check(st.project(rec["obj"], points))
         r["name"] = "framing:" + key
         checks.add(r)
     set_rest_pose(fig)
@@ -501,9 +532,14 @@ def main():
                    "body_rev_id": tape.header.get("body_rev_id"), "fit_id": tape.header.get("fit_id"), "controls": tape.header.get("controls"),
                    "fit_status": tape.header.get("fit_status"), "style": tape.header.get("style")},
           "preset": preset.get("name"), "shots": shots.get("id"), "timings": timings, "checks": checks.items, "failed_checks": failed,
-          "garments": fig.garment_report, "stage": {"ground_z": ground.location.z, "bounds_lo": list(lo), "bounds_hi": list(hi), "body_height_m": hi_t.z - lo_t.z},
+          "garments": fig.garment_report, "stage": {"reference_frame": reference_frame, "ground_z": ground.location.z,
+                       "cameras": {k: {p: v[p] for p in ("target", "lens", "az", "el", "dist", "mode", "tape_frame")}
+                                   for k, v in cams.items()}, "bounds_lo": list(lo), "bounds_hi": list(hi), "body_height_m": hi_t.z - lo_t.z},
           "figure": {"neutral_match_err_m": fig.neutral_match_err_m, "rig_head_err_m": fig.rig_head_err_m, "hidden_body_vertices": fig.hidden_body_vertices,
-                     "sss_inputs": fig.sss_inputs, "hair_part": getattr(fig, "hair_part", None), "hair_violations_in_eye_box": getattr(fig, "hair_pos_violations", None),
+                     "sss_inputs": fig.sss_inputs,
+                     "textures": {m["fa_texture_id"]: m["fa_texture_sha256"] for obj in figure_objects(fig)
+                                  for m in obj.data.materials if m and "fa_texture_id" in m},
+                     "skirt": fig.skirt["data"]["params"] if fig.skirt else None, "hair_part": getattr(fig, "hair_part", None), "hair_violations_in_eye_box": getattr(fig, "hair_pos_violations", None),
                      "iris_vertices": getattr(fig, "iris_verts", None)},
           "results": results, "notes": notes}
     with open(os.path.join(out, "render.json"), "w", encoding="utf-8") as fh:
