@@ -21,13 +21,13 @@ pub mod skin;
 
 pub use math::{Mat4, Quat, Transform, Vec3};
 pub use morph::MorphTarget;
-pub use revision::{
-    compile, BodyFamily, BodyRecipe, CharacterRevision, CompileError, EvalError, FamilyRef,
-    PoseInput, PosedMesh, RevisionId, SupportClass,
-};
 pub use preview::{
     frame_bounds, frame_bounds_view, render_preview, PreviewCamera, PreviewImage, PreviewLight,
     PreviewMaterial, PreviewMesh, PreviewOptions,
+};
+pub use revision::{
+    compile, BodyFamily, BodyRecipe, CharacterRevision, CompileError, EvalError, FamilyRef,
+    PoseInput, PosedMesh, RevisionId, SupportClass,
 };
 pub use skeleton::{Joint, Landmark, Skeleton};
 pub use skin::SkinWeights;
