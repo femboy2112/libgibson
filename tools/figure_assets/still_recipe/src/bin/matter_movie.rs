@@ -172,12 +172,16 @@ fn chair(scene: &Value, template: &RenderMesh) -> Result<Vec<RenderMesh>> {
         result.push(box_mesh(template, center, size));
         if key == "seat" {
             let h = center[2] - size[2] / 2.;
-            for x in [-0.43, 0.43] {
-                for y in [-0.43, 0.43] {
+            for x in [-1., 1.] {
+                for y in [-1., 1.] {
                     result.push(box_mesh(
                         template,
-                        [center[0] + size[0] * x, center[1] + size[1] * y, h * 0.5],
-                        [0.024, 0.024, h],
+                        [
+                            center[0] + (size[0] / 2. - 0.031) * x,
+                            center[1] + (size[1] / 2. - 0.031) * y,
+                            h * 0.5,
+                        ],
+                        [0.031, 0.031, h],
                     ));
                 }
             }

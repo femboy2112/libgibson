@@ -324,6 +324,17 @@ pub fn write_setup(tape: &Tape, fit: &Value, out: &Path, chair: Option<Value>) -
     let mut props = json!({"format":"gibson.figure.scene.v1","tape_bin_sha256":tape.bin_sha256(),
         "body_rev_id":fit["body_rev_id"],"fit_id":fit["fit_id"],"present_id":fit["present_id"],
         "seat":chair.as_ref().map(|c| &c["seat"]), "chair":chair});
+    props["basis"] = json!("world-z-up-m");
+    props["clock"] = json!({"frames_per_second":tape.fps,"frames":tape.frame_count});
+    props["actors"] = json!([{"id":"actor-01","present_id":fit["present_id"],"root_track":"generic.tape.bin","origin":[0,0,0]}]);
+    props["ground"] = json!({"id":"stage-floor","normal":[0,0,1],"offset":0});
+    props["camera_cuts"] = json!(cuts(tape));
+    if let Some(target) = props["chair"]["pelvis_target"][2].as_f64() {
+        props["title"] = json!("THE GODDESS AWAKENS");
+        props["targets"] = json!([{"id":"attention-01","position":[-0.65,-2.0,target/0.56+0.64]},
+            {"id":"seat-contact-01","prop":"chair-01","position":props["chair"]["pelvis_target"]}]);
+        props["chair"]["id"] = json!("chair-01");
+    }
     if props["chair"].is_null() {
         props.as_object_mut().unwrap().remove("seat");
     }
