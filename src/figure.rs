@@ -6,7 +6,11 @@
 //! deterministic, content-addressed compile of a body recipe. Interface contract:
 //! `docs/FIGURE_CONTRACT.md`.
 //!
-//! Pure Rust, scalar `f32`, no `unsafe`, no SIMD, no dependency, no clock, no I/O.
+//! `studio` is the M5-C `rev.v1` compiler (`RecipeV1` -> coupled deformation, garment fits, three
+//! identities); see its module docs.
+//!
+//! Pure Rust, scalar `f32`, no `unsafe`, no SIMD, no dependency, no clock, no I/O (the one
+//! exception is `studio::AssetSet::load_dir`).
 #![forbid(unsafe_code)]
 
 pub mod clip;
@@ -18,6 +22,7 @@ pub mod revision;
 pub mod sha256;
 pub mod skeleton;
 pub mod skin;
+pub mod studio;
 
 pub use math::{DualQuat, Mat4, Quat, Transform, Vec3};
 pub use morph::MorphTarget;
