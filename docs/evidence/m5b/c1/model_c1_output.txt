@@ -1,0 +1,55 @@
+== identities
+quintic end conditions max err 0
+max|h0''| = 5.773502627639999 (declared 5.78)  max|h1''| = 3.9402338689799996 (declared 4)  max|h0'| = 1.875 (declared 1.875)  max|h1'| = 1.0 (declared 1)
+quintic derivative formulas vs FD max err 1.6539321023856246e-09
+omega - J(r) r' max err: 3.822660075578067e-10  Jinv(J(v)) - v max err: 3.722145839155691e-15  at theta=pi: 1.2412670766236366e-16
+sup |J(r) v| / |v| = 0.9999937392117317 (declared <= 1);  sup |dJ/dt v| / (|r'|/2 |v|) = 0.9974916686848321 (declared <= 1)
+== velocity preservation, general 3-D axes (preempt_rot, no mutant)
+max |omega_out(t0) - omega_old(t0)| over 200 random cases = 1.0290994924006174e-14
+check                  normal      bound         snap     freeze     linear
+clip A/once arm       0.05777     0.1685            -          -         10
+clip A/once spine     0.02759     0.4683            -          -      4.867
+clip A/once smile     0.02311    0.05624            -          -        3.6
+clip A/loop arm       0.05777     0.1685            -          -         10
+clip A/loop spine     0.02759     0.4683            -          -      4.867
+clip A/loop smile     0.02151    0.05624            -          -        3.6
+clip B/loop arm        0.1025     0.3116            -          -         10
+clip B/loop spine     0.04398     0.6165            -          -      4.544
+clip B/loop smile     0.05299     0.1558            -          -      5.667
+crossfade arm          0.1045     0.7609         2078          -      13.33
+crossfade spine       0.02714     0.8331        370.6          -      3.663
+crossfade smile       0.02311     0.1878        434.2          -        3.6
+preempt arm            0.1531      0.883         2469      8.375      13.33
+preempt spine         0.03151     0.5385        131.7      3.694      3.663
+preempt smile         0.02311     0.1623        127.4        2.4        3.6
+== preempt at t0: |FD vel before - after| (arm, y comp) and premise |v| ; reported-rate check
+  mut=None: v_before=[-2.5752844 -8.374462   1.62649  ], v_after=[-2.61115595 -8.38595917  1.63320983], jump=0.03587, reported rate(t0)=[-2.575 -8.375  1.625], old rate(t0)=[-2.575 -8.375  1.625]
+  mut=snap_transition: v_before=[2416.1747156 2460.375538  -342.12351  ], v_after=[-0.0366287  -0.01165648  0.00832407], jump=2460, reported rate(t0)=[0. 0. 0.], old rate(t0)=[-2.575 -8.375  1.625]
+  mut=freeze_on_preempt: v_before=[-2.5752844 -8.374462   1.62649  ], v_after=[ 3.76508167e-04  3.84295286e-04 -5.35084271e-05], jump=8.375, reported rate(t0)=[0. 0. 0.], old rate(t0)=[-2.575 -8.375  1.625]
+== preempt offset closed form at tau=1/2 (arm): measured - predicted (normal / freeze / snap)
+  mut=None: |got - pred|_inf = 1.15e-05
+  mut=freeze_on_preempt: |got - pred|_inf = 0.742
+  mut=snap_transition: |got - pred|_inf = 1.76
+== look: forward +Z, initial +Z, retarget 500 ms -> +X, 700 ms -> +Y, ease 400 ms
+  mut=None: max|d jump per ms|=0.008069  max FD-velocity jump=0.09583 at t=0.782
+    final direction [0. 1. 0.]
+  mut=snap_transition: max|d jump per ms|=1.414  max FD-velocity jump=1414 at t=0.499
+    final direction [0. 1. 0.]
+  mut=freeze_on_preempt: max|d jump per ms|=0.008019  max FD-velocity jump=7.766 at t=0.700
+    final direction [0. 1. 0.]
+  declared look bound: R1=37.86 R2=344.8  A_d=2495  bound*dt=2.495
+== min |n| over fixture A spine segments = 0.9344863347996031 (declared rho_min = 0.75 )
+   A spine min|n| = 0.9345
+   B spine min|n| = 0.9737
+   N spine min|n| = 0.9751
+== premises used by tests/figure_motion.rs
+   old rates at 750 ms: arm [-2.575 -8.375  1.625]  spine omega_z -3.693  smile rate -2.4   (tests need |omega_z| > 0.5, |smile rate| > 0.5)
+   tilted case: |dot(q_old,q_new)| = 0.5937766299083979 (test needs < 0.9);  |omega_old| = 5.339157350302953 (test needs > 0.5)
+   closed form (new started at 600 ms, 1 ms central differences), mut=None: |got-pred|_inf = 1.74e-06 (TOL_CF 2e-4)
+   closed form (new started at 600 ms, 1 ms central differences), mut=freeze_on_preempt: |got-pred|_inf = 0.73 (TOL_CF 2e-4)
+   closed form (new started at 600 ms, 1 ms central differences), mut=snap_transition: |got-pred|_inf = 1.47 (TOL_CF 2e-4)
+== look: reported-omega continuity at the second retarget (|omega(700ms) - omega(699.999ms)|) and the
+   aim jump across the first retarget instant (|d(500ms) - d(499.999999ms)|)
+   mut=None: |d omega| = 3.682e-10 (tol 2e-3; |omega| before = 7.36); |d jump| = 2.22e-16 (tol 1e-5)
+   mut=snap_transition: |d omega| = 0 (tol 2e-3; |omega| before = 0); |d jump| = 1.414 (tol 1e-5)
+   mut=freeze_on_preempt: |d omega| = 7.767 (tol 2e-3; |omega| before = 7.77); |d jump| = 0 (tol 1e-5)
