@@ -58,3 +58,26 @@ fused-multiply-add and reassociation freedom of the optimiser, which the scalar 
 construction but a run alone confirms. The bearing on I is thin (2 tests, both through joint
 positions); a posed-vertex test about a non-root joint, whose expected value needs the DQS blend
 in closed form, is not in this slice.
+
+## Addendum (ORDER #105 and the delete-set ruling): four more tests, a fourth mutant
+
+**C** = `stale_control` (`Compiled::with_control` returns the old compile unchanged). Added tests
+(`tests/figure_studio.rs`, 26 in all), predicted outcomes:
+
+| Test | I | S | F | C | Basis |
+|---|---|---|---|---|---|
+| `a_bulge_outside_the_delete_set_still_rejects_and_inside_it_does_not` | - | K | K | - | S: the bulge never reaches the shell, which stays Fitted; F: the neutral body is measured, so the shell stays Fitted. Oracle: shell Rejected (depth 0.0199) and plug Fitted at bulge 1.0 |
+| `with_control_is_bit_identical_to_a_full_compile_and_moves_the_measurement` | - | K | K | K | C: the hip distance stays 0.4 where 0.6 is designed, and every `assert_same` against the full compile fails; S: the same measurement; F: the verdict flip (`bulged` shell NeedsAdaptation) fails because the neutral body is measured |
+| `drawable_meshes_hide_deleted_body_triangles_and_carry_slots` | - | K | K | - | S and F: the shell is Fitted and drawn where its absence is asserted |
+| `a_tape_frame_is_read_and_mapped_to_the_rig` | - | - | - | - | reader tests; no mutant touches them |
+
+Rows of the first table that change with the delete-set ruling: none of their verdicts (the shell
+now hides ring 0, which the bulge does not move). Kill counts become **I** 2, **S** 14, **F** 7,
+**C** 1 (`with_control_is_bit_identical_...`; the single killer is by design: C only touches
+`with_control`). `ignore_surface_update` also kills the `with_control` test, so C has no
+second bearing.
+
+The oracle (`oracle_shape.py`, now skipping a part vertex whose nearest body vertex is in the
+part's delete set, the rule `studio` implements) gives, at the neutral real body, `skirt` Fitted and
+`female_casualsuit01` 44 of 2197 vertices deeper than 2 mm (deepest 7.4 mm, NeedsAdaptation); before
+the masking it was 157 and 9.7 mm. Thresholds are unchanged.

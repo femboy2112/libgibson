@@ -867,7 +867,7 @@ bound body vertices by the export); the body vertices hidden under the part.
    footwear floats (heel height, toe pitch). The footwear is hashed because the studio API puts it
    in the body id; it has no geometric effect in v1.
 5. **Fit id.** As specified: the body id, `u32` garment count, per garment `str id` + the sha256 of
-   the garment FILE, then `str "gibson.fit.vertex-normal-penetration.v1"`, `u32 2`, the parameters
+   the garment FILE, then `str "gibson.fit.vertex-normal-penetration.v2"`, `u32 2`, the parameters
    `tolerance_m` and `adapt_depth_m` (`str` name + `f32`). The verdict and the geometry are not
    hashed.
 6. **Presentation id.** The fit id, then in order: the material bindings (`str` slot, `str` material
@@ -884,7 +884,12 @@ bound body vertices by the export); the body vertices hidden under the part.
    `Rejected(FitReason)` (a different type from `figure::revision::FitStatus`, whose v0 enum stays
    as it is). The measure: the body's area-weighted vertex normals of the SHAPED triangles; for
    each garment vertex the nearest body vertex (ties to the lowest index) and the signed distance
-   along that normal; negative is inside. `penetrating` counts the vertices deeper than
+   along that normal; negative is inside. The body vertices a garment hides (`delete_verts`,
+   carried by the part format) are masked out of ITS measure: a garment vertex whose nearest body
+   vertex is hidden is skipped (algorithm id `...penetration.v2`; v1 measured them and read a tight suit as
+   penetrating at the neutral body). A body vertex it does not hide still counts, so a bulge outside
+   the delete set rejects the garment. Body triangles that use a hidden vertex of a drawn garment are
+   dropped from the drawable body mesh. `penetrating` counts the vertices deeper than
    `tolerance_m` (default 0.002), `max_depth_m` is the deepest. None penetrating: `Fitted`. The
    deepest at most `adapt_depth_m` (default 0.01): `NeedsAdaptation`. Deeper: `Rejected`. Only
    `Fitted` garments are in `Compiled::drawable_garments()` and in `pose_vertices`; every verdict is
@@ -905,6 +910,20 @@ bound body vertices by the export); the body vertices hidden under the part.
     that order, but the two never share state: the body id is computed before any garment is read, the
     fit is a pure function of the shaped body and the garment set, and the three ids are returned
     separately. A host that wants the split can call `compile` with an empty garment list.
+11. **Normals, drawable meshes, single-control edits, tapes.** `pose_vertices` also returns posed unit
+    normals (the skin transform's rotation; DQS: the blended rotation) for the body, each drawn
+    garment and the hair. `rest_render_meshes()` and `render_meshes(&TapeFrame)` give
+    `RenderMesh { id, role, positions, normals, triangles, slot_per_triangle }` for the body, every
+    `Fitted` garment and the hair, with the hidden body triangles dropped; a triangle's slot indexes
+    `MATERIAL_SLOTS` (body and hair `base`, a garment the slot of its first slot binding).
+    `Compiled::with_control(name, value)` equals a full `compile` of the edited recipe bit for bit
+    (it re-runs the same pipeline on the shared `Arc<AssetSet>`; no intermediate is reused yet).
+    `TapeReader::new(header_json, bin)` validates a `gibson.figure.tape.v1` once (format, the four
+    channel names, size, `bin_sha256`); `TapeFrame::from_tape_bytes` and `Compiled::tape_frame` read a
+    frame, the latter mapping the tape's joints to the rig by name and refusing a tape made for another
+    `body_rev_id`.
+12. **Motion style is in none of the ids, on purpose** (coordinator ruling: a deliberate deviation from
+    docs/design/m5c-studio-api.md section 2, whose "style" row is to be read as appearance style).
 
 ---
 

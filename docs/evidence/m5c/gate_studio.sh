@@ -12,7 +12,7 @@ set -euo pipefail
 HEAD_SHA=${1:?head sha}
 REPO=${REPO:?main clone path}; W=${W:?detached gate worktree path}
 L=${LOGDIR:?log directory}; mkdir -p "$L"
-STUDIO_MIN_TESTS=${STUDIO_MIN_TESTS:-22}
+STUDIO_MIN_TESTS=${STUDIO_MIN_TESTS:-26}
 cd "$REPO"
 git fetch -q origin feat/m5c-deform
 [ -d "$W" ] || git worktree add -q --detach "$W" "$HEAD_SHA"
@@ -90,7 +90,10 @@ check_mutant ignore_surface_update figure_studio \
 check_mutant stale_fit figure_studio \
   a_garment_the_body_bulges_through_is_not_drawn \
   a_verdict_is_never_carried_across_a_body_edit \
-  garments_follow_the_shaped_body_with_per_axis_offset_scales
+  garments_follow_the_shaped_body_with_per_axis_offset_scales \
+  a_bulge_outside_the_delete_set_still_rejects_and_inside_it_does_not
+check_mutant stale_control figure_studio \
+  with_control_is_bit_identical_to_a_full_compile_and_moves_the_measurement
 
 run clippy $T clippy --features figure --lib --tests -- -D warnings; tail -5 "$L/clippy.log"; [ "$RC" -eq 0 ] || fail "clippy rc=$RC"
 run msrv_figure cargo +1.85 check --lib --features figure; tail -3 "$L/msrv_figure.log"; [ "$RC" -eq 0 ] || fail "msrv rc=$RC"
