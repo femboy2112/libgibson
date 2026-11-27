@@ -7,7 +7,7 @@ use super::{
 
 #[derive(Clone, Debug)]
 pub(super) struct Hair {
-    particles: Particles,
+    pub(super) particles: Particles,
     ids: Vec<usize>,
     map: Vec<(usize, usize, f32, f32)>,
 }

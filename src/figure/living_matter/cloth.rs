@@ -7,7 +7,7 @@ use super::{
 
 #[derive(Clone, Debug)]
 pub(super) struct Cloth {
-    particles: Particles,
+    pub(super) particles: Particles,
     fine_cols: usize,
     fine_rows: usize,
     cols: usize,

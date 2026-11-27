@@ -29,6 +29,7 @@ pub struct FigureDynamics {
     props: Vec<(Vec3, Vec3)>,
     present: [u8; 32],
     tick: u64,
+    rate: Option<u32>,
     chest: usize,
     centers: [Vec3; 2],
     regions: [Region; 2],
@@ -227,6 +228,7 @@ impl FigureDynamics {
             props: props.to_vec(),
             present: c.present_id().0,
             tick: 0,
+            rate: None,
             chest,
             centers,
             regions,
@@ -260,10 +262,14 @@ impl FigureDynamics {
         frame: &TapeFrame,
         fps: u32,
     ) -> Result<Vec<RenderMesh>, &'static str> {
-        if !(10..=240).contains(&fps) || self.present != c.present_id().0 {
+        if !(10..=240).contains(&fps)
+            || self.rate.is_some_and(|r| r != fps)
+            || self.present != c.present_id().0
+        {
             return Err("invalid rate or compiled actor");
         }
         let mut next = self.clone();
+        next.rate = Some(fps);
         let meshes = next.advance(c, frame, fps)?;
         *self = next;
         Ok(meshes)
@@ -361,3 +367,6 @@ impl FigureDynamics {
         Ok(meshes)
     }
 }
+
+#[path = "checkpoint.rs"]
+mod checkpoint;

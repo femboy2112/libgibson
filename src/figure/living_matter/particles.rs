@@ -44,7 +44,7 @@ pub struct Particles {
     links: Vec<Link>,
     pub(super) positions: Vec<Vec3>,
     pub(super) velocities: Vec<Vec3>,
-    previous_pins: Vec<Vec3>,
+    pub(super) previous_pins: Vec<Vec3>,
 }
 
 impl Particles {

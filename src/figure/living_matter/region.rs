@@ -10,10 +10,10 @@ pub struct RegionFrame {
 
 #[derive(Clone, Debug)]
 pub struct Region {
-    displacement: Vec3,
-    speed: Vec3,
-    frame: RegionFrame,
-    last_velocity: Vec3,
+    pub(super) displacement: Vec3,
+    pub(super) speed: Vec3,
+    pub(super) frame: RegionFrame,
+    pub(super) last_velocity: Vec3,
     reference_force: Vec3,
 }
 
