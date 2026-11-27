@@ -186,7 +186,74 @@ fn chair(scene: &Value, template: &RenderMesh) -> Result<Vec<RenderMesh>> {
     Ok(result)
 }
 
-fn render(comp: &Compiled, dir: &Path, output: &Path, mode: &str, dynamic: bool) -> Result<()> {
+struct Shape {
+    channel: usize,
+    mesh: usize,
+    sign: f32,
+    offsets: Vec<(usize, Vec3)>,
+}
+fn shapes(path: Option<&Path>, id: &Value, meshes: &[RenderMesh]) -> Result<Vec<Shape>> {
+    let Some(path) = path else {
+        return Ok(Vec::new());
+    };
+    let s = json(path)?;
+    if s["coordinates"] != "rest_armature_metres" || s["format"] != "projectghost.face-basis/1" {
+        return Err("unknown host shape basis".into());
+    }
+    for k in ["present_id", "fit_id", "body_rev_id"] {
+        if s[k] != id[k] {
+            return Err(format!("shape basis {k} mismatch").into());
+        }
+    }
+    let mut result = Vec::new();
+    for (name, targets) in s["channels"].as_object().ok_or("missing shape channels")? {
+        let channel = id["face"]
+            .as_array()
+            .ok_or("missing tape channels")?
+            .iter()
+            .position(|c| c.as_str() == Some(name))
+            .ok_or("unknown shape channel")?;
+        for t in targets.as_array().ok_or("invalid shape list")? {
+            let mesh = meshes
+                .iter()
+                .position(|m| Some(m.id.as_str()) == t["part"].as_str())
+                .ok_or("missing shape part")?;
+            let count = meshes[mesh].positions.len();
+            if t["vertex_count"] != count {
+                return Err("shape topology mismatch".into());
+            }
+            let sign = t["sign"]
+                .as_i64()
+                .filter(|s| *s == 1 || *s == -1)
+                .ok_or("invalid shape direction")? as f32;
+            let mut offsets = Vec::new();
+            for d in t["deltas"].as_array().ok_or("invalid shape offsets")? {
+                let (i, x, y, z): (usize, f32, f32, f32) = serde_json::from_value(d.clone())?;
+                let v = Vec3::new(x, y, z);
+                if i >= count || !v.is_finite() {
+                    return Err("bad shape vertex".into());
+                }
+                offsets.push((i, v));
+            }
+            result.push(Shape {
+                channel,
+                mesh,
+                sign,
+                offsets,
+            });
+        }
+    }
+    Ok(result)
+}
+
+fn render(
+    comp: &Compiled,
+    dir: &Path,
+    output: &Path,
+    mode: &str,
+    dynamic: bool,
+    basis: Option<&Path>,
+) -> Result<()> {
     let header = fs::read(dir.join("generic.tape.json"))?;
     let id: Value = serde_json::from_slice(&header)?;
     let bin = fs::read(dir.join("generic.tape.bin"))?;
@@ -201,6 +268,7 @@ fn render(comp: &Compiled, dir: &Path, output: &Path, mode: &str, dynamic: bool)
     }
     let rest = comp.rest_render_meshes();
     let props = chair(&scene, &rest[0])?;
+    let shapes = shapes(basis, &id, &rest)?;
     let mut track = if dynamic {
         Some(Track::open(dir, &id, &rest)?)
     } else {
@@ -282,10 +350,25 @@ fn render(comp: &Compiled, dir: &Path, output: &Path, mode: &str, dynamic: bool)
     let wide = frame_bounds_view((lo, hi), 16. / 9., 0.84, -14., 5.);
     let rec = (|| -> Result<()> {
         for i in 0..frames {
-            let pose = tape.frame(i)?;
+            let pose = comp.tape_frame(&tape, i)?;
             let mut meshes = comp.render_meshes(&pose)?;
             if let Some(t) = &mut track {
                 t.read(&mut meshes)?;
+            }
+            if !shapes.is_empty() {
+                let values = tape.face_channels(i)?;
+                let mut sums = vec![Vec::new(); meshes.len()];
+                for s in &shapes {
+                    let w = (values[s.channel] * s.sign).clamp(0., 1.);
+                    if w > 0. {
+                        sums[s.mesh].extend(s.offsets.iter().map(|&(j, d)| (j, d.scale(w))));
+                    }
+                }
+                for (m, offsets) in meshes.iter_mut().zip(sums) {
+                    if !offsets.is_empty() {
+                        comp.apply_rest_offsets(&pose, m, &offsets)?;
+                    }
+                }
             }
             let mut camera = wide;
             let close = mode == "cut"
@@ -340,7 +423,7 @@ fn render(comp: &Compiled, dir: &Path, output: &Path, mode: &str, dynamic: bool)
 }
 fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().collect();
-    let [_, asset, preset, run, out, mode, source] = args.as_slice() else {
+    let [_, asset, preset, run, out, mode, source, tail @ ..] = args.as_slice() else {
         return Err(
             "usage: matter_movie ASSET PRESET RUN OUT.mp4 wide|cut|orbit kinematic|physical".into(),
         );
@@ -350,6 +433,11 @@ fn main() -> Result<()> {
     {
         return Err("unsupported camera/source".into());
     }
+    let basis = match tail {
+        [] => None,
+        [flag, path] if flag == "--shape-basis" => Some(Path::new(path)),
+        _ => return Err("expected --shape-basis PATH".into()),
+    };
     let p = json(Path::new(preset))?;
     let style = recipe::movement_style(&p)?;
     let c = compile(
@@ -362,5 +450,6 @@ fn main() -> Result<()> {
         Path::new(out),
         mode,
         source == "physical",
+        basis,
     )
 }

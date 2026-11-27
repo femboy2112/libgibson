@@ -71,8 +71,31 @@ pub fn bake(
     let mut writer = BufWriter::new(fs::File::create(&temp)?);
     let mut digest = Sha256::new();
     let mut frame_bytes = Vec::with_capacity(stride);
+    let mut checkpoints = Vec::new();
     for i in 0..tape.frame_count {
-        let dynamic = sim.step(compiled, &kinematic(i), tape.fps)?;
+        // A checkpoint is the state immediately before next_frame, including pre-roll.
+        let mut replay = None;
+        if i % (tape.fps as usize * 2) == 0 {
+            let state = sim.checkpoint_bytes();
+            let state_sha = hex(&gibson::figure::sha256::digest(&state));
+            let name = format!("checkpoint-{state_sha}.bin");
+            let tmp = out.join(format!(".checkpoint-{}.tmp", std::process::id()));
+            fs::write(&tmp, &state)?;
+            fs::rename(tmp, out.join(&name))?;
+            checkpoints
+                .push(json!({"next_frame":i,"tick":sim.tick(),"file":name,"sha256":state_sha}));
+            let mut resumed = FigureDynamics::with_props(compiled, config, &props)?;
+            resumed.restore_bytes(&state)?;
+            replay = Some(resumed);
+        }
+        let pose = kinematic(i);
+        let dynamic = sim.step(compiled, &pose, tape.fps)?;
+        if let Some(mut resumed) = replay {
+            let actual = resumed.step(compiled, &pose, tape.fps)?;
+            if actual != dynamic || resumed.checkpoint_bytes() != sim.checkpoint_bytes() {
+                return Err("checkpoint replay differs from uninterrupted actor".into());
+            }
+        }
         frame_bytes.clear();
         for (idx, _) in &outputs {
             for p in &dynamic[*idx].positions {
@@ -96,7 +119,7 @@ pub fn bake(
         "sim_config_id":id,"fps":tape.fps,"frames":tape.frame_count,"preroll_frames":preroll_frames,
         "gravity":[config.gravity.x,config.gravity.y,config.gravity.z],"fabric":format!("{:?}",config.fabric),
         "firmness":config.firmness,"damping":config.damping,"support":config.support,"intensity":config.intensity,
-        "substeps":config.substeps,"iterations":config.iterations,"stride_bytes":stride,"meshes":records});
+        "checkpoints":checkpoints,"substeps":config.substeps,"iterations":config.iterations,"stride_bytes":stride,"meshes":records});
     let tmp_header = out.join(format!(".matter-{}.json.tmp", std::process::id()));
     fs::write(&tmp_header, serde_json::to_vec_pretty(&header)?)?;
     fs::rename(tmp_header, out.join("matter.json"))?;

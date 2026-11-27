@@ -176,3 +176,6 @@ mod tests {
         assert!((collider.project(inside, 0.003).x - 0.123).abs() < 1e-6);
     }
 }
+
+#[cfg(test)]
+mod lab;
