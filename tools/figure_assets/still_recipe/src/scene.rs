@@ -238,19 +238,20 @@ pub fn seated_chair(compiled: &Compiled, tape: &Tape, seat: Vec3) -> Result<(Val
     let frame = |f| TapeFrame::new(tape.root(f), tape.locals(f));
     let settled = compiled.pose_vertices(&frame(tape.frame_count - 1))?;
     // Use the lowest contact vertex in a posterior ischial patch, avoiding legs and soles.
-    let top = settled
+    let (contact_vertex, contact) = settled
         .body
         .iter()
-        .filter(|p| {
-            (p.x - seat.x).abs() < 0.09
+        .enumerate()
+        .filter(|(_, p)| {
+            (p.x - seat.x).abs() < 0.08
                 && p.y >= seat.y
                 && p.y < seat.y + 0.12
                 && p.z > seat.z - 0.25
                 && p.z < seat.z + 0.02
         })
-        .map(|p| p.z)
-        .reduce(f32::min)
+        .min_by(|(_, a), (_, b)| a.z.total_cmp(&b.z))
         .ok_or("no seated posterior body vertices")?;
+    let top = contact.z;
     let stop = tape
         .events
         .iter()
@@ -312,7 +313,8 @@ pub fn seated_chair(compiled: &Compiled, tape: &Tape, seat: Vec3) -> Result<(Val
     Ok((
         json!({"pelvis_target":[seat.x,seat.y,seat.z],
         "walk_frames_measured":stop+1, "walk_to_chair_gap_m":gap,
-        "contact_top_m":top, "seat":{"center":[x,seat.y,top-thick/2.0],"size":[width,depth,thick]},
+        "contact_body_vertex":contact_vertex, "contact_top_m":top,
+        "seat":{"center":[x,seat.y,top-thick/2.0],"size":[width,depth,thick]},
         "back":{"center":[x+back_offset,back_y,top+back_height/2.0],"size":[back_width,0.035,back_height]}}),
         min_pelvis_x,
     ))

@@ -391,3 +391,7 @@ These are observations about drafts, not defects of shipped code.
   never in the repository, except small committed subsets approved for the generic preset.
 - No part of this design reads a host's identity or memory. If a future milestone seems to need
   that, it belongs in the host and arrives as an already-admitted intent.
+
+### SECOND PERFORMANCE candidate
+
+Living Matter now sits between the admitted kinematic Performance and the geometry drawn by Render. Director selects an actor, scene-local chair and attention target, walk/stop/turn/sit beats and shot cuts. A production may choose a named authoritative physical backend; its state travels beside the kinematic tape. Read the implementation and compatibility limits in [Living Matter](living-matter.md). Multi-actor interaction, editable choreography and production authoring remain later milestones.
