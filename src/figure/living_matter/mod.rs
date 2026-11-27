@@ -31,8 +31,8 @@ pub struct FabricProperties {
 impl Fabric {
     pub fn properties(self) -> FabricProperties {
         let (density, stretch, bend, drag, friction) = match self {
-            Self::Light => (0.085, 0.014, 0.50, 1.8, 0.12),
-            Self::Medium => (0.19, 0.002, 0.045, 3.5, 0.24),
+            Self::Light => (0.085, 0.24, 0.50, 1.8, 0.12),
+            Self::Medium => (0.19, 0.12, 0.045, 3.5, 0.24),
             Self::Structured => (0.36, 0.00008, 0.0015, 6.5, 0.36),
         };
         FabricProperties {

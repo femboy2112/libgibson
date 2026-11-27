@@ -18,3 +18,7 @@ ProjectGHOST #342–345 remain open drafts against codex/vivification-1.0. #346�
 ## Owner boundary
 
 Mk.0's sprite approval remains attached to the original sprite asset. The derived 3D geometry is a candidate for the owner's visual review. Private source, cooked assets, comparisons, recipe vectors and canonical media stay local. This branch ships the generic engineering implementation. Clinical anatomy, universal garment fit, cross-platform bitwise physics and engine-level self-intersection guarantees are outside the current evidence.
+
+### Calibrated sheet coefficients
+
+The complete 24-cell response sweep is in fabric-sweep.csv (family, density kg/m², stretch compliance m/N, mean hem Z m, peak displacement m). The core implementation compiled with Rust 1.85. Light at 0.24 m/N and medium at 0.12 m/N separate the sewn conical calibration surface by 1.07 mm; medium and structured at 0.00008 m/N separate it by 0.62 mm. Peak local displacements were 3.79, 1.62 and 0.21 mm. Larger coefficients entered a buckled regime on this fixture. These effective coarse-panel coefficients are artistic settings. The configuration digest includes their actual values. The measured calibration surface is excluded as an independent holdout. Retain the original actor motion and changed cut as holdouts; compare their actual positions at the same admitted skeletal frames.

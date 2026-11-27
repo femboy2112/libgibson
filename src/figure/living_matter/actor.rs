@@ -77,10 +77,20 @@ fn normals(mesh: &mut RenderMesh) {
 }
 fn digest(cfg: DynamicsConfig, c: &Compiled, meshes: &[RenderMesh]) -> [u8; 32] {
     let mut h = sha256::Sha256::new();
-    h.update(b"gibson.living-matter.config.v2\0");
+    h.update(b"gibson.living-matter.config.v3\0");
     h.update(&c.body_rev_id().0);
     h.update(&c.fit_id().0);
     h.update(&[cfg.fabric as u8, cfg.substeps as u8, cfg.iterations as u8]);
+    let fabric = cfg.fabric.properties();
+    for coefficient in [
+        fabric.density,
+        fabric.stretch,
+        fabric.bend,
+        fabric.drag,
+        fabric.friction,
+    ] {
+        h.update(&coefficient.to_le_bytes());
+    }
     for n in [
         cfg.gravity.x,
         cfg.gravity.y,

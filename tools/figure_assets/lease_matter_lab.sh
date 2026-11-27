@@ -19,8 +19,12 @@ case "$phase" in
 build)
   rc=0
   cargo +1.98.1 test --offline --locked --features figure --lib living_matter -- --nocapture >"$out/fixtures.log" 2>&1 || rc=$?
+  echo "$rc" >"$out/fixtures.rc"
   tail -24 "$out/fixtures.log"
-  "${BLENDER:-$HOME/opt/blender/blender}" -b -t 3 --factory-startup --python-exit-code 3 --python "$repo/docs/evidence/incarnate-iii/blender_cloth_probe.py" >"$out/blender-cloth.log" 2>&1 || rc=$?
+  comparison=0
+  "${BLENDER:-$HOME/opt/blender/blender}" -b -t 3 --factory-startup --python-exit-code 3 --python "$repo/docs/evidence/incarnate-iii/blender_cloth_probe.py" >"$out/blender-cloth.log" 2>&1 || comparison=$?
+  echo "$comparison" >"$out/blender-cloth.rc"
+  ((comparison==0)) || rc=$comparison
   rg 'BLENDER_CLOTH|Error|Assertion' "$out/blender-cloth.log" || true
   cargo +1.98.1 build --release --offline --locked --manifest-path "$here/still_recipe/Cargo.toml" >"$out/build.log" 2>&1 || rc=$?
   tail -6 "$out/build.log"
