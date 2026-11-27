@@ -1,0 +1,10 @@
+# Only the small committed subset may land here (written by ../run_kit.sh).
+*
+!.gitignore
+!manifest.txt
+!contact_sheet.png
+!motion_analysis.json
+!stills/
+!stills/*.png
+!motion/
+!motion/*.png
