@@ -1,0 +1,6 @@
+format gibson.figure.asset.v1
+body body.gfa 2f64d3b0ecf2d05098e401b20ffb5a3355249dbec8c9bea91721ce69a0fab7fc
+part cap hair part.cap.gfa 78e46baa134e39d66db168c9fe5480d25bf7fb424098912a243f2363842d6d23
+part shell clothes part.shell.gfa 13b96283e6db78a4a021c8c8b3cef592e6662c5b8c01e606e76feb5c30249c6e
+part tabard clothes part.tabard.gfa 3f6ab7b96e8ddbd7944799c46f1de529306de081e3acc14eff5b70cb7238c2f5
+part tunic clothes part.tunic.gfa 8edec945799455f8d4f7fb3ee2b0af000e838e695999cb35886b087e61009f5d
