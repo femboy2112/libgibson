@@ -75,6 +75,7 @@ def parse_args(argv):
     ap.add_argument("--checks-only", action="store_true", help="build, run the self-checks, write render.json; no stills/clips")
     ap.add_argument("--no-stills", action="store_true")
     ap.add_argument("--no-clips", action="store_true")
+    ap.add_argument("--batch-clips", action="store_true", help="render each requested clip slice as a single timed Blender animation")
     ap.add_argument("--clip-frames", type=int, default=0, help="render only N frames of every clip (smoke runs, split leases); 0 = all")
     ap.add_argument("--clip-from", type=int, default=0, help="first clip frame index to render (with --clip-frames, to split a clip over leases)")
     ap.add_argument("--oracle-every", type=int, default=30)
@@ -481,9 +482,7 @@ def main(figure_setup=None, frame_update=None, stage_setup=None):
             cuts = list(c.get("cuts", []))
             fdir = os.path.join(out, "frames", c["name"])
             os.makedirs(fdir, exist_ok=True)
-            times, used = [], []
-            ema = None
-            for i in range(lo_i, hi_i):
+            def apply_clip_frame(i):
                 f = start if hold else min(tape.frame_count - 1, start + int(round(i * tape.fps / fps)))
                 cid = tape.camera_id_at(f) if c.get("use_tape_camera_cuts", True) else None
                 for cut in sorted(cuts, key=lambda q: q["frame"]):
@@ -510,12 +509,25 @@ def main(figure_setup=None, frame_update=None, stage_setup=None):
                 sc.camera = rec["obj"]
                 for lab in fig.labels:
                     st.attach_label_to_camera(lab, rec["obj"], rec["lens"])
-                path = os.path.join(fdir, "frame_%05d.png" % i)
-                dt = st.render_to(path, r)
-                times.append(dt)
-                used.append(cid)
-                if i % 10 == 0:
-                    say("RT_FRAME %s %d/%d tape_frame=%d camera=%s %.2fs" % (c["name"], i, n_total, f, cid, dt))
+                return f, cid
+
+            times, used = [], []
+            if a.batch_clips:
+                import fa_batch
+                records = fa_batch.render_frames(sc, fdir, r, lo_i, hi_i, apply_clip_frame)
+                for i, f, cid, dt in records:
+                    times.append(dt)
+                    used.append(cid)
+                    say("RT_BATCH_FRAME %s %d/%d tape_frame=%d camera=%s %.2fs" % (c["name"], i, n_total, f, cid, dt))
+            else:
+                for i in range(lo_i, hi_i):
+                    f, cid = apply_clip_frame(i)
+                    path = os.path.join(fdir, "frame_%05d.png" % i)
+                    dt = st.render_to(path, r)
+                    times.append(dt)
+                    used.append(cid)
+                    if i % 10 == 0:
+                        say("RT_FRAME %s %d/%d tape_frame=%d camera=%s %.2fs" % (c["name"], i, n_total, f, cid, dt))
             switches = sum(1 for x, y in zip(used, used[1:]) if x != y)
             results["clips"].append({"name": c["name"], "frames": hi_i - lo_i, "frames_total": n_total, "first_index": lo_i, "fps": fps, "res": list(r), "dir": os.path.relpath(fdir, out), "seconds_total": sum(times),
                                      "seconds_mean": sum(times) / len(times) if times else 0.0, "camera_switches": switches, "cameras_used": sorted(set(used)),
