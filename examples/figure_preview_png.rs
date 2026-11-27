@@ -96,6 +96,7 @@ fn main() {
         ssaa: 2,
         ground: true,
         shadow: true,
+        contact_shadow: true,
     };
     let t0 = std::time::Instant::now();
     let img = render_preview(&[mesh], &mats, &cam, &PreviewLight::default_rig(), opts);

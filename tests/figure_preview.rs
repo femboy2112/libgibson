@@ -162,6 +162,7 @@ fn small_opts() -> PreviewOptions {
         ssaa: 2,
         ground: true,
         shadow: true,
+        contact_shadow: false,
     }
 }
 
@@ -439,6 +440,7 @@ fn degenerate_inputs_do_not_panic() {
             ssaa,
             ground: true,
             shadow: true,
+            contact_shadow: true,
         };
         let img = render_preview(&meshes, &[], &cam, &[], o);
         assert_eq!(img.rgb8.len(), (img.width * img.height * 3) as usize);
@@ -477,7 +479,287 @@ fn large_mesh_renders() {
         ssaa: 1,
         ground: true,
         shadow: true,
+        contact_shadow: true,
     };
     let img = render_preview(&[m.view()], &mats(), &cam, &PreviewLight::default_rig(), o);
     assert_eq!(img.rgb8.len(), 960 * 540 * 3);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Contact shadow and shadow root (a standing subject must not read as floating)
+// ---------------------------------------------------------------------------------------------
+
+fn add_box(m: &mut M, lo: [f32; 3], hi: [f32; 3]) {
+    let base = m.pos.len() as u32;
+    for i in 0..8 {
+        m.pos.push([
+            if i & 1 == 0 { lo[0] } else { hi[0] },
+            if i & 2 == 0 { lo[1] } else { hi[1] },
+            if i & 4 == 0 { lo[2] } else { hi[2] },
+        ]);
+    }
+    for q in [
+        [0u32, 1, 3, 2],
+        [4, 6, 7, 5],
+        [0, 4, 5, 1],
+        [2, 3, 7, 6],
+        [0, 2, 6, 4],
+        [1, 5, 7, 3],
+    ] {
+        m.tris.push([base + q[0], base + q[1], base + q[2]]);
+        m.tris.push([base + q[0], base + q[2], base + q[3]]);
+        m.slots.extend([0, 0]);
+    }
+}
+
+/// Synthetic standing figure, +Z up: two feet boxes (10 x 26 x 6 cm) at x = -0.12 and +0.12,
+/// thin legs, and a torso box. The whole figure is raised by `lift`. A tiny speck on the z = 0
+/// plane, 1 m to the right, keeps the ground plane at z = 0 (the plane sits at the lowest vertex)
+/// and is far outside the contact reach of the feet, so a lifted figure really hovers.
+fn standing_figure(lift: f32) -> M {
+    let mut m = M {
+        pos: Vec::new(),
+        tris: Vec::new(),
+        slots: Vec::new(),
+    };
+    for fx in [-0.12f32, 0.12] {
+        add_box(
+            &mut m,
+            [fx - 0.05, -0.13, lift],
+            [fx + 0.05, 0.13, lift + 0.06],
+        );
+        add_box(
+            &mut m,
+            [fx - 0.04, -0.05, lift + 0.06],
+            [fx + 0.04, 0.05, lift + 0.9],
+        );
+    }
+    add_box(&mut m, [-0.25, -0.10, lift + 0.9], [0.25, 0.10, lift + 1.7]);
+    let b = m.pos.len() as u32;
+    m.pos
+        .extend([[1.0, 0.0, 0.0], [1.02, 0.0, 0.0], [1.0, 0.02, 0.0]]);
+    m.tris.push([b, b + 1, b + 2]);
+    m.slots.push(0);
+    m
+}
+
+fn no_cast_rig() -> [PreviewLight; 3] {
+    let mut r = PreviewLight::default_rig();
+    for l in &mut r {
+        l.casts_shadow = false;
+    }
+    r
+}
+
+const CW: u32 = 640;
+const CH: u32 = 360;
+
+fn contact_opts(contact_shadow: bool) -> PreviewOptions {
+    PreviewOptions {
+        width: CW,
+        height: CH,
+        ssaa: 2,
+        ground: true,
+        shadow: true,
+        contact_shadow,
+    }
+}
+
+/// Camera from the front at 55 degrees elevation, framed on the grounded figure.
+fn contact_camera() -> PreviewCamera {
+    let g = standing_figure(0.0);
+    gibson::figure::preview::frame_bounds_view(
+        bounds_of(&[g.view()]).unwrap(),
+        CW as f32 / CH as f32,
+        0.7,
+        0.0,
+        55.0,
+    )
+}
+
+/// Mean luminance of the 3 x 3 pixel patch around world point `p`.
+fn patch_lum(img: &PreviewImage, cam: &PreviewCamera, p: [f32; 3]) -> f32 {
+    let (sx, sy) = cam.project(p, CW, CH).expect("on screen");
+    let (cx, cy) = (sx.round() as i64, sy.round() as i64);
+    let mut s = 0.0;
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            let (x, y) = ((cx + dx) as u32, (cy + dy) as u32);
+            assert!(x < CW && y < CH, "patch off screen at {p:?}");
+            s += lum(img.pixel(x, y));
+        }
+    }
+    s / 9.0
+}
+
+/// Ground point `d` metres in front of (towards the camera from) the front edge of the foot at
+/// x = `fx`.
+fn front_of_foot(fx: f32, d: f32) -> [f32; 3] {
+    [fx, -0.13 - d, 0.0]
+}
+
+#[test]
+fn contact_shadow_darkens_ground_beside_each_foot() {
+    let fig = standing_figure(0.0);
+    let cam = contact_camera();
+    let rig = no_cast_rig();
+    let on = render_preview(&[fig.view()], &mats(), &cam, &rig, contact_opts(true));
+    let off = render_preview(&[fig.view()], &mats(), &cam, &rig, contact_opts(false));
+    // Open ground, well away from the feet and the speck.
+    let open_on = patch_lum(&on, &cam, [0.55, 0.0, 0.0]);
+    let open_off = patch_lum(&off, &cam, [0.55, 0.0, 0.0]);
+    assert!(
+        (open_on - open_off).abs() < 0.5,
+        "open ground is untouched: {open_on} vs {open_off}"
+    );
+    for fx in [-0.12f32, 0.12] {
+        let near = patch_lum(&on, &cam, front_of_foot(fx, 0.02));
+        let near_off = patch_lum(&off, &cam, front_of_foot(fx, 0.02));
+        // Stated margin: next to a foot the ground is at least 8 luminance levels darker than
+        // open ground, and at least 8 darker than the same pixels without the term.
+        assert!(
+            near < open_on - 8.0,
+            "foot x={fx}: near {near} vs open {open_on}"
+        );
+        assert!(
+            near < near_off - 8.0,
+            "foot x={fx}: contact on {near} vs off {near_off}"
+        );
+    }
+    // The sides of a foot darken too (outer side of the left foot).
+    let side_on = patch_lum(&on, &cam, [-0.17 - 0.02, 0.0, 0.0]);
+    let side_off = patch_lum(&off, &cam, [-0.17 - 0.02, 0.0, 0.0]);
+    assert!(side_on < side_off - 8.0, "side {side_on} vs {side_off}");
+}
+
+#[test]
+fn contact_darkening_falls_off_with_distance() {
+    let fig = standing_figure(0.0);
+    let cam = contact_camera();
+    let rig = no_cast_rig();
+    let on = render_preview(&[fig.view()], &mats(), &cam, &rig, contact_opts(true));
+    let off = render_preview(&[fig.view()], &mats(), &cam, &rig, contact_opts(false));
+    for fx in [-0.12f32, 0.12] {
+        // Three radii out from the foot's front edge: 2, 6 and 10 cm.
+        let drop: Vec<f32> = [0.02f32, 0.06, 0.10]
+            .iter()
+            .map(|&d| {
+                let p = front_of_foot(fx, d);
+                patch_lum(&off, &cam, p) - patch_lum(&on, &cam, p)
+            })
+            .collect();
+        assert!(
+            drop[0] >= 8.0 && drop[1] >= 3.0 && drop[2] >= 0.3,
+            "foot x={fx}: still darkened at every radius: {drop:?}"
+        );
+        assert!(
+            drop[0] > drop[1] + 1.0 && drop[1] > drop[2] + 1.0,
+            "foot x={fx}: strictly monotone falloff over 3 radii: {drop:?}"
+        );
+    }
+}
+
+#[test]
+fn a_lifted_figure_has_no_contact_darkening() {
+    // Control: the same figure raised 0.2 m (well above the contact band) over the same ground
+    // plane; the render with the term on is identical, pixel for pixel, around the feet.
+    let fig = standing_figure(0.2);
+    let cam = contact_camera();
+    let rig = no_cast_rig();
+    let on = render_preview(&[fig.view()], &mats(), &cam, &rig, contact_opts(true));
+    let off = render_preview(&[fig.view()], &mats(), &cam, &rig, contact_opts(false));
+    for fx in [-0.12f32, 0.12] {
+        for d in [0.0f32, 0.02, 0.06, 0.10] {
+            let p = front_of_foot(fx, d);
+            let (a, b) = (patch_lum(&on, &cam, p), patch_lum(&off, &cam, p));
+            assert!(
+                (a - b).abs() < 0.5,
+                "hovering foot x={fx} d={d}: {a} vs {b}"
+            );
+        }
+    }
+    // Non-vacuous: the grounded figure under the identical camera and options does darken there.
+    let g = standing_figure(0.0);
+    let gon = render_preview(&[g.view()], &mats(), &cam, &rig, contact_opts(true));
+    let goff = render_preview(&[g.view()], &mats(), &cam, &rig, contact_opts(false));
+    let p = front_of_foot(-0.12, 0.02);
+    assert!(patch_lum(&goff, &cam, p) - patch_lum(&gon, &cam, p) > 8.0);
+}
+
+#[test]
+fn contact_shadow_is_deterministic_and_never_brightens() {
+    let fig = standing_figure(0.0);
+    let cam = contact_camera();
+    let rig = PreviewLight::default_rig();
+    let a = render_preview(&[fig.view()], &mats(), &cam, &rig, contact_opts(true));
+    let b = render_preview(&[fig.view()], &mats(), &cam, &rig, contact_opts(true));
+    assert_eq!(a, b, "byte-identical");
+    let off = render_preview(&[fig.view()], &mats(), &cam, &rig, contact_opts(false));
+    // With the real key light casting a shadow too: every channel is <= the render without the
+    // term (the term only darkens), and a substantial set of pixels is strictly darker.
+    assert!(a.rgb8.iter().zip(&off.rgb8).all(|(x, y)| x <= y));
+    let darker = a
+        .rgb8
+        .chunks(3)
+        .zip(off.rgb8.chunks(3))
+        .filter(|(x, y)| x != y)
+        .count();
+    assert!(darker > 300, "contact term changed {darker} pixels");
+}
+
+#[test]
+fn the_shadow_of_a_vertex_on_the_ground_lands_at_its_screen_position() {
+    // A pole standing on the ground; the key light is low and from -X, so the shadow falls to
+    // +X. The root of the shadow must touch the pole's base on screen (the shadow of a vertex at
+    // ground height is the vertex itself), and the far end must be where the projection says.
+    let pole = cylinder(24, 0.06, 1.0, 8);
+    let bounds = ([-0.5, -0.5, 0.0], [1.8, 0.5, 1.0]);
+    let cam = frame_bounds(bounds, CW as f32 / CH as f32, 0.8);
+    let l = shadow_lights();
+    let on = render_preview(
+        &[pole.view()],
+        &mats(),
+        &cam,
+        &l,
+        PreviewOptions {
+            contact_shadow: false,
+            ..contact_opts(false)
+        },
+    );
+    let off = render_preview(
+        &[pole.view()],
+        &mats(),
+        &cam,
+        &l,
+        PreviewOptions {
+            shadow: false,
+            contact_shadow: false,
+            ..contact_opts(false)
+        },
+    );
+    // Just right of the pole's base (5 cm clear of its 6 cm radius): inside the shadow.
+    let root = patch_lum(&off, &cam, [0.11, 0.0, 0.0]) - patch_lum(&on, &cam, [0.11, 0.0, 0.0]);
+    assert!(
+        root >= 10.0,
+        "shadow root is attached to the base: drop {root}"
+    );
+    // Away from the shadow side: no shadow.
+    let away = patch_lum(&off, &cam, [-0.25, 0.0, 0.0]) - patch_lum(&on, &cam, [-0.25, 0.0, 0.0]);
+    assert!(away.abs() <= 2.0, "no shadow on the lit side: drop {away}");
+    // The shadow region (pixels darker by >= 10 levels) ends where the top of the pole projects:
+    // ground x = 1.333 for a 1 m pole at -0.8/0.6 slope; allow 0.25 m for the soft blur.
+    let mut right = 0u32;
+    for y in 0..CH {
+        for x in 0..CW {
+            if lum(off.pixel(x, y)) - lum(on.pixel(x, y)) >= 10.0 {
+                right = right.max(x);
+            }
+        }
+    }
+    let lo = cam.project([1.2, 0.0, 0.0], CW, CH).unwrap().0;
+    let hi = cam.project([1.333 + 0.25, 0.0, 0.0], CW, CH).unwrap().0;
+    assert!(
+        (right as f32) >= lo && (right as f32) <= hi,
+        "shadow ends at x={right}, expected within [{lo}, {hi}]"
+    );
 }

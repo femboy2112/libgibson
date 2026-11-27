@@ -4,7 +4,10 @@
 //! perspective-correct attributes, smooth (area-weighted when not supplied) normals, Blinn-Phong
 //! key/fill/rim lights evaluated in linear light with an sRGB encode, optional 2x2 SSAA, a
 //! background gradient, and a ground plane at the lowest point of the subject along the camera
-//! `up` axis carrying a planar-projected soft shadow of the first shadow-casting light.
+//! `up` axis carrying a planar-projected soft shadow of the first shadow-casting light, a sharper
+//! shadow layer for geometry within a few centimetres of the ground (so the shadow root meets
+//! the feet), and a contact-shadow (ground ambient occlusion) term from the subject's height
+//! above the ground.
 //!
 //! World convention: `camera.up` is the world up axis (the helpers [`frame_bounds`] and
 //! [`frame_bounds_view`] assume +Z up and put the camera on the -Y side, so +X is screen right at
@@ -21,6 +24,13 @@ type V3 = [f32; 3];
 const NEAR: f32 = 1.0e-3;
 const SHADOW_N: usize = 512;
 const SHADOW_STRENGTH: f32 = 0.85;
+/// Contact shadow: grid resolution, darkening strength and occupancy gain; the height band and
+/// the reach are fractions of the subject radius (scale invariant).
+const CONTACT_N: usize = 256;
+const CONTACT_STRENGTH: f32 = 0.75;
+const CONTACT_GAIN: f32 = 2.0;
+const CONTACT_BAND: f32 = 0.06;
+const CONTACT_REACH: f32 = 0.15;
 const AMB_SKY: V3 = [0.22, 0.25, 0.30];
 const AMB_GROUND: V3 = [0.10, 0.09, 0.08];
 const BG_TOP: V3 = [0.10, 0.12, 0.16];
@@ -117,12 +127,13 @@ pub struct PreviewLight {
 }
 
 impl PreviewLight {
-    /// Key (front-left-high, casts the shadow), fill and rim for a +Z-up world seen from the -Y
-    /// side.
+    /// Key (front-left-high, about 56 degrees of elevation so a standing subject's shadow is
+    /// about 0.7 of its height long and stays attached to the feet; casts the shadow), fill and
+    /// rim for a +Z-up world seen from the -Y side.
     pub fn default_rig() -> [PreviewLight; 3] {
         [
             PreviewLight {
-                direction_to_light: [-0.5, -0.6, 0.7],
+                direction_to_light: [-0.4, -0.5, 0.95],
                 color_linear: [1.0, 0.96, 0.90],
                 casts_shadow: true,
             },
@@ -329,6 +340,9 @@ pub fn frame_bounds_view(
 }
 
 /// Render options. `ssaa` is clamped to 1 or 2 (2x2 supersampling); sizes clamp to 1..=8192.
+/// `contact_shadow` (default true) darkens the ground by a smooth falloff of the subject's height
+/// above it and hardens the cast shadow right at the ground contact; it needs `ground`. Build
+/// with `..PreviewOptions::default()` so later fields do not break callers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PreviewOptions {
     pub width: u32,
@@ -336,6 +350,7 @@ pub struct PreviewOptions {
     pub ssaa: u8,
     pub ground: bool,
     pub shadow: bool,
+    pub contact_shadow: bool,
 }
 
 impl Default for PreviewOptions {
@@ -346,8 +361,31 @@ impl Default for PreviewOptions {
             ssaa: 2,
             ground: true,
             shadow: true,
+            contact_shadow: true,
         }
     }
+}
+
+/// Whether the contact-shadow term runs. MUTANT (`figure_mutant = "no_contact_shadow"`): never.
+#[cfg(not(figure_mutant = "no_contact_shadow"))]
+fn contact_enabled(requested: bool) -> bool {
+    requested
+}
+#[cfg(figure_mutant = "no_contact_shadow")]
+fn contact_enabled(_requested: bool) -> bool {
+    false
+}
+
+/// Height (in subject radii) added to the ground plane the shadow is projected onto. Zero.
+/// MUTANT (`figure_mutant = "shadow_detached"`): 0.6, so the shadow of a vertex resting on the
+/// ground lands far from it.
+#[cfg(not(figure_mutant = "shadow_detached"))]
+fn shadow_plane_bias(_radius: f32) -> f32 {
+    0.0
+}
+#[cfg(figure_mutant = "shadow_detached")]
+fn shadow_plane_bias(radius: f32) -> f32 {
+    0.6 * radius
 }
 
 /// Packed 8-bit sRGB image, row-major, top row first, 3 bytes per pixel.
@@ -619,6 +657,8 @@ struct Ground {
     radius: f32,
     half: f32,
     shadow: Vec<f32>,
+    chalf: f32,
+    contact: Vec<f32>,
 }
 
 fn shadow_mark(cov: &mut [f32], x: f32, y: f32) {
@@ -630,8 +670,7 @@ fn shadow_mark(cov: &mut [f32], x: f32, y: f32) {
     }
 }
 
-fn box_blur(src: &[f32], r: usize, horizontal: bool) -> Vec<f32> {
-    let n = SHADOW_N;
+fn box_blur(src: &[f32], n: usize, r: usize, horizontal: bool) -> Vec<f32> {
     let mut out = vec![0.0f32; n * n];
     let norm = 1.0 / (2 * r + 1) as f32;
     for y in 0..n {
@@ -654,16 +693,37 @@ fn box_blur(src: &[f32], r: usize, horizontal: bool) -> Vec<f32> {
     out
 }
 
-fn build_shadow(flat: &Flat, g: &Ground, l: V3) -> Vec<f32> {
+/// Marks the cells a projected triangle covers: centres inside it, plus vertices, edge midpoints
+/// and the centroid (sub-cell triangles can miss every cell centre).
+fn splat_tri(cov: &mut [f32], a: [f32; 2], b: [f32; 2], c: [f32; 2]) {
+    let n = SHADOW_N;
+    raster_tri(a, b, c, n, n, |x, y, _, _, _| cov[y * n + x] = 1.0);
+    for (p, q) in [(a, b), (b, c), (c, a)] {
+        shadow_mark(cov, p[0], p[1]);
+        shadow_mark(cov, 0.5 * (p[0] + q[0]), 0.5 * (p[1] + q[1]));
+    }
+    shadow_mark(cov, (a[0] + b[0] + c[0]) / 3.0, (a[1] + b[1] + c[1]) / 3.0);
+}
+
+/// Planar shadow coverage. `band > 0` also builds a lightly blurred layer from triangles whose
+/// every vertex is within `band` of the ground and takes the max with the soft layer, so the
+/// shadow root stays dense at the contact instead of being diluted by the wide blur.
+fn build_shadow(flat: &Flat, g: &Ground, l: V3, band: f32) -> Vec<f32> {
     let n = SHADOW_N;
     let nf = n as f32;
     let ldu = dot(l, g.up);
+    let bias = shadow_plane_bias(g.radius);
     let mut cov = vec![0.0f32; n * n];
+    let mut low = if band > 0.0 {
+        vec![0.0f32; n * n]
+    } else {
+        Vec::new()
+    };
     let proj = |p: V3| -> Option<[f32; 2]> {
         if !finite3(p) {
             return None;
         }
-        let k = (dot(p, g.up) - g.h) / ldu;
+        let k = (dot(p, g.up) - g.h + bias) / ldu;
         let q = sub(p, mul(l, k));
         let a = dot(q, g.e1) - g.ca;
         let b = dot(q, g.e2) - g.cb;
@@ -682,36 +742,131 @@ fn build_shadow(flat: &Flat, g: &Ground, l: V3) -> Vec<f32> {
         else {
             continue;
         };
-        raster_tri(a, b, c, n, n, |x, y, _, _, _| cov[y * n + x] = 1.0);
-        // Sub-cell triangles can miss every cell centre: also mark vertices, midpoints, centroid.
-        for (p, q) in [(a, b), (b, c), (c, a)] {
-            shadow_mark(&mut cov, p[0], p[1]);
-            shadow_mark(&mut cov, 0.5 * (p[0] + q[0]), 0.5 * (p[1] + q[1]));
+        splat_tri(&mut cov, a, b, c);
+        if !low.is_empty()
+            && t.iter()
+                .all(|&i| dot(flat.pos[i as usize], g.up) - g.h < band)
+        {
+            splat_tri(&mut low, a, b, c);
         }
-        shadow_mark(
-            &mut cov,
-            (a[0] + b[0] + c[0]) / 3.0,
-            (a[1] + b[1] + c[1]) / 3.0,
-        );
     }
     for _ in 0..2 {
-        cov = box_blur(&cov, 4, true);
-        cov = box_blur(&cov, 4, false);
+        cov = box_blur(&cov, n, 4, true);
+        cov = box_blur(&cov, n, 4, false);
     }
     for v in &mut cov {
         *v = (*v * 1.4).min(1.0);
     }
+    if !low.is_empty() {
+        low = box_blur(&low, n, 1, true);
+        low = box_blur(&low, n, 1, false);
+        for (c, l) in cov.iter_mut().zip(low) {
+            *c = c.max(l);
+        }
+    }
     cov
+}
+
+fn min_mark(minh: &mut [f32], x: f32, y: f32, h: f32) {
+    if x >= 0.0 && y >= 0.0 {
+        let (ix, iy) = (x as usize, y as usize);
+        if ix < CONTACT_N && iy < CONTACT_N {
+            let c = &mut minh[iy * CONTACT_N + ix];
+            if h < *c {
+                *c = h;
+            }
+        }
+    }
+}
+
+/// Contact occlusion over the ground: a coarse grid of the subject's minimum height above the
+/// ground (orthographic along `up`, so exact for the plane), turned into an occupancy that is 1
+/// at the ground and falls smoothly to 0 at `band` above it, blurred by a smooth kernel of
+/// support about `reach`, and scaled by `CONTACT_GAIN`. Zero where nothing is within the band.
+fn build_contact(flat: &Flat, g: &Ground, band: f32, reach: f32) -> Vec<f32> {
+    let n = CONTACT_N;
+    let nf = n as f32;
+    let half = g.chalf;
+    let s = nf / (2.0 * half);
+    let proj = |p: V3| -> Option<([f32; 2], f32)> {
+        if !finite3(p) {
+            return None;
+        }
+        let a = dot(p, g.e1) - g.ca;
+        let b = dot(p, g.e2) - g.cb;
+        let h = (dot(p, g.up) - g.h).max(0.0);
+        let (gx, gy) = ((a + half) * s, (b + half) * s);
+        if gx.is_finite() && gy.is_finite() && h.is_finite() {
+            Some(([gx, gy], h))
+        } else {
+            None
+        }
+    };
+    let pts: Vec<Option<([f32; 2], f32)>> = flat.pos.iter().map(|&p| proj(p)).collect();
+    let mut minh = vec![f32::INFINITY; n * n];
+    for t in &flat.tris {
+        let (Some((a, ha)), Some((b, hb)), Some((c, hc))) =
+            (pts[t[0] as usize], pts[t[1] as usize], pts[t[2] as usize])
+        else {
+            continue;
+        };
+        raster_tri(a, b, c, n, n, |x, y, b0, b1, b2| {
+            let h = b0 * ha + b1 * hb + b2 * hc;
+            let cell = &mut minh[y * n + x];
+            if h < *cell {
+                *cell = h;
+            }
+        });
+        for (p, hp, q, hq) in [(a, ha, b, hb), (b, hb, c, hc), (c, hc, a, ha)] {
+            min_mark(&mut minh, p[0], p[1], hp);
+            min_mark(
+                &mut minh,
+                0.5 * (p[0] + q[0]),
+                0.5 * (p[1] + q[1]),
+                0.5 * (hp + hq),
+            );
+        }
+        min_mark(
+            &mut minh,
+            (a[0] + b[0] + c[0]) / 3.0,
+            (a[1] + b[1] + c[1]) / 3.0,
+            (ha + hb + hc) / 3.0,
+        );
+    }
+    let mut occ: Vec<f32> = minh
+        .iter()
+        .map(|&h| {
+            if h.is_finite() {
+                1.0 - smoothstep(0.0, band, h)
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    let cell = 2.0 * half / nf;
+    let r = ((reach / (3.0 * cell)).round() as usize).clamp(1, 32);
+    for _ in 0..3 {
+        occ = box_blur(&occ, n, r, true);
+        occ = box_blur(&occ, n, r, false);
+    }
+    for v in &mut occ {
+        *v = (*v * CONTACT_GAIN).min(1.0);
+    }
+    occ
 }
 
 fn shadow_at(g: &Ground, a: f32, b: f32) -> f32 {
     if g.shadow.is_empty() {
         return 0.0;
     }
-    let n = SHADOW_N;
-    let s = n as f32 / (2.0 * g.half);
-    let gx = (a + g.half) * s - 0.5;
-    let gy = (b + g.half) * s - 0.5;
+    sample_grid(&g.shadow, SHADOW_N, g.half, a, b)
+}
+
+/// Bilinear sample of an `n` x `n` grid covering `[-half, half]` in ground coordinates; 0 outside.
+fn sample_grid(grid: &[f32], n: usize, half: f32, a: f32, b: f32) -> f32 {
+    let s = n as f32 / (2.0 * half);
+    let gx = (a + half) * s - 0.5;
+    let gy = (b + half) * s - 0.5;
     let range = -1.0..=n as f32;
     if !(gx.is_finite() && gy.is_finite()) || !range.contains(&gx) || !range.contains(&gy) {
         return 0.0;
@@ -723,7 +878,7 @@ fn shadow_at(g: &Ground, a: f32, b: f32) -> f32 {
         if !r.contains(&ix) || !r.contains(&iy) {
             0.0
         } else {
-            g.shadow[iy as usize * n + ix as usize]
+            grid[iy as usize * n + ix as usize]
         }
     };
     let top = at(fx, fy) * (1.0 - tx) + at(fx + 1.0, fy) * tx;
@@ -842,13 +997,20 @@ fn render_inner(
                 radius,
                 half: 4.0 * radius,
                 shadow: Vec::new(),
+                chalf: radius * (1.0 + CONTACT_REACH),
+                contact: Vec::new(),
             };
+            let contact = contact_enabled(opts.contact_shadow);
             if opts.shadow {
                 if let Some(l) = lights.iter().find(|l| l.casts) {
                     if dot(l.dir, up) > 0.05 {
-                        g.shadow = build_shadow(&flat, &g, l.dir);
+                        let band = if contact { CONTACT_BAND * radius } else { 0.0 };
+                        g.shadow = build_shadow(&flat, &g, l.dir, band);
                     }
                 }
+            }
+            if contact {
+                g.contact = build_contact(&flat, &g, CONTACT_BAND * radius, CONTACT_REACH * radius);
             }
             if h.is_finite() && dot(bas.eye, up) - h > 1.0e-6 {
                 ground = Some(g);
@@ -903,8 +1065,12 @@ fn render_inner(
                         let fade = smoothstep(2.0 * g.radius, g.half, dist);
                         if fade < 1.0 {
                             let s = shadow_at(g, a, b);
-                            let gc =
+                            let mut gc =
                                 shade_surface(p, g.up, bas.eye, &GROUND_MATERIAL, &lights, g.up, s);
+                            if !g.contact.is_empty() {
+                                let ao = sample_grid(&g.contact, CONTACT_N, g.chalf, a, b);
+                                gc = mul(gc, 1.0 - CONTACT_STRENGTH * ao);
+                            }
                             col = lerp3(gc, bg, fade);
                         }
                     }
