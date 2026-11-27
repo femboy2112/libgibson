@@ -1,0 +1,49 @@
+{
+  "id": "smoke",
+  "mandate": "adapter smoke lease: 1 still + 12 frames, one camera cut",
+  "still_res": [
+    1920,
+    1080
+  ],
+  "stills": [
+    {
+      "name": "front",
+      "camera": {
+        "kind": "front"
+      },
+      "tape_frame": 0
+    }
+  ],
+  "clips": [
+    {
+      "name": "smoke",
+      "res": [
+        1280,
+        720
+      ],
+      "tape_start": 0,
+      "frames": 12,
+      "min_cuts": 1,
+      "use_tape_camera_cuts": false,
+      "default_camera": "main",
+      "cameras": {
+        "main": {
+          "kind": "front"
+        },
+        "alt": {
+          "kind": "three_quarter"
+        }
+      },
+      "cuts": [
+        {
+          "frame": 0,
+          "camera": "main"
+        },
+        {
+          "frame": 6,
+          "camera": "alt"
+        }
+      ]
+    }
+  ]
+}

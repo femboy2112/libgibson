@@ -1,0 +1,96 @@
+{
+  "id": "ex3_transformation",
+  "mandate": "Ex3 transformation: matched cameras for at least two presets (mandate section 8)",
+  "matched_presets": [
+    "generic_neutral",
+    "generic_exaggerated_feminine"
+  ],
+  "matched_styles": [
+    "restrained",
+    "expressive"
+  ],
+  "note": "Every camera is FIXED (centre + frame height in metres, no per-body fit) so the same shots file renders identically framed images for each preset: run the adapter once per preset/outfit/style with the same --shots and compare the PNGs side by side.",
+  "still_res": [
+    1920,
+    1080
+  ],
+  "stills": [
+    {
+      "name": "front",
+      "camera": {
+        "kind": "front",
+        "frame": {
+          "mode": "fixed",
+          "center": [
+            0.0,
+            0.0,
+            0.9
+          ],
+          "height_m": 1.8
+        },
+        "fill": 0.8
+      },
+      "tape_frame": 0
+    },
+    {
+      "name": "three_quarter",
+      "camera": {
+        "kind": "three_quarter",
+        "frame": {
+          "mode": "fixed",
+          "center": [
+            0.0,
+            0.0,
+            0.9
+          ],
+          "height_m": 1.8
+        },
+        "fill": 0.8
+      },
+      "tape_frame": 0
+    },
+    {
+      "name": "side",
+      "camera": {
+        "kind": "side",
+        "frame": {
+          "mode": "fixed",
+          "center": [
+            0.0,
+            0.0,
+            0.9
+          ],
+          "height_m": 1.8
+        },
+        "fill": 0.8
+      },
+      "tape_frame": 0
+    }
+  ],
+  "clips": [
+    {
+      "name": "matched_motion",
+      "res": [
+        1280,
+        720
+      ],
+      "fps": 30,
+      "tape_start": 0,
+      "frames": 120,
+      "use_tape_camera_cuts": false,
+      "camera": {
+        "kind": "three_quarter",
+        "frame": {
+          "mode": "fixed",
+          "center": [
+            0.0,
+            0.0,
+            0.9
+          ],
+          "height_m": 1.8
+        },
+        "fill": 0.8
+      }
+    }
+  ]
+}

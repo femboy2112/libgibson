@@ -1,0 +1,4 @@
+STEP licence_audit rc=0 proc_rc=0 seconds=1 max_rss_kb=34056
+STEP export_mpfb rc=0 proc_rc=0 seconds=22 max_rss_kb=421740
+STEP render_probe rc=0 proc_rc=0 seconds=173 max_rss_kb=1960596
+STEP licence_check rc=0 (informational unless LEASE_STRICT_LICENCE=1) LICENCE_CHECK ok=46 bad=0

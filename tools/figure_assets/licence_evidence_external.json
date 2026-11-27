@@ -1,0 +1,204 @@
+{
+  "format": "figure-licence-external-evidence/1",
+  "note": "Coordinator-supplied evidence for files with no on-disk licence statement. Each entry: id (a row id from LICENCE_MANIFEST, e.g. 'rig_game_engine', 'target:legs/measure-thigh-circ', 'macro_targets', 'vertex_groups', 'macro_json'), url (the page actually read), quote (the exact text that shows CC0 for that file or its whole directory), retrieved (date and who). The audit accepts an entry only if url is non-empty and quote contains CC0. Never put an unread or paraphrased quote here.",
+  "entries": [
+    {
+      "id": "vertex_groups",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "macro_json",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "macro_targets",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "rig_game_engine",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "rig_default_no_toes",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:legs/upperlegs-height-decr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:legs/lowerlegs-height-decr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:legs/upperlegs-height-incr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:legs/lowerlegs-height-incr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:torso/torso-scale-vert-decr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:torso/torso-scale-vert-incr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:torso/measure-shoulder-dist-decr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:torso/measure-shoulder-dist-incr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:torso/measure-underbust-circ-decr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:torso/measure-underbust-circ-incr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:breast/breast-point-decr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:breast/breast-point-incr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:torso/measure-bust-circ-decr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:torso/measure-bust-circ-incr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:torso/measure-waist-circ-decr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:torso/measure-waist-circ-incr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:hip/hip-scale-horiz-decr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:hip/hip-scale-horiz-incr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:buttocks/buttocks-volume-decr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:buttocks/buttocks-volume-incr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:legs/measure-thigh-circ-decr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:legs/measure-thigh-circ-incr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:chin/chin-width-decr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:chin/chin-width-incr",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:torso/torso-trans-backward",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:neck/neck-trans-backward",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:torso/torso-trans-forward",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    },
+    {
+      "id": "target:neck/neck-trans-forward",
+      "url": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.md",
+      "quote": "MPFB LICENSE.md, section listing the assets (\"The base mesh and proxies\", \"Targets and modifiers\", \"Textures\", \"Clothes (any MHCLO-based asset)\", \"Rigs, poses and expressions\", \"JSON data with mesh information\"): \"These assets have been released under CC0 1.0 Universal.\" Full CC0 1.0 legal text: https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/LICENSE.ASSETS.md",
+      "retrieved": "2026-11-27, LibGibson session (web fetch of the MPFB repository licence files)"
+    }
+  ]
+}

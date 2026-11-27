@@ -1,0 +1,43 @@
+{
+  "format": "figure-asset-list/1",
+  "note": "Every third-party file the export may read. root 'mpfb' = the MPFB extension data dir (env MPFB_DATA); root 'user' = the MakeHuman system asset pack data dir inside MPFB user data (env MPFB_USER_DATA). The control target rows are generated from controls.json by licence_audit.py. 'glob' rows are aggregated (one row, per-file evidence required for all files).",
+  "source_urls": {
+    "mpfb": "https://extensions.blender.org/add-ons/mpfb/",
+    "mpfb_site": "http://static.makehumancommunity.org/mpfb.html",
+    "pack": "https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html"
+  },
+  "files": [
+    {"id": "base_mesh", "role": "neutral base mesh (obj: topology, UV, rest positions)", "root": "mpfb", "path": "3dobjs/base.obj", "source": "mpfb"},
+    {"id": "vertex_groups", "role": "joint/helper vertex group definitions (landmark sets)", "root": "mpfb", "path": "mesh_metadata/basemesh_vertex_groups.json", "source": "mpfb"},
+    {"id": "macro_json", "role": "macro-detail configuration", "root": "mpfb", "path": "targets/macrodetails/macro.json", "source": "mpfb"},
+    {"id": "macro_targets", "role": "macro-detail targets (gender/age/muscle/weight/height/proportions/cup/firmness blends)", "root": "mpfb", "glob": "targets/macrodetails/**/*.target.gz", "source": "mpfb"},
+    {"id": "rig_game_engine", "role": "rig definition, 53 bones, 5 fingers per hand (default choice)", "root": "mpfb", "path": "rigs/standard/rig.game_engine.json", "source": "mpfb"},
+    {"id": "weights_game_engine", "role": "skin weights for rig_game_engine", "root": "mpfb", "path": "rigs/standard/weights.game_engine.json", "source": "mpfb"},
+    {"id": "rig_default_no_toes", "role": "rig definition, 137 bones with face/eye/jaw bones (selectable alternative)", "root": "mpfb", "path": "rigs/standard/rig.default_no_toes.json", "source": "mpfb"},
+    {"id": "weights_default", "role": "skin weights used for rig_default_no_toes (fallback to weights.default)", "root": "mpfb", "path": "rigs/standard/weights.default.json", "source": "mpfb"},
+    {"id": "garment_casualsuit_mhclo", "role": "fitted garment binding (female_casualsuit01)", "root": "user", "path": "clothes/female_casualsuit01/female_casualsuit01.mhclo", "source": "pack", "pack_key": "female_casualsuit01"},
+    {"id": "garment_casualsuit_obj", "role": "fitted garment mesh (female_casualsuit01)", "root": "user", "path": "clothes/female_casualsuit01/female_casualsuit01.obj", "source": "pack", "pack_key": "female_casualsuit01"},
+    {"id": "hair_bob01_mhclo", "role": "hair binding (bob01)", "root": "user", "path": "hair/bob01/bob01.mhclo", "source": "pack", "pack_key": "bob01"},
+    {"id": "hair_bob01_obj", "role": "hair mesh (bob01)", "root": "user", "path": "hair/bob01/bob01.obj", "source": "pack", "pack_key": "bob01"},
+    {"id": "hair_ponytail01_mhclo", "role": "hair binding (ponytail01)", "root": "user", "path": "hair/ponytail01/ponytail01.mhclo", "source": "pack", "pack_key": "ponytail01"},
+    {"id": "hair_ponytail01_obj", "role": "hair mesh (ponytail01)", "root": "user", "path": "hair/ponytail01/ponytail01.obj", "source": "pack", "pack_key": "ponytail01"},
+    {"id": "hair_long01_mhclo", "role": "hair binding (long01)", "root": "user", "path": "hair/long01/long01.mhclo", "source": "pack", "pack_key": "long01"},
+    {"id": "hair_long01_obj", "role": "hair mesh (long01)", "root": "user", "path": "hair/long01/long01.obj", "source": "pack", "pack_key": "long01"},
+    {"id": "eyes_lowpoly_mhclo", "role": "eye mesh binding (low-poly)", "root": "user", "path": "eyes/low-poly/low-poly.mhclo", "source": "pack", "pack_key": "low-poly"},
+    {"id": "eyes_lowpoly_obj", "role": "eye mesh (low-poly)", "root": "user", "path": "eyes/low-poly/low-poly.obj", "source": "pack", "pack_key": "low-poly"},
+    {"id": "eyebrow001_mhclo", "role": "eyebrow binding (eyebrow001)", "root": "user", "path": "eyebrows/eyebrow001/eyebrow001.mhclo", "source": "pack", "pack_key": "eyebrow001"},
+    {"id": "eyebrow001_obj", "role": "eyebrow mesh (eyebrow001)", "root": "user", "path": "eyebrows/eyebrow001/eyebrow001.obj", "source": "pack", "pack_key": "eyebrow001"},
+    {"id": "eyelashes01_mhclo", "role": "eyelash binding (eyelashes01)", "root": "user", "path": "eyelashes/eyelashes01/eyelashes01.mhclo", "source": "pack", "pack_key": "eyelashes01"},
+    {"id": "eyelashes01_obj", "role": "eyelash mesh (eyelashes01)", "root": "user", "path": "eyelashes/eyelashes01/eyelashes01.obj", "source": "pack", "pack_key": "eyelashes01"},
+    {"id": "teeth_base_mhclo", "role": "teeth binding (teeth_base)", "root": "user", "path": "teeth/teeth_base/teeth_base.mhclo", "source": "pack", "pack_key": "teeth_base"},
+    {"id": "teeth_base_obj", "role": "teeth mesh (teeth_base)", "root": "user", "path": "teeth/teeth_base/teeth_base.obj", "source": "pack", "pack_key": "teeth_base"},
+    {"id": "pack_index", "role": "EVIDENCE ONLY (not shipped): pack-level index with per-asset licence field", "root": "user", "path": "packs/makehuman_system_assets.json", "source": "pack", "evidence_only": true}
+  ],
+  "self_authored": [
+    {"id": "skirt_procedural", "role": "loose skirt (the pack has no skirt/dress); generated by fa_common.make_skirt from the neutral body, own geometry", "licence": "self-authored, repo licence"}
+  ],
+  "not_used": [
+    "all textures (*.png) and material files (*.mhmat, *.thumb) of the pack: the runtime has its own shading; no pack texture is read, hashed or shipped",
+    "skins, tongue, high-poly eyes, other hair/clothes/eyebrow variants"
+  ]
+}

@@ -1,0 +1,186 @@
+{
+  "name": "generic_neutral",
+  "note": "Synthetic generic adult feminine reference body: MakeHuman gender 0.1 (0 = female, 1 = male), every other macro at its mid value, every control at 0. Not an average of anything: a named baseline.",
+  "rig": "game_engine",
+  "macro": {
+    "gender": 0.1,
+    "age": 0.5,
+    "muscle": 0.5,
+    "weight": 0.5,
+    "proportions": 0.5,
+    "height": 0.5,
+    "cupsize": 0.5,
+    "firmness": 0.5,
+    "race": {
+      "asian": 0.333,
+      "caucasian": 0.334,
+      "african": 0.333
+    }
+  },
+  "controls": {
+    "stature": 0.0,
+    "leg_length": 0.0,
+    "torso_length": 0.0,
+    "shoulder_breadth": 0.0,
+    "ribcage": 0.0,
+    "bust_projection": 0.0,
+    "bust_fullness": 0.0,
+    "waist": 0.0,
+    "hip_breadth": 0.0,
+    "glute_projection": 0.0,
+    "thigh_fullness": 0.0,
+    "jaw_width": 0.0,
+    "posture_lean": 0.0
+  },
+  "export_attachments": [
+    "clothes:female_casualsuit01",
+    "hair:long01",
+    "eyes:low-poly",
+    "eyebrows:eyebrow001",
+    "eyelashes:eyelashes01",
+    "teeth:teeth_base"
+  ],
+  "gltf_attachments": [
+    "hair:long01",
+    "eyes:low-poly",
+    "eyebrows:eyebrow001",
+    "eyelashes:eyelashes01"
+  ],
+  "hide_body_under_garment": true,
+  "render": {
+    "skin": {
+      "albedo": [
+        0.68,
+        0.46,
+        0.34
+      ],
+      "roughness": 0.55,
+      "specular": 0.22,
+      "subsurface": 0.15,
+      "subsurface_radius": [
+        1.0,
+        0.35,
+        0.2
+      ],
+      "subsurface_scale": 0.01
+    },
+    "hair": {
+      "id": "long01",
+      "color": [
+        0.1,
+        0.06,
+        0.035
+      ]
+    },
+    "brows": {
+      "color": [
+        0.03,
+        0.018,
+        0.012
+      ]
+    },
+    "eyes": {
+      "id": "low-poly",
+      "iris": [
+        0.2,
+        0.3,
+        0.42
+      ]
+    },
+    "garments": [
+      "female_casualsuit01",
+      "skirt_a_line"
+    ],
+    "bindings": {
+      "garment": "base",
+      "skirt": "panel"
+    },
+    "materials": {
+      "base": {
+        "albedo": [
+          0.1,
+          0.21,
+          0.25
+        ],
+        "roughness": 0.8,
+        "metalness": 0.0
+      },
+      "panel": {
+        "albedo": [
+          0.2,
+          0.21,
+          0.27
+        ],
+        "roughness": 0.85,
+        "metalness": 0.0
+      },
+      "trim": {
+        "albedo": [
+          0.62,
+          0.55,
+          0.4
+        ],
+        "roughness": 0.35,
+        "metalness": 0.9
+      },
+      "ornament": {
+        "albedo": [
+          0.8,
+          0.62,
+          0.3
+        ],
+        "roughness": 0.3,
+        "metalness": 1.0
+      },
+      "gem_emissive": {
+        "albedo": [
+          0.05,
+          0.3,
+          0.3
+        ],
+        "roughness": 0.2,
+        "metalness": 0.0,
+        "emissive": [
+          0.1,
+          0.9,
+          0.8
+        ],
+        "emissive_intensity": 4.0
+      },
+      "mask": {
+        "albedo": [
+          0.85,
+          0.84,
+          0.8
+        ],
+        "roughness": 0.5,
+        "metalness": 0.0
+      },
+      "iris": {
+        "albedo": [
+          0.2,
+          0.3,
+          0.42
+        ],
+        "roughness": 0.12,
+        "metalness": 0.0
+      },
+      "accessory_emissive": {
+        "albedo": [
+          0.2,
+          0.2,
+          0.2
+        ],
+        "roughness": 0.4,
+        "metalness": 0.0,
+        "emissive": [
+          1.0,
+          0.5,
+          0.2
+        ],
+        "emissive_intensity": 3.0
+      }
+    },
+    "note": "Render-only fields. The tape header (materials, garments, fit_status, controls) is authoritative at render time. Hair long01 is a long CC0 pack style (hangs to the waist); the pack hair meshes are alpha-card shells, so without their textures they render as a solid shell: judge by viewing."
+  }
+}

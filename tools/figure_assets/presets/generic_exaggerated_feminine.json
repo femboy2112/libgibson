@@ -1,0 +1,186 @@
+{
+  "name": "generic_exaggerated_feminine",
+  "note": "Synthetic exaggerated feminine body: large bust, hip, glute and thigh with a narrow waist. Control values sit at the +/-1 ends of their domains on purpose; they are never averaged or clamped by the adapter (a tape may carry values beyond +/-1: they are applied as given and reported as ControlOutOfDomain). The exporter itself only accepts [-1,1] in this file.",
+  "rig": "game_engine",
+  "macro": {
+    "gender": 0.0,
+    "age": 0.5,
+    "muscle": 0.4,
+    "weight": 0.55,
+    "proportions": 0.6,
+    "height": 0.5,
+    "cupsize": 0.9,
+    "firmness": 0.6,
+    "race": {
+      "asian": 0.333,
+      "caucasian": 0.334,
+      "african": 0.333
+    }
+  },
+  "controls": {
+    "stature": 0.1,
+    "leg_length": 0.4,
+    "torso_length": -0.2,
+    "shoulder_breadth": -0.5,
+    "ribcage": -0.4,
+    "bust_projection": 1.0,
+    "bust_fullness": 1.0,
+    "waist": -1.0,
+    "hip_breadth": 1.0,
+    "glute_projection": 1.0,
+    "thigh_fullness": 1.0,
+    "jaw_width": -0.4,
+    "posture_lean": 0.0
+  },
+  "export_attachments": [
+    "clothes:female_casualsuit01",
+    "hair:ponytail01",
+    "eyes:low-poly",
+    "eyebrows:eyebrow001",
+    "eyelashes:eyelashes01",
+    "teeth:teeth_base"
+  ],
+  "gltf_attachments": [
+    "hair:ponytail01",
+    "eyes:low-poly",
+    "eyebrows:eyebrow001",
+    "eyelashes:eyelashes01"
+  ],
+  "hide_body_under_garment": true,
+  "render": {
+    "skin": {
+      "albedo": [
+        0.6,
+        0.39,
+        0.29
+      ],
+      "roughness": 0.55,
+      "specular": 0.22,
+      "subsurface": 0.15,
+      "subsurface_radius": [
+        1.0,
+        0.35,
+        0.2
+      ],
+      "subsurface_scale": 0.01
+    },
+    "hair": {
+      "id": "ponytail01",
+      "color": [
+        0.05,
+        0.03,
+        0.025
+      ]
+    },
+    "brows": {
+      "color": [
+        0.03,
+        0.018,
+        0.012
+      ]
+    },
+    "eyes": {
+      "id": "low-poly",
+      "iris": [
+        0.18,
+        0.36,
+        0.22
+      ]
+    },
+    "garments": [
+      "female_casualsuit01",
+      "skirt_a_line"
+    ],
+    "bindings": {
+      "garment": "base",
+      "skirt": "panel"
+    },
+    "materials": {
+      "base": {
+        "albedo": [
+          0.3,
+          0.09,
+          0.13
+        ],
+        "roughness": 0.8,
+        "metalness": 0.0
+      },
+      "panel": {
+        "albedo": [
+          0.14,
+          0.13,
+          0.19
+        ],
+        "roughness": 0.85,
+        "metalness": 0.0
+      },
+      "trim": {
+        "albedo": [
+          0.62,
+          0.55,
+          0.4
+        ],
+        "roughness": 0.35,
+        "metalness": 0.9
+      },
+      "ornament": {
+        "albedo": [
+          0.8,
+          0.62,
+          0.3
+        ],
+        "roughness": 0.3,
+        "metalness": 1.0
+      },
+      "gem_emissive": {
+        "albedo": [
+          0.05,
+          0.3,
+          0.3
+        ],
+        "roughness": 0.2,
+        "metalness": 0.0,
+        "emissive": [
+          0.1,
+          0.9,
+          0.8
+        ],
+        "emissive_intensity": 4.0
+      },
+      "mask": {
+        "albedo": [
+          0.85,
+          0.84,
+          0.8
+        ],
+        "roughness": 0.5,
+        "metalness": 0.0
+      },
+      "iris": {
+        "albedo": [
+          0.18,
+          0.36,
+          0.22
+        ],
+        "roughness": 0.12,
+        "metalness": 0.0
+      },
+      "accessory_emissive": {
+        "albedo": [
+          0.2,
+          0.2,
+          0.2
+        ],
+        "roughness": 0.4,
+        "metalness": 0.0,
+        "emissive": [
+          1.0,
+          0.5,
+          0.2
+        ],
+        "emissive_intensity": 3.0
+      }
+    },
+    "note": "See generic_neutral. Exaggerated body unchanged; hair ponytail01 (pulled back, hangs mid-back)."
+  }
+}

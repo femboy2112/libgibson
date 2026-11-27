@@ -1,0 +1,70 @@
+{
+  "id": "ex2_performance",
+  "mandate": "Ex2 performance: a 15-30 s scene with at least one camera cut (mandate section 8)",
+  "still_res": [
+    1920,
+    1080
+  ],
+  "stills": [
+    {
+      "name": "hero",
+      "camera": {
+        "kind": "three_quarter"
+      },
+      "tape_frame": 0
+    }
+  ],
+  "clips": [
+    {
+      "name": "performance",
+      "res": [
+        1280,
+        720
+      ],
+      "tape_start": 0,
+      "duration_s": [
+        15,
+        30
+      ],
+      "min_cuts": 1,
+      "use_tape_camera_cuts": true,
+      "default_camera": "wide",
+      "cameras": {
+        "wide": {
+          "kind": "front",
+          "fill": 0.78
+        },
+        "medium": {
+          "kind": "three_quarter",
+          "fill": 0.88
+        },
+        "close": {
+          "kind": "face_closeup"
+        },
+        "track": {
+          "kind": "tracking",
+          "fill": 0.8
+        }
+      },
+      "cuts": [
+        {
+          "frame": 0,
+          "camera": "wide"
+        },
+        {
+          "frame": 240,
+          "camera": "medium"
+        },
+        {
+          "frame": 420,
+          "camera": "close"
+        },
+        {
+          "frame": 510,
+          "camera": "wide"
+        }
+      ],
+      "note": "The tape's camera_cuts (camera_id = a key of cameras) win; the `cuts` list (clip frame index) is the fallback when the tape has none. 20 s at 30 fps = 600 frames: render at --spp 32 in slices (--clip-from/--clip-frames)."
+    }
+  ]
+}
