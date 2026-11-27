@@ -133,7 +133,7 @@ paths (the only scan hit is the public sponsor link in the bundled README, as in
 | M5-B `figure` (#462) | **Not in 0.9.2** | Own branch, off-by-default `figure` feature; Slice 1 not qualified. |
 | #444 multi-line text area (EXPERIMENTAL) | **Deferred to 0.10.0** (unchanged) | Breaks `ui::Interaction` literals (Release Contract §1). |
 | `max_frame_bytes` for the kitty frame plan; prompt editor | **Not in 0.9.2** (unchanged) | Not scheduled. |
-| Release gates (exact-head CI incl. Release preflight and the `stage_motion_kit` example build) | **Met** | Merged `main` `dd1bac0` CI run 45918225196 11/11 success. The `git diff v0.9.1 <rc> -- abi include bindings` check was required to show only the Python package version. |
+| Release gates (exact-head CI incl. Release preflight and the `stage_motion_kit` example build) | **Met** | Merged `main` `dd1bac0` CI run 45918225196 11/11 success. `git diff v0.9.1 v0.9.2 -- abi include bindings` shows only `bindings/python/pyproject.toml` (1 line: the Python package version). |
 | Consumer gate | **Substituted**, as for 0.9.0 and 0.9.1 | Additive module that GHOST does not consume yet. Hosted CI on the exact candidate plus the abi/include/bindings diff. GHOST's pin bump to 0.9.2 is gated at its next integration candidate. |
 
 #### v0.9.1 completion status (2026-11-26)
