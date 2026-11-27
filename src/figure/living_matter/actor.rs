@@ -12,6 +12,22 @@ use crate::figure::{
     DualQuat, Quat,
 };
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+/// Elapsed wall time for one real actor step. Constraint times include contact queries.
+#[derive(Default, Debug)]
+pub struct StepTiming {
+    pub skin_and_regions: Duration,
+    pub contact_build: Duration,
+    pub cloth_and_contacts: Duration,
+    pub hair_and_contacts: Duration,
+}
+enum Phase {
+    Pose,
+    Surface,
+    Cloth,
+    Hair,
+}
 
 #[derive(Clone, Copy, Debug)]
 struct Weight {
@@ -262,6 +278,39 @@ impl FigureDynamics {
         frame: &TapeFrame,
         fps: u32,
     ) -> Result<Vec<RenderMesh>, &'static str> {
+        self.step_observed(c, frame, fps, |_| {})
+    }
+
+    /// Run the identical solver with wall-clock measurements for an exclusive host lease.
+    pub fn step_profiled(
+        &mut self,
+        c: &Compiled,
+        frame: &TapeFrame,
+        fps: u32,
+    ) -> Result<(Vec<RenderMesh>, StepTiming), &'static str> {
+        let mut times = StepTiming::default();
+        let mut last = Instant::now();
+        let result = self.step_observed(c, frame, fps, |phase| {
+            let now = Instant::now();
+            let dt = now.duration_since(last);
+            match phase {
+                Phase::Pose => times.skin_and_regions = dt,
+                Phase::Surface => times.contact_build = dt,
+                Phase::Cloth => times.cloth_and_contacts = dt,
+                Phase::Hair => times.hair_and_contacts = dt,
+            }
+            last = now;
+        })?;
+        Ok((result, times))
+    }
+
+    fn step_observed(
+        &mut self,
+        c: &Compiled,
+        frame: &TapeFrame,
+        fps: u32,
+        done: impl FnMut(Phase),
+    ) -> Result<Vec<RenderMesh>, &'static str> {
         if !(10..=240).contains(&fps)
             || self.rate.is_some_and(|r| r != fps)
             || self.present != c.present_id().0
@@ -270,7 +319,7 @@ impl FigureDynamics {
         }
         let mut next = self.clone();
         next.rate = Some(fps);
-        let meshes = next.advance(c, frame, fps)?;
+        let meshes = next.advance(c, frame, fps, done)?;
         *self = next;
         Ok(meshes)
     }
@@ -279,6 +328,7 @@ impl FigureDynamics {
         c: &Compiled,
         frame: &TapeFrame,
         fps: u32,
+        mut done: impl FnMut(Phase),
     ) -> Result<Vec<RenderMesh>, &'static str> {
         let mut meshes = c
             .render_meshes(frame)
@@ -320,6 +370,7 @@ impl FigureDynamics {
                 normals(m);
             }
         }
+        done(Phase::Pose);
         let mut collision = Surface::new();
         if self.cloth.is_some() || self.hair.is_some() {
             let body = &meshes[0];
@@ -335,6 +386,7 @@ impl FigureDynamics {
                 }
             }
         }
+        done(Phase::Surface);
         let contact = |p: Vec3, _t: f32| {
             let mut q = collision.project(p, 0.004);
             for &(center, size) in &self.props {
@@ -359,10 +411,12 @@ impl FigureDynamics {
             cloth.step(&mut meshes[*i].positions, self.config, dt, contact)?;
             normals(&mut meshes[*i]);
         }
+        done(Phase::Cloth);
         if let Some((i, hair)) = &mut self.hair {
             hair.step(&mut meshes[*i].positions, self.config, dt, contact)?;
             normals(&mut meshes[*i]);
         }
+        done(Phase::Hair);
         self.tick = self.tick.checked_add(1).ok_or("simulation tick overflow")?;
         Ok(meshes)
     }

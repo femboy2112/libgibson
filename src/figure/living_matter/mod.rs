@@ -5,7 +5,7 @@ mod actor;
 mod cloth;
 mod contact;
 mod hair;
-pub use actor::{FigureDynamics, MatterCheckpoint};
+pub use actor::{FigureDynamics, MatterCheckpoint, StepTiming};
 pub mod particles;
 pub mod region;
 use super::math::Vec3;
