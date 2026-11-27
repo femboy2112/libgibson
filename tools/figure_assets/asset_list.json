@@ -17,6 +17,7 @@
     {"id": "weights_default", "role": "skin weights used for rig_default_no_toes (fallback to weights.default)", "root": "mpfb", "path": "rigs/standard/weights.default.json", "source": "mpfb"},
     {"id": "garment_casualsuit_mhclo", "role": "fitted garment binding (female_casualsuit01)", "root": "user", "path": "clothes/female_casualsuit01/female_casualsuit01.mhclo", "source": "pack", "pack_key": "female_casualsuit01"},
     {"id": "garment_casualsuit_obj", "role": "fitted garment mesh (female_casualsuit01)", "root": "user", "path": "clothes/female_casualsuit01/female_casualsuit01.obj", "source": "pack", "pack_key": "female_casualsuit01"},
+    {"id": "garment_casualsuit_diffuse", "role": "offline adapter suit UV atlas, named as diffuseTexture in female_casualsuit01.mhmat", "root": "user", "path": "clothes/female_casualsuit01/female_casualsuit01_diffuse.png", "source": "pack", "pack_key": "female_casualsuit01"},
     {"id": "hair_bob01_mhclo", "role": "hair binding (bob01)", "root": "user", "path": "hair/bob01/bob01.mhclo", "source": "pack", "pack_key": "bob01"},
     {"id": "hair_bob01_obj", "role": "hair mesh (bob01)", "root": "user", "path": "hair/bob01/bob01.obj", "source": "pack", "pack_key": "bob01"},
     {"id": "hair_ponytail01_mhclo", "role": "hair binding (ponytail01)", "root": "user", "path": "hair/ponytail01/ponytail01.mhclo", "source": "pack", "pack_key": "ponytail01"},

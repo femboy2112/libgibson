@@ -3389,6 +3389,30 @@
    "files": [
     {
      "evidence": [
+      "pack index packs/makehuman_system_assets.json[\"female_casualsuit01\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
+     ],
+     "path": "clothes/female_casualsuit01/female_casualsuit01_diffuse.png",
+     "sha256": "414d46afa55fba09ad0913484d57df2ba6b597dc8193595a13a12436137dc21b",
+     "size": 3019656,
+     "status": "CC0-PACKINDEX"
+    }
+   ],
+   "id": "garment_casualsuit_diffuse",
+   "n_files": 1,
+   "role": "offline adapter suit UV atlas, named as diffuseTexture in female_casualsuit01.mhmat",
+   "root": "user",
+   "sha256": "414d46afa55fba09ad0913484d57df2ba6b597dc8193595a13a12436137dc21b",
+   "sha256_kind": "file",
+   "size": 3019656,
+   "source": "pack",
+   "source_url": "https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html",
+   "status": "CC0-PACKINDEX"
+  },
+  {
+   "evidence_only": false,
+   "files": [
+    {
+     "evidence": [
       "file header lines 3-6: \"This asset was explicitly released as CC0 in september 2020. The license text for CC0 can be found in the root of this repository. The copyright holders at the point of the release to CC0 were:\"",
       "pack index packs/makehuman_system_assets.json[\"bob01\"]: license=\"CC0\", author=\"makehuman_system\", source=\"http://www.makehumancommunity.org\""
      ],

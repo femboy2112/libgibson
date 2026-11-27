@@ -108,6 +108,29 @@ def fabric_material(mat):
     return mat
 
 
+def garment_material(mat, garment_id, pack):
+    """Keep the suit's UV-mapped seams, fabric and print while tinting its blue ground to the recipe."""
+    fabric_material(mat)
+    if pack is None or garment_id != "female_casualsuit01":
+        return mat
+    tex = pack.node(mat, "garment_casualsuit_diffuse")
+    # The source shirt is indigo in linear RGB. Balance out that dye when applying the slot.
+    # A bounded multiply also exports as a glTF baseColorTexture with a baseColorFactor.
+    indigo = (0.03, 0.077, 0.22)
+    gain = [c / dye for c, dye in zip(mat.diffuse_color[:3], indigo)]
+    divisor = max(1.0, *gain)
+    mix = mat.node_tree.nodes.new("ShaderNodeMix")
+    mix.data_type = "RGBA"
+    mix.blend_type = "MULTIPLY"
+    inputs = {socket.identifier: socket for socket in mix.inputs}
+    result = next(socket for socket in mix.outputs if socket.identifier == "Result_Color")
+    inputs["Factor_Float"].default_value = 1.0
+    inputs["B_Color"].default_value = tuple(x / divisor for x in gain) + (1.0,)
+    mat.node_tree.links.new(tex.outputs["Color"], inputs["A_Color"])
+    mat.node_tree.links.new(result, mat.node_tree.nodes["Principled BSDF"].inputs["Base Color"])
+    return mat
+
+
 def layer_intersections(skirt, garments):
     """Count crossing polygons on the final posed garment meshes, including lining and rims."""
     bpy.context.view_layer.update()

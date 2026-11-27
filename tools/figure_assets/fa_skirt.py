@@ -4,8 +4,8 @@
     python3 -I tools/figure_assets/fa_skirt.py --selftest
 
 Fixes viewed defect 4 of the MEASURE lease (stiff flared hem, notch at the waist, did not follow the pose):
-  * rings are SUPER-ELLIPSES (exponent 2.6) fitted around the torso/thigh vertices of each height band, then scaled
-    until every band vertex is inside, so there is no notch by construction; arms and hands are excluded by skin weight;
+  * the waistband follows the convex outline of the body and fitted inner garment at the waist;
+    below the hip the panels span the clothed leg envelope; arms and hands are excluded by skin weight;
   * rounded folds open below a narrow waistband; waist gathers and an undulating hem break up the silhouette;
   * the mesh is a coarse quad panel grid; the renderer adds Solidify + Subdivision Surface (smooth panels);
   * skinning is kinematic: every vertex is bound to pelvis / thigh_l / thigh_r with weights that ramp from the pelvis at
@@ -60,6 +60,34 @@ def _pleat(x):
     return (0.5 + 0.5 * math.sin(x)) ** 0.8
 
 
+def _band_radii(points, center_y, directions):
+    """A horizontal strip of fabric around some points takes their convex outline.
+
+    Intersect rays with its supporting half-planes. A forward fold of the shirt then
+    needs extra room only at the front; it cannot open a gap at both side seams.
+    """
+    points = sorted({(x, y - center_y) for x, y, _ in points})
+
+    def half(seq):
+        stack = []
+        for x, y in seq:
+            while len(stack) >= 2:
+                (ax, ay), (bx, by) = stack[-2:]
+                if (bx - ax) * (y - ay) > (by - ay) * (x - ax):
+                    break
+                stack.pop()
+            stack.append((x, y))
+        return stack
+
+    hull = half(points)[:-1] + half(reversed(points))[:-1]
+    planes = []
+    for (ax, ay), (bx, by) in zip(hull, hull[1:] + hull[:1]):
+        nx, ny = by - ay, ax - bx
+        planes.append((nx, ny, nx * ax + ny * ay))
+    return [min(offset / (nx * dx + ny * dy) for nx, ny, offset in planes if nx * dx + ny * dy > 1e-10)
+            for dx, dy in directions]
+
+
 def natural_waist(P, torso, z_lo, z_hi, steps=40, half_band=0.012):
     """Height of the narrowest torso band in [z_lo, z_hi] (width proxy: max |x| + half the y extent of the band), or None when the
     narrowest band sits on the window edge (no interior minimum: the caller falls back to the pelvis-relative formula)."""
@@ -81,17 +109,18 @@ def natural_waist(P, torso, z_lo, z_hi, steps=40, half_band=0.012):
     return zs[k], {"width_proxy_m": ws[k], "window": [z_lo, z_hi]}
 
 
-def make_skirt(P, joints, exclude=None, n_seg=192, n_ring=18, hem_below_knee_frac=0.03, margin_m=0.012, flare_m=0.17,
+def make_skirt(P, joints, exclude=None, n_seg=192, n_ring=18, hem_below_knee_frac=0.03, margin_m=0.012, flare_m=0.105,
                waist="natural", waist_above_pelvis_frac=0.06, folds=12, fold_amp_m=0.03, gathers_per_fold=2, gather_amp_m=0.004,
-               hem_wave_m=0.010, extra=None, contain=True, left_is_plus_x=None):
+               hem_wave_m=0.006, extra=None, contain=True, left_is_plus_x=None):
     """P: shaped positions (full index space).  joints: {"joint-pelvis": [idx...], "joint-l-knee": ..., "joint-r-knee",
     "joint-l-upper-leg"}.  exclude: optional list[bool] per body vertex (True = ignore, e.g. arms/hands by skin weight).
     extra: optional [(positions, exclude_mask_or_None)] of fitted garments the skirt must also contain (the suit under it).
     contain=False skips the containment scale (the `skirt_tight` must-FAIL mutant only).
 
     Silhouette: the top ring sits at the NATURAL WAIST (narrowest torso band between pelvis + 2% and + 16% of stature; fallback
-    pelvis + waist_above_pelvis_frac * stature), a super-ellipse fitted round each height band, flared toward the hem by
-    flare_m * t^1.3.  Fullness: `folds` rounded folds whose depth grows from 0 at the waist to fold_amp_m at the hem (t^1.2),
+    pelvis + waist_above_pelvis_frac * stature). The gathered cut follows the clothed waist and opens below the hip with
+    a smoothstep flare. The fold-free control keeps its original super-ellipse profile. Fullness: `folds` rounded folds
+    grow from 0 at the waist to fold_amp_m at the hem,
     plus folds * gathers_per_fold small gathers at the waist (gather_amp_m, fading by (1 - t)^2), plus a hem wave (the hem dips by up
     to hem_wave_m on fold crests).  Every fold/gather offset is OUTWARD only, so containment of the body holds by construction.
     -> dict(positions, quads, uvs, quad_uv, t (per vertex 0 waist..1 hem), weights {bone: [per vertex]}, params)."""
@@ -153,6 +182,18 @@ def make_skirt(P, joints, exclude=None, n_seg=192, n_ring=18, hem_below_knee_fra
         scales.append(s)
     scales = [max(a, b) for a, b in zip(scales, _smooth3(scales))]      # smooth over height, never below a band's own need
     two_pi = 2.0 * math.pi
+    directions = [(math.cos(two_pi * j / n_seg), math.sin(two_pi * j / n_seg)) for j in range(n_seg)]
+    if folds and contain:
+        # Keep all rings on one axis so contours can be compared in metres. Cut the lower
+        # panels over the entire clothed leg envelope instead of following the knee and calf.
+        waist_y = cy[0]
+        outlines = []
+        for z, (band_idx, width) in zip(zk, bands):
+            layer = [p for p in xpts if abs(p[2] - z) <= width]
+            band_pts = [P[i] for i in band_idx] + layer
+            outlines.append(_band_radii(band_pts, waist_y, directions))
+        hip_ring = min(range(n_ring), key=lambda k: abs(zk[k] - pel[2]))
+        lower_panel = [max(column) for column in zip(*outlines[hip_ring:])]
     n_g = folds * gathers_per_fold
     pos, tt, base_r = [], [], []
     for k in range(n_ring):
@@ -161,19 +202,29 @@ def make_skirt(P, joints, exclude=None, n_seg=192, n_ring=18, hem_below_knee_fra
         release = _smoothstep((t - 0.045) / 0.09)
         a_f = fold_amp_m * t ** 0.85 * release
         a_g = gather_amp_m * (1.0 - t) ** 2 * release
-        band_edge = 0.0035 if folds and t <= 0.045 else 0.0
+        band_edge = 0.001 if folds and t <= 0.045 else 0.0
         for j in range(n_seg):
             th = two_pi * j / n_seg
-            ca, sa = math.cos(th), math.sin(th)
+            ca, sa = directions[j]
             r0 = (abs(ca / a) ** POWER + abs(sa / b) ** POWER) ** (-1.0 / POWER)
+            ease = margin_m
+            flare = flare_m * t ** 1.3
+            if folds and contain:
+                c = waist_y
+                # A close waistband opens into wider gathered cloth below the seam. Beyond
+                # the hip the profile flattens at the hem, letting the folds hang downward.
+                blend = _smoothstep((t - 0.09) / max(0.10, ring_t[hip_ring] - 0.09))
+                r0 = outlines[k][j] + blend * max(0.0, lower_panel[j] - outlines[k][j])
+                ease = margin_m * (0.4 + 0.6 * release)
+                flare = flare_m * _smoothstep(t) - 0.004 * _smoothstep((t - 0.80) / 0.20)
             phase = 0.35 * t + 0.44 * math.sin(3.0 * th - 1.8 * t)
             pl = _pleat(folds * th + phase) if folds else 0.0
-            off = margin_m + band_edge + flare_m * t ** 1.3 + a_f * _fold_amp(th) * pl + (a_g * (0.5 + 0.5 * math.sin(n_g * th)) if n_g else 0.0)
+            off = ease + band_edge + flare + a_f * _fold_amp(th) * pl + (a_g * (0.5 + 0.5 * math.sin(n_g * th)) if n_g else 0.0)
             r = r0 + off
             dz = -hem_wave_m * t ** 4 * pl
             pos.append((r * ca, c + r * sa, zk[k] + dz))
             tt.append(t)
-            base_r.append(r0 + margin_m + flare_m * t ** 1.3)
+            base_r.append(r0 + ease + flare)
     quads, quv = [], []
     uvs = [(j / float(n_seg), 1.0 - t) for t in ring_t for j in range(n_seg + 1)]
     for k in range(n_ring - 1):
@@ -214,7 +265,8 @@ def make_skirt(P, joints, exclude=None, n_seg=192, n_ring=18, hem_below_knee_fra
             "params": {"n_seg": n_seg, "n_ring": n_ring, "z_top": z_top, "z_hem": z_hem, "stature": stature, "lateral_limit": lim,
                        "flare_m": flare_m, "margin_m": margin_m, "power": POWER, "left_is_plus_x": left_is_plus_x, "waist": waist_info,
                        "folds": folds, "fold_amp_m": fold_amp_m, "gathers": n_g, "gather_amp_m": gather_amp_m, "hem_wave_m": hem_wave_m,
-                       "contain": contain, "extra_points": len(xpts), "containment_scale_max": max(scales)}}
+                       "contain": contain, "extra_points": len(xpts), "profile": "clothed_contour" if folds and contain else "superellipse",
+                       "containment_scale_max": None if folds and contain else max(scales)}}
 
 
 def under_skirt_hide(positions, exclude, z_top, z_hem, waist_keep_m=0.03, hem_keep_m=0.05):
