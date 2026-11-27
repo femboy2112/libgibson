@@ -246,7 +246,7 @@ unchanged inputs, which means a minor release and a changelog note.
 - **KNOWN v0 LIMIT.** `BoneLengthScale` moves **no vertices**. That is accepted for the Slice-1
   synthetic skeleton only. The parametric body (M5-C) needs bone-driven vertex displacement, and
   that will be a semantics or layout change under a new prefix version (`v1`). M5-C must not treat
-  the v0 control semantics as settled.
+  the v0 control semantics as settled. See "`rev.v1` (DRAFT)" below: the limit is superseded only there.
 
 ### Resolved spec ambiguities A1–A8 (from the independent hand-bytes test; RATIFIED by ruling #70, A4 amended)
 
@@ -597,6 +597,199 @@ perpendicular axis (deterministic). It owns the joint's rotation track: apply it
 - `Look` does not know the joint hierarchy or limits and does not constrain the neck; it is an
   aim, not an IK solver.
 - Corrective shapes, IK, contacts and secondary motion remain LATER (see Evaluation order).
+
+---
+
+## `rev.v1` (DRAFT): coupled deformation, skinning mode and three identities
+
+**Status: DRAFT, DESIGN ONLY.** Nothing in this section is frozen. Slice 1 of the M5-C deform
+packet writes it down BEFORE any v1 code exists, so that serialization and cache identity are
+decided first and the code is built to them. The names below are proposals. The only code that
+accompanies this section is the DQS skinning path (see "Skinning mode"), which is additive to v0
+and lands in Slice 2. Nothing here was compiled.
+
+### What does not change (v0 is untouched)
+
+- `gibson.figure.rev.v0\0`, the layout above, `compile`, `BodyFamily`, `ControlEffect`, the
+  ratified resolutions A1 to A8 and the golden `rev_id` stay **bit-identical**. No v0 test, byte
+  or fixture is edited by anything in this section.
+- `BoneLengthScale` keeps its v0 meaning, including the KNOWN v0 LIMIT (it moves no vertices). That
+  limit is superseded **only in v1**, by the coupled derivation below. v0 revisions stay valid and
+  evaluable. There is no automatic upgrade, and no v0 revision is ever re-labelled as v1.
+- A v1 `rev_id` is never equal to a v0 `rev_id` of "the same body": the prefixes differ, so the
+  digests are unrelated by construction. Migration is an explicit `compile_v1` of a v1 family.
+
+### Why a new version and not an extension
+
+Coupled deformation changes what the skeleton and the inverse binds *are* (derived from the
+surface, not declared), and the skinning mode changes what the same pose means. Both change the
+bytes a revision hashes and the geometry a pose produces. Law 3 requires that to be a new
+explicitly versioned layout. Appending optional fields to v0 would either leave the new inputs
+out of `rev_id` (two different bodies with one id) or change v0 ids for unchanged inputs.
+
+### Inputs (proposed `BodyFamilyV1`)
+
+All of it is data in the family, never in the recipe:
+
+- the **neutral mesh**: positions and a triangle index buffer, as v0;
+- **per-control target deltas**: sparse morph targets as v0 (`MorphTarget`), driven by controls
+  whose only v1 effect is `MorphWeight`. `BoneLengthScale` is **not accepted in v1**
+  (`CompileErrorV1::LegacyEffect`): the skeleton changes only through the surface, so a control
+  can no longer change a bone without moving a vertex;
+- **joint-landmark vertex groups**: each joint may carry an anchor group, an ordered list of vertex
+  indices (non-empty, in range, no repeats within a group). Surface landmarks (a name plus a
+  group, used to measure a control's effect) use the same mechanism;
+- the joint list, parents, rest rotations, rest scales and v0-style landmark offsets, as v0;
+- the skin weights, as v0 (at most 4 influences, never renormalized);
+- the **skinning mode**.
+
+### Coupled derivation (compile order)
+
+Validation precedes derived data, and nothing is observable until all of it succeeds (law 1).
+After the v0 validation steps for mesh, morphs, skin and controls:
+
+1. Resolve control values (defaults, range check, no clamp) and accumulate morph weights in
+   family-declared control order, exactly as v0 (A5, A6).
+2. Shape the surface: `G = G0 + sum(w_i * delta_i)`, as v0.
+3. **Re-derive the joints from the shaped surface.** Walking joints in parent-before-child order:
+   - an anchored joint `j` has bind world position `c_j`, the centroid of its group's SHAPED
+     positions: the three sums run over the group in its declared order, in `f32`, then one
+     division by the count converted to `f32`;
+   - its derived rest local translation is `W_parent_bind^-1` applied to `c_j`, where
+     `W_parent_bind` is the already derived parent world bind matrix (a root has none);
+   - an unanchored joint keeps its declared local translation, so it rides with its parent;
+   - the rest rotation and rest scale are the declared values. **Orientation and scale are not
+     re-derived** (see Limits).
+4. **Bone lengths follow the surface**: the length of a bone is the length of its child's derived
+   local translation. It is an output, never an input.
+5. Recompute the world bind matrices and the **inverse binds** from the derived skeleton
+   (`IB_j = (W_j at bind)^-1`, as v0). A stale or ignored derivation is the v1 form of the v0
+   mutants `ignored_skeleton_update` and `stale_bind`; each gets an equivalent v1 control.
+6. Weights, colliders and motion calibration are derived from the same shaped content in the
+   same compile. Colliders and calibration stay LATER; the contract keeps their hooks.
+7. Serialize and hash (below).
+
+The evaluation order of the `f32` code stays the v0 law: scalar, no SIMD, no `unsafe`, no fused
+multiply-add, no reassociation, sums in ascending index order. The centroid is a sum in group
+declaration order, which is part of the bytes for non-dyadic data. Bit-stability remains claimed
+on the tested platform only (x86_64).
+
+### Skinning mode
+
+```rust
+#[non_exhaustive]
+pub enum SkinningMode { Linear /* default */, DualQuat }
+```
+
+- **Linear** is the v0 behaviour: `v' = sum(w_j * (W_j * IB_j) * v)`.
+- **DualQuat** blends the rigid part of each skin matrix `M_j = W_j * IB_j` as a unit dual
+  quaternion: convert `M_j` to a unit dual quaternion, align the sign of every influence to the
+  FIRST influence in the vertex's declared order (negate when the 4-D dot product of the real
+  parts is below zero; exactly zero is not flipped), sum `w_j * dq_j` in declared order,
+  normalize by the dual-number norm, and apply to the point (rotation, then the translation read
+  from the dual part) or to the normal (rotation only). The result does not depend on the weight
+  sum, so DQS is the one place where the weights are effectively renormalized, by the blend.
+- **Scale and shear in skin matrices (decision: reject).** A dual quaternion cannot represent
+  scale or shear. When any joint that a vertex references has a skin matrix whose 3x3 block is
+  not a rotation within `RIGID_TOLERANCE` (1e-3 on `|R^T R - I|` and on `|det R - 1|`), DualQuat
+  skinning returns the typed `SkinError::NonRigid { joint }`. It never drops the scale silently
+  and never applies it "separately". Reason: a separate scale pass has to choose an order (before
+  or after the blend) and a pivot, and no choice is right for non-uniform scale in a hierarchy; a
+  silent drop would make the mode's own acceptance check pass on a body it deforms wrongly. A
+  rigid skin matrix is the norm: a joint whose rest scale is not 1 still gives `M_j = I` at the
+  bind pose, and stays rigid in any pose that only rotates and translates it. Squash and stretch
+  is not a v1 feature and would be a new mode.
+- **Where the mode lives.** In v1 it is a field of the revision and part of the neutral-body
+  `rev_id`, because it decides which deformation the body was validated against. For a v0
+  revision, which cannot gain a hashed field, it is an evaluation argument:
+  `evaluate_with(&PoseInput, SkinningMode)`. `evaluate` is `evaluate_with(.., Linear)` and is
+  unchanged, bit for bit.
+- A blend whose real part cancels to (near) zero is the typed `SkinError::DegenerateBlend`.
+  DQS is genuinely discontinuous where two influences are exactly 180 degrees apart (the shortest
+  path is ambiguous); alignment removes the sign ambiguity of the representation, not that one.
+
+### Canonical serialization `gibson.figure.rev.v1` (DRAFT layout)
+
+Encoding (little-endian, `f32` bit patterns with `-0.0` written as `+0.0`, `str` as `u32` length
+plus bytes, the v0 id alphabet) is exactly the v0 encoding. `body_rev_id = SHA-256(bytes)`.
+
+1. The prefix: the 21 bytes `gibson.figure.rev.v1\0`.
+2. `u8` skinning mode: `0` Linear, `1` DualQuat. Any other value is invalid.
+3. The family: `str id`, `u32 version`.
+4. The vertices (SHAPED positions) and the indices, as v0 items 3 and 4.
+5. The joints: `u32 n`; per joint, in family order: `str name`, `i32 parent`, `u8 anchored`;
+   if anchored, `u32 count` then `count x u32` vertex indices in declared order; then the DERIVED
+   rest translation (3 x `f32`), the rest rotation (xyzw) and the rest scale (3 x `f32`).
+6. The v0-style landmarks, as v0 item 6, then the surface landmarks: `u32 n`; per landmark
+   `str name`, `u32 count`, `count x u32` vertex indices. The measured points are derived from
+   hashed content and are not serialized.
+7. The inverse binds, the skin and the morphs, as v0 items 7, 8 and 9 (declared influence order,
+   declared delta order, zero deltas kept, nothing renormalized).
+
+Control values and the recipe are not serialized (as v0). Two recipes that resolve to the same
+shaped content, such as an explicit default and an omitted control, give one id.
+
+### Three identities (decided here, before extension)
+
+| Id | Meaning | Digest input | Prefix |
+|---|---|---|---|
+| neutral-body `rev_id` (`BodyRevId`) | the body and its controls | the bytes above | `gibson.figure.rev.v1\0` |
+| fit id (`FitId`) | one garment-fit computation | `BodyRevId` (32 bytes), the garment set, the fit params | `gibson.figure.fit.v1\0` |
+| presentation-cache id (`PresentationId`) | one cached look | `FitId` (32 bytes), the material and style params | `gibson.figure.presentation.v1\0` |
+
+- **Fit id input, in order.** `BodyRevId`; `u32` garment count; per garment, in the HOST-DECLARED
+  order (layering is semantic, so a reorder is a different fit): `str garment id`, then the
+  32-byte SHA-256 of the garment asset's own canonical bytes (garment content, not its name); then
+  the fit params as a versioned block: `str algorithm id`, `u32` parameter count and each
+  parameter as `str name` plus `f32` bits. The result of fitting (each `FitStatus` and the fitted
+  geometry) is a deterministic function of these inputs and is NOT hashed into the id; a golden
+  and an independent oracle pin the results (obligations below). A garment id repeated in a set is
+  an error.
+- **Presentation id input, in order.** `FitId`; `u32` material-binding count and per binding, in
+  declared order: `str slot`, `str material id`, the 32-byte SHA-256 of the material or texture
+  bytes, a `u32` count of `f32` parameters (colours, roughness, and so on) and the parameters;
+  then the style params block (hair, skin tone and other appearance values, as `str name` plus
+  `f32`). `motion_style` and any pose or performance parameter are in **none** of the three ids
+  (ruling D3 stays): the performance tape carries its own digest.
+- **Domain separation.** The prefixes differ and each begins with its own version, so a body id, a
+  fit id and a presentation id can never be confused for one another, whatever the content.
+
+**Invariants** (each becomes a test with a control that must fail; they are the acceptance rows
+"determinism + revision isolation" of the incarnate plan):
+1. `BodyRevId` depends only on the family content, the resolved controls and the skinning mode. It
+   does not depend on any garment, material, style, motion style or recipe lineage.
+2. **An outfit edit leaves the neutral `rev_id` bit-identical.** Adding, removing or reordering a
+   garment, or changing the fit params, changes `FitId` and `PresentationId`, and not `BodyRevId`.
+3. **A material or style edit leaves `BodyRevId` and `FitId` bit-identical** and changes only
+   `PresentationId`.
+4. A body edit (any control, any family content, the mode) changes `BodyRevId`, and through it
+   `FitId` and `PresentationId`. A fit result is never carried across body ids. After a body edit
+   a garment has no verdict until it is refitted, and **a garment with no verdict is not drawn**
+   (law 5, unchanged). `compile_v1` therefore returns the body only: it holds no `garment_fits`.
+   Fitting is a separate step that takes the body and returns a `FitReport { fit_id, entries }`.
+5. Caches are keyed by id equality alone. There is no time stamp, no counter and no "latest".
+
+### Limits (proposed constants; each checked before allocation; any raise needs a ruling)
+
+`MAX_GROUP_VERTICES` 4096 per group, `MAX_GROUP_TOTAL` 65536 indices across all groups,
+`MAX_GARMENTS` 64 per set, `MAX_FIT_PARAMS` 64, `MAX_MATERIAL_BINDINGS` 256, `MAX_STYLE_PARAMS`
+256. The v0 caps (`MAX_JOINTS` 256, `MAX_SKIN_VERTICES` 262144, `MAX_MORPH_TARGETS`, the morph
+delta cap, the id alphabet and length) carry over unchanged.
+
+### Out of scope for v1 and still v0-only or LATER
+
+- **v0-only:** the `BoneLengthScale` effect and its limit; `CharacterRevision` with a
+  `garment_fits` field; `rev.v0` ids; `evaluate` as the Linear default.
+- **Not re-derived in v1:** joint orientation and scale (only positions follow the surface), so a
+  large shape change can leave a bone's axis a little off its limb. Pose-space correctives,
+  colliders and motion calibration are LATER and are not hashed.
+- **Not defined here:** the garment asset layout and the fit algorithm (Lane B), the glTF or VRM
+  interchange, and any cross-architecture identity claim.
+- **Verification obligations when v1 lands** (not met by this draft): a golden `body_rev_id` by an
+  independent numpy replication, a hand-derived bytes test written from this text by a separate
+  author, an f64 oracle for the derived joints and inverse binds, and mutation controls
+  `ignored_refit` (the derivation is skipped) and `stale_fit` (a verdict reused across body ids),
+  each killed by a non-golden assertion.
 
 ---
 
