@@ -2289,5 +2289,8 @@ fn body_skin_accessor_exposes_the_stored_body_weights() {
         assert!((sum - 1.0).abs() < 1e-4, "vertex {v} weights sum {sum}");
         assert!(inf.iter().all(|&(j, _)| j < a.joint_count()));
     }
-    assert!(skin.influences(skin.vertex_count()).is_none(), "helpers are unskinned");
+    assert!(
+        skin.influences(skin.vertex_count()).is_none(),
+        "helpers are unskinned"
+    );
 }
