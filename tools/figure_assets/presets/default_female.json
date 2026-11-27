@@ -1,0 +1,18 @@
+{
+  "name": "default_female",
+  "note": "Synthetic preset. 'macro' is the neutral baseline (female-leaning adult, 0.5 = 25 years); 'controls' are applied ONLY to the shaped glTF and the oracle positions, never to the neutral base or the deltas.",
+  "rig": "game_engine",
+  "macro": {
+    "gender": 0.0, "age": 0.5, "muscle": 0.5, "weight": 0.5, "proportions": 0.5, "height": 0.5,
+    "cupsize": 0.5, "firmness": 0.5,
+    "race": {"asian": 0.333, "caucasian": 0.334, "african": 0.333}
+  },
+  "controls": {
+    "stature": 0.2, "leg_length": 0.3, "torso_length": -0.1, "shoulder_breadth": -0.2, "ribcage": 0.0,
+    "bust_projection": 0.2, "bust_fullness": 0.3, "waist": -0.4, "hip_breadth": 0.4, "glute_projection": 0.3,
+    "thigh_fullness": 0.3, "jaw_width": -0.3, "posture_lean": 0.0
+  },
+  "export_attachments": ["clothes:female_casualsuit01", "hair:bob01", "eyes:low-poly", "eyebrows:eyebrow001", "eyelashes:eyelashes01", "teeth:teeth_base", "skirt"],
+  "gltf_attachments": ["hair:bob01", "eyes:low-poly", "eyebrows:eyebrow001", "eyelashes:eyelashes01", "skirt"],
+  "hide_body_under_garment": true
+}

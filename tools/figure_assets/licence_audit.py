@@ -307,6 +307,8 @@ def check_export(res, manifest_path):
         man = json.load(f)
     by_sha = {}
     for r in res["rows"]:
+        if r["sha256"] and r["n_files"] > 1:
+            by_sha.setdefault(r["sha256"], []).append((r["id"], {"status": r["status"]}))
         for f in r["files"]:
             if f["sha256"]:
                 by_sha.setdefault(f["sha256"], []).append((r["id"], f))
