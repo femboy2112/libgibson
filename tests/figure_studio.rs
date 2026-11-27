@@ -35,7 +35,7 @@ use gibson::figure::skin::SkinningMode;
 use gibson::figure::studio::{
     compile, AnchorV1, AssetError, AssetSet, AttachmentV1, CompileError, Compiled, Diagnostic,
     FitReason, FitStatus, GarmentV1, MaterialSlotV1, MeshRole, PoseError, ProvenanceV1, RecipeV1,
-    TapeFrame, BODY_MAGIC, FIT_PREFIX, PRESENT_PREFIX,
+    TapeError, TapeFrame, TapeHeader, TapeReader, BODY_MAGIC, FIT_PREFIX, PRESENT_PREFIX,
 };
 
 const BODY: &[u8] = include_bytes!("fixtures/figure_studio/body.gfa");
@@ -1423,6 +1423,178 @@ fn drawable_meshes_hide_deleted_body_triangles_and_carry_slots() {
     let mut bad = c.rest_frame();
     bad.locals.pop();
     assert!(c.render_meshes(&bad).is_err());
+}
+
+// ---- reading gibson.figure.tape.v1 ----
+
+fn tape_header(body_id: &str, joints: &[&str], face: &[&str], frames: usize, sha: &str) -> String {
+    let q = |v: &[&str]| {
+        v.iter()
+            .map(|s| format!("\"{s}\""))
+            .collect::<Vec<String>>()
+            .join(", ")
+    };
+    format!(
+        "{{\"format\": \"gibson.figure.tape.v1\", \"body_rev_id\": \"{body_id}\", \"fit_id\": \"00\", \
+         \"present_id\": \"11\", \"asset_manifest_sha256\": \"ab\", \"controls\": {{\"stature\": 0.5}}, \
+         \"style\": {{\"preset\": \"a\\u0062c\"}}, \"fps\": 30, \"frame_count\": {frames}, \
+         \"joints\": [{}], \"channels\": [\"root_t3\", \"local_t3\", \"local_r4\", \"local_s3\"], \
+         \"face\": [{}], \"events\": [], \"camera_cuts\": [], \"bin_sha256\": \"{sha}\"}}",
+        q(joints),
+        q(face)
+    )
+}
+
+fn tape_bin(frames: &[Vec<f32>]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for f in frames {
+        for v in f {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    out
+}
+
+fn hex(b: &[u8; 32]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// The tape reader: a hand-built `gibson.figure.tape.v1` (JSON with an escape, 2 frames, joints in
+/// REVERSED order, 2 face channels) is read back, its joint order is mapped to the rig's, and every
+/// refusal is typed: wrong sha, wrong length, wrong format, frame out of range, a joint the rig does
+/// not have, a rig joint the tape lacks, a tape made for another body, a non-finite value.
+#[test]
+fn a_tape_frame_is_read_and_mapped_to_the_rig() {
+    let c = build(&RecipeV1::new());
+    let rig = ["root", "pelvis", "spine", "neck", "arm_l"];
+    let rev: Vec<&str> = rig.iter().rev().copied().collect();
+    // per frame: root t3, then per tape joint (neck-first order): t3 r4 s3, then 2 face values
+    let mut frames = Vec::new();
+    for f in 0..2 {
+        let mut v = vec![0.5 + f as f32, 0.0, 2.0];
+        for (k, _) in rev.iter().enumerate() {
+            let k = k as f32;
+            v.extend_from_slice(&[k, f as f32, 0.25, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
+        }
+        v.extend_from_slice(&[0.125, 0.75]);
+        frames.push(v);
+    }
+    let bin = tape_bin(&frames);
+    let body = c.body_rev_id().to_hex();
+    let header = tape_header(
+        &body,
+        &rev,
+        &["brow_up", "lid_close"],
+        2,
+        &hex(&sha256::digest(&bin)),
+    );
+    let reader = TapeReader::new(header.as_bytes(), &bin).expect("valid tape");
+    let h: &TapeHeader = reader.header();
+    assert_eq!(h.joints, rev);
+    assert_eq!(h.face, ["brow_up", "lid_close"]);
+    assert_eq!(h.frame_count, 2);
+    assert_eq!(h.fps, 30.0);
+    assert_eq!(h.frame_floats(), 3 + 50 + 2);
+    assert_eq!(reader.face_channels(1).expect("face"), [0.125, 0.75]);
+
+    // tape order: the first tape joint is arm_l (k = 0), the last is root (k = 4)
+    let raw = reader.frame(1).expect("frame");
+    assert_eq!(raw.root_t, Vec3::new(1.5, 0.0, 2.0));
+    assert_eq!(raw.locals[0].translation, Vec3::new(0.0, 1.0, 0.25));
+    assert_eq!(raw.locals[4].translation, Vec3::new(4.0, 1.0, 0.25));
+    // rig order: root first, so its local is the tape's LAST joint's
+    let f = c.tape_frame(&reader, 1).expect("mapped");
+    assert_eq!(f.root_t, Vec3::new(1.5, 0.0, 2.0));
+    for (j, name) in rig.iter().enumerate() {
+        let want_k = (rig.len() - 1 - j) as f32;
+        assert_eq!(
+            f.locals[j].translation,
+            Vec3::new(want_k, 1.0, 0.25),
+            "joint {name}"
+        );
+    }
+    assert!(c.pose_vertices(&f).is_ok(), "a mapped frame poses");
+    let one = TapeFrame::from_tape_bytes(header.as_bytes(), &bin, 0).expect("convenience");
+    assert_eq!(one.locals.len(), 5);
+
+    // refusals
+    let bad_sha = tape_header(&body, &rev, &["a", "b"], 2, &hex(&[0u8; 32]));
+    assert_eq!(
+        TapeReader::new(bad_sha.as_bytes(), &bin).unwrap_err(),
+        TapeError::BinSha
+    );
+    let more = tape_header(&body, &rev, &["a", "b"], 3, &hex(&sha256::digest(&bin)));
+    assert!(matches!(
+        TapeReader::new(more.as_bytes(), &bin),
+        Err(TapeError::BinLength { .. })
+    ));
+    let wrong_format = header.replace("gibson.figure.tape.v1", "gibson.figure.tape.v2");
+    assert_eq!(
+        TapeReader::new(wrong_format.as_bytes(), &bin).unwrap_err(),
+        TapeError::Format
+    );
+    assert!(matches!(
+        TapeReader::new(b"{not json", &bin),
+        Err(TapeError::Json(_))
+    ));
+    assert!(matches!(
+        TapeReader::new(b"{}", &bin),
+        Err(TapeError::MissingField(_))
+    ));
+    assert!(matches!(
+        reader.frame(2),
+        Err(TapeError::FrameOutOfRange { frame: 2, count: 2 })
+    ));
+    let other_body = tape_header(
+        &hex(&[9u8; 32]),
+        &rev,
+        &["brow_up", "lid_close"],
+        2,
+        &hex(&sha256::digest(&bin)),
+    );
+    let other = TapeReader::new(other_body.as_bytes(), &bin).expect("valid tape");
+    assert_eq!(
+        c.tape_frame(&other, 0).unwrap_err(),
+        TapeError::BodyMismatch
+    );
+
+    // a joint the rig lacks, and a rig joint the tape lacks
+    let mut names = rev.clone();
+    names[0] = "tail";
+    let unk = tape_header(&body, &names, &["a", "b"], 2, &hex(&sha256::digest(&bin)));
+    let ur = TapeReader::new(unk.as_bytes(), &bin).expect("valid tape");
+    assert!(matches!(
+        c.tape_frame(&ur, 0),
+        Err(TapeError::UnknownJoint { .. })
+    ));
+    let short_names = &rev[1..];
+    let mut sf = vec![0.0f32, 0.0, 0.0];
+    for _ in 0..4 {
+        sf.extend_from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
+    }
+    sf.extend_from_slice(&[0.0, 0.0]);
+    let sbin = tape_bin(&[sf]);
+    let sh = tape_header(
+        &body,
+        short_names,
+        &["a", "b"],
+        1,
+        &hex(&sha256::digest(&sbin)),
+    );
+    let sr = TapeReader::new(sh.as_bytes(), &sbin).expect("valid tape");
+    assert!(matches!(
+        c.tape_frame(&sr, 0),
+        Err(TapeError::MissingJoint { .. })
+    ));
+
+    // a non-finite value is refused when the frame is read
+    let mut nan = frames.clone();
+    nan[0][5] = f32::NAN;
+    let nbin = tape_bin(&nan);
+    let nh = tape_header(&body, &rev, &["a", "b"], 2, &hex(&sha256::digest(&nbin)));
+    let nr = TapeReader::new(nh.as_bytes(), &nbin).expect("valid tape");
+    assert_eq!(nr.frame(0).unwrap_err(), TapeError::NonFinite);
+    assert!(nr.frame(1).is_ok());
 }
 
 // ---- the asset loader ----

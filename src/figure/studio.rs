@@ -2607,3 +2607,465 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
         assets: Arc::clone(assets),
     })
 }
+
+// --------------------------------------------------------------------------------------------
+// Reading `gibson.figure.tape.v1` (docs/design/m5c-studio-api.md section 5).
+
+/// Why a tape header, binary or frame was refused.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum TapeError {
+    /// The header is not valid JSON (the reason is a fixed message).
+    Json(&'static str),
+    /// The `format` field is not `gibson.figure.tape.v1`.
+    Format,
+    /// A required header field is missing.
+    MissingField(&'static str),
+    /// A header field has the wrong type or an impossible value.
+    BadField(&'static str),
+    /// `frame` is not below `frame_count`.
+    FrameOutOfRange { frame: usize, count: usize },
+    /// The binary has the wrong size for the header.
+    BinLength { expected: usize, got: usize },
+    /// The binary's SHA-256 is not the header's `bin_sha256`.
+    BinSha,
+    /// A value in the binary is NaN or infinite.
+    NonFinite,
+    /// The header's `body_rev_id` is not this compile's.
+    BodyMismatch,
+    /// The tape names a joint the compiled rig does not have.
+    UnknownJoint { name: String },
+    /// The compiled rig has a joint the tape does not name.
+    MissingJoint { name: String },
+}
+
+impl fmt::Display for TapeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TapeError::Json(m) => write!(f, "tape header is not valid JSON: {m}"),
+            TapeError::Format => write!(f, "tape format is not gibson.figure.tape.v1"),
+            TapeError::MissingField(n) => write!(f, "tape header lacks {n}"),
+            TapeError::BadField(n) => write!(f, "tape header field {n} is invalid"),
+            TapeError::FrameOutOfRange { frame, count } => {
+                write!(f, "frame {frame} is out of range ({count} frames)")
+            }
+            TapeError::BinLength { expected, got } => {
+                write!(f, "tape binary has {got} bytes, expected {expected}")
+            }
+            TapeError::BinSha => write!(f, "tape binary does not match bin_sha256"),
+            TapeError::NonFinite => write!(f, "tape binary holds a non-finite value"),
+            TapeError::BodyMismatch => write!(f, "tape was made for a different body id"),
+            TapeError::UnknownJoint { name } => write!(f, "tape joint {name:?} is not in the rig"),
+            TapeError::MissingJoint { name } => write!(f, "rig joint {name:?} is not in the tape"),
+        }
+    }
+}
+
+impl std::error::Error for TapeError {}
+
+// `Null` and `Bool` are parsed so that any valid header parses; no field reads them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+enum Json {
+    Null,
+    Bool(bool),
+    Num(f64),
+    Str(String),
+    Arr(Vec<Json>),
+    Obj(Vec<(String, Json)>),
+}
+
+struct JsonParser<'a> {
+    b: &'a [u8],
+    i: usize,
+}
+
+impl<'a> JsonParser<'a> {
+    fn ws(&mut self) {
+        while self.i < self.b.len() && matches!(self.b[self.i], b' ' | b'\t' | b'\n' | b'\r') {
+            self.i += 1;
+        }
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.b.get(self.i).copied()
+    }
+
+    fn expect(&mut self, c: u8) -> Result<(), &'static str> {
+        if self.peek() == Some(c) {
+            self.i += 1;
+            Ok(())
+        } else {
+            Err("unexpected character")
+        }
+    }
+
+    fn literal(&mut self, word: &str, v: Json) -> Result<Json, &'static str> {
+        let w = word.as_bytes();
+        if self.b[self.i..].starts_with(w) {
+            self.i += w.len();
+            Ok(v)
+        } else {
+            Err("bad literal")
+        }
+    }
+
+    fn string(&mut self) -> Result<String, &'static str> {
+        self.expect(b'"')?;
+        let mut out: Vec<u8> = Vec::new();
+        loop {
+            let c = match self.peek() {
+                Some(c) => c,
+                None => return Err("unterminated string"),
+            };
+            self.i += 1;
+            match c {
+                b'"' => break,
+                b'\\' => {
+                    let e = match self.peek() {
+                        Some(e) => e,
+                        None => return Err("bad escape"),
+                    };
+                    self.i += 1;
+                    match e {
+                        b'"' => out.push(b'"'),
+                        b'\\' => out.push(b'\\'),
+                        b'/' => out.push(b'/'),
+                        b'b' => out.push(8),
+                        b'f' => out.push(12),
+                        b'n' => out.push(b'\n'),
+                        b'r' => out.push(b'\r'),
+                        b't' => out.push(b'\t'),
+                        b'u' => {
+                            if self.i + 4 > self.b.len() {
+                                return Err("bad escape");
+                            }
+                            let h = std::str::from_utf8(&self.b[self.i..self.i + 4])
+                                .map_err(|_| "bad escape")?;
+                            let cp = u32::from_str_radix(h, 16).map_err(|_| "bad escape")?;
+                            self.i += 4;
+                            let ch = char::from_u32(cp).ok_or("surrogate escape")?;
+                            let mut buf = [0u8; 4];
+                            out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+                        }
+                        _ => return Err("bad escape"),
+                    }
+                }
+                c if c < 0x20 => return Err("control character in string"),
+                c => out.push(c),
+            }
+        }
+        String::from_utf8(out).map_err(|_| "string is not UTF-8")
+    }
+
+    fn value(&mut self, depth: usize) -> Result<Json, &'static str> {
+        if depth > 32 {
+            return Err("nesting too deep");
+        }
+        self.ws();
+        match self.peek() {
+            Some(b'{') => {
+                self.i += 1;
+                let mut v: Vec<(String, Json)> = Vec::new();
+                self.ws();
+                if self.peek() == Some(b'}') {
+                    self.i += 1;
+                    return Ok(Json::Obj(v));
+                }
+                loop {
+                    self.ws();
+                    let k = self.string()?;
+                    self.ws();
+                    self.expect(b':')?;
+                    let x = self.value(depth + 1)?;
+                    v.push((k, x));
+                    self.ws();
+                    match self.peek() {
+                        Some(b',') => self.i += 1,
+                        Some(b'}') => {
+                            self.i += 1;
+                            return Ok(Json::Obj(v));
+                        }
+                        _ => return Err("expected , or }"),
+                    }
+                }
+            }
+            Some(b'[') => {
+                self.i += 1;
+                let mut v: Vec<Json> = Vec::new();
+                self.ws();
+                if self.peek() == Some(b']') {
+                    self.i += 1;
+                    return Ok(Json::Arr(v));
+                }
+                loop {
+                    let x = self.value(depth + 1)?;
+                    v.push(x);
+                    self.ws();
+                    match self.peek() {
+                        Some(b',') => self.i += 1,
+                        Some(b']') => {
+                            self.i += 1;
+                            return Ok(Json::Arr(v));
+                        }
+                        _ => return Err("expected , or ]"),
+                    }
+                }
+            }
+            Some(b'"') => Ok(Json::Str(self.string()?)),
+            Some(b't') => self.literal("true", Json::Bool(true)),
+            Some(b'f') => self.literal("false", Json::Bool(false)),
+            Some(b'n') => self.literal("null", Json::Null),
+            Some(c) if c == b'-' || c.is_ascii_digit() => {
+                let start = self.i;
+                while let Some(c) = self.peek() {
+                    if c.is_ascii_digit() || matches!(c, b'-' | b'+' | b'.' | b'e' | b'E') {
+                        self.i += 1;
+                    } else {
+                        break;
+                    }
+                }
+                let t = std::str::from_utf8(&self.b[start..self.i]).map_err(|_| "bad number")?;
+                let n = t.parse::<f64>().map_err(|_| "bad number")?;
+                Ok(Json::Num(n))
+            }
+            _ => Err("unexpected token"),
+        }
+    }
+}
+
+fn parse_json(b: &[u8]) -> Result<Json, &'static str> {
+    let mut p = JsonParser { b, i: 0 };
+    let v = p.value(0)?;
+    p.ws();
+    if p.i != b.len() {
+        return Err("trailing characters");
+    }
+    Ok(v)
+}
+
+fn json_get<'a>(o: &'a Json, key: &str) -> Option<&'a Json> {
+    match o {
+        Json::Obj(v) => v.iter().find(|(k, _)| k == key).map(|(_, x)| x),
+        _ => None,
+    }
+}
+
+fn json_need<'a>(o: &'a Json, key: &'static str) -> Result<&'a Json, TapeError> {
+    json_get(o, key).ok_or(TapeError::MissingField(key))
+}
+
+fn json_strings(j: &Json, key: &'static str) -> Result<Vec<String>, TapeError> {
+    match j {
+        Json::Arr(a) => {
+            let mut out = Vec::with_capacity(a.len());
+            for x in a {
+                match x {
+                    Json::Str(s) => out.push(s.clone()),
+                    _ => return Err(TapeError::BadField(key)),
+                }
+            }
+            Ok(out)
+        }
+        _ => Err(TapeError::BadField(key)),
+    }
+}
+
+fn json_string(j: &Json, key: &'static str) -> Result<String, TapeError> {
+    match j {
+        Json::Str(s) => Ok(s.clone()),
+        _ => Err(TapeError::BadField(key)),
+    }
+}
+
+/// The header fields of `gibson.figure.tape.v1` that the skinner needs.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct TapeHeader {
+    pub body_rev_id: String,
+    /// Joint names, in the tape's channel order.
+    pub joints: Vec<String>,
+    /// Face channel names; each frame ends with one value per name.
+    pub face: Vec<String>,
+    pub fps: f64,
+    pub frame_count: usize,
+    pub bin_sha256: String,
+}
+
+impl TapeHeader {
+    /// Parse and validate a `<name>.tape.json`: the format string, the four channel names in
+    /// order, and the fields above.
+    pub fn parse(header: &[u8]) -> Result<TapeHeader, TapeError> {
+        let j = parse_json(header).map_err(TapeError::Json)?;
+        if json_string(json_need(&j, "format")?, "format")? != "gibson.figure.tape.v1" {
+            return Err(TapeError::Format);
+        }
+        let channels = json_strings(json_need(&j, "channels")?, "channels")?;
+        if channels != ["root_t3", "local_t3", "local_r4", "local_s3"] {
+            return Err(TapeError::BadField("channels"));
+        }
+        let joints = json_strings(json_need(&j, "joints")?, "joints")?;
+        let face = json_strings(json_need(&j, "face")?, "face")?;
+        let fps = match json_need(&j, "fps")? {
+            Json::Num(n) if n.is_finite() && *n > 0.0 => *n,
+            _ => return Err(TapeError::BadField("fps")),
+        };
+        let frame_count = match json_need(&j, "frame_count")? {
+            Json::Num(n) if n.is_finite() && *n >= 0.0 && n.fract() == 0.0 && *n < 1.0e9 => {
+                *n as usize
+            }
+            _ => return Err(TapeError::BadField("frame_count")),
+        };
+        Ok(TapeHeader {
+            body_rev_id: json_string(json_need(&j, "body_rev_id")?, "body_rev_id")?,
+            joints,
+            face,
+            fps,
+            frame_count,
+            bin_sha256: json_string(json_need(&j, "bin_sha256")?, "bin_sha256")?,
+        })
+    }
+
+    /// `f32` values per frame: root translation (3), per joint t3 + r4 + s3, then the face channels.
+    pub fn frame_floats(&self) -> usize {
+        3 + 10 * self.joints.len() + self.face.len()
+    }
+}
+
+/// A validated tape: header parsed, binary size and SHA-256 checked once, frames read on demand.
+#[derive(Debug, Clone)]
+pub struct TapeReader<'a> {
+    header: TapeHeader,
+    bin: &'a [u8],
+}
+
+impl<'a> TapeReader<'a> {
+    /// Validate `header` (`<name>.tape.json`) and `bin` (`<name>.tape.bin`, little-endian `f32`,
+    /// no padding): the size must be `frame_count * frame_floats * 4` and the SHA-256 must be
+    /// the header's `bin_sha256`.
+    pub fn new(header: &[u8], bin: &'a [u8]) -> Result<TapeReader<'a>, TapeError> {
+        let h = TapeHeader::parse(header)?;
+        let expected = h
+            .frame_count
+            .checked_mul(h.frame_floats())
+            .and_then(|x| x.checked_mul(4))
+            .ok_or(TapeError::BadField("frame_count"))?;
+        if bin.len() != expected {
+            return Err(TapeError::BinLength {
+                expected,
+                got: bin.len(),
+            });
+        }
+        if hex32(&sha256::digest(bin)) != h.bin_sha256 {
+            return Err(TapeError::BinSha);
+        }
+        Ok(TapeReader { header: h, bin })
+    }
+
+    /// The parsed header.
+    pub fn header(&self) -> &TapeHeader {
+        &self.header
+    }
+
+    fn floats(&self, frame: usize) -> Result<Vec<f32>, TapeError> {
+        if frame >= self.header.frame_count {
+            return Err(TapeError::FrameOutOfRange {
+                frame,
+                count: self.header.frame_count,
+            });
+        }
+        let n = self.header.frame_floats();
+        let start = frame * n * 4;
+        let mut out = Vec::with_capacity(n);
+        for k in 0..n {
+            let p = start + 4 * k;
+            let v = f32::from_le_bytes([
+                self.bin[p],
+                self.bin[p + 1],
+                self.bin[p + 2],
+                self.bin[p + 3],
+            ]);
+            if !v.is_finite() {
+                return Err(TapeError::NonFinite);
+            }
+            out.push(v);
+        }
+        Ok(out)
+    }
+
+    /// Frame `frame` in the TAPE's joint order (see [`Compiled::tape_frame`] for skeleton order).
+    pub fn frame(&self, frame: usize) -> Result<TapeFrame, TapeError> {
+        let f = self.floats(frame)?;
+        let mut locals = Vec::with_capacity(self.header.joints.len());
+        for j in 0..self.header.joints.len() {
+            let o = 3 + 10 * j;
+            locals.push(Transform::new(
+                Vec3::new(f[o], f[o + 1], f[o + 2]),
+                Quat::new(f[o + 3], f[o + 4], f[o + 5], f[o + 6]),
+                Vec3::new(f[o + 7], f[o + 8], f[o + 9]),
+            ));
+        }
+        Ok(TapeFrame {
+            root_t: Vec3::new(f[0], f[1], f[2]),
+            locals,
+        })
+    }
+
+    /// The face channel values of frame `frame`, in the header's `face` order.
+    pub fn face_channels(&self, frame: usize) -> Result<Vec<f32>, TapeError> {
+        let f = self.floats(frame)?;
+        let start = 3 + 10 * self.header.joints.len();
+        Ok(f[start..].to_vec())
+    }
+}
+
+impl TapeFrame {
+    /// Frame `frame` of a `gibson.figure.tape.v1` (`header` = the `.tape.json` bytes, `bin` = the
+    /// `.tape.bin` bytes), locals in the tape's joint order. Validates the whole binary on every
+    /// call; use [`TapeReader`] to validate once.
+    pub fn from_tape_bytes(
+        header: &[u8],
+        bin: &[u8],
+        frame: usize,
+    ) -> Result<TapeFrame, TapeError> {
+        TapeReader::new(header, bin)?.frame(frame)
+    }
+}
+
+impl Compiled {
+    /// Frame `frame` of `tape` as a [`TapeFrame`] in THIS rig's joint order. The tape must have been
+    /// made for this body (`body_rev_id`) and must name exactly this rig's joints.
+    pub fn tape_frame(&self, tape: &TapeReader<'_>, frame: usize) -> Result<TapeFrame, TapeError> {
+        let h = tape.header();
+        if h.body_rev_id != self.body_rev_id.to_hex() {
+            return Err(TapeError::BodyMismatch);
+        }
+        let f = tape.frame(frame)?;
+        let nj = self.skeleton.joint_count();
+        let mut slots: Vec<Option<Transform>> = vec![None; nj];
+        for (k, name) in h.joints.iter().enumerate() {
+            let Some(j) = self.skeleton.joint_index(name) else {
+                return Err(TapeError::UnknownJoint { name: name.clone() });
+            };
+            if slots[j].is_some() {
+                return Err(TapeError::BadField("joints"));
+            }
+            slots[j] = Some(f.locals[k]);
+        }
+        let mut locals = Vec::with_capacity(nj);
+        for (j, s) in slots.into_iter().enumerate() {
+            match s {
+                Some(t) => locals.push(t),
+                None => {
+                    return Err(TapeError::MissingJoint {
+                        name: self.skeleton.joints()[j].name.clone(),
+                    })
+                }
+            }
+        }
+        Ok(TapeFrame {
+            root_t: f.root_t,
+            locals,
+        })
+    }
+}
