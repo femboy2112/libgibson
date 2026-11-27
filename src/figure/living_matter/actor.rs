@@ -387,12 +387,12 @@ impl FigureDynamics {
             collision.insert(
                 &body.positions,
                 c.indices().chunks_exact(3).map(|t| [t[0], t[1], t[2]]),
-            );
+            )?;
             for (i, m) in meshes.iter().enumerate() {
                 if m.role == MeshRole::Garment
                     && !self.cloth.as_ref().is_some_and(|(ci, _)| *ci == i)
                 {
-                    collision.insert(&m.positions, m.triangles.iter().copied());
+                    collision.insert(&m.positions, m.triangles.iter().copied())?;
                 }
             }
         }

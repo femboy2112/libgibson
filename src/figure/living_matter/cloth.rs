@@ -136,12 +136,13 @@ impl Cloth {
             &pins,
             &project,
             |pos, old, inv| {
-                super::contact::separate_sheet(pos, old, inv, &self.proxy_faces, self.cols);
+                super::contact::separate_sheet(pos, old, inv, &self.proxy_faces, self.cols)?;
                 for (p, w) in pos.iter_mut().zip(inv) {
                     if *w > 0. {
                         *p = project(*p, 1.);
                     }
                 }
+                Ok(())
             },
         )?;
         // Transport the fine cut detail in the instantaneous material frame. This preserves

@@ -118,7 +118,8 @@ fn real_surface_contact_and_pose_relative_support() {
     s.insert(
         &[Vec3::ZERO, Vec3::new(1., 0., 0.), Vec3::new(0., 1., 0.)],
         [[0, 1, 2]].into_iter(),
-    );
+    )
+    .unwrap();
     let p = Vec3::new(0.2, 0.2, -0.004);
     let valid = |q: Vec3| (q.z - 0.004).abs() < 0.00001;
     assert!(valid(s.project(p, 0.004)));
@@ -162,9 +163,20 @@ fn folded_sheet_separates_unrelated_faces_without_moving_pins() {
     let old = p.clone();
     let mut inv = vec![0.; 32];
     inv[20] = 1.;
-    contact::separate_sheet(&mut p, &old, &inv, &[ids], 8);
+    contact::separate_sheet(&mut p, &old, &inv, &[ids], 8).unwrap();
     assert!((p[20].z - 0.005).abs() < 1e-6);
     for k in ids {
         assert_eq!(p[k], old[k]);
     }
+}
+
+#[test]
+fn implausible_collision_extent_fails_before_expanding_the_grid() {
+    let mut s = contact::Surface::new();
+    let v = [
+        Vec3::ZERO,
+        Vec3::new(10000., 0., 0.),
+        Vec3::new(0., 10000., 0.),
+    ];
+    assert!(s.insert(&v, [[0, 1, 2]].into_iter()).is_err());
 }

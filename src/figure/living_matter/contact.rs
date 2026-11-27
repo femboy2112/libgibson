@@ -13,6 +13,23 @@ fn index(p: Vec3) -> [i32; 3] {
     ]
 }
 
+/// Reject a malformed or exploded primitive before expanding the broad phase.
+fn account_cells(lo: [i32; 3], hi: [i32; 3], total: &mut usize) -> Result<(), &'static str> {
+    let mut count = 1usize;
+    for k in 0..3 {
+        let span = i64::from(hi[k]) - i64::from(lo[k]) + 1;
+        if !(1..=80).contains(&span) {
+            return Err("collision primitive exceeds spatial budget");
+        }
+        count *= span as usize;
+    }
+    if count > 4096 || count > 2_000_000usize.saturating_sub(*total) {
+        return Err("collision grid exceeds spatial budget");
+    }
+    *total += count;
+    Ok(())
+}
+
 #[derive(Clone, Copy)]
 struct Tri {
     a: Vec3,
@@ -53,16 +70,22 @@ impl Tri {
 
 pub(super) struct Surface {
     faces: Vec<Tri>,
+    postings: usize,
     bins: HashMap<[i32; 3], Vec<usize>>,
 }
 impl Surface {
     pub(super) fn new() -> Self {
         Self {
             faces: Vec::new(),
+            postings: 0,
             bins: HashMap::new(),
         }
     }
-    pub(super) fn insert(&mut self, v: &[Vec3], indices: impl Iterator<Item = [u32; 3]>) {
+    pub(super) fn insert(
+        &mut self,
+        v: &[Vec3],
+        indices: impl Iterator<Item = [u32; 3]>,
+    ) -> Result<(), &'static str> {
         for xyz in indices {
             let [a, b, c] = xyz.map(|i| v[i as usize]);
             let Some(normal) = b.sub(a).cross(c.sub(a)).try_normalize() else {
@@ -78,6 +101,7 @@ impl Surface {
                 a.y.max(b.y).max(c.y) + BAND,
                 a.z.max(b.z).max(c.z) + BAND,
             ));
+            account_cells(lo, hi, &mut self.postings)?;
             let id = self.faces.len();
             self.faces.push(Tri { a, b, c, normal });
             for x in lo[0]..=hi[0] {
@@ -88,6 +112,7 @@ impl Surface {
                 }
             }
         }
+        Ok(())
     }
     pub(super) fn project(&self, p: Vec3, thickness: f32) -> Vec3 {
         let Some(ids) = self.bins.get(&index(p)) else {
@@ -127,7 +152,7 @@ pub(super) fn separate_sheet(
     inv: &[f32],
     faces: &[[usize; 3]],
     cols: usize,
-) {
+) -> Result<(), &'static str> {
     const GAP: f32 = 0.005;
     let point = |p: Vec3| {
         [
@@ -137,6 +162,7 @@ pub(super) fn separate_sheet(
         ]
     };
     let mut bins: HashMap<[i32; 3], Vec<usize>> = HashMap::new();
+    let mut postings = 0;
     for (j, ids) in faces.iter().enumerate() {
         let [a, b, c] = ids.map(|i| pos[i]);
         let lo = point(Vec3::new(
@@ -149,6 +175,7 @@ pub(super) fn separate_sheet(
             a.y.max(b.y).max(c.y) + GAP,
             a.z.max(b.z).max(c.z) + GAP,
         ));
+        account_cells(lo, hi, &mut postings)?;
         for x in lo[0]..=hi[0] {
             for y in lo[1]..=hi[1] {
                 for z in lo[2]..=hi[2] {
@@ -218,4 +245,5 @@ pub(super) fn separate_sheet(
             }
         }
     }
+    Ok(())
 }

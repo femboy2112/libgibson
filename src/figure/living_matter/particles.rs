@@ -114,7 +114,7 @@ impl Particles {
             friction,
             pins,
             project,
-            |_, _, _| {},
+            |_, _, _| Ok(()),
         )
     }
 
@@ -135,7 +135,7 @@ impl Particles {
     ) -> Result<(), &'static str>
     where
         F: Fn(Vec3, f32) -> Vec3,
-        S: Fn(&mut [Vec3], &[Vec3], &[f32]),
+        S: Fn(&mut [Vec3], &[Vec3], &[f32]) -> Result<(), &'static str>,
     {
         if !(1..=16).contains(&substeps)
             || !(1..=32).contains(&iterations)
@@ -192,7 +192,7 @@ impl Particles {
                     }
                 }
             }
-            self_project(&mut pos, &old, &self.inv_mass);
+            self_project(&mut pos, &old, &self.inv_mass)?;
             for i in 0..pos.len() {
                 let mut v = pos[i].sub(old[i]).scale(1. / dt);
                 let n = normals[i];
