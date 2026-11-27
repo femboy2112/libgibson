@@ -1205,7 +1205,7 @@ fn hostile_asset_bytes_are_typed_errors() {
     let mut more = TUNIC.to_vec();
     more.push(0);
     assert!(matches!(
-        AssetSet::from_bytes(BODY, &[&more]),
+        AssetSet::from_bytes(BODY, &[more.as_slice()]),
         Err(AssetError::TrailingBytes { extra: 1 })
     ));
     // n_vertices (offset: prefix, id string, version, grounded flag) set to u32::MAX
