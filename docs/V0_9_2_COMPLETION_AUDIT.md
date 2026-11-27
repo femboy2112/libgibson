@@ -8,7 +8,7 @@ Candidate scope: PR #461, `stage::motion` (M5-A G1–G4), on `feat/m5-motion` of
 
 | Item | Status | Evidence |
 |---|---|---|
-| M5-A G1 `FrameSequence`, G2 `LayerSlots`, G3 `CueSchedule`, G4 hidden-quiescence test (EXPERIMENTAL, additive) | **Done** (QUALIFIED; hosted CI on the final head still pending) | See the breakdown below the table. |
+| M5-A G1 `FrameSequence`, G2 `LayerSlots`, G3 `CueSchedule`, G4 hidden-quiescence test (EXPERIMENTAL, additive) | **Done** | Merged as `4a86232` (head `5999b7f`: hosted CI run 45907340425 9/9 including the `stage_motion_kit` example build, Release preflight run 45907340415). See the breakdown below the table. |
 | Continuous motion: sprite in-betweens (sub-cell offsets, crossfade; Leah ruling 17) | **Deferred to a later 0.9.x** | GOD's ruling at #63. `FrameSequence` is labelled the **keyframe layer** in the module docs and in the CHANGELOG (5999b7f). Packet scope was approved at GOD #63. It starts after M5-B Slice 1 qualifies. |
 | Live-playback capture with frame-timing metrics | **Deferred to the next motion checkpoint** | Leah's verdict, binding on the next checkpoint (VIEWED.md). |
 | #294 resize (GHOST) | **Not in 0.9.2** | Spec #458 has the probe plan only. ROADMAP:195 already documents the steer to fullscreen. |
@@ -16,7 +16,7 @@ Candidate scope: PR #461, `stage::motion` (M5-A G1–G4), on `feat/m5-motion` of
 | #444 multi-line text area | **Deferred to 0.10.0** (unchanged) | It breaks `ui::Interaction` literals (Release Contract §1). |
 | `max_frame_bytes` for the kitty frame plan, and the prompt editor | **Not in 0.9.2** (unchanged) | Not scheduled. |
 | Release classification | **Patch** | It adds a new experimental module and one `pub mod motion;` line in `stage.rs`. No existing all-public struct or exhaustive enum changes. There is no C ABI change; `git diff 29ca8de <rc> -- abi include bindings` must be empty except the version. There is a new `[[example]]`, `stage_motion_kit`. |
-| Release gates (exact-head CI including Release preflight and the `stage_motion_kit` example build) | **Pending** | Observed on the final release-prep head. On #461 @5999b7f, MSRV, parser laws and Python wire were green, and Rust and Release preflight were in progress at the time of writing. |
+| Release gates (exact-head CI including Release preflight and the `stage_motion_kit` example build) | **Pending** | Observed on the final release-prep head. #461 final head `5999b7f`: 9/9 green plus Release preflight. The prep head is observed separately. |
 | Consumer gate | **Substituted**, as for 0.9.0 and 0.9.1 (coordinator ruling) | The change is additive and GHOST does not consume `stage::motion` yet. Hosted CI on the exact candidate plus the abi/include/bindings diff. GHOST's pin bump to 0.9.2 is gated at its next integration candidate. |
 
 Evidence for the M5-A row:
