@@ -1,0 +1,30 @@
+{
+ "engine": "EEVEE_NEXT",
+ "engine_note": "eevee smoke: child ok",
+ "fell_back": null,
+ "frame_res": [
+  1280,
+  720
+ ],
+ "frame_s_max": 6.003442764282227,
+ "frame_s_mean": 5.829022864500682,
+ "frames": 24,
+ "rig_bones_animated": [
+  "arm_l",
+  "arm_r",
+  "spine"
+ ],
+ "settings": {
+  "engine": "EEVEE_NEXT",
+  "samples": 64
+ },
+ "stage": {
+  "camera_distance_m": 6.889290461937587,
+  "height_m": 2.8024232387542725
+ },
+ "still_res": [
+  1920,
+  1080
+ ],
+ "still_s": 13.498447895050049
+}
