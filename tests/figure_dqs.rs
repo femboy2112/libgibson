@@ -816,6 +816,9 @@ fn oracle_of(axis: [f32; 3], deg: f32, t: [f32; 3]) -> oracle::Dq {
     )
 }
 
+/// One sign-invariance case: (first, second, weights, raw dot must be negative, oracle first, oracle second).
+type SignCase = (DualQuat, DualQuat, (f32, f32), bool, oracle::Dq, oracle::Dq);
+
 /// `-q` is the same transform as `q`: negating any non-first term of a blend must not change the
 /// result (it is exactly the sign alignment that guarantees this), including for pairs whose
 /// quaternions are on opposite hemispheres (rotations more than 180 degrees apart as 4-D
@@ -825,7 +828,7 @@ fn oracle_of(axis: [f32; 3], deg: f32, t: [f32; 3]) -> oracle::Dq {
 fn blend_is_invariant_to_the_sign_of_a_later_term_and_takes_the_short_way() {
     let z = [0.0, 0.0, 1.0];
     // (first, second, weights, true when the raw quaternion dot product must be negative)
-    let cases: [(DualQuat, DualQuat, (f32, f32), bool, oracle::Dq, oracle::Dq); 3] = [
+    let cases: [SignCase; 3] = [
         (
             rigid(z, 100.0, [0.0; 3]),
             rigid(z, -100.0, [0.0; 3]),
