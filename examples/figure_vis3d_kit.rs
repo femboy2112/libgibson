@@ -1107,6 +1107,7 @@ struct EventOut {
     pass: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn analyse_event(
     rev: &CharacterRevision,
     names: &[String],
@@ -1356,8 +1357,9 @@ fn analyse_scene(rev: &CharacterRevision, scene: &Scene, out_dir: &Path) -> (Str
             .events
             .iter()
             .any(|e| (i as i64 - e.at_ms).abs() <= WINDOW_MS);
-        for p in 0..np {
-            let j = second_diff(sweep[i + 1][p], sweep[i][p], sweep[i - 1][p]) / H_S;
+        let triples = sweep[i + 1].iter().zip(&sweep[i]).zip(&sweep[i - 1]);
+        for (p, ((&next, &cur), &prev)) in triples.enumerate().take(np) {
+            let j = second_diff(next, cur, prev) / H_S;
             if j > gmax.0 {
                 gmax = (j, i, p);
             }
