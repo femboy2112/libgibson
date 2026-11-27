@@ -372,6 +372,14 @@ These are observations about drafts, not defects of shipped code.
 | Q9 | Where should recorded interactive sessions live: as intent logs the host stores, or as a library file format? | section 4.3 depends on it | library defines the log format, host stores it |
 | Q10 | Priority between P1 (mocap/retarget), P2 (secondary dynamics) and P3 (lip sync) relative to D2 to D4 | sequencing after FIRST PERFORMANCE | D1, D2, then P1; P2/P3 after D3 |
 
+**Coordinator ruling #110 (recorded):**
+- **Adopted as stated:** the defaults for Q1, Q2 (declared cuts only), Q3, Q4, Q5, Q6, Q7, Q9
+  and Q10.
+- **Q5 detail:** glTF stays in T1 tooling. There is no T0 glTF in the crate without an amendment
+  to ruling #39.
+- **Q8:** the thresholds stay PROPOSED and go to the owner's batch after FIRST PERFORMANCE.
+- Lane D is closed for this round.
+
 ## 14. Provenance, licence and privacy notes
 
 - This document is original design prose; it copies no third-party text. Format and tool
