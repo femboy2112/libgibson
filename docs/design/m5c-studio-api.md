@@ -73,3 +73,32 @@ Live::set_reduced_motion(bool); Live::quiesce(); Live::stop()
 ## 4. Out of scope for FIRST PERFORMANCE
 Multiple actors, scene graphs, full wardrobe, cloth or hair dynamics, and lip sync. These belong in
 `docs/design/DIRECTOR_ROADMAP.md`.
+
+## 5. Tape file format `gibson.figure.tape.v1` (the shared contract between runtime, preview and Blender adapter)
+- **Files:** `<name>.tape.json` (the header) plus `<name>.tape.bin` (little-endian f32, no padding).
+- **Header fields:**
+  - `format`: `"gibson.figure.tape.v1"`.
+  - Identities: `body_rev_id`, `fit_id`, `present_id` (hex).
+  - `asset_manifest_sha256`.
+  - `controls`: {name: value}, in exact recipe order.
+  - `garments`: [id], plus `fit_status` {id: verdict}.
+  - `materials`: {slot: {...}}.
+  - `style`: {preset, amplitude, tempo, settle_ms}.
+  - `fps`, `frame_count`.
+  - `joints`: [names], in skeleton order. Every name must exist in the exported rig.
+  - `channels`: `["root_t3", "local_t3", "local_r4", "local_s3"]`.
+  - `face`: [channel names].
+  - `events`: [{frame, kind, label}].
+  - `camera_cuts`: [{frame, camera_id}].
+  - `bin_sha256`.
+- **Body bytes:** each frame is laid out in this order:
+  1. root translation (3 values);
+  2. per joint, in `joints` order: local translation (3), rotation quaternion xyzw (4), scale (3);
+  3. face channels (`len(face)` values).
+- **Determinism:** the runtime evaluates `pose(t)` at `t = frame / fps` with fixed f32 order. The
+  same recipe plus the same script gives byte-identical tape files.
+- **Consumers:**
+  - the libgibson software preview, which skins with the selected `SkinningMode`;
+  - the Blender adapter, which sets pose bones from the locals, applies the same control values
+    through MPFB, and fits the same garments.
+  - The oracle compares the posed vertices of both on sampled frames.
