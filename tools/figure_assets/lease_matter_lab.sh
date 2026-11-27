@@ -7,7 +7,7 @@ phase=${1:?build|physics|movies|assemble}
 asset=${2:?converted generic asset directory}
 out=${3:?private output directory}
 here=$(cd "$(dirname "$0")" && pwd)
-repo=$(git -C "$here" rev-parse --show-toplevel)
+repo=$(cd "$here/../.." && pwd)
 cd "$repo"
 mkdir -p "$out"
 preset="$here/presets/generic_neutral.json"
