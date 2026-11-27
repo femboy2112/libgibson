@@ -3,73 +3,19 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 
+mod bake;
+mod recipe;
+mod scene;
+
 use gibson::figure::math::Vec3;
 use gibson::figure::perform::{
     perform, Beat, PerformanceScript, Rig, RigGeometry, RigMap, RigRoles, Style, TapeIdentity,
 };
-use gibson::figure::studio::{
-    compile, AdaptationV1, AssetSet, Compiled, FitStatus, GarmentV1, MaterialSlotV1, RecipeV1,
-    BODY_FRONT,
-};
-use serde_json::{from_value, json, Map, Value};
+use gibson::figure::studio::{compile, AssetSet, Compiled, FitStatus, BODY_FRONT};
+use recipe::build_recipe;
+use serde_json::{json, Map, Value};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-
-fn generic_recipe(preset: &Value, style: &Style) -> Result<RecipeV1> {
-    if preset["name"] != "generic_neutral" || preset["rig"] != "game_engine" {
-        return Err("the still requires the generic_neutral preset and the game_engine rig".into());
-    }
-    let mut recipe = RecipeV1::new();
-    let controls = preset["controls"].as_object().ok_or("missing controls")?;
-    for (name, value) in controls {
-        recipe.set_control(name, from_value(value.clone())?);
-    }
-    let render = &preset["render"];
-    let materials = render["materials"].as_object().ok_or("missing materials")?;
-    for (slot, spec) in materials {
-        let mut m = MaterialSlotV1::new(slot);
-        m.albedo = from_value(spec["albedo"].clone())?;
-        m.roughness = from_value(spec["roughness"].clone())?;
-        m.metalness = from_value(spec["metalness"].clone())?;
-        if let Some(color) = spec.get("emissive") {
-            m.emissive = Some((
-                from_value(color.clone())?,
-                from_value(spec["emissive_intensity"].clone())?,
-            ));
-        }
-        recipe.materials.push(m);
-    }
-    recipe.hair.style_id = Some(from_value(render["hair"]["id"].clone())?);
-    recipe.hair.color = from_value(render["hair"]["color"].clone())?;
-    let garment_ids: Vec<String> = from_value(render["garments"].clone())?;
-    let bindings = render["bindings"]
-        .as_object()
-        .ok_or("missing garment bindings")?;
-    for id in garment_ids {
-        let kind = if id == "skirt_a_line" {
-            "skirt"
-        } else {
-            "garment"
-        };
-        let slot = bindings
-            .get(&format!("garment:{id}"))
-            .or_else(|| bindings.get(kind))
-            .and_then(Value::as_str)
-            .ok_or_else(|| format!("missing slot binding for {id}"))?;
-        if !materials.contains_key(slot) {
-            return Err(format!("undefined slot {slot} on {id}").into());
-        }
-        let mut garment = GarmentV1::new(id);
-        garment.slot_bindings.push((String::new(), slot.to_owned()));
-        recipe.garments.push(garment);
-    }
-    recipe.fit_params.adaptation = Some(AdaptationV1::default());
-    recipe.motion_style.preset = style.preset.clone();
-    recipe.motion_style.amplitude = style.amplitude;
-    recipe.motion_style.tempo = style.tempo;
-    recipe.motion_style.settle_ease_ms = style.settle_ms as f32;
-    Ok(recipe)
-}
 
 fn game_engine_rig(compiled: &Compiled) -> Result<Rig> {
     let skeleton = compiled.skeleton();
@@ -106,10 +52,22 @@ fn source_manifest(asset_dir: &Path) -> Result<String> {
     Ok(sha.to_owned())
 }
 
-fn run(asset_dir: &Path, preset_path: &Path, out: &Path) -> Result<()> {
+fn run(
+    asset_dir: &Path,
+    preset_path: &Path,
+    out: &Path,
+    options: Option<scene::Options>,
+) -> Result<()> {
     let preset: Value = serde_json::from_slice(&fs::read(preset_path)?)?;
-    let style = Style::restrained();
-    let recipe = generic_recipe(&preset, &style)?;
+    if options.is_none() && preset["name"] != "generic_neutral" {
+        return Err("the reference still requires generic_neutral".into());
+    }
+    let style = if options.is_some() {
+        recipe::movement_style(&preset)?
+    } else {
+        Style::restrained()
+    };
+    let recipe = build_recipe(&preset, &style)?;
     let manifest_sha = source_manifest(asset_dir)?;
     let assets = AssetSet::load_dir(asset_dir)?;
     let compiled = compile(&recipe, &assets)?;
@@ -139,10 +97,41 @@ fn run(asset_dir: &Path, preset_path: &Path, out: &Path) -> Result<()> {
     }
     let rig = game_engine_rig(&compiled)?;
     let fps = 30;
-    let script = PerformanceScript::new(style).with(Beat::Idle {
-        secs: 1.0 / fps as f32,
-    });
-    let tape = perform(&rig, &script, fps)?;
+    let (mut script, seat) = match options.as_ref() {
+        Some(o) => scene::performance(&rig, style, o.sequence)?,
+        None => (
+            PerformanceScript::new(style).with(Beat::Idle {
+                secs: 1.0 / fps as f32,
+            }),
+            None,
+        ),
+    };
+    let mut tape = perform(&rig, &script, fps)?;
+    let chair = if let Some(mut position) = seat {
+        let (mut data, min_x) = scene::seated_chair(&compiled, &tape, position)?;
+        if position.x < min_x {
+            println!("seat_lateral_adjustment_m={}", min_x - position.x);
+            position.x = min_x + 0.002;
+            for beat in &mut script.beats {
+                if let Beat::Sit { seat_pos, .. } = beat {
+                    *seat_pos = position;
+                }
+            }
+            tape = perform(&rig, &script, fps)?;
+            let (updated, required_x) = scene::seated_chair(&compiled, &tape, position)?;
+            if position.x < required_x {
+                return Err(format!(
+                    "walk clearance requires pelvis x {required_x}, got {}",
+                    position.x
+                )
+                .into());
+            }
+            data = updated;
+        }
+        Some(data)
+    } else {
+        None
+    };
     let id = TapeIdentity {
         body_rev_id: compiled.body_rev_id().to_hex(),
         fit_id: compiled.fit_id().to_hex(),
@@ -154,7 +143,11 @@ fn run(asset_dir: &Path, preset_path: &Path, out: &Path) -> Result<()> {
             .map(|r| (r.id.clone(), format!("{:?}", r.status)))
             .collect(),
         materials_json: serde_json::to_string(&preset["render"]["materials"])?,
-        camera_cuts: vec![],
+        camera_cuts: if options.is_some() {
+            scene::cuts(&tape)
+        } else {
+            Vec::new()
+        },
     };
     let fit = json!({
         "body_rev_id": id.body_rev_id,
@@ -169,6 +162,17 @@ fn run(asset_dir: &Path, preset_path: &Path, out: &Path) -> Result<()> {
     fs::write(out.join("generic.fit.json"), serde_json::to_vec(&fit)?)?;
     fs::write(out.join("generic.tape.bin"), files.bin)?;
     fs::write(out.join("generic.tape.json"), files.header_json)?;
+    if let Some(o) = options {
+        scene::write_setup(&tape, &fit, out, chair)?;
+        if !o.kinematic_only {
+            bake::bake(&compiled, &tape, &fit, out, o.config, o.preroll_frames)?;
+        }
+        println!(
+            "fps={fps} frames={} sequence={:?} fit_id={}",
+            tape.frame_count, o.sequence, id.fit_id
+        );
+        return Ok(());
+    }
     println!(
         "fps={fps} frames={} requested_idle_s=1/30 still_frame=0 fit_id={}",
         tape.frame_count, id.fit_id
@@ -178,8 +182,13 @@ fn run(asset_dir: &Path, preset_path: &Path, out: &Path) -> Result<()> {
 
 fn main() -> Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    let [asset, preset, out] = args.as_slice() else {
-        return Err("usage: gibson-still-recipe ASSET_DIR GENERIC_PRESET_JSON OUT_DIR".into());
+    let [asset, preset, out, flags @ ..] = args.as_slice() else {
+        return Err("usage: gibson-still-recipe ASSET_DIR PRESET_JSON OUT_DIR [--performance idle|scene --kinematic-only | physics options]".into());
     };
-    run(Path::new(asset), Path::new(preset), Path::new(out))
+    run(
+        Path::new(asset),
+        Path::new(preset),
+        Path::new(out),
+        scene::Options::parse(flags)?,
+    )
 }

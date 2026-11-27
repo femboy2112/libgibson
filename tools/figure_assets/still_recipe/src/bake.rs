@@ -34,7 +34,7 @@ pub fn bake(
     let scene = out.join("scene.json");
     if scene.is_file() {
         let scene: Value = serde_json::from_slice(&fs::read(scene)?)?;
-        if let Some(seat) = scene.get("seat") {
+        if let Some(seat) = scene.get("seat").filter(|value| !value.is_null()) {
             let center: [f32; 3] = serde_json::from_value(seat["center"].clone())?;
             let size: [f32; 3] = serde_json::from_value(seat["size"].clone())?;
             let v = |a: [f32; 3]| Vec3::new(a[0], a[1], a[2]);

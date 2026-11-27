@@ -2,6 +2,7 @@
 name = "gibson-still-recipe"
 version = "0.1.0"
 edition = "2021"
+default-run = "gibson-still-recipe"
 publish = false
 
 [workspace]

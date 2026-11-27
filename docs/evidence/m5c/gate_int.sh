@@ -51,7 +51,12 @@ n=$(ran head_figure_perform)
 [ "$n" -ge "$PERFORM_MIN_TESTS" ] || fail "figure_perform ran $n tests, expected >= $PERFORM_MIN_TESTS"
 n=$(ran head_figure_studio)
 [ "$n" -ge "$STUDIO_MIN_TESTS" ] || fail "figure_studio ran $n tests, expected >= $STUDIO_MIN_TESTS"
-if grep -rqs 'cfg(test)' src/figure src/figure.rs; then fail "src/figure gained unit tests; add a lib step"; fi
+if grep -rqs 'cfg(test)' src/figure src/figure.rs; then
+  run head_figure_unit $T test --features figure --lib 'figure::'
+  n=$(ran head_figure_unit); echo "head_figure_unit_ran=$n"
+  [ "$RC" -eq 0 ] || fail "figure unit rc=$RC"
+  [ "$n" -gt 0 ] || fail "figure unit ran 0 tests"
+fi
 
 # Mutants. Expected killers (from the predicted matrix) must be among the failures.
 check_mutant() {
