@@ -1,0 +1,29 @@
+{
+  "original": {
+    "exit": 0,
+    "killed": [],
+    "sha256": "12b488d5e5b10dd4552620f297bf0776a05e5317701330153f6c6a6e48a3230b"
+  },
+  "gravity_ignored": {
+    "exit": 101,
+    "killed": [
+      "figure::living_matter::lab::analytic_gravity_history_and_timestep_mutation_controls",
+      "figure::living_matter::tests::hanging_mass_matches_hooke_equilibrium_and_can_replay_from_checkpoint"
+    ],
+    "sha256": "4ecb137e8ee54fe38021e2f9e82dc98e56918f3c2ec81be177aaf2f474680362"
+  },
+  "fabric_aliased": {
+    "exit": 101,
+    "killed": [
+      "figure::living_matter::lab::identical_cut_different_fabric_and_alias_mutant"
+    ],
+    "sha256": "8d07e43a66596eb13f73bbd4e816cf75d9df44526575414aa3e29e3950f8a1f8"
+  },
+  "contact_disabled": {
+    "exit": 101,
+    "killed": [
+      "figure::living_matter::lab::real_surface_contact_and_pose_relative_support"
+    ],
+    "sha256": "65b976fffae1646d671ca15c424e4edd6ffa949f43f91714273c8ed8e76b8c76"
+  }
+}
