@@ -509,8 +509,10 @@ def synthetic_fixture():
       sink      dz = -0.05 (pos) / +0.05 (neg)                on every non-fixed vertex
     Parts: tunic (clothes, bound to ring 2 with weights 0.8/0.1/0.1, offset 0.05 outward, const scales), shell
     (clothes, bound to the 8 fixed helpers at radius 0.172 on z = 1.0: it does NOT follow the
-    body, so a bulge pushes the body through it; a stature change moves ring 2 away from it too, so use
-    it in bulge-only recipes), tabard (clothes, bound 1:1 to ring 1, offset
+    body, so a bulge pushes the body through it; it hides ring 0 (delete_verts), which the bulge does
+    not move; a stature change moves ring 2 away from it too, so use
+    it in bulge-only recipes), plug (the same geometry, but it hides ring 2, the ring the bulge
+    moves), tabard (clothes, bound 1:1 to ring 1, offset
     0.05 outward scaled by the hip breadth), cap (hair, bound to ring 3, offset +0.03 up scaled by
     the stature).
     """
@@ -651,8 +653,13 @@ def synthetic_fixture():
     sh_bind = [(fixed_first + k, fixed_first + k, fixed_first + k, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0)
                for k in range(SEG)]
     shell = {"id": "shell", "kind": "clothes", "bind": sh_bind, "spec": spec1, "indices": tun_tris,
-             "skin": [transfer(16 + k) for k in range(SEG)], "hidden": []}
+             "skin": [transfer(16 + k) for k in range(SEG)], "hidden": list(range(0, 8))}
     shell["positions"] = fit_const(sh_bind, spec1)
+    # plug: the shell again, but it hides ring 2 (its delete_verts), the ring the bulge control
+    # moves, so the body vertices that would poke through it are not part of its penetration measure
+    plug = dict(shell)
+    plug["id"] = "plug"
+    plug["hidden"] = list(range(16, 24))
 
     # tabard: ring 1 vertex k, offset 0.05 outward (x, y) scaled by the hip breadth ratio
     tab_bind = []
@@ -674,7 +681,7 @@ def synthetic_fixture():
            "skin": [transfer(24 + k) for k in range(SEG)], "hidden": []}
     cap["positions"] = [(positions[b[0]][0], positions[b[0]][1], positions[b[0]][2] + 0.03) for b in cap_bind]
 
-    parts = [(p["id"], p["kind"], encode_part(p)) for p in (tunic, shell, tabard, cap)]
+    parts = [(p["id"], p["kind"], encode_part(p)) for p in (tunic, shell, plug, tabard, cap)]
     return encode_body(body), parts
 
 

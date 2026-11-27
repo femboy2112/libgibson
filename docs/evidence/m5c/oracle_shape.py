@@ -13,7 +13,7 @@ What it recomputes (the `rev.v1` coupled derivation, docs/FIGURE_CONTRACT.md):
                                                                   product of the declared local rotations)
   bone     = |local_t|
   part_i   = w0 P[v0] + w1 P[v1] + w2 P[v2] + (ox sx, oy sy, oz sz)   (the MakeHuman .mhclo rule)
-  penetration: nearest body vertex (ties: lowest index) of each part vertex; signed distance along that
+  penetration: nearest body vertex (ties: lowest index; a part vertex whose nearest body vertex is in its delete_verts is skipped) of each part vertex; signed distance along that
   vertex's area-weighted normal; depth = -signed if negative; count = #(depth > tolerance).
 
 Usage:
@@ -301,7 +301,8 @@ def body_normals(p, tris, n_body):
     return out
 
 
-def penetration(garment, p, normals, tolerance):
+def penetration(garment, p, normals, tolerance, hidden=()):
+    hid = set(hidden)  # the body vertices the part hides (delete_verts) are not measured
     cand = [i for i, n in enumerate(normals) if n is not None]
     cx = [p[i][0] for i in cand]
     cy = [p[i][1] for i in cand]
@@ -318,6 +319,8 @@ def penetration(garment, p, normals, tolerance):
             if d2 < best_d2:
                 best_d2, best = d2, k
         b = cand[best]
+        if b in hid:
+            continue  # nearest body vertex is hidden under the part: not measured
         n = normals[b]
         s = (gx - p[b][0]) * n[0] + (gy - p[b][1]) * n[1] + (gz - p[b][2]) * n[2]
         if s < 0.0:
@@ -400,7 +403,7 @@ def main(argv):
         for gid in args.garment:
             part = parts[gid]
             pos = fit_part(part, shaped)
-            count, depth = penetration(pos, shaped, normals, args.tolerance)
+            count, depth = penetration(pos, shaped, normals, args.tolerance, part["hidden"])
             v = verdict(count, depth, args.adapt_depth)
             summary["garments"][gid] = {"vertices": len(pos), "penetrating": count, "max_depth_m": depth, "verdict": v}
             print("GARMENT %-22s vertices=%d penetrating=%d max_depth_m=%.6g verdict=%s" % (gid, len(pos), count, depth, v))

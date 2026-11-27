@@ -40,13 +40,14 @@ use gibson::figure::studio::{
 
 const BODY: &[u8] = include_bytes!("fixtures/figure_studio/body.gfa");
 const CAP: &[u8] = include_bytes!("fixtures/figure_studio/part.cap.gfa");
+const PLUG: &[u8] = include_bytes!("fixtures/figure_studio/part.plug.gfa");
 const SHELL: &[u8] = include_bytes!("fixtures/figure_studio/part.shell.gfa");
 const TABARD: &[u8] = include_bytes!("fixtures/figure_studio/part.tabard.gfa");
 const TUNIC: &[u8] = include_bytes!("fixtures/figure_studio/part.tunic.gfa");
 const FIXTURE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/figure_studio");
 
 fn assets() -> AssetSet {
-    AssetSet::from_bytes(BODY, &[CAP, SHELL, TABARD, TUNIC]).expect("the fixture loads")
+    AssetSet::from_bytes(BODY, &[CAP, PLUG, SHELL, TABARD, TUNIC]).expect("the fixture loads")
 }
 
 fn recipe(controls: &[(&str, f32)]) -> RecipeV1 {
@@ -665,7 +666,7 @@ fn the_fit_id_and_presentation_id_are_rebuilt_by_hand() {
     fit.extend_from_slice(&sha256::digest(TUNIC));
     put_str(&mut fit, "tabard");
     fit.extend_from_slice(&sha256::digest(TABARD));
-    put_str(&mut fit, "gibson.fit.vertex-normal-penetration.v1");
+    put_str(&mut fit, "gibson.fit.vertex-normal-penetration.v2");
     put_u32(&mut fit, 2);
     put_str(&mut fit, "tolerance_m");
     fit.extend_from_slice(&0.002f32.to_le_bytes());
@@ -927,6 +928,44 @@ fn garments_follow_the_shaped_body_with_per_axis_offset_scales() {
     }
 }
 
+/// Delete sets (MakeHuman `delete_verts`). A body vertex a garment hides is masked out of that
+/// garment's penetration measure (a garment vertex whose nearest body vertex is hidden is not
+/// measured); a body vertex it does NOT hide still counts. The `shell` hides ring 0 only, so the
+/// ring-2 bulge still rejects it; the `plug` is the same geometry hiding ring 2, so the same bulge
+/// does not reject it. Kills `ignore_surface_update` and `stale_fit` (the bulge never reaches the
+/// shell's measure).
+#[test]
+fn a_bulge_outside_the_delete_set_still_rejects_and_inside_it_does_not() {
+    let a = assets();
+    let r = with_garments(recipe(&[("bulge", 1.0)]), &["shell", "plug"]);
+    let c = compile(&r, &a).expect("compiles");
+    assert!(
+        matches!(status_of(&c, "shell"), FitStatus::Rejected(_)),
+        "{:?}",
+        status_of(&c, "shell")
+    );
+    assert_eq!(status_of(&c, "plug"), FitStatus::Fitted);
+    assert!(!drawn(&c, "shell") && drawn(&c, "plug"));
+    let plug = c
+        .drawable_garments()
+        .iter()
+        .find(|g| g.id == "plug")
+        .expect("drawn");
+    assert_eq!(plug.hidden_body_vertices, (16u32..24).collect::<Vec<u32>>());
+    // the measured vertices are masked, not forgiven: the shell's metrics see the full bulge
+    let shell_depth = f64::from(depth_of(&c, "shell"));
+    assert!(shell_depth > 0.015, "shell depth {shell_depth}");
+    assert_eq!(
+        c.fit_status()
+            .iter()
+            .find(|r| r.id == "plug")
+            .unwrap()
+            .metrics
+            .penetrating,
+        0
+    );
+}
+
 /// Typed errors for garment, hair, slot, anchor and attachment input.
 #[test]
 fn bad_garment_hair_and_slot_input_is_a_typed_error() {
@@ -1122,6 +1161,27 @@ fn garments_follow_the_pose_and_only_drawn_garments_are_posed() {
             assert_near3("moved garment", *p, expect(*q), 3.0e-5);
         }
     }
+    // posed normals are the rest normals rotated by the same rigid motion (translation ignored)
+    for i in 0..moved.body_normals.len() {
+        let n = c.body_normals()[i];
+        let w = rot_z90([f64::from(n.x), f64::from(n.y), f64::from(n.z)]);
+        assert_near3("moved body normal", moved.body_normals[i], w, 1.0e-4);
+        let l = moved.body_normals[i];
+        assert_near("unit normal", l.length(), 1.0, 1.0e-4);
+    }
+    for g in &moved.garments {
+        let fit = c
+            .drawable_garments()
+            .iter()
+            .find(|d| d.id == g.id)
+            .expect("drawn");
+        for (p, q) in g.normals.iter().zip(fit.normals.iter()) {
+            let w = rot_z90([f64::from(q.x), f64::from(q.y), f64::from(q.z)]);
+            assert_near3("moved garment normal", *p, w, 1.0e-4);
+        }
+    }
+    // an outward ring-2 vertex at angle 0 has a normal pointing along +x
+    assert!(c.body_normals()[16].x > 0.7, "{:?}", c.body_normals()[16]);
     // the linear mode agrees on a rigid motion
     let mut lin = r.clone();
     lin.skinning = SkinningMode::Linear;
@@ -1247,7 +1307,7 @@ fn the_asset_set_loads_from_disk_and_verifies_the_index() {
     assert_eq!(a.control_domain("stature"), Some((-1.0, 1.0, 0.0)));
     assert_eq!(a.joint_count(), 5);
     assert_eq!(a.joint_name(3), Some("neck"));
-    assert_eq!(a.part_ids(), ["cap", "shell", "tabard", "tunic"]);
+    assert_eq!(a.part_ids(), ["cap", "plug", "shell", "tabard", "tunic"]);
     assert_eq!(a.part_kind("cap"), Some("hair"));
     assert_eq!(a.part_sha256("tunic"), Some(sha256::digest(TUNIC)));
     assert_eq!(a.body_sha256(), sha256::digest(BODY));
@@ -1259,6 +1319,7 @@ fn the_asset_set_loads_from_disk_and_verifies_the_index() {
         "index.txt",
         "body.gfa",
         "part.cap.gfa",
+        "part.plug.gfa",
         "part.shell.gfa",
         "part.tabard.gfa",
         "part.tunic.gfa",

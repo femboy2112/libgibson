@@ -53,7 +53,7 @@ pub const FIT_PREFIX: &[u8] = b"gibson.figure.fit.v1\0";
 /// Prefix of the presentation-id digest input.
 pub const PRESENT_PREFIX: &[u8] = b"gibson.figure.presentation.v1\0";
 /// The garment-fit algorithm id hashed into the fit id.
-pub const FIT_ALGORITHM_ID: &str = "gibson.fit.vertex-normal-penetration.v1";
+pub const FIT_ALGORITHM_ID: &str = "gibson.fit.vertex-normal-penetration.v2";
 
 /// The closed set of material slot names.
 pub const MATERIAL_SLOTS: [&str; 8] = [
@@ -1438,14 +1438,28 @@ fn body_normals(p: &[Vec3], indices: &[u32], n_body: usize) -> Vec<Vec3> {
     out
 }
 
+/// Unit vertex normals of a mesh of `n` vertices; a vertex in no triangle gets +z (it is never
+/// drawn, and a zero normal would make linear skinning refuse it).
+fn unit_normals(p: &[Vec3], indices: &[u32], n: usize) -> Vec<Vec3> {
+    let mut v = body_normals(p, indices, n);
+    for x in v.iter_mut() {
+        if x.dot(*x) == 0.0 {
+            *x = Vec3::new(0.0, 0.0, 1.0);
+        }
+    }
+    v
+}
+
 /// Penetration of `garment` into the body: for each garment vertex the nearest body vertex (ties:
 /// lowest index) among `candidates`, and the signed distance along that vertex's normal. Below
-/// zero is inside. Returns `(count deeper than tolerance, deepest depth)`.
+/// zero is inside. A garment vertex whose nearest body vertex is `masked` (hidden under the
+/// garment) is skipped. Returns `(count deeper than tolerance, deepest depth)`.
 fn penetration(
     garment: &[Vec3],
     body: &[Vec3],
     normals: &[Vec3],
     candidates: &[usize],
+    masked: &[bool],
     tolerance: f32,
 ) -> (u32, f32) {
     let mut count = 0u32;
@@ -1461,7 +1475,7 @@ fn penetration(
                 best = b;
             }
         }
-        if best == usize::MAX {
+        if best == usize::MAX || masked[best] {
             continue;
         }
         let s = g.sub(body[best]).dot(normals[best]);
@@ -1506,7 +1520,11 @@ pub struct DrawableGarment {
     /// Fitted vertex positions at rest (the shaped body's frame).
     pub positions: Vec<Vec3>,
     pub indices: Vec<u32>,
-    /// Body vertex indices hidden under this garment.
+    /// Rest vertex normals (area-weighted, unit; a vertex in no triangle gets +z).
+    pub normals: Vec<Vec3>,
+    /// Body vertex indices hidden under this garment (MakeHuman `delete_verts`). Body triangles
+    /// that use one of them are not drawn, and these vertices are not part of the penetration
+    /// measure of this garment.
     pub hidden_body_vertices: Vec<u32>,
     skin: SkinWeights,
 }
@@ -1517,6 +1535,7 @@ pub struct DrawableGarment {
 pub struct FittedHair {
     pub id: String,
     pub positions: Vec<Vec3>,
+    pub normals: Vec<Vec3>,
     pub indices: Vec<u32>,
     skin: SkinWeights,
 }
@@ -1578,6 +1597,8 @@ impl std::error::Error for PoseError {}
 pub struct PosedPart {
     pub id: String,
     pub positions: Vec<Vec3>,
+    /// Posed unit normals (the rotation of the skin transform; DQS: the blended rotation).
+    pub normals: Vec<Vec3>,
 }
 
 /// The skinned figure for one tape frame.
@@ -1586,6 +1607,8 @@ pub struct PosedPart {
 pub struct PosedFigure {
     /// Skinned body vertices (`0..body_vertex_count`), root translation applied.
     pub body: Vec<Vec3>,
+    /// Posed body normals, one per body vertex.
+    pub body_normals: Vec<Vec3>,
     /// Drawable garments only, in set order.
     pub garments: Vec<PosedPart>,
     pub hair: Option<PosedPart>,
@@ -1607,6 +1630,7 @@ pub struct Compiled {
     skeleton: Skeleton,
     inverse_binds: Vec<Mat4>,
     skin: SkinWeights,
+    body_normals: Vec<Vec3>,
     landmarks: Vec<(String, Vec<u32>)>,
     ground_lift_m: f32,
     body_bytes: Vec<u8>,
@@ -1700,6 +1724,12 @@ impl Compiled {
         self.n_body
     }
 
+    /// Rest unit vertex normals of the shaped body, one per body vertex (area-weighted; a vertex
+    /// in no triangle gets +z).
+    pub fn body_normals(&self) -> &[Vec3] {
+        &self.body_normals
+    }
+
     /// The body triangle index buffer.
     pub fn indices(&self) -> &[u32] {
         &self.indices
@@ -1787,15 +1817,24 @@ impl Compiled {
                 &self.inverse_binds,
             )
             .map_err(PoseError::Skin)?;
+        let body_normals = self
+            .skin
+            .skin_normals(self.mode, &self.body_normals, &world, &self.inverse_binds)
+            .map_err(PoseError::Skin)?;
         let mut garments = Vec::with_capacity(self.garments.len());
         for g in &self.garments {
             let p = g
                 .skin
                 .skin_with(self.mode, &g.positions, &world, &self.inverse_binds)
                 .map_err(PoseError::Skin)?;
+            let n = g
+                .skin
+                .skin_normals(self.mode, &g.normals, &world, &self.inverse_binds)
+                .map_err(PoseError::Skin)?;
             garments.push(PosedPart {
                 id: g.id.clone(),
                 positions: shift(p),
+                normals: n,
             });
         }
         let hair = match &self.hair {
@@ -1804,15 +1843,21 @@ impl Compiled {
                     .skin
                     .skin_with(self.mode, &h.positions, &world, &self.inverse_binds)
                     .map_err(PoseError::Skin)?;
+                let n = h
+                    .skin
+                    .skin_normals(self.mode, &h.normals, &world, &self.inverse_binds)
+                    .map_err(PoseError::Skin)?;
                 Some(PosedPart {
                     id: h.id.clone(),
                     positions: shift(p),
+                    normals: n,
                 })
             }
             None => None,
         };
         Ok(PosedFigure {
             body: shift(body),
+            body_normals,
             garments,
             hair,
             joint_world: world,
@@ -2160,11 +2205,23 @@ pub fn compile(recipe: &RecipeV1, assets: &AssetSet) -> Result<Compiled, Compile
     for part in &garment_parts {
         let pos = fit_part(part, fit_src);
         let finite = pos.iter().all(|p| p.is_finite());
+        // The body vertices this garment hides (`delete_verts`) are masked out of its measure: a
+        // garment vertex whose nearest body vertex is hidden is not measured.
+        let mut masked = vec![false; body.n_body];
+        for &h in &part.hidden {
+            masked[h as usize] = true;
+        }
         let metrics;
         let status;
         if finite {
-            let (count, max_depth) =
-                penetration(&pos, fit_src, &normals, &candidates, fp.tolerance_m);
+            let (count, max_depth) = penetration(
+                &pos,
+                fit_src,
+                &normals,
+                &candidates,
+                &masked,
+                fp.tolerance_m,
+            );
             metrics = FitMetrics {
                 vertices: pos.len() as u32,
                 penetrating: count,
@@ -2183,6 +2240,7 @@ pub fn compile(recipe: &RecipeV1, assets: &AssetSet) -> Result<Compiled, Compile
             drawable.push(DrawableGarment {
                 id: part.id.clone(),
                 kind: part.kind.clone(),
+                normals: unit_normals(&pos, &part.indices, pos.len()),
                 positions: pos,
                 indices: part.indices.clone(),
                 hidden_body_vertices: part.hidden.clone(),
@@ -2201,12 +2259,16 @@ pub fn compile(recipe: &RecipeV1, assets: &AssetSet) -> Result<Compiled, Compile
         });
     }
     let hair = match hair_part {
-        Some(p) => Some(FittedHair {
-            id: p.id.clone(),
-            positions: fit_part(p, fit_src),
-            indices: p.indices.clone(),
-            skin: p.skin.clone(),
-        }),
+        Some(p) => {
+            let positions = fit_part(p, fit_src);
+            Some(FittedHair {
+                id: p.id.clone(),
+                normals: unit_normals(&positions, &p.indices, positions.len()),
+                positions,
+                indices: p.indices.clone(),
+                skin: p.skin.clone(),
+            })
+        }
         None => None,
     };
 
@@ -2313,6 +2375,7 @@ pub fn compile(recipe: &RecipeV1, assets: &AssetSet) -> Result<Compiled, Compile
     put_f32(&mut pb, if recipe.lower_face_covered { 1.0 } else { 0.0 });
     let present_id = PresentationId(sha256::digest(&pb));
 
+    let rest_normals = unit_normals(&shaped, &body.indices, body.n_body);
     Ok(Compiled {
         body_rev_id,
         fit_id,
@@ -2324,6 +2387,7 @@ pub fn compile(recipe: &RecipeV1, assets: &AssetSet) -> Result<Compiled, Compile
         skeleton,
         inverse_binds,
         skin: body.skin.clone(),
+        body_normals: rest_normals,
         landmarks: body.landmarks.clone(),
         ground_lift_m: lift,
         body_bytes,
