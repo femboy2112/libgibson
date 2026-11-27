@@ -54,5 +54,17 @@ case ${1:-} in
         grep '^RT_CHECK FAIL contact ' "$out/logs/bad-bounds.log"
         grep '^RT_CHECK FAIL shadow ' "$out/logs/bad-bounds.log"
         ;;
-    *) echo "usage: $0 {export|tape|render|controls}" >&2; exit 2 ;;
+    unmasked)
+        probe=("$blender" -b -t 4 --python-exit-code 3 --python "$repo/docs/evidence/incarnate-iii/check_unmasked.py" --
+               --export "$out/export" --tape "$out/tape/generic.tape.json" --fitted "$out/tape/generic.fit.json")
+        "${probe[@]}" > "$out/logs/unmasked.log" 2>&1
+        grep -x 'UNMASKED_SUIT_SKIRT PASS' "$out/logs/unmasked.log"
+        rc=0
+        "${probe[@]}" --inject > "$out/logs/injected-unmasked.log" 2>&1 || rc=$?
+        [[ $rc == 5 ]]
+        grep -E '^DISPLAY_SURFACE_CROSSINGS .*"suit_skirt": 0\}' "$out/logs/injected-unmasked.log"
+        grep -E '^UNMASKED_SURFACE_CROSSINGS .*"suit_skirt": [1-9][0-9]*\}' "$out/logs/injected-unmasked.log"
+        grep -x 'UNMASKED_SUIT_SKIRT FAIL' "$out/logs/injected-unmasked.log"
+        ;;
+    *) echo "usage: $0 {export|tape|render|controls|unmasked}" >&2; exit 2 ;;
 esac

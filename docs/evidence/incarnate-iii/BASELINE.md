@@ -51,7 +51,7 @@ output directory. The runner supports the original output location by default.
 ```bash
 export FP_OUTPUT_ROOT="$HOME/.local/state/second-performance/baseline-replay"
 export CARGO_TARGET_DIR=/media/leah/SPANKBANK/temp/codex-iii/lg-target
-for phase in export tape render controls; do
+for phase in export tape render controls unmasked; do
   /media/leah/SPANKBANK/GOD/bin/heavy run --who Codex/III-A \
     --why "generic baseline $phase" --class s --max-min 15 -- \
     bash tools/figure_assets/lease_fp_stills.sh "$phase" || exit
@@ -65,3 +65,28 @@ failed, `the_fit_id_and_presentation_id_are_rebuilt_by_hand`. Its independent
 byte fixture wrote the body-only algorithm identifier for a two-layer recipe.
 The compiler hashed the versioned layered algorithm. The complete failing log
 is `baseline/qual/clip-cargo.log` and the aggregate returned 1.
+
+The corrected two-layer byte expectation and three independent forward-eye, face-identity
+and garment-order controls passed all 36 studio tests against the archived implementation.
+The nine other retained targets passed all 161 tests. They cover inverse binds, DQS
+twist and bend behavior, IK reach, stance, motion continuity, preview lighting and tape
+round trips. The design makes pose-space correctives conditional on measured DQS failure.
+The retained source has no separate corrective morph driver to qualify.
+
+The frame-zero Blender probe disables every visibility mask on the evaluated render
+surfaces. It retains the actual armatures, subdivision and skirt lining. Counts are
+crossing polygon pairs, which measure surface intersection and do not measure depth.
+
+| Frame zero | Body/suit | Body/skirt | Suit/skirt |
+|---|---:|---:|---:|
+| Render masks on | 29 | 0 | 0 |
+| Masks removed | 2,448 | 0 | 0 |
+| Injected hidden patch, masks on | 29 | 0 | 0 |
+| Same patch, masks removed | 2,387 | 0 | 230 |
+
+Pulling 33 actual hidden cage vertices on the right side of the suit outward caused
+the unmasked suit/skirt test to fail with exit code 5 while the displayed suit/skirt
+still measured zero. Raw native Blender outputs are `qual/unmasked.log` and
+`qual/injected-unmasked.log`. The incoming suit crosses the underlying body even
+after the compiler's Fitted verdict. The baseline qualifies the reference replay
+and the suit/skirt measurement. Whole-body contact remains open.

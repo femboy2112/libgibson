@@ -12,11 +12,15 @@ HEAD_SHA=${1:?head sha}
 REPO=${REPO:?main clone path}; W=${W:?detached gate worktree path}
 L=${LOGDIR:?log directory}; mkdir -p "$L"
 PERFORM_MIN_TESTS=${PERFORM_MIN_TESTS:-24}
-STUDIO_MIN_TESTS=${STUDIO_MIN_TESTS:-33}
+STUDIO_MIN_TESTS=${STUDIO_MIN_TESTS:-36}
 cd "$REPO"
-git fetch -q origin feat/m5c-integrate
+HEAD_SHA=$(git rev-parse --verify "$HEAD_SHA^{commit}")
 [ -d "$W" ] || git worktree add -q --detach "$W" "$HEAD_SHA"
 cd "$W"
+if git symbolic-ref -q HEAD >/dev/null || [[ -n $(git status --porcelain) ]]; then
+  echo "Use a clean, detached gate worktree." >&2
+  exit 2
+fi
 echo "== box at start $(date -u +%H:%M:%SZ)"; cat /proc/pressure/memory; free -m | sed -n "1,3p"
 export CARGO_TARGET_DIR=${GATE_TARGET:-$W/target}
 T="cargo +1.98.1"
@@ -31,7 +35,7 @@ ran() { awk '/^running [0-9]+ tests?$/{n+=$2} END{print n+0}' "$L/$1.log"; }
 compile_err() { grep -qE "^error(\[E[0-9]+\])?:" "$L/$1.log" && ! grep -q "^running " "$L/$1.log"; }
 killed_set() { grep -E "^test .* FAILED$" "$L/$1.log" | sed -E 's/^test (.*) \.\.\. FAILED$/\1/' | sort -u | tr '\n' ' ' || true; }
 
-echo "== HEAD @ $HEAD_SHA"; git checkout -q -f --detach "$HEAD_SHA"
+echo "== HEAD @ $HEAD_SHA"; git checkout -q --detach "$HEAD_SHA"
 run fmt $T fmt --all -- --check; [ "$RC" -eq 0 ] || fail "fmt rc=$RC"
 
 # Every figure test target. The v0 golden (figure_mechanics, figure_canonical_bytes) must still
@@ -78,6 +82,9 @@ check_mutant no_contact_shadow figure_preview contact_shadow_darkens_ground_besi
 check_mutant shadow_detached figure_preview the_shadow_of_a_vertex_on_the_ground_lands_at_its_screen_position
 check_mutant no_adapt figure_studio adaptation_makes_a_penetrating_garment_fit_and_leaves_the_rest_untouched
 check_mutant adapt_rejected figure_studio a_rejected_garment_is_never_adapted_even_under_the_cap
+check_mutant face_iris_backward figure_studio forward_eye_regions_and_face_materials_follow_the_posed_triangles
+check_mutant face_unhashed figure_studio the_face_selection_and_source_bytes_change_only_presentation_identity
+check_mutant no_layers figure_studio the_outer_garment_is_measured_against_the_fitted_inner_garment
 
 run clippy $T clippy --features figure --lib --tests -- -D warnings; tail -5 "$L/clippy.log"; [ "$RC" -eq 0 ] || fail "clippy rc=$RC"
 run msrv_figure cargo +1.85 check --lib --features figure; tail -3 "$L/msrv_figure.log"; [ "$RC" -eq 0 ] || fail "msrv rc=$RC"
