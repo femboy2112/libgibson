@@ -64,6 +64,17 @@ pub const REDUCED_AMPLITUDE: f32 = 0.25;
 /// the IK starts at 0.98, so planted feet stay exactly on their targets).
 const DESIGN_RATIO: f64 = 0.95;
 const MIN_WALK: f64 = 0.05;
+/// How far in front of the head-centre plane the waving hand is held (metres, heading frame).
+///
+/// The hand target of a wave is the straight blend `hang + (wave - hang) w`, so on the way up
+/// and down (and through every cut blend, where `w` decays while the inherited wave oscillation
+/// still pulls the hand toward the head) it passes the shoulder at this forward distance. The
+/// two-bone IK clamps a target nearer than the fold limit (`|l1 - l2| + 0.05 (l1 + l2)`, 0.059 m
+/// on the synthetic arm) to that sphere: continuous, but a velocity step. At the former 0.05 m the
+/// blend dipped to 0.041 m from the shoulder and the hand jumped by 1.2 m/s of velocity
+/// (`docs/evidence/m5c/model_perform_cut.py`). The forward offset is not touched by the lateral
+/// wave oscillation, so it keeps the chord clear of the fold for every cut phase.
+const WAVE_FORWARD: f64 = 0.12;
 
 // ---------------------------------------------------------------------------------------------
 // Errors
@@ -744,7 +755,7 @@ const D_SPINE: usize = 10; // 3: total spine bend, distributed over the chain
 const D_GAZE: usize = 13; // 2: gaze yaw (left +), pitch (down +)
 const D_NOD: usize = 15; // head nod pitch, additive
 const D_FOOT: usize = 16; // 2 x 6: target x y z (world), yaw, toe pitch, ik weight
-const D_ARM: usize = 28; // 2 x 8: swing f r u, wave weight, wave f r u (heading frame), elbow out
+const D_ARM: usize = 28; // 2 x 8: swing f r u, wave weight, wave f r u (rest: the hang), elbow out
 const N_BASE: usize = 44;
 
 fn initial_drivers(rig: &Rig) -> Vec<f64> {
@@ -754,6 +765,18 @@ fn initial_drivers(rig: &Rig) -> Vec<f64> {
         let a = v64(rig.rest_pos[rig.limb[2 + f][2]]);
         d[D_FOOT + f * 6..D_FOOT + f * 6 + 3].copy_from_slice(&a);
         d[D_FOOT + f * 6 + 5] = 1.0;
+    }
+    // The wave point rests at the hang (the pelvis offset included, as in `solve_pass`), so the
+    // first wave's raise blends it out of the hand's own position. Resting at the origin, the
+    // inertialized wave point flew in from the floor while the wave weight rose: the target dipped
+    // away from the shoulder into the soft reach limit, J = 0.10 m/s at 1 ms.
+    for side in 0..2 {
+        let hand = v64(rig.rest_pos[rig.limb[side][2]]);
+        let h = heading_coords(rig, hand, 0.0);
+        let b = D_ARM + side * 8;
+        for c in 0..3 {
+            d[b + 4 + c] = h[c] + d[D_PEL + c];
+        }
     }
     d
 }
@@ -1546,7 +1569,7 @@ fn plan_gesture(cx: &Ctx<'_>, c: &Carry, kind: GestureKind, intensity: f32) -> B
             let [hf, hr, hu] = heading_coords(rig, hc, 0.0);
             let clear = f64::from(rig.map.geometry.hand_clearance);
             let base = [
-                hf + 0.05,
+                hf + WAVE_FORWARD,
                 hr + (clear + 0.07),
                 hu - rig.stand_crouch() + 0.04 + 0.06 * cx.amp.min(1.5),
             ];

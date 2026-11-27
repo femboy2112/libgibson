@@ -90,6 +90,9 @@ for (_, p, t) in J:
 PEL, HEAD, NECK = 1, 6, 5; SPINE = [2, 3, 4]; EYES = [7, 8]
 LIMB = [[9, 10, 11], [12, 13, 14], [15, 16, 17], [18, 19, 20]]
 HEAD_C_UP = .09; CLEAR = .20
+# perform.rs WAVE_FORWARD and the wave point resting at the hang (initial_drivers); the pre-fix
+# values (0.05, False) reproduce the two C-1 failures, see model_perform_cut.py.
+WAVE_FORWARD = 0.12; WAVE_REST_AT_HANG = True
 ROLE = {PEL: "pel", NECK: "neck", HEAD: "head"}
 for s in SPINE: ROLE[s] = "spine"
 for e in EYES: ROLE[e] = "eye"
@@ -123,6 +126,10 @@ def init_drivers():
         a = rest_pos[LIMB[2+f][2]]
         for c in range(3): d[D_FOOT+f*6+c] = a[c]
         d[D_FOOT+f*6+5] = 1.0
+    if WAVE_REST_AT_HANG:
+        for side in range(2):
+            hp = rest_pos[LIMB[side][2]]; b = D_ARM+side*8
+            d[b+4] = dot(hp, FWD)+d[D_PEL]; d[b+5] = dot(hp, RIGHT)+d[D_PEL+1]; d[b+6] = dot(hp, UP)+d[D_PEL+2]
     return d
 
 def solve_pass(d, foot_lock=True, hc_in=None):
@@ -310,7 +317,7 @@ if __name__ == "__main__":
 # ---- wave / gaze / sit checks ----
 def wave_drivers(t, amp, tempo, intensity, start):
     k = intensity; hc = add(rest_pos[HEAD], sc(UP, HEAD_C_UP))
-    base = [dot(hc, FWD)+.05, dot(hc, RIGHT)+(CLEAR+.07), dot(hc, UP)-stand_crouch()+.04+.06*min(amp, 1.5)]
+    base = [dot(hc, FWD)+WAVE_FORWARD, dot(hc, RIGHT)+(CLEAR+.07), dot(hc, UP)-stand_crouch()+.04+.06*min(amp, 1.5)]
     freq = 2.4*tempo; t_r = .55/tempo; t_w = 3/freq; t_l = .6/tempo; dur = t_r+t_w+t_l
     t = min(max(t, 0), dur); d = list(start)
     w = ramp(t, 0, t_r)*(1-ramp(t, t_r+t_w, t_l)); o = .07*(.35+.65*amp)*k*w*math.sin(2*math.pi*freq*t)
