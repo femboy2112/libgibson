@@ -102,3 +102,59 @@ Multiple actors, scene graphs, full wardrobe, cloth or hair dynamics, and lip sy
   - the Blender adapter, which sets pose bones from the locals, applies the same control values
     through MPFB, and fits the same garments.
   - The oracle compares the posed vertices of both on sampled frames.
+
+## 6. Naming contract v1 (rig, controls, face channels): the names consumers map onto
+Asset family `gibson.figure.asset.v1`, generated from the MPFB/MakeHuman CC0 assets by
+`tools/figure_assets/`. Names are exact, case-sensitive ASCII. Anything that is not on these lists
+is unmapped, and a consumer must return a typed error for it. It must never guess.
+
+### 6.1 Joints (MPFB `game_engine` rig, 53 joints, parent order)
+`Root pelvis spine_01 spine_02 spine_03 clavicle_l upperarm_l lowerarm_l hand_l index_01_l index_02_l
+index_03_l middle_01_l middle_02_l middle_03_l pinky_01_l pinky_02_l pinky_03_l ring_01_l ring_02_l
+ring_03_l thumb_01_l thumb_02_l thumb_03_l clavicle_r upperarm_r lowerarm_r hand_r index_01_r
+index_02_r index_03_r middle_01_r middle_02_r middle_03_r pinky_01_r pinky_02_r pinky_03_r ring_01_r
+ring_02_r ring_03_r thumb_01_r thumb_02_r thumb_03_r neck_01 head thigh_l calf_l foot_l ball_l
+thigh_r calf_r foot_r ball_r`
+- **Roles used by `perform::RigRoles`:**
+  - pelvis = `pelvis`;
+  - spine = `spine_01..03`;
+  - neck = `neck_01`;
+  - head = `head`;
+  - arms = `upperarm_*`, `lowerarm_*` and `hand_*`;
+  - legs = `thigh_*`, `calf_*`, `foot_*` and `ball_*`.
+- The rig has no jaw, eye or eyelid bones. The face is driven by the morph and eye channels below.
+
+### 6.2 Body controls (13; bipolar, documented domain [-1, 1], never clamped)
+`stature leg_length torso_length shoulder_breadth ribcage bust_projection bust_fullness waist
+hip_breadth glute_projection thigh_fullness jaw_width posture_lean`
+- Each control maps to MakeHuman target files, listed in `tools/figure_assets/controls.json`.
+- The face parameter is `jaw_width`, and the posture parameter is `posture_lean`.
+
+### 6.3 Face channels (tape `face` array and `Express{channel}`), value range [0, 1] unless noted
+Morph channels are driven by MakeHuman expression-unit targets (CC0). They are blended across the
+three bundled ethnic unit sets with the body's ethnic weights (1/3 each for the generic presets).
+| channel | expression-unit target(s) |
+|---|---|
+| `brow_up_l` / `brow_up_r` | eyebrows-{left,right}-up |
+| `brow_down_l` / `brow_down_r` | eyebrows-{left,right}-down |
+| `brow_inner_up_l` / `brow_inner_up_r` | eyebrows-{left,right}-inner-up |
+| `brow_outer_up_l` / `brow_outer_up_r` | eyebrows-{left,right}-extern-up |
+| `lid_close_l` / `lid_close_r` | eye-{left,right}-closure |
+| `lid_wide_l` / `lid_wide_r` | eye-{left,right}-opened-up |
+| `lid_squint_l` / `lid_squint_r` | eye-{left,right}-slit |
+| `jaw_open` | mouth-open |
+| `mouth_smile` | mouth-corner-puller |
+| `mouth_frown` | mouth-depression |
+| `mouth_press` | mouth-compression |
+| `mouth_pucker` | mouth-pursing |
+| `nose_wrinkle` | nose-compression |
+| `gaze_yaw` / `gaze_pitch` | not a morph: a rigid rotation of both eye meshes about their centroids, in degrees, ±35 yaw and ±25 pitch |
+- When `lower_face_covered` is set, the `jaw_*`, `mouth_*` and `nose_*` channels are inert, and
+  driving them produces `Diagnostic::FaceChannelCovered`.
+- **Blink and saccade** are composed from `lid_close_*` and `gaze_*`. They are never separate names.
+
+### 6.4 Garments, hair and material slots
+- **Garment ids:** `female_casualsuit01` (fitted) and `skirt_a_line` (self-authored, loose).
+- **Hair ids:** `long01` and `ponytail01` (CC0).
+- **Material slots:** see section 1.
+- Ids come from the asset `index.txt`. Asking for an id that is not there gives `CompileError::UnknownPart`.
