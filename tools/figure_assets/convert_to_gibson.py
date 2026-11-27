@@ -452,8 +452,15 @@ def convert_export(export, asset_id):
         part = {
             "id": a["name"], "kind": a["kind"], "positions": triples(ppos, n),
             "indices": [int(i) for i in ptri], "bind": bind, "spec": spec,
-            "skin": skin_from_top4(pskin_i, pskin_w, n), "hidden": [int(i) for i in hid],
+            # MakeHuman delete_verts also lists helper vertices (n_body..n_v); only body vertices
+            # can be hidden in the render, so helpers are dropped (and counted) here.
+            "skin": skin_from_top4(pskin_i, pskin_w, n),
+            "hidden": [int(i) for i in hid if int(i) < n_body],
         }
+        dropped = sum(1 for i in hid if int(i) >= n_body)
+        if dropped:
+            print("part %s: dropped %d hidden helper vertices (>= n_body %d)"
+                  % (a["name"], dropped, n_body), file=sys.stderr)
         parts.append((a["name"], a["kind"], encode_part(part)))
     return encode_body(body), parts
 

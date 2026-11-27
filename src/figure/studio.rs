@@ -63,6 +63,9 @@ pub const FIT_ADAPT_ALGORITHM_ID: &str = "gibson.fit.vertex-normal-penetration.v
 pub const MAX_ADAPT_ITERATIONS: u32 = 16;
 
 /// The closed set of material slot names.
+/// Positions, normals and per-triangle slots of one mesh, flattened for `figure::preview`.
+type FlatMesh = (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<u8>);
+
 /// Fraction of the frame height the auto-framed [`Compiled::preview`] figure fills.
 pub const PREVIEW_FILL: f32 = 0.8;
 
@@ -2215,7 +2218,7 @@ impl Compiled {
             metalness: 0.0,
             emissive: [0.0; 3],
         });
-        let flat: Vec<(Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<u8>)> = meshes
+        let flat: Vec<FlatMesh> = meshes
             .iter()
             .map(|m| {
                 let p = m.positions.iter().map(|v| [v.x, v.y, v.z]).collect();
