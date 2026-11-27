@@ -88,6 +88,11 @@ path = "examples/figure_vis3d_kit.rs"
 required-features = ["figure"]
 
 [[example]]
+name = "figure_studio_preview"
+path = "examples/figure_studio_preview.rs"
+required-features = ["figure"]
+
+[[example]]
 name = "figure_preview_png"
 path = "examples/figure_preview_png.rs"
 required-features = ["figure"]
