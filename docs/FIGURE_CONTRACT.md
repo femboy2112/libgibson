@@ -897,6 +897,24 @@ bound body vertices by the export); the body vertices hidden under the part.
    thresholds are NOT calibrated: on the real asset at the neutral body the oracle reports 157 of
    2197 `female_casualsuit01` vertices deeper than 2 mm (deepest 9.7 mm). They are fit parameters and
    change the fit id.
+
+   **Garment adaptation (opt-in, `FitParamsV1::adaptation = Some(AdaptationV1)`; default `None`
+   changes nothing, the fit id above is bit-identical).** After the fit and before the verdict above,
+   each garment is adapted: every garment vertex whose signed distance to its nearest unmasked body
+   vertex along that vertex's normal is below `clearance_m` (default 0.002; penetrating or merely
+   closer) is pushed out along that normal to `clearance_m`; the displacement field is then smoothed
+   for `smooth_iterations` (default 2, at most 16) Jacobi passes (a vertex takes the mean of its own
+   and its triangle neighbours' displacement; ascending order, `f32`), restricted to the pushed
+   vertices and their 1-ring, re-asserting the clearance on that region after every pass.
+   Vertices outside the region are bit-identical. The SAME check and verdict (same `tolerance_m`,
+   same `adapt_depth_m`) then run on the adapted positions. If any vertex is displaced by more than
+   `max_displacement_m` (default 0.02) the adaptation is refused: the unadapted positions and the
+   unadapted verdict stand and `Diagnostic::GarmentAdaptationRefused` is reported; an applied
+   adaptation reports `Diagnostic::GarmentAdapted`, and `GarmentFitReport::adaptation` carries the
+   statistics (pushed, moved, maximum displacement, applied). When enabled the fit id hashes
+   `str "gibson.fit.vertex-normal-penetration.v2+adapt.v1"`, `u32 5`, the two parameters above and
+   then `adapt_clearance_m`, `adapt_max_displacement_m` (`f32`) and `adapt_smooth_iterations`
+   (`u32`). Mutation control `no_adapt` skips the step.
 8. **Pose input.** `TapeFrame { root_t: Vec3, locals: Vec<Transform> }`: one local transform per
    joint in skeleton order, REPLACING the rest locals (the tape's `local_t3`, `local_r4`, `local_s3`),
    plus a translation of the whole figure after skinning (`root_t3`). It is a studio-local type; the

@@ -81,3 +81,24 @@ The oracle (`oracle_shape.py`, now skipping a part vertex whose nearest body ver
 part's delete set, the rule `studio` implements) gives, at the neutral real body, `skirt` Fitted and
 `female_casualsuit01` 44 of 2197 vertices deeper than 2 mm (deepest 7.4 mm, NeedsAdaptation); before
 the masking it was 157 and 9.7 mm. Thresholds are unchanged.
+
+## Addendum (garment adaptation): five more tests, a fifth mutant
+
+**A** = `no_adapt` (the opt-in adaptation step, `FitParamsV1::adaptation`, is skipped; the fit id is
+unchanged). Added tests (`tests/figure_studio.rs`, 31 in all), predicted outcomes (PREDICTION, not a
+measurement; the fixture numbers below were read off an independent f64 python port of the
+algorithm run on the fixture's design, not off the Rust):
+
+| Test | I | S | F | C | A | Basis |
+|---|---|---|---|---|---|---|
+| `adaptation_makes_a_penetrating_garment_fit_and_leaves_the_rest_untouched` | - | K | K | - | K | A: the shell at bulge 0.3, lean 0.05 stays NeedsAdaptation and has no report; S: the bulge and lean never reach the shell so the unadapted precondition (NeedsAdaptation) fails; F: the neutral body is measured, the same |
+| `adaptation_pushes_a_uniformly_penetrating_garment_out_to_the_clearance` | - | K | K | - | K | A: stays NeedsAdaptation (4 mm), no report |
+| `adaptation_leaves_a_garment_that_already_clears_the_body_bit_identical` | - | - | - | - | K | A: the per-garment report is absent (`expect` fails); nothing else touches it |
+| `an_adaptation_over_the_cap_is_refused_and_the_unadapted_verdict_stands` | - | K | K | - | K | A: no report, no refusal diagnostic; S and F: the shell is Fitted, `assert_ne!(st, Fitted)` fails |
+| `the_fit_id_covers_the_adaptation_parameters` | - | - | - | - | - | A does not change ids (by design: the parameters, not the step, are hashed); an id test only |
+
+Predicted: **A** is killed by 4 tests. Fixture facts used (f64 port): shell at bulge 0.3, lean 0.05:
+signed distance per ring-2 vertex 2.60, -0.98, -2.59, -1.28, 2.18, 5.75, 7.36, 6.05 mm, so
+vertices 1..3 are pushed (3 of 8), the 1-ring is {0, 4}, vertices 5..8 are untouched, the largest
+displacement is 4.59 mm; at bulge 0.5 all 8 vertices are pushed by about 6.0 to 6.3 mm; at bulge 1.0 by
+22.0 to 23.2 mm (over the 20 mm default cap, refused).

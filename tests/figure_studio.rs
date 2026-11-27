@@ -21,8 +21,13 @@
 //! - determinism: compile twice, identical ids and bytes; recipe order does not matter;
 //! - the pose path: a rigid root motion moves the body and every drawn garment exactly.
 //!
+//! - garment adaptation (opt-in): a garment the body penetrates is pushed to the clearance and
+//!   Fitted, vertices outside the moved region and its 1-ring are bit-identical, the displacement
+//!   stays under the cap or the adaptation is refused and the unadapted verdict stands, and the fit
+//!   id covers the adaptation parameters;
+//!
 //! Mutation controls (`RUSTFLAGS='--cfg figure_mutant="..."'`): `ignore_skeleton_update_v1`,
-//! `ignore_surface_update`, `stale_fit`. None is inspected here. Predicted kill matrix:
+//! `ignore_surface_update`, `stale_fit`, `stale_control`, `no_adapt`. None is inspected here. Predicted kill matrix:
 //! `docs/evidence/m5c/KILL_MATRIX_STUDIO_PREDICTED.md`.
 #![cfg(feature = "figure")]
 #![allow(clippy::needless_range_loop)]
@@ -33,9 +38,9 @@ use gibson::figure::math::{Quat, Transform, Vec3};
 use gibson::figure::sha256;
 use gibson::figure::skin::SkinningMode;
 use gibson::figure::studio::{
-    compile, AnchorV1, AssetError, AssetSet, AttachmentV1, CompileError, Compiled, Diagnostic,
-    FitReason, FitStatus, GarmentV1, MaterialSlotV1, MeshRole, PoseError, ProvenanceV1, RecipeV1,
-    TapeError, TapeFrame, TapeHeader, TapeReader, BODY_MAGIC, FIT_PREFIX, PRESENT_PREFIX,
+    compile, AdaptationV1, AnchorV1, AssetError, AssetSet, AttachmentV1, CompileError, Compiled,
+    Diagnostic, FitReason, FitStatus, GarmentV1, MaterialSlotV1, MeshRole, PoseError, ProvenanceV1,
+    RecipeV1, TapeError, TapeFrame, TapeHeader, TapeReader, BODY_MAGIC, FIT_PREFIX, PRESENT_PREFIX,
 };
 
 const BODY: &[u8] = include_bytes!("fixtures/figure_studio/body.gfa");
@@ -964,6 +969,321 @@ fn a_bulge_outside_the_delete_set_still_rejects_and_inside_it_does_not() {
             .penetrating,
         0
     );
+}
+
+// ---- garment adaptation (opt-in, deterministic) ----
+
+/// The shell's fixed helper vertices in the full index space: 32 body vertices, then 5 joint
+/// helper groups of 4, then the 8 fixed helpers the shell is bound to 1:1 (zero offset).
+const SHELL_HELPER_FIRST: usize = 52;
+const SHELL_VERTICES: usize = 8;
+/// The shell hides body ring 0 (vertices 0..8): those body vertices are not measured.
+const SHELL_HIDDEN_BODY: usize = 8;
+
+fn shell_recipe(bulge: f32, lean: f32, adaptation: Option<AdaptationV1>) -> RecipeV1 {
+    let mut r = with_garments(recipe(&[("bulge", bulge), ("lean", lean)]), &["shell"]);
+    r.fit_params.adaptation = adaptation;
+    r
+}
+
+/// The shell's vertices as fitted (before any adaptation): its fixed helpers, read from the body.
+fn shell_fitted(c: &Compiled) -> Vec<Vec3> {
+    (0..SHELL_VERTICES)
+        .map(|k| c.shaped_positions()[SHELL_HELPER_FIRST + k])
+        .collect()
+}
+
+fn drawn_positions(c: &Compiled, id: &str) -> Vec<Vec3> {
+    c.drawable_garments()
+        .iter()
+        .find(|g| g.id == id)
+        .unwrap_or_else(|| panic!("{id} is not drawn"))
+        .positions
+        .clone()
+}
+
+fn bits(v: Vec3) -> [u32; 3] {
+    [v.x.to_bits(), v.y.to_bits(), v.z.to_bits()]
+}
+
+fn dist(a: Vec3, b: Vec3) -> f64 {
+    let d = [
+        f64::from(a.x) - f64::from(b.x),
+        f64::from(a.y) - f64::from(b.y),
+        f64::from(a.z) - f64::from(b.z),
+    ];
+    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+}
+
+/// The clearance of a garment vertex to the shaped body, measured in f64 with the rule of the
+/// fit check: the nearest body vertex (ring 0 is hidden by the shell and skipped), and the signed
+/// distance along that vertex's normal.
+fn clearance_of(c: &Compiled, g: Vec3) -> f64 {
+    let body = &c.shaped_positions()[..c.body_vertex_count()];
+    let mut best = 0usize;
+    let mut best_d = f64::INFINITY;
+    for (i, b) in body.iter().enumerate() {
+        let d = dist(g, *b);
+        if d < best_d {
+            best_d = d;
+            best = i;
+        }
+    }
+    assert!(
+        best >= SHELL_HIDDEN_BODY,
+        "nearest body vertex {best} is hidden"
+    );
+    let n = c.body_normals()[best];
+    let b = body[best];
+    (f64::from(g.x) - f64::from(b.x)) * f64::from(n.x)
+        + (f64::from(g.y) - f64::from(b.y)) * f64::from(n.y)
+        + (f64::from(g.z) - f64::from(b.z)) * f64::from(n.z)
+}
+
+/// Adaptation, partial case. `bulge 0.3` with `lean 0.05` pushes the +y side of the body ring
+/// through the shell: vertices 1, 2 and 3 are closer than the 2 mm clearance (vertex 2 by 4.6 mm,
+/// 2.6 mm of it penetration, over the 2 mm tolerance), vertices 0 and 4 are close but clear. Without
+/// adaptation the shell is `NeedsAdaptation` and not drawn. With it: the three are pushed to the
+/// clearance, their 1-ring (0 and 4; the shell is a fan around vertex 0) is feathered, vertices 5..8
+/// are bit-identical, every vertex keeps the clearance (measured here in f64), the displacement is
+/// under the cap, the report and the diagnostic carry the statistics, and the same fit check now
+/// says `Fitted`. Kills `no_adapt` (the garment stays `NeedsAdaptation`).
+#[test]
+fn adaptation_makes_a_penetrating_garment_fit_and_leaves_the_rest_untouched() {
+    let a = assets();
+    let plain = compile(&shell_recipe(0.3, 0.05, None), &a).expect("compiles");
+    assert!(
+        matches!(
+            status_of(&plain, "shell"),
+            FitStatus::NeedsAdaptation(FitReason::Penetration { .. })
+        ),
+        "{:?}",
+        status_of(&plain, "shell")
+    );
+    assert!(!drawn(&plain, "shell"));
+    assert!(plain.fit_status()[0].adaptation.is_none());
+
+    let ad = AdaptationV1::default();
+    let (eps, cap) = (f64::from(ad.clearance_m), f64::from(ad.max_displacement_m));
+    let r = shell_recipe(0.3, 0.05, Some(ad));
+    let c = compile(&r, &a).expect("compiles");
+    // the same body, a different fit (the parameters are in the fit id)
+    assert_eq!(c.body_rev_id(), plain.body_rev_id());
+    assert_ne!(c.fit_id(), plain.fit_id());
+    assert_eq!(status_of(&c, "shell"), FitStatus::Fitted);
+    assert!(drawn(&c, "shell"));
+    let report = &c.fit_status()[0];
+    assert_eq!(report.metrics.penetrating, 0);
+    let ar = report.adaptation.as_ref().expect("adaptation report");
+    assert!(ar.applied);
+    assert_eq!(
+        ar.pushed, 3,
+        "vertices 1, 2, 3 are closer than the clearance"
+    );
+    assert_eq!(ar.moved, 5, "the pushed vertices and their 1-ring (0, 4)");
+    assert!(
+        ar.max_displacement_m > 0.004 && ar.max_displacement_m < 0.006,
+        "max displacement {}",
+        ar.max_displacement_m
+    );
+    assert!(c.diagnostics().iter().any(|d| matches!(
+        d,
+        Diagnostic::GarmentAdapted { id, pushed: 3, moved: 5, .. } if id == "shell"
+    )));
+    assert!(!c
+        .diagnostics()
+        .iter()
+        .any(|d| matches!(d, Diagnostic::GarmentNotDrawn { .. })));
+
+    let before = shell_fitted(&c);
+    let after = drawn_positions(&c, "shell");
+    assert_eq!(after.len(), SHELL_VERTICES);
+    // untouched vertices are bit-identical; the pushed ones and the 1-ring moved
+    for k in 5..8 {
+        assert_eq!(bits(after[k]), bits(before[k]), "vertex {k} must not move");
+    }
+    for k in 0..5 {
+        assert_ne!(bits(after[k]), bits(before[k]), "vertex {k} must move");
+    }
+    // clearance everywhere, displacement under the cap, and the report is the true maximum
+    let mut max_disp = 0.0f64;
+    for k in 0..SHELL_VERTICES {
+        let clr = clearance_of(&c, after[k]);
+        assert!(clr >= eps - 1.0e-5, "vertex {k}: clearance {clr}");
+        let d = dist(after[k], before[k]);
+        assert!(d <= cap, "vertex {k}: displacement {d}");
+        max_disp = max_disp.max(d);
+    }
+    assert!(
+        (max_disp - f64::from(ar.max_displacement_m)).abs() < 1.0e-6,
+        "{max_disp} vs {}",
+        ar.max_displacement_m
+    );
+    // the feathered 1-ring moves less than the pushed vertex it borders (no crease: the
+    // displacement falls off away from vertex 2)
+    let d_of = |k: usize| dist(after[k], before[k]);
+    assert!(d_of(2) > d_of(4) && d_of(4) > 0.0 && d_of(0) > 0.0);
+
+    // deterministic: the same recipe gives the same bits and the same id
+    let again = compile(&r, &a).expect("compiles");
+    assert_eq!(again.fit_id(), c.fit_id());
+    let after2 = drawn_positions(&again, "shell");
+    for k in 0..SHELL_VERTICES {
+        assert_eq!(bits(after2[k]), bits(after[k]));
+    }
+}
+
+/// Adaptation, whole garment. `bulge 0.5` pushes all eight shell vertices 4 mm through the body:
+/// every vertex is pushed to the clearance (about 6 mm in all), the garment is `Fitted` and drawn,
+/// and the clearance holds everywhere. Kills `no_adapt`.
+#[test]
+fn adaptation_pushes_a_uniformly_penetrating_garment_out_to_the_clearance() {
+    let a = assets();
+    let ad = AdaptationV1::default();
+    let eps = f64::from(ad.clearance_m);
+    let c = compile(&shell_recipe(0.5, 0.0, Some(ad)), &a).expect("compiles");
+    assert_eq!(status_of(&c, "shell"), FitStatus::Fitted);
+    assert!(drawn(&c, "shell"));
+    let ar = c.fit_status()[0].adaptation.clone().expect("report");
+    assert!(ar.applied);
+    assert_eq!((ar.pushed, ar.moved), (8, 8));
+    let before = shell_fitted(&c);
+    let after = drawn_positions(&c, "shell");
+    for k in 0..SHELL_VERTICES {
+        let clr = clearance_of(&c, after[k]);
+        assert!(clr >= eps - 1.0e-5, "vertex {k}: clearance {clr}");
+        let d = dist(after[k], before[k]);
+        assert!(d > 0.005 && d < 0.008, "vertex {k}: displacement {d}");
+    }
+}
+
+/// Garments that already clear the body are not touched: with adaptation on, the tunic, the shell
+/// and the tabard at the neutral body keep their `Fitted` verdicts and their positions bit for bit
+/// (nothing is within the clearance), the report says so, and no diagnostic is added.
+#[test]
+fn adaptation_leaves_a_garment_that_already_clears_the_body_bit_identical() {
+    let a = assets();
+    let ids = ["tunic", "shell", "tabard"];
+    let plain = compile(&with_garments(RecipeV1::new(), &ids), &a).expect("compiles");
+    let mut r = with_garments(RecipeV1::new(), &ids);
+    r.fit_params.adaptation = Some(AdaptationV1::default());
+    let c = compile(&r, &a).expect("compiles");
+    assert_eq!(c.body_rev_id(), plain.body_rev_id());
+    for id in ids {
+        assert_eq!(status_of(&c, id), FitStatus::Fitted);
+        let p = drawn_positions(&plain, id);
+        let q = drawn_positions(&c, id);
+        assert_eq!(p.len(), q.len());
+        for k in 0..p.len() {
+            assert_eq!(bits(p[k]), bits(q[k]), "{id} vertex {k}");
+        }
+    }
+    for rep in c.fit_status() {
+        let ar = rep.adaptation.as_ref().expect("report");
+        assert!(ar.applied && ar.pushed == 0 && ar.moved == 0 && ar.max_displacement_m == 0.0);
+    }
+    assert_eq!(c.diagnostics(), plain.diagnostics());
+}
+
+/// The cap. Adaptation never silently warps a garment past `max_displacement_m`: `bulge 1.0` needs
+/// about 22 mm (20 mm of penetration plus the clearance), over the default 20 mm cap, so the shell
+/// stays `Rejected` with the metrics and the verdict of the unadapted fit, is not drawn, and the
+/// refusal is reported; `bulge 0.5` needs about 6 mm, over a 3 mm cap, so it stays `NeedsAdaptation`
+/// the same way. Both verdicts equal the ones without adaptation. Kills `no_adapt` (no refusal is
+/// reported) via the report and diagnostic assertions.
+#[test]
+fn an_adaptation_over_the_cap_is_refused_and_the_unadapted_verdict_stands() {
+    let a = assets();
+    let mut tight = AdaptationV1::default();
+    tight.max_displacement_m = 0.003;
+    let cases: [(f32, AdaptationV1); 2] = [(1.0, AdaptationV1::default()), (0.5, tight)];
+    for (bulge, ad) in cases {
+        let cap = ad.max_displacement_m;
+        let plain = compile(&shell_recipe(bulge, 0.0, None), &a).expect("compiles");
+        let c = compile(&shell_recipe(bulge, 0.0, Some(ad)), &a).expect("compiles");
+        let st = status_of(&c, "shell");
+        assert_eq!(st, status_of(&plain, "shell"), "bulge {bulge}");
+        assert_ne!(st, FitStatus::Fitted);
+        assert!(!drawn(&c, "shell"), "bulge {bulge}");
+        assert_eq!(c.fit_status()[0].metrics, plain.fit_status()[0].metrics);
+        let ar = c.fit_status()[0].adaptation.clone().expect("report");
+        assert!(!ar.applied, "bulge {bulge}");
+        assert!(ar.max_displacement_m > cap, "bulge {bulge}: {ar:?}");
+        assert!(c.diagnostics().iter().any(|d| matches!(
+            d,
+            Diagnostic::GarmentAdaptationRefused { id, cap_m, .. } if id == "shell" && *cap_m == cap
+        )));
+        assert!(c
+            .diagnostics()
+            .iter()
+            .any(|d| matches!(d, Diagnostic::GarmentNotDrawn { id, .. } if id == "shell")));
+        assert!(!c
+            .diagnostics()
+            .iter()
+            .any(|d| matches!(d, Diagnostic::GarmentAdapted { .. })));
+    }
+}
+
+/// The fit id covers the adaptation parameters. Without adaptation the id is the v2 id of old (the
+/// hand-rebuilt test above); with it the algorithm id is `...v2+adapt.v1`, the parameter count is 5
+/// and the three adaptation parameters follow in order. Each parameter moves the id. Invalid
+/// parameters are a typed error.
+#[test]
+fn the_fit_id_covers_the_adaptation_parameters() {
+    let a = assets();
+    let at = |f: &dyn Fn(&mut AdaptationV1)| {
+        let mut ad = AdaptationV1::default();
+        f(&mut ad);
+        let mut r = with_garments(RecipeV1::new(), &["tunic"]);
+        r.fit_params.adaptation = Some(ad);
+        compile(&r, &a)
+    };
+    let base = at(&|_| {}).expect("compiles");
+
+    let mut fit = Vec::new();
+    fit.extend_from_slice(b"gibson.figure.fit.v1\0");
+    fit.extend_from_slice(&base.body_rev_id().0);
+    put_u32(&mut fit, 1);
+    put_str(&mut fit, "tunic");
+    fit.extend_from_slice(&sha256::digest(TUNIC));
+    put_str(&mut fit, "gibson.fit.vertex-normal-penetration.v2+adapt.v1");
+    put_u32(&mut fit, 5);
+    put_str(&mut fit, "tolerance_m");
+    fit.extend_from_slice(&0.002f32.to_le_bytes());
+    put_str(&mut fit, "adapt_depth_m");
+    fit.extend_from_slice(&0.01f32.to_le_bytes());
+    put_str(&mut fit, "adapt_clearance_m");
+    fit.extend_from_slice(&0.002f32.to_le_bytes());
+    put_str(&mut fit, "adapt_max_displacement_m");
+    fit.extend_from_slice(&0.02f32.to_le_bytes());
+    put_str(&mut fit, "adapt_smooth_iterations");
+    put_u32(&mut fit, 2);
+    assert_eq!(sha256::digest(&fit), base.fit_id().0, "adaptation fit id");
+
+    let off = compile(&with_garments(RecipeV1::new(), &["tunic"]), &a).expect("compiles");
+    assert_ne!(off.fit_id(), base.fit_id());
+    for (what, c) in [
+        ("clearance", at(&|x| x.clearance_m = 0.003)),
+        ("cap", at(&|x| x.max_displacement_m = 0.03)),
+        ("iterations", at(&|x| x.smooth_iterations = 3)),
+    ] {
+        let c = c.expect("compiles");
+        assert_ne!(c.fit_id(), base.fit_id(), "{what} must move the fit id");
+        assert_eq!(c.body_rev_id(), base.body_rev_id());
+    }
+
+    assert!(matches!(
+        at(&|x| x.clearance_m = -0.001),
+        Err(CompileError::BadFitParams)
+    ));
+    assert!(matches!(
+        at(&|x| x.max_displacement_m = f32::NAN),
+        Err(CompileError::BadFitParams)
+    ));
+    assert!(matches!(
+        at(&|x| x.smooth_iterations = 17),
+        Err(CompileError::BadFitParams)
+    ));
 }
 
 /// Typed errors for garment, hair, slot, anchor and attachment input.

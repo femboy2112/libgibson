@@ -25,8 +25,9 @@
 //!
 //! `ignore_skeleton_update_v1` skips the refit (the declared skeleton is kept), `ignore_surface_update`
 //! skips the control deltas, `stale_fit` fits and gates garments against the NEUTRAL body instead of
-//! the shaped one (a fit carried across a body edit). Each is killed by a non-golden assertion in
-//! `tests/figure_studio.rs`.
+//! the shaped one (a fit carried across a body edit), `stale_control` reuses a stale control value in
+//! `with_control`, and `no_adapt` skips the opt-in garment adaptation step (see [`AdaptationV1`]).
+//! Each is killed by a non-golden assertion in `tests/figure_studio.rs`.
 
 use std::fmt;
 use std::fs;
@@ -55,6 +56,11 @@ pub const FIT_PREFIX: &[u8] = b"gibson.figure.fit.v1\0";
 pub const PRESENT_PREFIX: &[u8] = b"gibson.figure.presentation.v1\0";
 /// The garment-fit algorithm id hashed into the fit id.
 pub const FIT_ALGORITHM_ID: &str = "gibson.fit.vertex-normal-penetration.v2";
+/// The garment-fit algorithm id hashed into the fit id when the recipe opts into adaptation
+/// ([`FitParamsV1::adaptation`]). Without adaptation the id above is hashed, bit for bit as before.
+pub const FIT_ADAPT_ALGORITHM_ID: &str = "gibson.fit.vertex-normal-penetration.v2+adapt.v1";
+/// Upper bound on [`AdaptationV1::smooth_iterations`].
+pub const MAX_ADAPT_ITERATIONS: u32 = 16;
 
 /// The closed set of material slot names.
 pub const MATERIAL_SLOTS: [&str; 8] = [
@@ -1115,11 +1121,16 @@ impl ProvenanceV1 {
 /// A garment vertex whose signed distance to the nearest body surface point, along that point's
 /// normal, is below `-tolerance_m` counts as penetrating. No penetrating vertex: `Fitted`. The
 /// deepest one no deeper than `adapt_depth_m`: `NeedsAdaptation`. Deeper: `Rejected`.
+///
+/// `adaptation` is opt-in (`None` by default: a garment is gated exactly as before, and the fit id is
+/// the v2 id of old). `Some` runs the deterministic adaptation step of [`AdaptationV1`] on every
+/// garment before the SAME verdict above, with the SAME `tolerance_m` and `adapt_depth_m`.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct FitParamsV1 {
     pub tolerance_m: f32,
     pub adapt_depth_m: f32,
+    pub adaptation: Option<AdaptationV1>,
 }
 
 impl Default for FitParamsV1 {
@@ -1127,8 +1138,61 @@ impl Default for FitParamsV1 {
         FitParamsV1 {
             tolerance_m: 0.002,
             adapt_depth_m: 0.01,
+            adaptation: None,
         }
     }
+}
+
+/// The garment adaptation step (hashed into the fit id when enabled).
+///
+/// Run per garment after the fit and before the verdict. A garment vertex whose signed distance to
+/// its nearest unmasked body vertex along that vertex's normal is below `clearance_m` (penetrating
+/// or merely closer than the clearance) is pushed outward along that normal to exactly
+/// `clearance_m`. The displacement field is then smoothed for `smooth_iterations` fixed Jacobi
+/// passes (each vertex takes the mean of its own and its triangle neighbours' displacement, in
+/// ascending vertex order), restricted to the moved vertices and their 1-ring, and after every pass
+/// the clearance is enforced again on that region, so smoothing can feather the displacement into
+/// the untouched cloth but never give clearance back. Vertices outside the region are not touched
+/// (bit-identical). The usual penetration check and verdict then run on the adapted positions.
+///
+/// If any vertex ends up displaced by more than `max_displacement_m` the adaptation is REFUSED: the
+/// garment keeps its unadapted positions and its unadapted verdict (`NeedsAdaptation` or
+/// `Rejected`), and the refusal is reported ([`Diagnostic::GarmentAdaptationRefused`]). A garment
+/// is never silently warped past the cap. No threshold of the verdict is loosened by adaptation.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct AdaptationV1 {
+    /// The clearance to the body surface the adapted garment keeps (metres, finite, `>= 0`).
+    pub clearance_m: f32,
+    /// The largest displacement adaptation may apply to any vertex (metres, finite, `>= 0`).
+    pub max_displacement_m: f32,
+    /// Smoothing passes (`0..=MAX_ADAPT_ITERATIONS`).
+    pub smooth_iterations: u32,
+}
+
+impl Default for AdaptationV1 {
+    fn default() -> AdaptationV1 {
+        AdaptationV1 {
+            clearance_m: 0.002,
+            max_displacement_m: 0.02,
+            smooth_iterations: 2,
+        }
+    }
+}
+
+/// What the adaptation step did to one garment (present when the recipe enabled it).
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct AdaptationReport {
+    /// Vertices pushed out to the clearance in the first pass.
+    pub pushed: u32,
+    /// Vertices whose final position differs from the fitted one (pushed plus feathered).
+    pub moved: u32,
+    /// The largest displacement of any vertex, in metres (0 if nothing moved). When `applied` is
+    /// false this is the displacement that exceeded the cap.
+    pub max_displacement_m: f32,
+    /// False when the displacement exceeded the cap: the unadapted positions were kept.
+    pub applied: bool,
 }
 
 /// The recipe of `figure::studio` (docs/design/m5c-studio-api.md section 1). All fields explicit.
@@ -1213,6 +1277,22 @@ pub enum Diagnostic {
     FootwearOutOfDomain { field: &'static str, value: f32 },
     /// A garment has no `Fitted` verdict and is not drawn.
     GarmentNotDrawn { id: String, status: FitStatus },
+    /// Adaptation moved garment vertices (applied; the verdict is of the adapted positions).
+    GarmentAdapted {
+        id: String,
+        pushed: u32,
+        moved: u32,
+        max_displacement_m: f32,
+    },
+    /// Adaptation would have displaced a vertex by `max_displacement_m`, more than the cap
+    /// `cap_m`: refused, the unadapted positions and verdict stand.
+    GarmentAdaptationRefused {
+        id: String,
+        pushed: u32,
+        moved: u32,
+        max_displacement_m: f32,
+        cap_m: f32,
+    },
     /// A jaw or mouth channel was driven while the lower face is covered.
     FaceChannelInert { channel: String },
 }
@@ -1256,6 +1336,8 @@ pub struct GarmentFitReport {
     pub id: String,
     pub status: FitStatus,
     pub metrics: FitMetrics,
+    /// Adaptation statistics; `None` unless the recipe enabled adaptation.
+    pub adaptation: Option<AdaptationReport>,
 }
 
 /// Why [`compile`] refused a recipe.
@@ -1491,6 +1573,153 @@ fn penetration(
         }
     }
     (count, max_depth)
+}
+
+/// The nearest unmasked body vertex of `g` among `candidates` (ties: lowest index), the same rule
+/// as [`penetration`]. `None` if there is none or the nearest one is hidden.
+fn nearest_body(g: Vec3, body: &[Vec3], candidates: &[usize], masked: &[bool]) -> Option<usize> {
+    let mut best = usize::MAX;
+    let mut best_d2 = f32::INFINITY;
+    for &b in candidates {
+        let d = g.sub(body[b]);
+        let d2 = d.dot(d);
+        if d2 < best_d2 {
+            best_d2 = d2;
+            best = b;
+        }
+    }
+    if best == usize::MAX || masked[best] {
+        None
+    } else {
+        Some(best)
+    }
+}
+
+/// The body surface the adaptation step measures against.
+struct BodySurface<'a> {
+    positions: &'a [Vec3],
+    normals: &'a [Vec3],
+    candidates: &'a [usize],
+    masked: &'a [bool],
+}
+
+/// Push every vertex of `region` (ascending) whose signed distance along its nearest body
+/// vertex's normal is below `clearance` out to `clearance`; sets `pushed[i]` for each and returns
+/// how many were newly marked.
+fn enforce_clearance(
+    pos: &mut [Vec3],
+    region: impl Iterator<Item = usize>,
+    body: &BodySurface<'_>,
+    clearance: f32,
+    pushed: &mut [bool],
+) -> u32 {
+    let mut count = 0u32;
+    for i in region {
+        if let Some(b) = nearest_body(pos[i], body.positions, body.candidates, body.masked) {
+            let s = pos[i].sub(body.positions[b]).dot(body.normals[b]);
+            if s < clearance {
+                pos[i] = pos[i].add(body.normals[b].scale(clearance - s));
+                if !pushed[i] {
+                    pushed[i] = true;
+                    count += 1;
+                }
+            }
+        }
+    }
+    count
+}
+
+/// The adaptation step (see [`AdaptationV1`]). Returns the adapted positions (the input, unchanged,
+/// when nothing needed pushing or when the cap refused it) and its report. Deterministic: ascending
+/// vertex order, neighbours sorted ascending, `f32` throughout.
+#[allow(clippy::needless_range_loop)]
+fn adapt_garment(
+    fitted: &[Vec3],
+    indices: &[u32],
+    body: &BodySurface<'_>,
+    a: &AdaptationV1,
+) -> (Vec<Vec3>, AdaptationReport) {
+    let n = fitted.len();
+    let mut pos: Vec<Vec3> = fitted.to_vec();
+    let mut pushed = vec![false; n];
+    let pushed_count = enforce_clearance(&mut pos, 0..n, body, a.clearance_m, &mut pushed);
+    if pushed_count == 0 {
+        return (
+            pos,
+            AdaptationReport {
+                pushed: 0,
+                moved: 0,
+                max_displacement_m: 0.0,
+                applied: true,
+            },
+        );
+    }
+    // triangle neighbours, sorted ascending and deduplicated
+    let mut nb: Vec<Vec<u32>> = vec![Vec::new(); n];
+    for t in indices.chunks_exact(3) {
+        for &x in t {
+            for &y in t {
+                if x != y && (x as usize) < n && (y as usize) < n {
+                    nb[x as usize].push(y);
+                }
+            }
+        }
+    }
+    for l in nb.iter_mut() {
+        l.sort_unstable();
+        l.dedup();
+    }
+    // the region: the pushed vertices and their 1-ring
+    let mut in_region = pushed.clone();
+    for i in 0..n {
+        if pushed[i] {
+            for &j in &nb[i] {
+                in_region[j as usize] = true;
+            }
+        }
+    }
+    let region: Vec<usize> = (0..n).filter(|&i| in_region[i]).collect();
+    // feather the displacement field inside the region, then re-assert the clearance there
+    for _ in 0..a.smooth_iterations {
+        let d: Vec<Vec3> = (0..n).map(|i| pos[i].sub(fitted[i])).collect();
+        for &i in &region {
+            let mut sum = d[i];
+            for &j in &nb[i] {
+                sum = sum.add(d[j as usize]);
+            }
+            pos[i] = fitted[i].add(sum.scale(1.0 / (1.0 + nb[i].len() as f32)));
+        }
+        enforce_clearance(
+            &mut pos,
+            region.iter().copied(),
+            body,
+            a.clearance_m,
+            &mut pushed,
+        );
+    }
+    let mut moved = 0u32;
+    let mut max_disp = 0.0f32;
+    for i in 0..n {
+        if pos[i] != fitted[i] {
+            moved += 1;
+        }
+        let len = pos[i].sub(fitted[i]).length();
+        if len > max_disp {
+            max_disp = len;
+        }
+    }
+    let applied = max_disp <= a.max_displacement_m;
+    let report = AdaptationReport {
+        pushed: pushed_count,
+        moved,
+        max_displacement_m: max_disp,
+        applied,
+    };
+    if applied {
+        (pos, report)
+    } else {
+        (fitted.to_vec(), report)
+    }
 }
 
 fn verdict(metrics: &FitMetrics, p: &FitParamsV1) -> FitStatus {
@@ -2253,6 +2482,15 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
     {
         return Err(CompileError::BadFitParams);
     }
+    if let Some(a) = &fp.adaptation {
+        if !(a.clearance_m.is_finite() && a.max_displacement_m.is_finite())
+            || a.clearance_m < 0.0
+            || a.max_displacement_m < 0.0
+            || a.smooth_iterations > MAX_ADAPT_ITERATIONS
+        {
+            return Err(CompileError::BadFitParams);
+        }
+    }
     if !recipe.style_params.iter().all(|(_, v)| v.is_finite()) {
         return Err(CompileError::NonFinite {
             part: "style parameter",
@@ -2418,7 +2656,39 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
         }
         let metrics;
         let status;
+        let mut adaptation: Option<AdaptationReport> = None;
+        let mut pos = pos;
         if finite {
+            // Fault injection (mutation control `no_adapt`): the adaptation step is skipped.
+            if let (Some(a), false) = (&fp.adaptation, cfg!(figure_mutant = "no_adapt")) {
+                let surface = BodySurface {
+                    positions: fit_src,
+                    normals: &normals,
+                    candidates: &candidates,
+                    masked: &masked,
+                };
+                let (adapted, rep) = adapt_garment(&pos, &part.indices, &surface, a);
+                if rep.applied {
+                    if rep.pushed > 0 {
+                        diagnostics.push(Diagnostic::GarmentAdapted {
+                            id: part.id.clone(),
+                            pushed: rep.pushed,
+                            moved: rep.moved,
+                            max_displacement_m: rep.max_displacement_m,
+                        });
+                    }
+                } else {
+                    diagnostics.push(Diagnostic::GarmentAdaptationRefused {
+                        id: part.id.clone(),
+                        pushed: rep.pushed,
+                        moved: rep.moved,
+                        max_displacement_m: rep.max_displacement_m,
+                        cap_m: a.max_displacement_m,
+                    });
+                }
+                pos = adapted;
+                adaptation = Some(rep);
+            }
             let (count, max_depth) = penetration(
                 &pos,
                 fit_src,
@@ -2461,6 +2731,7 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
             id: part.id.clone(),
             status,
             metrics,
+            adaptation,
         });
     }
     let hair = match hair_part {
@@ -2485,12 +2756,30 @@ pub fn compile_shared(recipe: &RecipeV1, assets: &Arc<AssetSet>) -> Result<Compi
         put_str(&mut fit_bytes, &part.id);
         fit_bytes.extend_from_slice(&part.sha);
     }
-    put_str(&mut fit_bytes, FIT_ALGORITHM_ID);
-    put_u32(&mut fit_bytes, 2);
-    put_str(&mut fit_bytes, "tolerance_m");
-    put_f32(&mut fit_bytes, fp.tolerance_m);
-    put_str(&mut fit_bytes, "adapt_depth_m");
-    put_f32(&mut fit_bytes, fp.adapt_depth_m);
+    match &fp.adaptation {
+        None => {
+            put_str(&mut fit_bytes, FIT_ALGORITHM_ID);
+            put_u32(&mut fit_bytes, 2);
+            put_str(&mut fit_bytes, "tolerance_m");
+            put_f32(&mut fit_bytes, fp.tolerance_m);
+            put_str(&mut fit_bytes, "adapt_depth_m");
+            put_f32(&mut fit_bytes, fp.adapt_depth_m);
+        }
+        Some(a) => {
+            put_str(&mut fit_bytes, FIT_ADAPT_ALGORITHM_ID);
+            put_u32(&mut fit_bytes, 5);
+            put_str(&mut fit_bytes, "tolerance_m");
+            put_f32(&mut fit_bytes, fp.tolerance_m);
+            put_str(&mut fit_bytes, "adapt_depth_m");
+            put_f32(&mut fit_bytes, fp.adapt_depth_m);
+            put_str(&mut fit_bytes, "adapt_clearance_m");
+            put_f32(&mut fit_bytes, a.clearance_m);
+            put_str(&mut fit_bytes, "adapt_max_displacement_m");
+            put_f32(&mut fit_bytes, a.max_displacement_m);
+            put_str(&mut fit_bytes, "adapt_smooth_iterations");
+            put_u32(&mut fit_bytes, a.smooth_iterations);
+        }
+    }
     let fit_id = FitId(sha256::digest(&fit_bytes));
 
     // 10. The presentation id.
