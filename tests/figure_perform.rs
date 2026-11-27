@@ -1024,28 +1024,43 @@ impl P<'_> {
             }
             Some(b'"') => {
                 self.i += 1;
-                let mut s = String::new();
+                let mut s: Vec<u8> = Vec::new();
                 loop {
                     match self.b.get(self.i) {
                         None => return Err("unterminated string".into()),
                         Some(b'"') => {
                             self.i += 1;
-                            return Ok(Json::Str(s));
+                            return String::from_utf8(s)
+                                .map(Json::Str)
+                                .map_err(|_| "string is not UTF-8".to_string());
                         }
                         Some(b'\\') => {
                             self.i += 1;
                             match self.b.get(self.i) {
-                                Some(b'n') => s.push('\n'),
-                                Some(b't') => s.push('\t'),
-                                Some(b'r') => s.push('\r'),
-                                Some(b'"') => s.push('"'),
-                                Some(b'\\') => s.push('\\'),
+                                Some(b'n') => s.push(b'\n'),
+                                Some(b't') => s.push(b'\t'),
+                                Some(b'r') => s.push(b'\r'),
+                                Some(b'"') => s.push(b'"'),
+                                Some(b'\\') => s.push(b'\\'),
+                                Some(b'/') => s.push(b'/'),
+                                Some(b'u') => {
+                                    let hex = self
+                                        .b
+                                        .get(self.i + 1..self.i + 5)
+                                        .and_then(|h| std::str::from_utf8(h).ok())
+                                        .and_then(|h| u32::from_str_radix(h, 16).ok())
+                                        .and_then(char::from_u32)
+                                        .ok_or_else(|| "bad \\u escape".to_string())?;
+                                    let mut buf = [0u8; 4];
+                                    s.extend_from_slice(hex.encode_utf8(&mut buf).as_bytes());
+                                    self.i += 4;
+                                }
                                 _ => return Err("unsupported escape".into()),
                             }
                             self.i += 1;
                         }
                         Some(&c) => {
-                            s.push(c as char);
+                            s.push(c);
                             self.i += 1;
                         }
                     }
@@ -1228,6 +1243,426 @@ fn the_tape_is_deterministic_well_formed_and_hashes_its_body() {
     assert_ne!(c.to_files(&identity()).bin, fa.bin);
     // Bad inputs are typed errors.
     assert!(matches!(perform(&rig, &s, 0), Err(PerformError::BadFps)));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Tape contract (docs/design/m5c-studio-api.md section 5)
+//
+// The reader of record is `TapeReader` (m5c-deform, `figure::studio`) and the Blender consumer is
+// `render_tape.py` / `fa_tape.read_tape` (m5c-assets). Neither is linkable from this branch, so
+// `read_like_the_readers` below reproduces their accepted-input rules: the `format` string, the
+// four channel names, `frame_count * (3 + 10 * joints + face) * 4` bytes, the SHA-256 of the
+// binary, and finite values. `tools/figure_assets/check_tape.py` is the same check in python, and
+// `the_python_contract_check_accepts_a_written_tape` runs it on a tape this writer produced.
+// ---------------------------------------------------------------------------------------------
+
+/// The header keys of section 5, in the order the writer emits them.
+const TAPE_KEYS: [&str; 18] = [
+    "format",
+    "body_rev_id",
+    "fit_id",
+    "present_id",
+    "asset_manifest_sha256",
+    "controls",
+    "garments",
+    "fit_status",
+    "materials",
+    "style",
+    "fps",
+    "frame_count",
+    "joints",
+    "channels",
+    "face",
+    "events",
+    "camera_cuts",
+    "bin_sha256",
+];
+
+/// The synthetic rig's joints in skeleton order (see `synthetic_rig`).
+const SYNTH_JOINTS: [&str; 21] = [
+    "root",
+    "pelvis",
+    "spine1",
+    "spine2",
+    "spine3",
+    "neck",
+    "head",
+    "eye_l",
+    "eye_r",
+    "upperarm_l",
+    "forearm_l",
+    "hand_l",
+    "upperarm_r",
+    "forearm_r",
+    "hand_r",
+    "thigh_l",
+    "calf_l",
+    "foot_l",
+    "thigh_r",
+    "calf_r",
+    "foot_r",
+];
+
+fn obj_keys(j: &Json) -> Vec<String> {
+    match j {
+        Json::Obj(o) => o.iter().map(|(k, _)| k.clone()).collect(),
+        other => panic!("not an object: {other:?}"),
+    }
+}
+
+fn strings(j: &Json) -> Vec<String> {
+    match j {
+        Json::Arr(a) => a
+            .iter()
+            .map(|x| match x {
+                Json::Str(s) => s.clone(),
+                other => panic!("not a string: {other:?}"),
+            })
+            .collect(),
+        other => panic!("not an array: {other:?}"),
+    }
+}
+
+fn number(j: &Json) -> f64 {
+    match j {
+        Json::Num(n) => *n,
+        other => panic!("not a number: {other:?}"),
+    }
+}
+
+fn hex_of(b: &[u8]) -> String {
+    let mut s = String::new();
+    for x in sha256::digest(b) {
+        s.push_str(&format!("{x:02x}"));
+    }
+    s
+}
+
+/// The header and the decoded floats, or why a reader would refuse the pair.
+fn read_like_the_readers(header: &str, bin: &[u8]) -> Result<(Json, Vec<f32>), String> {
+    let h = parse_json(header)?;
+    if !matches!(field(&h, "format"), Json::Str(f) if f == "gibson.figure.tape.v1") {
+        return Err("format".into());
+    }
+    if strings(field(&h, "channels")) != ["root_t3", "local_t3", "local_r4", "local_s3"] {
+        return Err("channels".into());
+    }
+    let stride = 3 + 10 * strings(field(&h, "joints")).len() + strings(field(&h, "face")).len();
+    let n = number(field(&h, "frame_count")) as usize;
+    if bin.len() != n * stride * 4 {
+        return Err(format!(
+            "bin has {} bytes, header implies {}",
+            bin.len(),
+            n * stride * 4
+        ));
+    }
+    match field(&h, "bin_sha256") {
+        Json::Str(s) if *s == hex_of(bin) => {}
+        _ => return Err("bin_sha256".into()),
+    }
+    let floats: Vec<f32> = bin
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
+    if floats.iter().any(|v| !v.is_finite()) {
+        return Err("non-finite value".into());
+    }
+    Ok((h, floats))
+}
+
+fn identity_two_cuts() -> TapeIdentity {
+    let mut id = identity();
+    id.garments = vec![
+        ("female_casualsuit01".into(), "Fitted".into()),
+        ("skirt_a_line".into(), "Failed".into()),
+    ];
+    id.camera_cuts = vec![(0, "front".into()), (10, "three_quarter".into())];
+    id
+}
+
+#[test]
+fn the_tape_header_has_exactly_the_contract_keys_in_order() {
+    let rig = synthetic_rig();
+    let tape = perform(&rig, &tape_script(), 30).unwrap();
+    let files = tape.to_files(&identity_two_cuts());
+    let h = parse_json(&files.header_json).expect("valid JSON");
+    assert_eq!(obj_keys(&h), TAPE_KEYS, "top-level keys, set and order");
+    assert_eq!(
+        obj_keys(field(&h, "style")),
+        ["preset", "amplitude", "tempo", "settle_ms"]
+    );
+    assert_eq!(
+        strings(field(&h, "channels")),
+        ["root_t3", "local_t3", "local_r4", "local_s3"]
+    );
+    // `fit_status` has one verdict per garment, in the garments' order.
+    assert_eq!(
+        obj_keys(field(&h, "fit_status")),
+        strings(field(&h, "garments"))
+    );
+    assert_eq!(
+        strings(field(&h, "garments")),
+        ["female_casualsuit01", "skirt_a_line"]
+    );
+    match field(&h, "fit_status") {
+        Json::Obj(o) => {
+            assert!(matches!(&o[0].1, Json::Str(v) if v == "Fitted"));
+            assert!(matches!(&o[1].1, Json::Str(v) if v == "Failed"));
+        }
+        other => panic!("{other:?}"),
+    }
+    // `controls` keeps the recipe order, not an alphabetical one.
+    assert_eq!(
+        obj_keys(field(&h, "controls")),
+        ["stature", "hip \"breadth\""]
+    );
+    assert!(matches!(field(&h, "materials"), Json::Obj(_)));
+    // Records: events are {frame, kind, label}; camera cuts are {frame, camera_id}.
+    match field(&h, "events") {
+        Json::Arr(a) => {
+            assert_eq!(a.len(), tape.events.len());
+            assert!(!a.is_empty());
+            for e in a {
+                assert_eq!(obj_keys(e), ["frame", "kind", "label"]);
+            }
+        }
+        other => panic!("{other:?}"),
+    }
+    match field(&h, "camera_cuts") {
+        Json::Arr(a) => {
+            assert_eq!(a.len(), 2);
+            for c in a {
+                assert_eq!(obj_keys(c), ["frame", "camera_id"]);
+            }
+        }
+        other => panic!("{other:?}"),
+    }
+    // An empty materials text means `{}` and an empty garment list still writes both keys.
+    let mut bare = identity_two_cuts();
+    bare.materials_json = String::new();
+    bare.garments.clear();
+    bare.camera_cuts.clear();
+    bare.controls.clear();
+    let bh = parse_json(&tape.to_files(&bare).header_json).unwrap();
+    assert_eq!(obj_keys(&bh), TAPE_KEYS);
+    assert!(matches!(field(&bh, "materials"), Json::Obj(o) if o.is_empty()));
+    assert!(matches!(field(&bh, "fit_status"), Json::Obj(o) if o.is_empty()));
+    assert!(matches!(field(&bh, "garments"), Json::Arr(o) if o.is_empty()));
+    assert!(matches!(field(&bh, "camera_cuts"), Json::Arr(o) if o.is_empty()));
+    assert!(matches!(field(&bh, "controls"), Json::Obj(o) if o.is_empty()));
+}
+
+#[test]
+fn the_tape_stride_is_three_plus_ten_per_joint_plus_face() {
+    let rig = synthetic_rig();
+    for fps in [1u32, 24, 30, 240] {
+        let tape = perform(&rig, &tape_script(), fps).unwrap();
+        let files = tape.to_files(&identity());
+        let h = parse_json(&files.header_json).unwrap();
+        let joints = strings(field(&h, "joints")).len();
+        let face = strings(field(&h, "face")).len();
+        let frames = number(field(&h, "frame_count")) as usize;
+        assert_eq!((joints, face), (21, 1));
+        let stride = 3 + 10 * joints + face;
+        assert_eq!(stride, 214);
+        assert_eq!(tape.stride(), stride);
+        assert_eq!(files.bin.len(), frames * stride * 4, "fps {fps}");
+        assert_eq!(frames, tape.frame_count);
+        assert_eq!(number(field(&h, "fps")) as u32, fps);
+    }
+}
+
+#[test]
+fn the_tape_body_round_trips_through_an_independent_reader() {
+    let rig = synthetic_rig();
+    let tape = perform(&rig, &tape_script(), 30).unwrap();
+    let files = tape.to_files(&identity_two_cuts());
+    let (h, floats) = read_like_the_readers(&files.header_json, &files.bin).expect("accepted");
+    let joints = strings(field(&h, "joints"));
+    assert_eq!(joints, SYNTH_JOINTS, "joints in skeleton order");
+    assert_eq!(strings(field(&h, "face")), ["smile"]);
+    let stride = 3 + 10 * joints.len() + 1;
+    assert_eq!(floats.len(), tape.frame_count * stride);
+    // Every float is the writer's float, bit for bit, in the documented order.
+    for i in 0..tape.frame_count {
+        let row = &floats[i * stride..(i + 1) * stride];
+        let frame = tape.frame(i);
+        assert_eq!(row.len(), frame.len());
+        for (k, (a, b)) in row.iter().zip(frame).enumerate() {
+            assert_eq!(a.to_bits(), b.to_bits(), "frame {i} float {k}");
+        }
+        assert_eq!([row[0], row[1], row[2]], {
+            let r = tape.root(i);
+            [r.x, r.y, r.z]
+        });
+        for (j, l) in tape.locals(i).iter().enumerate() {
+            let o = 3 + 10 * j;
+            assert_eq!(
+                [row[o], row[o + 1], row[o + 2]],
+                [l.translation.x, l.translation.y, l.translation.z]
+            );
+            assert_eq!(
+                [row[o + 3], row[o + 4], row[o + 5], row[o + 6]],
+                [l.rotation.x, l.rotation.y, l.rotation.z, l.rotation.w],
+                "rotation is stored xyzw"
+            );
+            assert_eq!(
+                [row[o + 7], row[o + 8], row[o + 9]],
+                [l.scale.x, l.scale.y, l.scale.z]
+            );
+        }
+        // The face channel is the last float of the frame.
+        assert_eq!(row[stride - 1], frame[stride - 1]);
+    }
+    // Quaternions never flip sign between neighbouring frames (hemisphere continuity).
+    for i in 1..tape.frame_count {
+        for j in 0..joints.len() {
+            let o = 3 + 10 * j + 3;
+            let (a, b) = (&floats[(i - 1) * stride + o..], &floats[i * stride + o..]);
+            let d: f32 = (0..4).map(|k| a[k] * b[k]).sum();
+            assert!(d > 0.0, "frame {i} joint {j} flips hemisphere");
+        }
+    }
+    // A reader refuses a corrupted body, a truncated body, a bad format and bad channels.
+    let mut bad = files.bin.clone();
+    bad[7] ^= 1;
+    assert!(read_like_the_readers(&files.header_json, &bad).is_err());
+    assert!(read_like_the_readers(&files.header_json, &files.bin[..files.bin.len() - 4]).is_err());
+    let bad_format = files
+        .header_json
+        .replace("gibson.figure.tape.v1", "gibson.figure.tape.v2");
+    assert!(read_like_the_readers(&bad_format, &files.bin).is_err());
+    let bad_channels = files.header_json.replace("local_r4", "local_r3");
+    assert!(read_like_the_readers(&bad_channels, &files.bin).is_err());
+}
+
+#[test]
+fn tape_text_escapes_round_trip_and_stay_one_json_document() {
+    let rig = synthetic_rig();
+    let weird = "sm\"ile\\ \t\n\u{1}\u{1f} caf\u{e9} \u{2603}";
+    let s = script(
+        Style::restrained(),
+        vec![
+            Beat::Express {
+                channel: weird.into(),
+                value: 0.5,
+            },
+            Beat::Idle { secs: 0.5 },
+        ],
+    );
+    let tape = perform(&rig, &s, 30).unwrap();
+    let mut id = identity();
+    id.controls = vec![(weird.into(), 0.5)];
+    id.garments = vec![(weird.into(), weird.into())];
+    id.camera_cuts = vec![(0, weird.into())];
+    let files = tape.to_files(&id);
+    // Control characters are escaped, never raw, so the header stays valid JSON text.
+    assert!(files
+        .header_json
+        .bytes()
+        .all(|b| b == b'\n' || (0x20..0x7f).contains(&b) || b >= 0x80));
+    let (h, _) = read_like_the_readers(&files.header_json, &files.bin).expect("accepted");
+    assert_eq!(strings(field(&h, "face")), [weird]);
+    assert_eq!(strings(field(&h, "garments")), [weird]);
+    assert_eq!(obj_keys(field(&h, "controls")), [weird]);
+    match field(&h, "events") {
+        Json::Arr(a) => assert!(a
+            .iter()
+            .any(|e| matches!(field(e, "label"), Json::Str(l) if l == weird))),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn tape_event_frames_and_every_value_lie_inside_the_tape() {
+    let rig = synthetic_rig();
+    for fps in [1u32, 7, 24, 30, 60, 240] {
+        let tape = perform(&rig, &tape_script(), fps).unwrap();
+        let files = tape.to_files(&identity());
+        let (h, floats) = read_like_the_readers(&files.header_json, &files.bin).expect("accepted");
+        assert!(floats.iter().all(|v| v.is_finite()));
+        let n = number(field(&h, "frame_count")) as usize;
+        match field(&h, "events") {
+            Json::Arr(a) => {
+                assert!(!a.is_empty());
+                let mut last = 0usize;
+                for e in a {
+                    let f = number(field(e, "frame")) as usize;
+                    assert!(f < n, "fps {fps}: event frame {f} of {n}");
+                    assert!(f >= last, "events are in time order");
+                    last = f;
+                }
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(tape.events.iter().all(|e| (e.frame as usize) < n));
+    }
+}
+
+#[test]
+fn the_tape_bytes_are_a_pure_function_of_script_fps_and_identity() {
+    let rig = synthetic_rig();
+    let first = perform(&rig, &tape_script(), 30)
+        .unwrap()
+        .to_files(&identity_two_cuts());
+    for _ in 0..3 {
+        // A freshly built rig, script and tape: nothing carries over between runs.
+        let again = perform(&synthetic_rig(), &tape_script(), 30)
+            .unwrap()
+            .to_files(&identity_two_cuts());
+        assert_eq!(again.header_json, first.header_json);
+        assert_eq!(again.bin, first.bin);
+    }
+    // A different identity changes the header and not the body; a different fps changes both.
+    let other_id = perform(&rig, &tape_script(), 30)
+        .unwrap()
+        .to_files(&identity());
+    assert_eq!(other_id.bin, first.bin);
+    assert_ne!(other_id.header_json, first.header_json);
+    let other_fps = perform(&rig, &tape_script(), 31)
+        .unwrap()
+        .to_files(&identity_two_cuts());
+    assert_ne!(other_fps.bin, first.bin);
+}
+
+#[test]
+fn the_python_contract_check_accepts_a_written_tape() {
+    let rig = synthetic_rig();
+    let tape = perform(&rig, &tape_script(), 30).unwrap();
+    let files = tape.to_files(&identity_two_cuts());
+    let dir = std::env::temp_dir().join(format!("gibson_tape_contract_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let json = dir.join("perform.tape.json");
+    std::fs::write(&json, files.header_json.as_bytes()).unwrap();
+    std::fs::write(dir.join("perform.tape.bin"), &files.bin).unwrap();
+    let script_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tools")
+        .join("figure_assets")
+        .join("check_tape.py");
+    let run = std::process::Command::new("python3")
+        .arg("-I")
+        .arg(&script_path)
+        .arg(&json)
+        .output();
+    let out = match run {
+        Ok(o) => o,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&dir);
+            if std::env::var_os("GIBSON_REQUIRE_PYTHON").is_some() {
+                panic!("python3 is required (GIBSON_REQUIRE_PYTHON) and did not start: {e}");
+            }
+            eprintln!("SKIP the_python_contract_check_accepts_a_written_tape: no python3 ({e})");
+            return;
+        }
+    };
+    let _ = std::fs::remove_dir_all(&dir);
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(
+        out.status.success() && text.contains("CHECK_TAPE_FAILS 0"),
+        "check_tape.py failed:\n{text}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!text.contains("FAIL "), "{text}");
 }
 
 // ---------------------------------------------------------------------------------------------

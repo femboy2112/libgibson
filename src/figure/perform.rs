@@ -116,6 +116,8 @@ pub enum PerformError {
     BadFps,
     /// The live queue is full.
     QueueFull,
+    /// A tape value was NaN or infinite (a tape reader refuses such a body).
+    NonFinite,
 }
 
 impl fmt::Display for PerformError {
@@ -134,6 +136,7 @@ impl fmt::Display for PerformError {
             PerformError::LimitExceeded { what } => write!(f, "limit exceeded: {what}"),
             PerformError::BadFps => write!(f, "fps must be in 1..=240"),
             PerformError::QueueFull => write!(f, "live queue is full"),
+            PerformError::NonFinite => write!(f, "the performance produced a non-finite value"),
         }
     }
 }
@@ -2454,11 +2457,17 @@ pub fn perform_with(
         }
         data.extend_from_slice(&pose.face);
     }
+    // A tape reader refuses NaN and infinity anywhere in the body, so refuse to write one.
+    if data.iter().any(|v| !v.is_finite()) {
+        return Err(PerformError::NonFinite);
+    }
+    // An event frame is an index into the tape: rounding must not land one past the last frame.
+    let last_frame = (frames - 1) as u32;
     let events = perf
         .events
         .iter()
         .map(|e| TapeEvent {
-            frame: (e.time * f64::from(fps)).round() as u32,
+            frame: ((e.time * f64::from(fps)).round() as u32).min(last_frame),
             kind: e.kind.to_string(),
             label: e.label.clone(),
         })
