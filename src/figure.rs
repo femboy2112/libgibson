@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 pub mod clip;
+pub mod family;
 pub mod math;
 pub mod morph;
 pub mod motion;
