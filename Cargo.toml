@@ -83,6 +83,11 @@ vt100 = "0.18"
 sha2 = "=0.11.0"
 
 [[example]]
+name = "figure_vis3d_kit"
+path = "examples/figure_vis3d_kit.rs"
+required-features = ["figure"]
+
+[[example]]
 name = "agent_chat"
 path = "examples/agent_chat.rs"
 
