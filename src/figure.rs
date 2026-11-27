@@ -13,6 +13,7 @@ pub mod clip;
 pub mod math;
 pub mod morph;
 pub mod motion;
+pub mod preview;
 pub mod revision;
 pub mod sha256;
 pub mod skeleton;
@@ -23,6 +24,10 @@ pub use morph::MorphTarget;
 pub use revision::{
     compile, BodyFamily, BodyRecipe, CharacterRevision, CompileError, EvalError, FamilyRef,
     PoseInput, PosedMesh, RevisionId, SupportClass,
+};
+pub use preview::{
+    frame_bounds, frame_bounds_view, render_preview, PreviewCamera, PreviewImage, PreviewLight,
+    PreviewMaterial, PreviewMesh, PreviewOptions,
 };
 pub use skeleton::{Joint, Landmark, Skeleton};
 pub use skin::SkinWeights;
