@@ -30,7 +30,7 @@ use super::math::{Mat4, Transform, Vec3};
 use super::morph::{self, MorphError, MorphTarget, MAX_MORPH_TARGETS};
 use super::sha256;
 use super::skeleton::{Joint, Landmark, Skeleton, SkeletonError, MAX_JOINTS};
-use super::skin::{SkinError, SkinWeights, MAX_SKIN_VERTICES};
+use super::skin::{SkinError, SkinWeights, SkinningMode, MAX_SKIN_VERTICES};
 
 /// Hard cap on vertices in a body family.
 pub const MAX_VERTICES: usize = MAX_SKIN_VERTICES;
@@ -556,6 +556,19 @@ impl CharacterRevision {
     /// order), then joint world transforms in parent-before-child order, then linear-blend
     /// skinning with this revision's inverse binds. Borrows `&self`, so `rev_id` cannot change.
     pub fn evaluate(&self, pose: &PoseInput) -> Result<PosedMesh, EvalError> {
+        self.evaluate_with(pose, SkinningMode::Linear)
+    }
+
+    /// [`CharacterRevision::evaluate`] with an explicit [`SkinningMode`]. `Linear` is exactly
+    /// `evaluate`. The mode is an evaluation argument for a v0 revision, so it never enters
+    /// `rev_id`; a `rev.v1` revision carries it as hashed content (contract, "rev.v1 (DRAFT)").
+    /// `DualQuat` can fail with `EvalError::Skin(SkinError::NonRigid { .. })` when the pose or
+    /// the skeleton makes a referenced joint's skin matrix non-rigid.
+    pub fn evaluate_with(
+        &self,
+        pose: &PoseInput,
+        mode: SkinningMode,
+    ) -> Result<PosedMesh, EvalError> {
         let mut weights = vec![0.0f32; self.morphs.len()];
         let mut set = vec![false; self.morphs.len()];
         for (name, w) in &pose.morph_weights {
@@ -597,7 +610,7 @@ impl CharacterRevision {
             .map_err(EvalError::Skeleton)?;
         let positions = self
             .skin
-            .skin(&positions, &joint_world, &self.inverse_binds)
+            .skin_with(mode, &positions, &joint_world, &self.inverse_binds)
             .map_err(EvalError::Skin)?;
         Ok(PosedMesh {
             positions,

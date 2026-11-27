@@ -36,6 +36,23 @@ pub struct Transform {
     pub scale: Vec3,
 }
 
+/// A rigid transform as a dual quaternion `real + e * dual`, where `real` is the rotation and
+/// `dual = 1/2 * t * real` for a translation `t` (as a pure quaternion). Points transform as
+/// `p' = R p + t`, the same convention as [`Mat4`]. Unit when `|real| = 1` and `real . dual = 0`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DualQuat {
+    pub real: Quat,
+    pub dual: Quat,
+}
+
+/// A skin matrix whose 3x3 block departs from a rotation by more than this is not rigid
+/// (dual-quaternion skinning cannot represent it). The test is on `|c_i . c_j - delta_ij|` for
+/// the three columns and on `|det - 1|`.
+pub const RIGID_TOLERANCE: f32 = 1.0e-3;
+
+/// A blended dual quaternion whose real part has squared length below this is degenerate.
+pub const DEGENERATE_BLEND_NORM2: f32 = 1.0e-12;
+
 // ---------------------------------------------------------------------------------------------
 // Operations.
 //
@@ -110,6 +127,16 @@ impl Vec3 {
         self.dot(self).sqrt()
     }
 
+    /// Unit-length copy, or `None` for a zero-length or non-finite vector. Evaluated as
+    /// `self.scale(1.0 / length)`.
+    pub fn try_normalize(self) -> Option<Vec3> {
+        let l = self.length();
+        if l <= 0.0 || !l.is_finite() {
+            return None;
+        }
+        Some(self.scale(1.0 / l))
+    }
+
     /// True when every component is finite.
     pub fn is_finite(self) -> bool {
         self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
@@ -151,6 +178,39 @@ impl Quat {
             self.w * o.z + self.x * o.y - self.y * o.x + self.z * o.w,
             self.w * o.w - self.x * o.x - self.y * o.y - self.z * o.z,
         )
+    }
+
+    /// Conjugate `(-x, -y, -z, w)`; the inverse of a unit quaternion.
+    pub fn conjugate(self) -> Quat {
+        Quat::new(-self.x, -self.y, -self.z, self.w)
+    }
+
+    /// Component-wise negation. `-q` is the same rotation as `q`.
+    pub fn neg(self) -> Quat {
+        Quat::new(-self.x, -self.y, -self.z, -self.w)
+    }
+
+    /// Component-wise sum.
+    pub fn add(self, o: Quat) -> Quat {
+        Quat::new(self.x + o.x, self.y + o.y, self.z + o.z, self.w + o.w)
+    }
+
+    /// Multiply every component by `s`.
+    pub fn scale(self, s: f32) -> Quat {
+        Quat::new(self.x * s, self.y * s, self.z * s, self.w * s)
+    }
+
+    /// 4-D dot product `x*x' + y*y' + z*z' + w*w'`, summed in that order.
+    pub fn dot(self, o: Quat) -> f32 {
+        self.x * o.x + self.y * o.y + self.z * o.z + self.w * o.w
+    }
+
+    /// Rotate `v` by this quaternion, assumed unit length: with `u = (x, y, z)` and
+    /// `t = 2 (u x v)`, the result is `v + w t + u x t`. Evaluated in exactly that order.
+    pub fn rotate(self, v: Vec3) -> Vec3 {
+        let u = Vec3::new(self.x, self.y, self.z);
+        let t = u.cross(v).scale(2.0);
+        v.add(t.scale(self.w)).add(u.cross(t))
     }
 
     /// Squared length `x*x + y*y + z*z + w*w`.
@@ -261,6 +321,16 @@ impl Mat4 {
         )
     }
 
+    /// Transform a direction (`w = 0`) by the 3x3 linear part; the translation is ignored.
+    pub fn transform_vector(&self, v: Vec3) -> Vec3 {
+        let m = &self.cols;
+        Vec3::new(
+            m[0][0] * v.x + m[1][0] * v.y + m[2][0] * v.z,
+            m[0][1] * v.x + m[1][1] * v.y + m[2][1] * v.z,
+            m[0][2] * v.x + m[1][2] * v.y + m[2][2] * v.z,
+        )
+    }
+
     /// True when every element is finite.
     pub fn is_finite(&self) -> bool {
         self.cols.iter().all(|c| c.iter().all(|v| v.is_finite()))
@@ -325,6 +395,182 @@ impl Mat4 {
         } else {
             None
         }
+    }
+}
+
+/// Dual-quaternion helpers for DQS. EVALUATION ORDER is fixed like the rest of this module:
+/// every expression left to right as written, scalar `f32`, no fused multiply-add, no
+/// reassociation; blends accumulate in the caller's term order.
+#[allow(clippy::should_implement_trait)]
+impl DualQuat {
+    /// The identity: no rotation, no translation.
+    pub const IDENTITY: DualQuat = DualQuat {
+        real: Quat::IDENTITY,
+        dual: Quat {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            w: 0.0,
+        },
+    };
+
+    /// From a rotation and a translation (`p' = R p + t`). The rotation is normalized; `None`
+    /// for a zero-length or non-finite rotation or a non-finite translation. The dual part is
+    /// `0.5 * (t_pure * real)`, with `t_pure = (tx, ty, tz, 0)` and the Hamilton product of
+    /// [`Quat::mul`].
+    pub fn from_rigid(rotation: Quat, translation: Vec3) -> Option<DualQuat> {
+        let real = rotation.try_normalize()?;
+        if !translation.is_finite() {
+            return None;
+        }
+        let t = Quat::new(translation.x, translation.y, translation.z, 0.0);
+        Some(DualQuat {
+            real,
+            dual: t.mul(real).scale(0.5),
+        })
+    }
+
+    /// From the rigid part of an affine matrix. `None` when the matrix is not finite, not affine
+    /// (bottom row exactly `0 0 0 1`) or not rigid: the three columns of the 3x3 block must be
+    /// orthonormal and the determinant +1, each within [`RIGID_TOLERANCE`]. The rotation is read
+    /// by Shepperd's method (largest of the trace and the three diagonal terms picks the
+    /// branch; the first of a tie wins); its sign is whatever the branch gives, which is why
+    /// blending aligns signs ([`DualQuat::aligned_to`]).
+    #[allow(clippy::needless_range_loop)]
+    pub fn from_mat4(m: &Mat4) -> Option<DualQuat> {
+        if !m.is_finite() || !m.is_affine() {
+            return None;
+        }
+        let c = &m.cols;
+        let cols = [
+            Vec3::new(c[0][0], c[0][1], c[0][2]),
+            Vec3::new(c[1][0], c[1][1], c[1][2]),
+            Vec3::new(c[2][0], c[2][1], c[2][2]),
+        ];
+        for i in 0..3 {
+            for j in i..3 {
+                let target = if i == j { 1.0 } else { 0.0 };
+                if (cols[i].dot(cols[j]) - target).abs() > RIGID_TOLERANCE {
+                    return None;
+                }
+            }
+        }
+        let det = cols[0].dot(cols[1].cross(cols[2]));
+        if (det - 1.0).abs() > RIGID_TOLERANCE {
+            return None;
+        }
+        // m_rc = c[col][row]
+        let (m00, m01, m02) = (c[0][0], c[1][0], c[2][0]);
+        let (m10, m11, m12) = (c[0][1], c[1][1], c[2][1]);
+        let (m20, m21, m22) = (c[0][2], c[1][2], c[2][2]);
+        let trace = m00 + m11 + m22;
+        let q = if trace > 0.0 {
+            let s = (trace + 1.0).sqrt() * 2.0;
+            Quat::new((m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, 0.25 * s)
+        } else if m00 > m11 && m00 > m22 {
+            let s = (1.0 + m00 - m11 - m22).sqrt() * 2.0;
+            Quat::new(0.25 * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s)
+        } else if m11 > m22 {
+            let s = (1.0 + m11 - m00 - m22).sqrt() * 2.0;
+            Quat::new((m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s)
+        } else {
+            let s = (1.0 + m22 - m00 - m11).sqrt() * 2.0;
+            Quat::new((m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s)
+        };
+        DualQuat::from_rigid(q, Vec3::new(c[3][0], c[3][1], c[3][2]))
+    }
+
+    /// The same rigid transform with its sign chosen so that `real . reference.real >= 0`: when
+    /// the 4-D dot product of the real parts is below zero, both parts are negated (`-q` is the
+    /// same transform). Exactly zero is NOT flipped.
+    pub fn aligned_to(self, reference: &DualQuat) -> DualQuat {
+        // Fault injection (mutation control `dqs_no_align`): signs are never aligned.
+        if cfg!(figure_mutant = "dqs_no_align") {
+            return self;
+        }
+        if self.real.dot(reference.real) < 0.0 {
+            DualQuat {
+                real: self.real.neg(),
+                dual: self.dual.neg(),
+            }
+        } else {
+            self
+        }
+    }
+
+    /// Multiply both parts by `s`.
+    pub fn scale(self, s: f32) -> DualQuat {
+        DualQuat {
+            real: self.real.scale(s),
+            dual: self.dual.scale(s),
+        }
+    }
+
+    /// Component-wise sum of both parts.
+    pub fn add(self, o: DualQuat) -> DualQuat {
+        DualQuat {
+            real: self.real.add(o.real),
+            dual: self.dual.add(o.dual),
+        }
+    }
+
+    /// Normalize by the dual-number norm: with `n = |real|`, `real' = real / n` and
+    /// `dual' = (dual - real' * (real' . dual)) / n`, which makes `real' . dual' = 0`.
+    /// `None` when `|real|^2` is below [`DEGENERATE_BLEND_NORM2`] or anything is non-finite.
+    pub fn try_normalize(self) -> Option<DualQuat> {
+        let n2 = self.real.length_squared();
+        if n2 < DEGENERATE_BLEND_NORM2 || !n2.is_finite() {
+            return None;
+        }
+        let n = n2.sqrt();
+        let inv = 1.0 / n;
+        let real = self.real.scale(inv);
+        let proj = real.dot(self.dual);
+        let dual = self.dual.add(real.scale(-proj)).scale(inv);
+        if real.is_finite() && dual.is_finite() {
+            Some(DualQuat { real, dual })
+        } else {
+            None
+        }
+    }
+
+    /// Dual-quaternion linear blend of `(weight, dq)` terms: every term is sign-aligned to the
+    /// FIRST term, `weight * dq` is summed in slice order starting from zero, and the sum is
+    /// normalized. `None` for an empty slice or a degenerate (cancelled) sum. Weights are used as
+    /// given; the normalization makes the result independent of their sum.
+    pub fn blend(terms: &[(f32, DualQuat)]) -> Option<DualQuat> {
+        let first = terms.first()?.1;
+        let zero = Quat::new(0.0, 0.0, 0.0, 0.0);
+        let mut acc = DualQuat {
+            real: zero,
+            dual: zero,
+        };
+        for &(w, dq) in terms {
+            acc = acc.add(dq.aligned_to(&first).scale(w));
+        }
+        acc.try_normalize()
+    }
+
+    /// The translation `t = 2 * (dual * conjugate(real))`, vector part (unit `real`).
+    pub fn translation(&self) -> Vec3 {
+        let c = self.dual.mul(self.real.conjugate());
+        Vec3::new(2.0 * c.x, 2.0 * c.y, 2.0 * c.z)
+    }
+
+    /// Transform a point: rotate by `real`, then add the translation.
+    pub fn transform_point(&self, p: Vec3) -> Vec3 {
+        self.real.rotate(p).add(self.translation())
+    }
+
+    /// Transform a direction or normal: rotation only.
+    pub fn transform_vector(&self, v: Vec3) -> Vec3 {
+        self.real.rotate(v)
+    }
+}
+
+impl Default for DualQuat {
+    fn default() -> DualQuat {
+        DualQuat::IDENTITY
     }
 }
 
