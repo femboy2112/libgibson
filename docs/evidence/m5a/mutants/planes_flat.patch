@@ -1,0 +1,21 @@
+--- a/src/stage/motion.rs
++++ b/src/stage/motion.rs
+@@ -319,10 +319,14 @@
+                 out.push(RasterPlane {
+                     anchor: key.clone(),
+                     source: Arc::clone(fill),
+-                    offset_px: (slot.rect_px.x, slot.rect_px.y),
+-                    // Slot count is caller-bounded; saturate rather than wrap.
+-                    z: z.saturating_add(1)
+-                        .saturating_add(i32::try_from(i).unwrap_or(i32::MAX)),
++                    offset_px: {
++                        let _ = slot;
++                        (0, 0)
++                    },
++                    z: {
++                        let _ = i;
++                        0
++                    },
+                 });
+             }
+         }

@@ -1,0 +1,10 @@
+--- a/src/stage/motion.rs
++++ b/src/stage/motion.rs
+@@ -354,6 +354,7 @@
+ 
+ /// The SplitMix64 step. Part of the G3 contract; do not change in a patch release.
+ fn mix(x: u64) -> u64 {
++    if true { let _ = x; return 0; }
+     let mut z = x.wrapping_add(0x9e37_79b9_7f4a_7c15);
+     z ^= z >> 30;
+     z = z.wrapping_mul(0xbf58_476d_1ce4_e5b9);
