@@ -26,7 +26,7 @@ behavioural assertion.
 | `stance_feet_are_world_locked_and_on_the_ground` | K | - | K | C: the planted ankle follows the pelvis at about 1 m/s and sinks by the crouch; R: the planted target is shifted backwards at the root speed |
 | `stance_control_without_foot_ik_slides` | - | - | - | the control itself (foot lock off through the option) |
 | `walk_with_a_turn_keeps_the_feet_planted` | K | - | K | same as above, while turning |
-| `every_beat_boundary_and_foot_lock_transition_is_c1` | - | K | - | S: the wave cut at 1.2 s becomes a 0.7 m jump, `J = 700 m/s` against 0.08 |
+| `every_beat_boundary_and_foot_lock_transition_is_c1` | - | K | - | S: the wave cut at 1.2 s becomes a 0.7 m jump, `J = 700 m/s` against 0.09 |
 | `control_a_snapped_beat_cut_breaks_the_same_metric` | - | K | - | the control passes by itself (option off); its second half asserts the shipping build is smooth at the cut, which S breaks |
 | `the_cut_blend_takes_the_settle_ease_and_lowers_the_hand_monotonically` | - | K | - | S: the hand jumps 0.7 m between samples 4 ms apart |
 | `the_waving_hand_stays_out_of_the_head_sphere` | - | - | - | its control (clearance off) is asserted to violate by more than 2 cm |
@@ -53,9 +53,9 @@ gate.
 
 * That the file compiles (it has never been through `rustc`); clippy, `+1.85` and the default check
   are gate steps for that reason.
-* That the declared continuity bound `J_BOUND = 0.08` holds through the IK map in `f32`. The planned
-  drivers peak at 36.7 m/s^2 on the foot (python model), the bound assumes 60 m/s^2 after the IK; the
-  first run measures it. A failure there is a number to read, not a threshold to relax.
+* That the declared continuity bound `J_BOUND = 0.09` holds through the IK map in `f32`. The planned
+  drivers peak at 36.7 m/s^2 on the foot and about 60 m/s^2 on a cut hand (python model and hand
+  derivation in the test header), the bound assumes 80 m/s^2 after the IK; the first run measures it. A failure there is a number to read, not a threshold to relax.
 * That the soft reach limit (0.98 of full extension) is never entered during a walk. The planner
   designs the crouch for a 0.95 ratio and the model shows a worst 0.963 including bob and sway; a turn
   shortens or lengthens the hip-to-ankle distance by a few percent more, which `walk_with_a_turn_*`

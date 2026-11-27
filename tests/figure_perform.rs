@@ -7,10 +7,14 @@
 //! `J = |p(t+h) - 2 p(t) + p(t-h)| / h` at `h = 1 ms` on WORLD joint positions. For a C1 path with
 //! acceleration at most `A`, `J <= A h` plus roundoff; a velocity step of `v` shows up as `v` and a
 //! position jump of `d` as `d / h`. The bound is DECLARED from the kinematic model, never from
-//! observed output (`docs/evidence/m5c/model_perform.py` prints the worst foot acceleration of the
-//! planned drivers, 36.7 m/s^2; the declared `A = 60 m/s^2` leaves room for the IK map):
-//! `J_BOUND = A h + 4 e / h = 0.06 + 0.004 ~ 0.08`, with `e = 1e-6 m` the declared f32 error of a
-//! world position assembled from a chain of ten matrix products.
+//! observed output. The largest accelerations by construction: a foot swing, 36.7 m/s^2
+//! (`docs/evidence/m5c/model_perform.py`); a beat cut that eases the raised hand (0.75 m of
+//! travel) to the hang over the 0.28 s expressive settle, `5.77 * 0.75 / 0.28^2 = 55 m/s^2` from
+//! the quintic offset plus `4 v0 / T = 9 m/s^2` for the 0.6 m/s wave velocity it inherits (the
+//! two are not simultaneous maxima). The declared `A = 80 m/s^2` leaves 25 % for the IK map:
+//! `J_BOUND = A h + 4 e / h = 0.08 + 0.004 ~ 0.09`, with `e = 1e-6 m` the declared f32 error of a
+//! world position assembled from a chain of ten matrix products. The controls snap at
+//! 700 m/s, four orders of magnitude above it.
 //!
 //! Every guarantee has a CONTROL that must fail (the guarantee switched off through
 //! `PerformOptions`, or a deliberately broken construction). The controls prove the measurement
@@ -42,7 +46,7 @@ use gibson::figure::sha256;
 use gibson::figure::skeleton::{Joint, Skeleton};
 
 /// Declared bound of the world-position second difference at h = 1 ms (see the module docs).
-const J_BOUND: f64 = 0.08;
+const J_BOUND: f64 = 0.09;
 const H: f64 = 1.0e-3;
 
 // Joint indices of the synthetic rig.

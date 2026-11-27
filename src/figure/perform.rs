@@ -733,7 +733,8 @@ impl Rig {
 // Drivers
 // ---------------------------------------------------------------------------------------------
 
-const D_ROOT: usize = 0; // 3: world ground position of the root
+// Drivers 0..3: world ground position of the root (indexed by literal; a `0 + c` offset constant
+// would trip clippy::identity_op).
 const D_HEAD: usize = 3; // heading yaw about up, radians, left positive
 const D_PEL: usize = 4; // 3: pelvis offset in the heading frame (forward, right, up)
 const D_PELROT: usize = 7; // 3: pelvis pitch (forward +), roll (right +), yaw (left +)
@@ -749,9 +750,7 @@ fn initial_drivers(rig: &Rig) -> Vec<f64> {
     d[D_PEL + 2] = -rig.stand_crouch();
     for f in 0..2 {
         let a = v64(rig.rest_pos[rig.limb[2 + f][2]]);
-        for c in 0..3 {
-            d[D_FOOT + f * 6 + c] = a[c];
-        }
+        d[D_FOOT + f * 6..D_FOOT + f * 6 + 3].copy_from_slice(&a);
         d[D_FOOT + f * 6 + 5] = 1.0;
     }
     d
@@ -810,7 +809,7 @@ fn solve_pass(
     let yawq = Quat::from_axis_angle(up, g(D_HEAD));
     let hf = yawq.rotate(rig.fwd);
     let hr = yawq.rotate(rig.right);
-    let root_t = Vec3::new(g(D_ROOT), g(D_ROOT + 1), g(D_ROOT + 2));
+    let root_t = Vec3::new(g(0), g(1), g(2));
     let tilt = |pitch: f32, roll: f32, yaw: f32| -> Quat {
         let qy = Quat::from_axis_angle(up, yaw);
         let qp = Quat::from_axis_angle(hr, -pitch);
@@ -987,7 +986,7 @@ impl Rig {
     /// Map a driver vector (at least the base drivers) to a pose. `foot_lock` false makes the
     /// feet follow the pelvis (the control of the planting guarantee).
     pub fn solve(&self, d: &[f64], foot_lock: bool, arm_clearance: bool) -> Pose {
-        let root_t = Vec3::new(d[D_ROOT] as f32, d[D_ROOT + 1] as f32, d[D_ROOT + 2] as f32);
+        let root_t = Vec3::new(d[0] as f32, d[1] as f32, d[2] as f32);
         let locals = if arm_clearance {
             let (_, hc0) = solve_pass(self, d, foot_lock, None);
             solve_pass(self, d, foot_lock, Some(hc0)).0
@@ -1212,7 +1211,7 @@ impl BeatPlan {
                 let total = self.dur;
                 let dd = walk_dist(t, w.tau, w.v, w.n);
                 for c in 0..3 {
-                    d[D_ROOT + c] = w.p0[c] + w.dir[c] * dd;
+                    d[c] = w.p0[c] + w.dir[c] * dd;
                 }
                 d[D_HEAD] = w.psi0 + (w.psi1 - w.psi0) * ramp(t, 0.0, w.turn);
                 let env = ramp(t, 0.0, w.tau) * (1.0 - ramp(t, total - w.tau, w.tau));
@@ -1238,9 +1237,7 @@ impl BeatPlan {
                 }
                 for f in 0..2 {
                     let (p, yaw, toe) = w.foot_at(f, t);
-                    for c in 0..3 {
-                        d[D_FOOT + f * 6 + c] = p[c];
-                    }
+                    d[D_FOOT + f * 6..D_FOOT + f * 6 + 3].copy_from_slice(&p);
                     d[D_FOOT + f * 6 + 3] = yaw;
                     d[D_FOOT + f * 6 + 4] = toe;
                 }
@@ -1248,7 +1245,7 @@ impl BeatPlan {
             Kind::Dissolve(p) => {
                 let r = ramp(t, 0.0, self.dur);
                 for c in 0..3 {
-                    d[D_ROOT + c] = lerp(p.p0[c], p.p1[c], r);
+                    d[c] = lerp(p.p0[c], p.p1[c], r);
                 }
                 d[D_HEAD] = lerp(p.psi0, p.psi1, r);
                 for f in 0..2 {
@@ -1329,7 +1326,7 @@ fn plan_settle(cx: &Ctx<'_>, c: &Carry) -> BeatPlan {
 }
 
 fn root_of(d: &[f64]) -> V {
-    [d[D_ROOT], d[D_ROOT + 1], d[D_ROOT + 2]]
+    [d[0], d[1], d[2]]
 }
 
 fn plan_walk(
@@ -1374,9 +1371,7 @@ fn plan_walk(
     let mut yaw0 = [0.0; 2];
     let mut rest_ank = [[0.0; 3]; 2];
     for f in 0..2 {
-        for k in 0..3 {
-            feet0[f][k] = s[D_FOOT + f * 6 + k];
-        }
+        feet0[f].copy_from_slice(&s[D_FOOT + f * 6..D_FOOT + f * 6 + 3]);
         yaw0[f] = s[D_FOOT + f * 6 + 3];
         rest_ank[f] = v64(rig.rest_pos[rig.limb[2 + f][2]]);
     }
@@ -1883,7 +1878,7 @@ impl Performance {
             if matches!(script.beats[i], Beat::WalkTo { .. }) {
                 return Err(PerformError::CannotCutWalk { beat: i });
             }
-            if !(s.is_finite() && s > 0.0) {
+            if !s.is_finite() || s <= 0.0 {
                 return Err(PerformError::BadBeat {
                     beat: i,
                     what: "cut time must be positive",
@@ -2119,8 +2114,8 @@ impl Performance {
         if !self.opts.root_motion || cfg!(figure_mutant = "no_root_motion") {
             let mut shift = [0.0; 3];
             for c in 0..3 {
-                shift[c] = d[D_ROOT + c] - self.root0[c];
-                d[D_ROOT + c] = self.root0[c];
+                shift[c] = d[c] - self.root0[c];
+                d[c] = self.root0[c];
             }
             for f in 0..2 {
                 for c in 0..3 {
