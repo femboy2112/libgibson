@@ -2096,8 +2096,8 @@ fn seam_diff(a: &dyn Motion, b: &dyn Motion, grid: &[f64], shift_b: f64) -> (f64
                         rate: rb,
                     },
                 ) => {
-                    wv = wv.max(f64::from(dist(*va, *vb)));
-                    wr = wr.max(f64::from(dist(*ra, *rb)));
+                    wv = wv.max(dist(*va, *vb));
+                    wr = wr.max(dist(*ra, *rb));
                 }
                 (
                     Sample::Rotation {
@@ -2112,7 +2112,7 @@ fn seam_diff(a: &dyn Motion, b: &dyn Motion, grid: &[f64], shift_b: f64) -> (f64
                     let qb = if qa.dot(*qb) < 0.0 { qb.neg() } else { *qb };
                     let d = Quat::new(qa.x - qb.x, qa.y - qb.y, qa.z - qb.z, qa.w - qb.w);
                     wv = wv.max(f64::from(d.dot(d)).sqrt());
-                    wr = wr.max(f64::from(dist(*oa, *ob)));
+                    wr = wr.max(dist(*oa, *ob));
                 }
                 (
                     Sample::Scalar {
