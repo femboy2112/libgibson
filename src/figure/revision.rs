@@ -318,6 +318,10 @@ pub enum CompileError {
     },
     /// Two joints, landmarks, controls or morph targets share a name.
     DuplicateName { kind: &'static str, name: String },
+    /// An id is outside the v0 alphabet: 1..=[`MAX_ID_LEN`] bytes of `[a-z0-9._-]`. `kind` is
+    /// "family", "joint", "landmark", "control" or "morph target". Ids are content-addressed
+    /// into `rev_id`, so non-ASCII ids are refused rather than allowed to alias (NFC vs NFD).
+    InvalidId { kind: &'static str, id: String },
     /// The family is internally inconsistent in a way no other variant names (empty skeleton,
     /// bad index buffer, a control effect that points at nothing, an invalid control range).
     InvalidFamily { detail: &'static str },
@@ -356,6 +360,10 @@ impl fmt::Display for CompileError {
                 write!(f, "duplicate {kind} name {name:?}")
             }
             CompileError::InvalidFamily { detail } => write!(f, "invalid family: {detail}"),
+            CompileError::InvalidId { kind, id } => write!(
+                f,
+                "{kind} id {id:?} is not 1..={MAX_ID_LEN} bytes of [a-z0-9._-]"
+            ),
         }
     }
 }
@@ -692,6 +700,26 @@ impl fmt::Display for EvalError {
 
 impl std::error::Error for EvalError {}
 
+/// Longest id, in bytes, accepted by [`compile`] (v0 alphabet, resolution A4).
+pub const MAX_ID_LEN: usize = 64;
+
+/// Allowlist byte check, never a regex: 1..=MAX_ID_LEN bytes, each in `[a-z0-9._-]`.
+fn check_id(kind: &'static str, id: &str) -> Result<(), CompileError> {
+    let ok = !id.is_empty()
+        && id.len() <= MAX_ID_LEN
+        && id
+            .bytes()
+            .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'.' | b'_' | b'-'));
+    if ok {
+        Ok(())
+    } else {
+        Err(CompileError::InvalidId {
+            kind,
+            id: id.to_string(),
+        })
+    }
+}
+
 /// Compile `recipe` against `family` into a [`CharacterRevision`], or a typed error. All or
 /// nothing: nothing partially built is observable. See the module docs for the exact order.
 pub fn compile(
@@ -719,6 +747,21 @@ pub fn compile(
             recipe: recipe.family.clone(),
             family: family.family.clone(),
         });
+    }
+
+    // 2b. Ids: the v0 ASCII alphabet (coordinator ruling #70, resolution A4).
+    check_id("family", &family.family.id)?;
+    for j in &family.joints {
+        check_id("joint", &j.name)?;
+    }
+    for l in &family.landmarks {
+        check_id("landmark", &l.name)?;
+    }
+    for c in &family.controls {
+        check_id("control", &c.id)?;
+    }
+    for m in &family.morphs {
+        check_id("morph target", &m.name)?;
     }
 
     // 3. Mesh.
