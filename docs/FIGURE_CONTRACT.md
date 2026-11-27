@@ -706,6 +706,13 @@ pub enum SkinningMode { Linear /* default */, DualQuat }
   revision, which cannot gain a hashed field, it is an evaluation argument:
   `evaluate_with(&PoseInput, SkinningMode)`. `evaluate` is `evaluate_with(.., Linear)` and is
   unchanged, bit for bit.
+- **Implemented in Slice 2 (UNCOMPILED until a heavy lease).** `figure::skin::SkinningMode`
+  (`#[non_exhaustive]`, `Linear` default, `DualQuat`); `SkinWeights::skin_with(mode, ..)` and
+  `SkinWeights::skin_normals(mode, ..)`; `CharacterRevision::evaluate_with(&PoseInput, mode)`;
+  `figure::math::DualQuat` (`from_rigid`, `from_mat4`, `aligned_to`, `blend`, `try_normalize`,
+  `translation`, `transform_point`, `transform_vector`) with `RIGID_TOLERANCE` and
+  `DEGENERATE_BLEND_NORM2`; `SkinError::{NonRigid, DegenerateBlend}`. Evidence:
+  `tests/figure_dqs.rs`, `docs/evidence/m5c/` (predicted kill matrix, model, `gate_dqs.sh`).
 - A blend whose real part cancels to (near) zero is the typed `SkinError::DegenerateBlend`.
   DQS is genuinely discontinuous where two influences are exactly 180 degrees apart (the shortest
   path is ambiguous); alignment removes the sign ambiguity of the representation, not that one.

@@ -1,0 +1,8 @@
+two_bone pose1: four_influence_vertices=8 max|LBS-DQS|=0.0448 sign_flips=0 min|dot_to_pivot|=0.9715 max|DQS-DQS_no_align|=0.0000
+two_bone pose2: four_influence_vertices=8 max|LBS-DQS|=0.5164 sign_flips=0 min|dot_to_pivot|=0.6428 max|DQS-DQS_no_align|=0.0000
+two_bone pose3: four_influence_vertices=8 max|LBS-DQS|=2.8921 sign_flips=8 min|dot_to_pivot|=0.0932 max|DQS-DQS_no_align|=2.9295
+three_bone pose1: four_influence_vertices=8 max|LBS-DQS|=0.3529 sign_flips=0 min|dot_to_pivot|=0.7745 max|DQS-DQS_no_align|=0.0000
+three_bone pose2: four_influence_vertices=8 max|LBS-DQS|=1.6463 sign_flips=5 min|dot_to_pivot|=0.0872 max|DQS-DQS_no_align|=3.8272
+three_bone pose3: four_influence_vertices=8 max|LBS-DQS|=1.0808 sign_flips=0 min|dot_to_pivot|=0.4488 max|DQS-DQS_no_align|=0.0000
+elbow  20.0 deg: min ratio over rings 3..5  linear=0.9848  dualquat=1.0000   mid ring linear=0.9848 dualquat=1.0000
+elbow 120.0 deg: min ratio over rings 3..5  linear=0.5000  dualquat=1.0000   mid ring linear=0.5000 dualquat=1.0000
