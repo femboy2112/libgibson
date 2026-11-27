@@ -16,6 +16,7 @@ import fa_common as fc
 import fa_hair
 import fa_stage as stage
 import fa_tape as ft
+import render_tape as renderer
 
 
 def iris_targets(eye, posed):
@@ -37,7 +38,7 @@ def iris_targets(eye, posed):
 
 
 def count_blocked(vertices, faces, targets, camera):
-    tree = BVHTree.FromPolygons(vertices, faces, all_triangles=True)
+    tree = BVHTree.FromPolygons(vertices, faces)
     blocked = 0
     for point in targets:
         ray = point - camera
@@ -57,6 +58,7 @@ def main():
     parser.add_argument("--export", required=True, type=Path)
     parser.add_argument("--tape", required=True)
     parser.add_argument("--report", required=True, type=Path)
+    parser.add_argument("--fitted", help="optional fitted wardrobe used by the render")
     args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
     tape = ft.read_tape(args.tape)
     report = stage.load_json(args.report)
@@ -70,6 +72,14 @@ def main():
     if "hair_long01_diffuse" not in report["figure"]["textures"]:
         raise ValueError("The report does not use long01")
 
+    # Replay the adapter itself to include the actual displayed, subdivided,
+    # skinned card surfaces. Keep the raw cage as a separately labelled control.
+    args.joint_frame = report["joint_frame"]
+    preset = stage.load_json(args.export / "figure_asset.json")["preset"]
+    figure = renderer.build_figure(args, tape, preset, False, [])
+    display_hair, = figure.objs["hair"]
+    display_eye, = figure.objs["eyes"]
+    display_faces = [poly.vertices[:] for poly in display_hair.data.polygons]
     shaped, _, _ = ft.shape_positions(args.export, tape.header["controls"])
     skeleton = stage.load_json(args.export / "skeleton.json")
     bind, _ = ft.bind_frames(skeleton, shaped, report["joint_frame"], args.export)
@@ -90,13 +100,19 @@ def main():
         az, el = math.radians(shot["az"]), math.radians(shot["el"])
         offset = Vector((math.sin(az) * math.cos(el), -math.cos(az) * math.cos(el), math.sin(el)))
         camera = Vector(shot["target"]) + shot["dist"] * offset
+        renderer.set_pose(figure, tape, shot["tape_frame"])
+        rendered_targets = iris_targets(eye, stage.eval_positions(display_eye))
+        display_hits = count_blocked(stage.eval_positions(display_hair), display_faces, rendered_targets, camera)
+        print("HAIR_RAYS %s evaluated_cards %d/%d" % (name, display_hits, len(rendered_targets)))
+        if display_hits:
+            failures.append(name + " displayed hair covers an iris")
         posed_eyes = [Vector(p) for p in ft.lbs_positions(eye_base, eye["skin_idx"], eye["skin_w"], matrices)]
         targets = iris_targets(eye, posed_eyes)
-        for label, points in (("native", native), ("bob_remap", remapped)):
+        for label, points in (("native_cage", native), ("bob_remap_cage", remapped)):
             posed = ft.lbs_positions(points, hair["skin_idx"], hair["skin_w"], matrices)
             hits = count_blocked(posed, hair["polys"], targets, camera)
             print("HAIR_RAYS %s %s %d/%d" % (name, label, hits, len(targets)))
-            if label == "native" and hits:
+            if label == "native_cage" and hits:
                 failures.append(name + " hair covers an iris")
         # Move a duplicate of the two opaque eyes 3 cm towards the camera.
         toward_camera = (camera - targets[0]).normalized() * 0.03

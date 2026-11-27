@@ -125,10 +125,21 @@ def hair_material(color, rough=0.38, pack=None):
     m.diffuse_color = rgba(color)
     if pack is not None:
         tex = pack.node(m, "hair_long01_diffuse")
-        fa_materials.tinted_albedo(m, tex, color, (0.1, 0.06, 0.035))
+        # Use the recipe pigment to dye the measured light-brown source fibres.
+        # Direct texture colour washes out the painted highlight at the crown.
+        mix = m.node_tree.nodes.new("ShaderNodeMix")
+        mix.data_type = "RGBA"
+        mix.blend_type = "MULTIPLY"
+        inputs = {s.identifier: s for s in mix.inputs}
+        inputs["Factor_Float"].default_value = 1.0
+        inputs["B_Color"].default_value = rgba([min(1.0, c / ref) for c, ref in zip(color, (0.36, 0.28, 0.20))])
+        m.node_tree.links.new(tex.outputs["Color"], inputs["A_Color"])
+        result = next(s for s in mix.outputs if s.identifier == "Result_Color")
+        m.node_tree.links.new(result, b.inputs["Base Color"])
         fa_materials.alpha_cards(m, tex)
-        set_input(b, ("Anisotropic IOR Level",), 0.35)
-        set_input(b, ("Specular IOR Level",), 0.34)
+        set_input(b, ("Roughness",), 0.58)
+        set_input(b, ("Anisotropic IOR Level",), 0.15)
+        set_input(b, ("Specular IOR Level",), 0.15)
     return m
 
 
@@ -152,9 +163,7 @@ def eye_material(iris_rgb, pack=None):
         tex = pack.node(m, "eyes_blue_diffuse")
         fa_materials.tinted_albedo(m, tex, iris_rgb, (0.2, 0.3, 0.42), iris_only=True)
         set_input(b, ("Roughness",), 0.24)
-        set_input(b, ("Coat Weight",), 1.0)
-        set_input(b, ("Coat IOR",), 1.376)
-        set_input(b, ("Coat Roughness",), 0.035)
+        fa_materials.corneal_coat(m)
         m.diffuse_color = rgba(iris_rgb)
         return m
     nt = m.node_tree
@@ -847,7 +856,10 @@ def attach_object(export_dir, name, role, mat, S, arm, names, post=None):
     info = {}
     if post is not None:
         pos, info = post(pos)
-    o = mesh_object(name, pos, rec["polys"], rec["uvs"], rec["uv_polys"], role=role)
+    faces, uv_faces = rec["polys"], rec["uv_polys"]
+    if name == "long01":
+        faces, uv_faces = fa_hair.long01_quads(faces), fa_hair.long01_quads(uv_faces)
+    o = mesh_object(name, pos, faces, rec["uvs"], uv_faces, role=role)
     place_like(o, arm)
     set_weights(o, [[names[i] for i in row] for row in rec["skin_idx"]], rec["skin_w"])
     add_armature_modifier(o, arm)
@@ -889,6 +901,8 @@ def dress(export_dir, S, landmarks, arm, names, body, rd, slots, garments, fit_s
             notes.append("hair %s is not in the export attachments (export with this preset)" % hid)
             out["report"]["hair:" + hid] = "NOT DRAWN: not in export"
         else:
+            if hid == "long01":
+                fa_hair.finish_long01(r[0], body)
             out["objs"]["hair"].append(r[0])
             out["hair_part"] = r[3] if post else {"method": "native centre part", "moved_vertices": 0}
             out["hair_violations"] = fa_hair.clearance_violations(r[2], eye_l, eye_r)

@@ -62,6 +62,38 @@ def alpha_cards(material, tex):
     material.node_tree.links.new(tex.outputs["Alpha"], material.node_tree.nodes["Principled BSDF"].inputs["Alpha"])
 
 
+def corneal_coat(material):
+    """Reflect the studio lights over the corneal dome on the MPFB eye's flat iris disk."""
+    nt = material.node_tree
+    uv = nt.nodes.new("ShaderNodeTexCoord").outputs["UV"]
+    distances = []
+    for center in ((0.705, 0.70), (0.30, 0.30)):
+        dist = nt.nodes.new("ShaderNodeVectorMath")
+        dist.operation = "DISTANCE"
+        dist.inputs[1].default_value = (*center, 0.0)
+        nt.links.new(uv, dist.inputs[0])
+        distances.append(dist.outputs["Value"])
+    nearest = nt.nodes.new("ShaderNodeMath")
+    nearest.operation = "MINIMUM"
+    for socket, value in zip(nearest.inputs, distances):
+        nt.links.new(value, socket)
+    cap = nt.nodes.new("ShaderNodeMapRange")
+    cap.interpolation_type = "SMOOTHSTEP"
+    cap.inputs["From Max"].default_value = 0.145
+    cap.inputs["To Min"].default_value = 1.0
+    cap.inputs["To Max"].default_value = 0.0
+    nt.links.new(nearest.outputs[0], cap.inputs["Value"])
+    relief = nt.nodes.new("ShaderNodeBump")
+    relief.name = "Corneal dome"
+    relief.inputs["Distance"].default_value = 0.0012
+    nt.links.new(cap.outputs["Result"], relief.inputs["Height"])
+    bsdf = nt.nodes["Principled BSDF"]
+    bsdf.inputs["Coat Weight"].default_value = 1.0
+    bsdf.inputs["Coat IOR"].default_value = 1.376
+    bsdf.inputs["Coat Roughness"].default_value = 0.035
+    nt.links.new(relief.outputs["Normal"], bsdf.inputs["Coat Normal"])
+
+
 def skin_detail(material):
     """A shallow pore relief in local metre coordinates, independent of UV seams."""
     nt = material.node_tree

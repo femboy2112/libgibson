@@ -44,7 +44,8 @@ case ${1:-} in
         ;;
     controls)
         "$blender" -b -t 4 --python-exit-code 1 --python "$here/check_long01.py" -- \
-            --export "$out/export" --tape "$out/tape/generic.tape.json" --report "$out/render/render.json" \
+            --export "$out/export" --tape "$out/tape/generic.tape.json" --fitted "$out/tape/generic.fit.json" \
+            --report "$out/render/render.json" \
             2>&1 | tee "$out/logs/eye-control.log"
         rc=0
         "${adapter[@]}" --out "$out/bad_bounds" --mutant bad_bounds --checks-only > "$out/logs/bad-bounds.log" 2>&1 || rc=$?

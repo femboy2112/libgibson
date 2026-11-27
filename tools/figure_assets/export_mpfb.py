@@ -266,7 +266,11 @@ class Blender:
                     material = stage.slot_material(slot, slots.get(slot, {}))
                     if a["kind"] == "clothes":
                         material = stage.fa_surface.garment_material(material, a["name"], pack)
-            made.append(self._attachment_object(a, arm, material))
+            attachment = self._attachment_object(a, arm, material)
+            if pack is not None and a["name"] == "long01":
+                import fa_hair
+                fa_hair.finish_long01(attachment, obj)
+            made.append(attachment)
         bpy.ops.object.select_all(action="DESELECT")
         for o in [arm] + made:
             o.select_set(True)
