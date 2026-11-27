@@ -1,0 +1,10 @@
+--- a/src/stage/motion.rs
++++ b/src/stage/motion.rs
+@@ -405,6 +405,7 @@
+     /// Occurrence `k`: its slot start plus the hashed jitter. `None` only if the time
+     /// overflows `Duration`; it never wraps or saturates.
+     pub fn nth(&self, k: u64) -> Option<Duration> {
++        if true { let _ = k; return Some(self.origin); }
+         let h = mix(mix(mix(self.seed) ^ self.cue) ^ k);
+         // `span_ns + 1` wraps to 0 only when span_ns == u64::MAX; the modulus is then 2^64,
+         // i.e. the whole of `h`.

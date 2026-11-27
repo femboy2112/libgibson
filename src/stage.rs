@@ -112,6 +112,7 @@ pub use raster_plane::{
 };
 
 mod driver;
+pub mod motion;
 pub use driver::{
     FrameParts, KeySnapshot, PixelRect, PlaneSnapshot, PresentationDriver, PresentationOptions,
     ResolvedFrameSnapshot, SourceDemand, StageError, StageFrame,
