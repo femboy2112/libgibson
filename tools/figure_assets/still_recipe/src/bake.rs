@@ -113,7 +113,7 @@ pub fn bake(
     let sha = hex(&digest.finalize());
     let filename = format!("matter-{sha}.bin");
     fs::rename(temp, out.join(&filename))?;
-    let header = json!({"format":"gibson.living-matter.bake.v1","backend":"rust-xpbd-region-v1","basis":"world-z-up-m",
+    let header = json!({"format":"gibson.living-matter.bake.v1","backend":"rust-xpbd-region-v2","basis":"world-z-up-m",
         "binary":filename,"bin_sha256":sha,"tape_bin_sha256":tape.bin_sha256(),"asset_manifest_sha256":fit["asset_manifest_sha256"],
         "fit_id":compiled.fit_id().to_hex(),"body_rev_id":compiled.body_rev_id().to_hex(),"present_id":compiled.present_id().to_hex(),
         "sim_config_id":id,"fps":tape.fps,"frames":tape.frame_count,"preroll_frames":preroll_frames,

@@ -118,3 +118,104 @@ impl Surface {
         result
     }
 }
+
+/// Two-sided non-neighbour vertex/triangle contact on the coarse sewn panel. The previous
+/// side of the triangle sets the outward orientation through an approaching fold.
+pub(super) fn separate_sheet(
+    pos: &mut [Vec3],
+    old: &[Vec3],
+    inv: &[f32],
+    faces: &[[usize; 3]],
+    cols: usize,
+) {
+    const GAP: f32 = 0.005;
+    let point = |p: Vec3| {
+        [
+            (p.x / CELL).floor() as i32,
+            (p.y / CELL).floor() as i32,
+            (p.z / CELL).floor() as i32,
+        ]
+    };
+    let mut bins: HashMap<[i32; 3], Vec<usize>> = HashMap::new();
+    for (j, ids) in faces.iter().enumerate() {
+        let [a, b, c] = ids.map(|i| pos[i]);
+        let lo = point(Vec3::new(
+            a.x.min(b.x).min(c.x) - GAP,
+            a.y.min(b.y).min(c.y) - GAP,
+            a.z.min(b.z).min(c.z) - GAP,
+        ));
+        let hi = point(Vec3::new(
+            a.x.max(b.x).max(c.x) + GAP,
+            a.y.max(b.y).max(c.y) + GAP,
+            a.z.max(b.z).max(c.z) + GAP,
+        ));
+        for x in lo[0]..=hi[0] {
+            for y in lo[1]..=hi[1] {
+                for z in lo[2]..=hi[2] {
+                    bins.entry([x, y, z]).or_default().push(j);
+                }
+            }
+        }
+    }
+    for i in 0..pos.len() {
+        let Some(candidates) = bins.get(&point(pos[i])) else {
+            continue;
+        };
+        for &j in candidates {
+            let ids = faces[j];
+            if ids.iter().any(|&k| {
+                let d = (k % cols).abs_diff(i % cols);
+                (k / cols).abs_diff(i / cols) <= 1 && d.min(cols - d) <= 1
+            }) {
+                continue;
+            }
+            let [a, b, c] = ids.map(|k| pos[k]);
+            let ab = b.sub(a);
+            let ac = c.sub(a);
+            let Some(mut n) = ab.cross(ac).try_normalize() else {
+                continue;
+            };
+            let side = pos[i].sub(a).dot(n);
+            if side.abs() > GAP {
+                continue;
+            }
+            let prev = old[ids[1]]
+                .sub(old[ids[0]])
+                .cross(old[ids[2]].sub(old[ids[0]]));
+            if old[i].sub(old[ids[0]]).dot(prev) < 0. {
+                n = n.scale(-1.);
+            }
+            let tri = Tri {
+                a,
+                b,
+                c,
+                normal: ab.cross(ac).try_normalize().unwrap(),
+            };
+            let q = tri.nearest(pos[i]);
+            let d = pos[i].sub(q);
+            if d.dot(d) > GAP * GAP {
+                continue;
+            }
+            let aq = q.sub(a);
+            let xx = ab.dot(ab);
+            let xy = ab.dot(ac);
+            let yy = ac.dot(ac);
+            let det = xx * yy - xy * xy;
+            if det <= 1e-15 {
+                continue;
+            }
+            let u = ((aq.dot(ab) * yy - aq.dot(ac) * xy) / det).clamp(0., 1.);
+            let v = ((aq.dot(ac) * xx - aq.dot(ab) * xy) / det).clamp(0., 1. - u);
+            let bary = [1. - u - v, u, v];
+            let w = inv[i] + (0..3).map(|k| inv[ids[k]] * bary[k] * bary[k]).sum::<f32>();
+            if w <= 0. {
+                continue;
+            }
+            let corr = n.scale((GAP - d.dot(n)).max(0.) / w);
+            pos[i] = pos[i].add(corr.scale(inv[i]));
+            for k in 0..3 {
+                pos[ids[k]] = pos[ids[k]].sub(corr.scale(inv[ids[k]] * bary[k]));
+            }
+        }
+    }
+}

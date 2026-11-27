@@ -105,6 +105,38 @@ impl Particles {
     where
         F: Fn(Vec3, f32) -> Vec3,
     {
+        self.advance_contact(
+            frame_dt,
+            substeps,
+            iterations,
+            gravity,
+            drag,
+            friction,
+            pins,
+            project,
+            |_, _, _| {},
+        )
+    }
+
+    /// Sheet contact runs once per substep after the internal distance solve. The last projection
+    /// against the actor keeps the contact correction from moving the sheet inside the collider.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn advance_contact<F, S>(
+        &mut self,
+        frame_dt: f32,
+        substeps: usize,
+        iterations: usize,
+        gravity: Vec3,
+        drag: f32,
+        friction: f32,
+        pins: &[Vec3],
+        project: F,
+        self_project: S,
+    ) -> Result<(), &'static str>
+    where
+        F: Fn(Vec3, f32) -> Vec3,
+        S: Fn(&mut [Vec3], &[Vec3], &[f32]),
+    {
         if !(1..=16).contains(&substeps)
             || !(1..=32).contains(&iterations)
             || !(1. / 241. ..=0.1).contains(&frame_dt)
@@ -160,6 +192,7 @@ impl Particles {
                     }
                 }
             }
+            self_project(&mut pos, &old, &self.inv_mass);
             for i in 0..pos.len() {
                 let mut v = pos[i].sub(old[i]).scale(1. / dt);
                 let n = normals[i];

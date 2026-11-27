@@ -150,3 +150,21 @@ fn real_surface_contact_and_pose_relative_support() {
         r.displacement()
     );
 }
+
+#[test]
+fn folded_sheet_separates_unrelated_faces_without_moving_pins() {
+    let mut p = vec![Vec3::new(1., 1., 1.); 32];
+    let ids = [0, 1, 8];
+    p[0] = Vec3::ZERO;
+    p[1] = Vec3::new(0.1, 0., 0.);
+    p[8] = Vec3::new(0., 0.1, 0.);
+    p[20] = Vec3::new(0.025, 0.025, 0.001);
+    let old = p.clone();
+    let mut inv = vec![0.; 32];
+    inv[20] = 1.;
+    contact::separate_sheet(&mut p, &old, &inv, &[ids], 8);
+    assert!((p[20].z - 0.005).abs() < 1e-6);
+    for k in ids {
+        assert_eq!(p[k], old[k]);
+    }
+}

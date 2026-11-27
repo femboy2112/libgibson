@@ -8,6 +8,7 @@ use super::{
 #[derive(Clone, Debug)]
 pub(super) struct Cloth {
     pub(super) particles: Particles,
+    proxy_faces: Vec<[usize; 3]>,
     fine_cols: usize,
     fine_rows: usize,
     cols: usize,
@@ -57,6 +58,7 @@ impl Cloth {
             .collect();
         let mut mass = vec![0.; rest.len()];
         let mut links = Vec::new();
+        let mut proxy_faces = Vec::new();
         let props = cfg.fabric.properties();
         let id = |r: usize, c: usize| r * cols + (c % cols);
         let mut edge = |a: usize, b: usize, compliance: f32| {
@@ -76,6 +78,7 @@ impl Cloth {
                 if r + 1 < rows.len() {
                     let d = id(r + 1, c);
                     let e = id(r + 1, c + 1);
+                    proxy_faces.extend([[a, d, e], [a, e, b]]);
                     let area = (rest[b].sub(rest[a]).cross(rest[d].sub(rest[a])).length()
                         + rest[b].sub(rest[e]).cross(rest[d].sub(rest[e])).length())
                         * 0.5;
@@ -99,6 +102,7 @@ impl Cloth {
         let particles = Particles::new(rest.clone(), inv, links)?;
         Ok(Self {
             particles,
+            proxy_faces,
             fine_cols,
             fine_rows,
             cols,
@@ -122,7 +126,7 @@ impl Cloth {
             }
         }
         let fabric = cfg.fabric.properties();
-        self.particles.advance(
+        self.particles.advance_contact(
             dt,
             cfg.substeps,
             cfg.iterations,
@@ -130,7 +134,15 @@ impl Cloth {
             fabric.drag,
             fabric.friction,
             &pins,
-            project,
+            &project,
+            |pos, old, inv| {
+                super::contact::separate_sheet(pos, old, inv, &self.proxy_faces, self.cols);
+                for (p, w) in pos.iter_mut().zip(inv) {
+                    if *w > 0. {
+                        *p = project(*p, 1.);
+                    }
+                }
+            },
         )?;
         // Transport the fine cut detail in the instantaneous material frame. This preserves
         // gathers during a turn instead of leaving a world-aligned residual on a rotated dress.
