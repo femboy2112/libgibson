@@ -103,6 +103,11 @@ path = "examples/figure_lm_regions_xcheck.rs"
 required-features = ["figure"]
 
 [[example]]
+name = "figure_family_dump"
+path = "examples/figure_family_dump.rs"
+required-features = ["figure"]
+
+[[example]]
 name = "agent_chat"
 path = "examples/agent_chat.rs"
 
