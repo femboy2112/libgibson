@@ -1,7 +1,7 @@
 //! Maps physical proxies onto a compiled, posed character. The authored mesh stays immutable.
 use super::{
     cloth::Cloth,
-    contact::Surface,
+    contact::{Collider, Reach, Source},
     hair::Hair,
     region::{Region, RegionFrame},
     regions::{RegionSpec, RegionSpecError},
@@ -67,20 +67,27 @@ pub struct MatterCheckpoint {
 }
 
 fn normals(mesh: &mut RenderMesh) {
-    mesh.normals.fill(Vec3::ZERO);
-    for tri in &mesh.triangles {
+    normals_of(&mesh.positions, &mesh.triangles, &mut mesh.normals);
+}
+fn normals_of(positions: &[Vec3], triangles: &[[u32; 3]], normals: &mut [Vec3]) {
+    normals.fill(Vec3::ZERO);
+    for tri in triangles {
         let [a, b, c] = tri.map(|i| i as usize);
-        let n = mesh.positions[b]
-            .sub(mesh.positions[a])
-            .cross(mesh.positions[c].sub(mesh.positions[a]));
+        let n = positions[b]
+            .sub(positions[a])
+            .cross(positions[c].sub(positions[a]));
         for i in [a, b, c] {
-            mesh.normals[i] = mesh.normals[i].add(n);
+            normals[i] = normals[i].add(n);
         }
     }
-    for n in &mut mesh.normals {
+    for n in normals {
         *n = n.try_normalize().unwrap_or(Vec3::new(0., 0., 1.));
     }
 }
+
+/// Margin around the simulated particles' cells: queries beyond it stay exact through the
+/// collider's full-surface fallback, so this only sets how often that slower path runs.
+const REACH_MARGIN: f32 = 0.06;
 fn digest(cfg: DynamicsConfig, c: &Compiled, meshes: &[RenderMesh]) -> [u8; 32] {
     let mut h = sha256::Sha256::new();
     h.update(b"gibson.living-matter.config.v3\0");
@@ -546,52 +553,87 @@ impl FigureDynamics {
             }
         }
         done(Phase::Pose);
-        let mut collision = Surface::new();
-        if self.cloth.is_some() || self.hair.is_some() {
-            let body = &meshes[0];
-            collision.insert(
-                &body.positions,
-                c.indices().chunks_exact(3).map(|t| [t[0], t[1], t[2]]),
-            )?;
-            for (i, m) in meshes.iter().enumerate() {
-                if m.role == MeshRole::Garment
-                    && !self.cloth.as_ref().is_some_and(|(ci, _)| *ci == i)
-                {
-                    collision.insert(&m.positions, m.triangles.iter().copied())?;
-                }
-            }
-        }
-        done(Phase::Surface);
-        let contact = |p: Vec3, _t: f32| {
-            let mut q = collision.project(p, 0.004);
-            for &(center, size) in &self.props {
-                let d = q.sub(center);
-                let e = size.scale(0.5).add(Vec3::new(0.004, 0.004, 0.004));
-                let depth = [e.x - d.x.abs(), e.y - d.y.abs(), e.z - d.z.abs()];
-                if depth.iter().all(|x| *x > 0.) {
-                    let k = (0..3)
-                        .min_by(|&a, &b| depth[a].total_cmp(&depth[b]))
-                        .unwrap();
-                    match k {
-                        0 => q.x = center.x + e.x.copysign(d.x),
-                        1 => q.y = center.y + e.y.copysign(d.y),
-                        _ => q.z = center.z + e.z.copysign(d.z),
+        // The simulated meshes are detached so the collider can borrow the rest; hair is never
+        // a collider and the simulated cloth is excluded, exactly as in the full surface.
+        let cloth_at = self.cloth.as_ref().map(|(i, _)| *i);
+        let hair_at = self.hair.as_ref().map(|(i, _)| *i);
+        let mut detach = |at: Option<usize>| {
+            at.map(|i| {
+                (
+                    std::mem::take(&mut meshes[i].positions),
+                    std::mem::take(&mut meshes[i].normals),
+                )
+            })
+        };
+        let mut cloth_pos = detach(cloth_at);
+        let mut hair_pos = detach(hair_at);
+        {
+            let collision = if cloth_at.is_some() || hair_at.is_some() {
+                let mut sources = vec![Source::Flat(&meshes[0].positions, c.indices())];
+                for (i, m) in meshes.iter().enumerate() {
+                    if m.role == MeshRole::Garment && cloth_at != Some(i) {
+                        sources.push(Source::Tris(&m.positions, &m.triangles));
                     }
                 }
+                let reach = cloth_pos
+                    .iter()
+                    .chain(hair_pos.iter())
+                    .flat_map(|(p, _)| p.iter().copied())
+                    .chain(
+                        self.cloth
+                            .iter()
+                            .flat_map(|(_, s)| s.particles.positions().iter().copied()),
+                    )
+                    .chain(
+                        self.hair
+                            .iter()
+                            .flat_map(|(_, s)| s.particles.positions().iter().copied()),
+                    );
+                Some(Collider::build(
+                    sources,
+                    Reach::around(reach, REACH_MARGIN),
+                )?)
+            } else {
+                None
+            };
+            done(Phase::Surface);
+            let contact = |p: Vec3, _t: f32| {
+                let mut q = collision.as_ref().map_or(p, |s| s.project(p, 0.004));
+                for &(center, size) in &self.props {
+                    let d = q.sub(center);
+                    let e = size.scale(0.5).add(Vec3::new(0.004, 0.004, 0.004));
+                    let depth = [e.x - d.x.abs(), e.y - d.y.abs(), e.z - d.z.abs()];
+                    if depth.iter().all(|x| *x > 0.) {
+                        let k = (0..3)
+                            .min_by(|&a, &b| depth[a].total_cmp(&depth[b]))
+                            .unwrap();
+                        match k {
+                            0 => q.x = center.x + e.x.copysign(d.x),
+                            1 => q.y = center.y + e.y.copysign(d.y),
+                            _ => q.z = center.z + e.z.copysign(d.z),
+                        }
+                    }
+                }
+                q.z = q.z.max(0.004);
+                q
+            };
+            if let (Some((i, cloth)), Some((pos, nrm))) = (&mut self.cloth, &mut cloth_pos) {
+                cloth.step(pos, self.config, dt, contact)?;
+                normals_of(pos, &meshes[*i].triangles, nrm);
             }
-            q.z = q.z.max(0.004);
-            q
-        };
-        if let Some((i, cloth)) = &mut self.cloth {
-            cloth.step(&mut meshes[*i].positions, self.config, dt, contact)?;
-            normals(&mut meshes[*i]);
+            done(Phase::Cloth);
+            if let (Some((i, hair)), Some((pos, nrm))) = (&mut self.hair, &mut hair_pos) {
+                hair.step(pos, self.config, dt, contact)?;
+                normals_of(pos, &meshes[*i].triangles, nrm);
+            }
+            done(Phase::Hair);
         }
-        done(Phase::Cloth);
-        if let Some((i, hair)) = &mut self.hair {
-            hair.step(&mut meshes[*i].positions, self.config, dt, contact)?;
-            normals(&mut meshes[*i]);
+        for (at, detached) in [(cloth_at, cloth_pos), (hair_at, hair_pos)] {
+            if let (Some(i), Some((pos, nrm))) = (at, detached) {
+                meshes[i].positions = pos;
+                meshes[i].normals = nrm;
+            }
         }
-        done(Phase::Hair);
         self.tick = self.tick.checked_add(1).ok_or("simulation tick overflow")?;
         Ok(meshes)
     }
