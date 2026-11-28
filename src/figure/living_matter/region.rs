@@ -14,7 +14,7 @@ pub struct Region {
     pub(super) speed: Vec3,
     pub(super) frame: RegionFrame,
     pub(super) last_velocity: Vec3,
-    reference_force: Vec3,
+    pub(super) reference_force: Vec3,
 }
 
 impl Region {

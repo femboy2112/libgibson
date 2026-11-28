@@ -4,6 +4,7 @@ use super::{
     contact::Surface,
     hair::Hair,
     region::{Region, RegionFrame},
+    regions::{RegionSpec, RegionSpecError},
     DynamicsConfig, Vec3,
 };
 use crate::figure::{
@@ -29,6 +30,9 @@ enum Phase {
     Hair,
 }
 
+/// The gravity every region is calibrated against: fixed, in the world frame, never the laboratory gravity.
+const REFERENCE_GRAVITY: Vec3 = Vec3::new(0., 0., -9.80665);
+
 #[derive(Clone, Copy, Debug)]
 struct Weight {
     j: usize,
@@ -47,8 +51,10 @@ pub struct FigureDynamics {
     tick: u64,
     rate: Option<u32>,
     chest: usize,
-    centers: [Vec3; 2],
-    regions: [Region; 2],
+    centers: Vec<Vec3>,
+    regions: Vec<Region>,
+    /// Declared regions ([`FigureDynamics::with_regions`]); `None` keeps the two built-in chest regions.
+    specs: Option<Vec<RegionSpec>>,
     fields: Arc<Vec<Vec<Weight>>>,
     cloth: Option<(usize, Cloth)>,
     hair: Option<(usize, Hair)>,
@@ -126,13 +132,73 @@ impl FigureDynamics {
         config: DynamicsConfig,
         props: &[(Vec3, Vec3)],
     ) -> Result<Self, &'static str> {
+        Self::build(c, config, props, &[]).map_err(|e| match e {
+            RegionSpecError::Dynamics(message) => message,
+            _ => "invalid region declaration",
+        })
+    }
+
+    /// Declared compliant regions in place of the two built-in chest regions. Each region has its
+    /// own frame joint, its weight ellipsoid comes from the spec (tag centroid and half extent),
+    /// and it is calibrated at the first admitted frame: its origin, rotation and the reference
+    /// gravity in that frame are taken from the first pose, so a held pose, whatever its
+    /// orientation, is the equilibrium and the sculpt is untouched there. Specs are part of the
+    /// configuration identity. An empty list is exactly [`FigureDynamics::new`].
+    ///
+    /// A spec measured on another body (vertex count), bound to another compiled body revision,
+    /// naming a missing joint or malformed is refused with a [`RegionSpecError`].
+    pub fn with_regions(
+        c: &Compiled,
+        config: DynamicsConfig,
+        specs: Vec<RegionSpec>,
+    ) -> Result<Self, RegionSpecError> {
+        Self::build(c, config, &[], &specs)
+    }
+
+    /// Like [`FigureDynamics::with_regions`] with stationary scene boxes.
+    pub fn with_regions_and_props(
+        c: &Compiled,
+        config: DynamicsConfig,
+        props: &[(Vec3, Vec3)],
+        specs: Vec<RegionSpec>,
+    ) -> Result<Self, RegionSpecError> {
+        Self::build(c, config, props, &specs)
+    }
+
+    /// Per-region displacement in the region frame, in declaration order (left, right for the built-in regions).
+    pub fn region_displacements(&self) -> Vec<Vec3> {
+        self.regions.iter().map(|r| r.displacement).collect()
+    }
+
+    /// Per-region frame (origin, rotation) at the last step.
+    pub fn region_frames(&self) -> Vec<(Vec3, Quat)> {
+        self.regions
+            .iter()
+            .map(|r| (r.frame.origin, r.frame.rotation))
+            .collect()
+    }
+
+    /// Region names: the specs' names, or `left`, `right` for the built-in regions.
+    pub fn region_names(&self) -> Vec<String> {
+        match &self.specs {
+            Some(specs) => specs.iter().map(|s| s.name.clone()).collect(),
+            None => vec!["left".to_string(), "right".to_string()],
+        }
+    }
+
+    fn build(
+        c: &Compiled,
+        config: DynamicsConfig,
+        props: &[(Vec3, Vec3)],
+        specs: &[RegionSpec],
+    ) -> Result<Self, RegionSpecError> {
         config.validate()?;
         if props.len() > 16
             || props.iter().any(|(p, s)| {
                 !p.is_finite() || !s.is_finite() || s.x <= 0. || s.y <= 0. || s.z <= 0.
             })
         {
-            return Err("invalid scene collider");
+            return Err("invalid scene collider".into());
         }
 
         let meshes = c.rest_render_meshes();
@@ -152,7 +218,19 @@ impl FigureDynamics {
             .fold(f32::INFINITY, f32::min);
         let height = top - lo;
         if !(0.1..=5.).contains(&height) {
-            return Err("unsupported figure scale");
+            return Err("unsupported figure scale".into());
+        }
+        for (i, spec) in specs.iter().enumerate() {
+            spec.validate(
+                body.positions.len(),
+                c.skeleton().joint_count(),
+                c.body_rev_id(),
+            )?;
+            if specs[..i].iter().any(|o| o.name == spec.name) {
+                return Err(RegionSpecError::DuplicateName {
+                    region: spec.name.clone(),
+                });
+            }
         }
         let chest = c
             .skeleton()
@@ -175,7 +253,21 @@ impl FigureDynamics {
             .iter()
             .map(|m| {
                 let mut weights = Vec::new();
-                if matches!(m.role, MeshRole::Body | MeshRole::Garment) {
+                if matches!(m.role, MeshRole::Body | MeshRole::Garment) && !specs.is_empty() {
+                    for (vertex, &p) in m.positions.iter().enumerate() {
+                        for (j, spec) in specs.iter().enumerate() {
+                            if let Some((w, gradient, r)) = spec.field_at(p) {
+                                weights.push(Weight {
+                                    j,
+                                    vertex,
+                                    w,
+                                    gradient,
+                                    r,
+                                });
+                            }
+                        }
+                    }
+                } else if matches!(m.role, MeshRole::Body | MeshRole::Garment) {
                     for (vertex, &p) in m.positions.iter().enumerate() {
                         for (j, &origin) in centers.iter().enumerate() {
                             let r = p.sub(origin);
@@ -211,7 +303,7 @@ impl FigureDynamics {
                     .any(|g| g.id == m.id && g.kind == "skirt")
             {
                 if cloth.is_some() {
-                    return Err("only one outer panel grid is supported");
+                    return Err("only one outer panel grid is supported".into());
                 }
                 cloth = Some((i, Cloth::new(&m.positions, &m.triangles, config)?));
             }
@@ -230,15 +322,39 @@ impl FigureDynamics {
                 }
             }
         }
-        let regions = centers.map(|origin| {
-            Region::new(
-                RegionFrame {
-                    origin,
-                    rotation: Quat::IDENTITY,
-                },
-                Vec3::new(0., 0., -9.80665),
+        let (centers, regions): (Vec<Vec3>, Vec<Region>) = if specs.is_empty() {
+            (
+                centers.to_vec(),
+                centers
+                    .map(|origin| {
+                        Region::new(
+                            RegionFrame {
+                                origin,
+                                rotation: Quat::IDENTITY,
+                            },
+                            REFERENCE_GRAVITY,
+                        )
+                    })
+                    .to_vec(),
             )
-        });
+        } else {
+            // Placeholders: every declared region is calibrated at the first admitted frame.
+            (
+                specs.iter().map(|s| s.centroid).collect(),
+                specs
+                    .iter()
+                    .map(|s| {
+                        Region::new(
+                            RegionFrame {
+                                origin: s.centroid,
+                                rotation: Quat::IDENTITY,
+                            },
+                            REFERENCE_GRAVITY,
+                        )
+                    })
+                    .collect(),
+            )
+        };
         Ok(Self {
             config,
             id: {
@@ -247,6 +363,14 @@ impl FigureDynamics {
                 for (p, s) in props {
                     for x in [p.x, p.y, p.z, s.x, s.y, s.z] {
                         h.update(&x.to_le_bytes());
+                    }
+                }
+                if !specs.is_empty() {
+                    // Declared regions only; no declared regions leaves the identity bytes untouched.
+                    h.update(b"gibson.living-matter.regions.v1\0");
+                    h.update(&(specs.len() as u64).to_le_bytes());
+                    for spec in specs {
+                        spec.write_digest(&mut h);
                     }
                 }
                 h.finalize()
@@ -258,6 +382,11 @@ impl FigureDynamics {
             chest,
             centers,
             regions,
+            specs: if specs.is_empty() {
+                None
+            } else {
+                Some(specs.to_vec())
+            },
             fields: Arc::new(fields),
             cloth,
             hair,
@@ -347,34 +476,70 @@ impl FigureDynamics {
             .skeleton()
             .world_from_locals(&frame.locals)
             .map_err(|_| "joint frame failed")?;
-        let skin = world[self.chest].mul(&c.inverse_binds()[self.chest]);
-        let rot = DualQuat::from_mat4(&skin)
-            .ok_or("regional anchor requires rigid joint")?
-            .real;
         let dt = 1. / fps as f32;
-        let mut shifts = [Vec3::ZERO; 2];
-        for (j, shift) in shifts.iter_mut().enumerate() {
-            let f = RegionFrame {
-                origin: skin.transform_point(self.centers[j]).add(frame.root_t),
-                rotation: rot,
-            };
-            self.regions[j].advance(
-                f,
-                self.config.gravity,
-                dt,
-                self.config.firmness,
-                self.config.damping,
-                self.config.support,
-                self.config.intensity,
-            )?;
-            *shift = self.regions[j].displacement();
+        let mut shifts = vec![Vec3::ZERO; self.regions.len()];
+        let mut rots = Vec::with_capacity(self.regions.len());
+        if let Some(specs) = &self.specs {
+            // Declared regions: one frame per region from its own joint.
+            let mut frames = Vec::with_capacity(specs.len());
+            for spec in specs {
+                let skin = world[spec.joint].mul(&c.inverse_binds()[spec.joint]);
+                let rotation = DualQuat::from_mat4(&skin)
+                    .ok_or("regional anchor requires rigid joint")?
+                    .real;
+                frames.push(RegionFrame {
+                    origin: skin.transform_point(spec.centroid).add(frame.root_t),
+                    rotation,
+                });
+            }
+            if self.tick == 0 {
+                // First admitted frame: origin, rotation and the reference gravity in that frame.
+                for (region, f) in self.regions.iter_mut().zip(frames.iter()) {
+                    *region = Region::new(*f, REFERENCE_GRAVITY);
+                }
+            }
+            for (j, f) in frames.iter().enumerate() {
+                self.regions[j].advance(
+                    *f,
+                    self.config.gravity,
+                    dt,
+                    self.config.firmness,
+                    self.config.damping,
+                    self.config.support,
+                    self.config.intensity,
+                )?;
+                shifts[j] = self.regions[j].displacement();
+                rots.push(f.rotation);
+            }
+        } else {
+            let skin = world[self.chest].mul(&c.inverse_binds()[self.chest]);
+            let rot = DualQuat::from_mat4(&skin)
+                .ok_or("regional anchor requires rigid joint")?
+                .real;
+            for (j, shift) in shifts.iter_mut().enumerate() {
+                let f = RegionFrame {
+                    origin: skin.transform_point(self.centers[j]).add(frame.root_t),
+                    rotation: rot,
+                };
+                self.regions[j].advance(
+                    f,
+                    self.config.gravity,
+                    dt,
+                    self.config.firmness,
+                    self.config.damping,
+                    self.config.support,
+                    self.config.intensity,
+                )?;
+                *shift = self.regions[j].displacement();
+                rots.push(rot);
+            }
         }
         for (m, field) in meshes.iter_mut().zip(self.fields.iter()) {
             for w in field {
                 let u = shifts[w.j];
                 // curl(0.5*w*(u cross r)): a compact, divergence-free first-order volume mode.
                 let d = u.scale(w.w).add(w.gradient.cross(u.cross(w.r)).scale(0.5));
-                m.positions[w.vertex] = m.positions[w.vertex].add(rot.rotate(d));
+                m.positions[w.vertex] = m.positions[w.vertex].add(rots[w.j].rotate(d));
             }
             if !field.is_empty() {
                 normals(m);

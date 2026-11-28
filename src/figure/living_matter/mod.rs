@@ -8,7 +8,9 @@ mod hair;
 pub use actor::{FigureDynamics, MatterCheckpoint, StepTiming};
 pub mod particles;
 pub mod region;
+pub mod regions;
 use super::math::Vec3;
+pub use regions::{Falloff, Partition, RegionSpec, RegionSpecError};
 
 /// Material properties for one cut. Density is kg/m², stretch and bend are m/N,
 /// drag is s⁻¹, and friction is a dimensionless contact parameter.

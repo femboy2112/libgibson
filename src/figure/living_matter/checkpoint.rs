@@ -62,6 +62,10 @@ impl FigureDynamics {
             for n in [q.x, q.y, q.z, q.w] {
                 out.extend(n.to_le_bytes());
             }
+            if self.specs.is_some() {
+                // Declared regions are calibrated at their first frame: the calibration is state.
+                vec_to(&mut out, r.reference_force);
+            }
         }
         if let Some((_, c)) = &self.cloth {
             particles_to(&mut out, &c.particles);
@@ -111,6 +115,9 @@ impl FigureDynamics {
                 return Err("invalid regional checkpoint");
             }
             reg.frame.rotation = q;
+            if next.specs.is_some() {
+                reg.reference_force = r.vector()?;
+            }
         }
         if let Some((_, c)) = &mut next.cloth {
             particles_from(&mut r, &mut c.particles)?;

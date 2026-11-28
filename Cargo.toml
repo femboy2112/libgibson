@@ -98,6 +98,11 @@ path = "examples/figure_preview_png.rs"
 required-features = ["figure"]
 
 [[example]]
+name = "figure_lm_regions_xcheck"
+path = "examples/figure_lm_regions_xcheck.rs"
+required-features = ["figure"]
+
+[[example]]
 name = "agent_chat"
 path = "examples/agent_chat.rs"
 
