@@ -116,6 +116,13 @@ fn no_declared_regions_leaves_the_identity_byte_identical() {
     assert_eq!(plain, legacy_config_id(&c, cfg));
     let hex: String = plain.iter().map(|b| format!("{b:02x}")).collect();
     println!("no-region config_id on the fixture: {hex}");
+    // Literal pin of the identity of an actor with no declared regions on the fixture, recorded
+    // at the first run of this test on the unchanged-layout code: a change to the configuration
+    // identity bytes of the two built-in regions changes this value.
+    assert_eq!(
+        hex,
+        "d1004366bddf281cf424ae86377526ba434a81c2d2bd16516567bf53a00f543e"
+    );
     let empty = FigureDynamics::with_regions(&c, cfg, Vec::new())
         .unwrap()
         .config_id();
