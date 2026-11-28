@@ -513,9 +513,10 @@ fn flatten(meshes: &[PreviewMesh<'_>], up: V3) -> Flat {
             Some(ns) if ns.len() == n && ns.iter().all(|v| finite3(*v)) => Some(ns),
             _ => None,
         };
-        let mut acc = vec![[0.0f32; 3]; n];
         let ok = |t: &[u32; 3]| t.iter().all(|&i| (i as usize) < n);
-        for t in m.triangles.iter().filter(|t| ok(t)) {
+        // Area-weighted normals only when the given ones are not used.
+        let mut acc = vec![[0.0f32; 3]; if given.is_some() { 0 } else { n }];
+        for t in m.triangles.iter().filter(|t| given.is_none() && ok(t)) {
             let (a, b, c) = (
                 m.positions[t[0] as usize],
                 m.positions[t[1] as usize],
@@ -529,12 +530,9 @@ fn flatten(meshes: &[PreviewMesh<'_>], up: V3) -> Flat {
             }
         }
         f.pos.extend_from_slice(m.positions);
-        for (i, a) in acc.iter().enumerate() {
-            let v = match given {
-                Some(g) => normalize_or(g[i], up),
-                None => normalize_or(*a, up),
-            };
-            f.nrm.push(v);
+        match given {
+            Some(g) => f.nrm.extend(g.iter().map(|&v| normalize_or(v, up))),
+            None => f.nrm.extend(acc.iter().map(|&a| normalize_or(a, up))),
         }
         for (ti, t) in m.triangles.iter().enumerate() {
             if !ok(t) {
@@ -670,25 +668,37 @@ fn shadow_mark(cov: &mut [f32], x: f32, y: f32) {
     }
 }
 
+/// Separable box filter of radius `r` over an `n` x `n` grid, zero outside. Each output is
+/// `(0 + s[-r] + ... + s[r]) * norm` over the in-range samples, added in ascending offset order;
+/// the loops run over each offset's valid span so they need no per-sample bounds test.
 fn box_blur(src: &[f32], n: usize, r: usize, horizontal: bool) -> Vec<f32> {
     let mut out = vec![0.0f32; n * n];
     let norm = 1.0 / (2 * r + 1) as f32;
-    for y in 0..n {
-        for x in 0..n {
-            let mut s = 0.0f32;
+    if horizontal {
+        for (row, dst) in src.chunks_exact(n).zip(out.chunks_exact_mut(n)) {
             for k in 0..=2 * r {
-                let o = k as isize - r as isize;
-                let (xx, yy) = if horizontal {
-                    (x as isize + o, y as isize)
-                } else {
-                    (x as isize, y as isize + o)
-                };
-                if xx >= 0 && yy >= 0 && (xx as usize) < n && (yy as usize) < n {
-                    s += src[yy as usize * n + xx as usize];
+                // Output x reads row[x + k - r] when that index is in range.
+                let (x0, x1) = (r.saturating_sub(k), (n + r).saturating_sub(k).min(n));
+                if x0 < x1 {
+                    let from = x0 + k - r;
+                    for (d, v) in dst[x0..x1].iter_mut().zip(&row[from..from + (x1 - x0)]) {
+                        *d += *v;
+                    }
                 }
             }
-            out[y * n + x] = s * norm;
         }
+    } else {
+        for y in 0..n {
+            let dst = &mut out[y * n..(y + 1) * n];
+            for yy in y.saturating_sub(r)..(y + r + 1).min(n) {
+                for (d, v) in dst.iter_mut().zip(&src[yy * n..(yy + 1) * n]) {
+                    *d += *v;
+                }
+            }
+        }
+    }
+    for v in &mut out {
+        *v *= norm;
     }
     out
 }
@@ -736,6 +746,14 @@ fn build_shadow(flat: &Flat, g: &Ground, l: V3, band: f32) -> Vec<f32> {
         }
     };
     let pts: Vec<Option<[f32; 2]>> = flat.pos.iter().map(|&p| proj(p)).collect();
+    let near: Vec<bool> = if low.is_empty() {
+        Vec::new()
+    } else {
+        flat.pos
+            .iter()
+            .map(|&p| dot(p, g.up) - g.h < band)
+            .collect()
+    };
     for t in &flat.tris {
         let (Some(a), Some(b), Some(c)) =
             (pts[t[0] as usize], pts[t[1] as usize], pts[t[2] as usize])
@@ -743,10 +761,7 @@ fn build_shadow(flat: &Flat, g: &Ground, l: V3, band: f32) -> Vec<f32> {
             continue;
         };
         splat_tri(&mut cov, a, b, c);
-        if !low.is_empty()
-            && t.iter()
-                .all(|&i| dot(flat.pos[i as usize], g.up) - g.h < band)
-        {
+        if !low.is_empty() && t.iter().all(|&i| near[i as usize]) {
             splat_tri(&mut low, a, b, c);
         }
     }
@@ -784,6 +799,10 @@ fn min_mark(minh: &mut [f32], x: f32, y: f32, h: f32) {
 /// at the ground and falls smoothly to 0 at `band` above it, blurred by a smooth kernel of
 /// support about `reach`, and scaled by `CONTACT_GAIN`. Zero where nothing is within the band.
 fn build_contact(flat: &Flat, g: &Ground, band: f32, reach: f32) -> Vec<f32> {
+    build_contact_with(flat, g, band, reach, true)
+}
+
+fn build_contact_with(flat: &Flat, g: &Ground, band: f32, reach: f32, skip: bool) -> Vec<f32> {
     let n = CONTACT_N;
     let nf = n as f32;
     let half = g.chalf;
@@ -804,12 +823,24 @@ fn build_contact(flat: &Flat, g: &Ground, band: f32, reach: f32) -> Vec<f32> {
     };
     let pts: Vec<Option<([f32; 2], f32)>> = flat.pos.iter().map(|&p| proj(p)).collect();
     let mut minh = vec![f32::INFINITY; n * n];
+    // Occupancy is `1 - smoothstep(0, band, h)`, exactly 0 for any h >= band, the same as an
+    // unmarked cell. A triangle whose vertices all clear the band by 0.1% writes only heights
+    // >= band (barycentric mixes, midpoints and the centroid stay within a few ulps of the
+    // vertex range), so it cannot change any occupancy and is skipped.
+    let clear = if skip && band > 0.0 && band.is_finite() {
+        band * 1.001
+    } else {
+        f32::INFINITY
+    };
     for t in &flat.tris {
         let (Some((a, ha)), Some((b, hb)), Some((c, hc))) =
             (pts[t[0] as usize], pts[t[1] as usize], pts[t[2] as usize])
         else {
             continue;
         };
+        if ha.min(hb).min(hc) >= clear {
+            continue;
+        }
         raster_tri(a, b, c, n, n, |x, y, b0, b1, b2| {
             let h = b0 * ha + b1 * hb + b2 * hc;
             let cell = &mut minh[y * n + x];
@@ -1177,4 +1208,128 @@ pub fn render_preview(
     let img = render_inner(meshes, materials, camera, lights, opts);
     STALE.with(|c| *c.borrow_mut() = Some((key, img.clone())));
     img
+}
+
+#[cfg(test)]
+mod exactness_tests {
+    use super::*;
+
+    /// The original per-sample, bounds-tested box filter: the bitwise reference.
+    fn box_blur_reference(src: &[f32], n: usize, r: usize, horizontal: bool) -> Vec<f32> {
+        let mut out = vec![0.0f32; n * n];
+        let norm = 1.0 / (2 * r + 1) as f32;
+        for y in 0..n {
+            for x in 0..n {
+                let mut s = 0.0f32;
+                for k in 0..=2 * r {
+                    let o = k as isize - r as isize;
+                    let (xx, yy) = if horizontal {
+                        (x as isize + o, y as isize)
+                    } else {
+                        (x as isize, y as isize + o)
+                    };
+                    if xx >= 0 && yy >= 0 && (xx as usize) < n && (yy as usize) < n {
+                        s += src[yy as usize * n + xx as usize];
+                    }
+                }
+                out[y * n + x] = s * norm;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn contact_skip_of_triangles_above_the_band_changes_no_bit() {
+        let mut seed = 0x51ed_2701_u32;
+        let mut r = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed as f32 / u32::MAX as f32
+        };
+        let up = [0.0, 0.0, 1.0];
+        let band = 0.06;
+        let mut pos = Vec::new();
+        let mut tris = Vec::new();
+        for k in 0..30_000u32 {
+            // Heights spread across the band edge: below, straddling, at and just above it.
+            let z0 = match k % 4 {
+                0 => r() * 0.2,
+                1 => band * (0.999 + 0.004 * r()),
+                2 => band * 1.001,
+                _ => r() * 0.08,
+            };
+            let c = [r() * 1.6 - 0.8, r() * 1.6 - 0.8, z0];
+            for _ in 0..3 {
+                pos.push([c[0] + 0.02 * r(), c[1] + 0.02 * r(), c[2] + 0.004 * r()]);
+            }
+            tris.push([3 * k, 3 * k + 1, 3 * k + 2]);
+        }
+        let n = pos.len();
+        let flat = Flat {
+            pos,
+            nrm: vec![up; n],
+            slot: vec![0; tris.len()],
+            tris,
+        };
+        let g = Ground {
+            h: 0.0,
+            up,
+            e1: [1.0, 0.0, 0.0],
+            e2: [0.0, 1.0, 0.0],
+            ca: 0.0,
+            cb: 0.0,
+            radius: 1.0,
+            half: 4.0,
+            shadow: Vec::new(),
+            chalf: 1.15,
+            contact: Vec::new(),
+        };
+        let a = build_contact_with(&flat, &g, band, 0.15, true);
+        let b = build_contact_with(&flat, &g, band, 0.15, false);
+        assert!(a.iter().any(|&v| v > 0.0));
+        assert!(a.iter().zip(&b).all(|(x, y)| x.to_bits() == y.to_bits()));
+    }
+
+    #[test]
+    fn box_blur_is_bit_identical_to_the_reference() {
+        let mut seed = 0x1234_5678_u32;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        for &(n, r) in &[
+            (1, 1),
+            (5, 4),
+            (7, 9),
+            (64, 1),
+            (64, 4),
+            (97, 6),
+            (256, 32),
+            (40, 100),
+        ] {
+            // Mixed magnitudes, exact zeros and signed zeros so rounding order matters.
+            let src: Vec<f32> = (0..n * n)
+                .map(|_| match next() % 5 {
+                    0 => 0.0,
+                    1 => -0.0,
+                    2 => 1.0,
+                    3 => (next() as f32 / u32::MAX as f32) * 1e-3,
+                    _ => next() as f32 / u32::MAX as f32 * 7.0,
+                })
+                .collect();
+            for horizontal in [true, false] {
+                let got = box_blur(&src, n, r, horizontal);
+                let want = box_blur_reference(&src, n, r, horizontal);
+                assert!(
+                    got.iter()
+                        .zip(&want)
+                        .all(|(a, b)| a.to_bits() == b.to_bits()),
+                    "n {n} r {r} horizontal {horizontal}"
+                );
+            }
+        }
+    }
 }
